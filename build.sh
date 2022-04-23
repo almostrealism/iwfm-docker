@@ -3,6 +3,9 @@ CC=cc
 CXX=c++
 CF=ifort
 
+mkdir libs
+mkdir libs/lib
+
 cd szip
 ./configure
 make
