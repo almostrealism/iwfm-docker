@@ -1,0 +1,147 @@
+name: ci
+
+env:
+  CTEST_PARALLEL_LEVEL: 4
+  CMAKE_BUILD_TYPE: Release
+
+on:
+  push:
+    paths:
+      - "**/CMakeLists.txt"
+      - "**.cmake"
+      - "**.f90"
+      - ".github/workflows/ci.yml"
+  release:
+    types: [published]
+
+
+jobs:
+
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      matrix:
+        shared: [true, false]
+        gcc: [8, 11]
+
+    env:
+      CC: gcc-${{ matrix.gcc }}
+      FC: gfortran-${{ matrix.gcc }}
+
+    steps:
+
+    - name: Setup cmake
+      uses: jwlawson/actions-setup-cmake@v1
+      with:
+        cmake-version: '3.20'
+
+    - name: install hdf5
+      run: |
+        sudo apt update
+        sudo apt install --no-install-recommends gcc-${{ matrix.gcc }} gfortran-${{ matrix.gcc}} ninja-build libhdf5-dev
+
+    - uses: actions/checkout@v2
+
+    - run: cmake --preset multi -DCMAKE_INSTALL_PREFIX=${{ runner.temp }} -DBUILD_SHARED_LIBS:BOOL=${{ matrix.shared }}
+
+    - name: Build Debug
+      run: cmake --build --parallel --preset debug
+    - name: Test Debug
+      run: ctest --preset debug --output-junit test-debug.xml
+
+    - name: Build Release
+      run: cmake --build --parallel --preset release
+    - name: Test Release
+      run: ctest --preset release --output-junit test-release.xml
+
+    - name: Publish Unit Test Results
+      uses: EnricoMi/publish-unit-test-result-action@v1
+      if: always()
+      with:
+        files: build/test-*.xml
+
+    - run: cmake --install build
+
+    - name: configure examples
+      run: cmake -S Examples -B Examples/build -DCMAKE_PREFIX_PATH:PATH=${{ runner.temp }} -DBUILD_SHARED_LIBS:BOOL=${{ matrix.shared }}
+    - name: build examples
+      run: cmake --build Examples/build --parallel
+    - name: Test examples
+      run: ctest --test-dir Examples/build -V
+
+
+  linux-coverage:
+    needs: linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+
+    - name: install hdf5
+      run: |
+        sudo apt update
+        sudo apt install --no-install-recommends ninja-build libhdf5-dev
+
+    - name: install Gcovr
+      run: pip install gcovr
+
+    - run: cmake --preset coverage
+    - run: cmake --build --parallel --preset coverage
+
+    - name: Code coverage
+      run: cmake --build --parallel --preset run-coverage
+
+    - uses: actions/upload-artifact@v2
+      with:
+        name: coverage-report-html
+        path: build-coverage/coverage/
+
+
+  linux-build:
+    needs: linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      matrix:
+        shared: [true, false]
+
+    steps:
+
+    - name: Setup cmake
+      uses: jwlawson/actions-setup-cmake@v1
+      with:
+        cmake-version: '3.20'
+
+    - uses: actions/checkout@v2
+
+    - name: Configure HDF5
+      run: cmake -S scripts -B scripts/build -DCMAKE_INSTALL_PREFIX=${{ runner.temp }} -DBUILD_SHARED_LIBS:BOOL=${{ matrix.shared }}
+
+    - name: Build/install HDF5
+      run: cmake --build scripts/build --parallel
+
+    - name: configure h5fortran
+      run: cmake -B build -DCMAKE_INSTALL_PREFIX=${{ runner.temp }} -DBUILD_SHARED_LIBS:BOOL=${{ matrix.shared }} -DCMAKE_PREFIX_PATH=${{ runner.temp }}
+
+    - name: build h5fortran
+      run: cmake --build build --parallel
+
+    - name: test h5fortran
+      run: ctest --test-dir build --preset default
+
+    - name: install h5fortran
+      run: cmake --install build
+
+    - name: configure examples
+      run: cmake -S Examples -B Examples/build -DCMAKE_PREFIX_PATH:PATH=${{ runner.temp }} -DBUILD_SHARED_LIBS:BOOL=${{ matrix.shared }}
+    - name: build Examples
+      run: cmake --build Examples/build --parallel
+    - name: Test Examples
+      run: ctest --test-dir Examples/build -V

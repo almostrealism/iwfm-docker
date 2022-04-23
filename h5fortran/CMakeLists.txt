@@ -1,0 +1,84 @@
+cmake_minimum_required(VERSION 3.20...3.23)
+
+get_property(is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(NOT is_multi_config AND NOT (CMAKE_BUILD_TYPE OR DEFINED ENV{CMAKE_BUILD_TYPE}))
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Release default")
+endif()
+
+file(READ ${CMAKE_CURRENT_LIST_DIR}/codemeta.json _j)
+string(JSON PROJECT_VERSION GET ${_j} version)
+
+project(h5fortran
+LANGUAGES C Fortran
+VERSION ${PROJECT_VERSION}
+DESCRIPTION "thin, light object-oriented HDF5 Fortran interface"
+HOMEPAGE_URL https://github.com/geospace-code/h5fortran
+)
+
+include(CTest)
+if(NOT DEFINED ${PROJECT_NAME}_BUILD_TESTING)
+  set(${PROJECT_NAME}_BUILD_TESTING ${BUILD_TESTING})
+endif()
+
+include(cmake/options.cmake)
+include(cmake/compilers.cmake)
+
+# --- find or build HDF5 library
+find_package(HDF5 1.8.7 COMPONENTS Fortran HL)
+if(NOT HDF5_FOUND)
+  message(FATAL_ERROR "HDF5 not found or working on the system. First build HDF5 by:
+
+  cmake -S scripts -B scripts/build -DCMAKE_INSTALL_PREFIX=~/mylibs
+  cmake --build scripts/build
+
+  Then build h5fortran:
+
+  cmake -B build -DCMAKE_PREFIX_PATH=~/mylibs
+  cmake --build build
+  ")
+endif()
+
+if(hdf5_parallel OR HDF5_HAVE_PARALLEL)
+  find_package(MPI COMPONENTS Fortran REQUIRED)
+  target_link_libraries(HDF5::HDF5 INTERFACE MPI::MPI_Fortran)
+endif()
+
+# --- h5fortran library
+
+add_library(h5fortran)
+target_include_directories(h5fortran
+PUBLIC
+$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+$<INSTALL_INTERFACE:include>
+)
+target_link_libraries(h5fortran PUBLIC HDF5::HDF5)
+set_target_properties(h5fortran PROPERTIES
+Fortran_MODULE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include
+LABELS core
+VERSION ${PROJECT_VERSION}
+)
+
+# GLOBAL needed for use by FetchContent
+add_library(h5fortran::h5fortran INTERFACE IMPORTED GLOBAL)
+target_link_libraries(h5fortran::h5fortran INTERFACE h5fortran)
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/h5fortran.mod TYPE INCLUDE)
+
+install(TARGETS h5fortran EXPORT ${PROJECT_NAME}-targets)
+
+add_subdirectory(src)
+
+if(${PROJECT_NAME}_BUILD_TESTING)
+  add_subdirectory(tests)
+endif()
+
+# additional Find*.cmake necessary
+install(FILES
+${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/FindHDF5.cmake
+${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/check_hdf5_mpi.f90
+${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/FindSZIP.cmake
+DESTINATION cmake
+)
+
+include(cmake/pkgconf.cmake)
+include(cmake/install.cmake)

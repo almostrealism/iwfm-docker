@@ -1,0 +1,49 @@
+cmake_minimum_required(VERSION 3.20...3.23)
+
+project(h5fortranExample
+LANGUAGES C CXX Fortran)
+
+include(CTest)
+
+find_package(h5fortran CONFIG REQUIRED)
+
+# --- Fortran interface for examples
+add_library(fortran_interface fortran_interface.f90)
+target_link_libraries(fortran_interface PRIVATE h5fortran::h5fortran)
+
+# --- example 1
+add_executable(ex_fcn ex_fcn.f90)
+target_link_libraries(ex_fcn h5fortran::h5fortran)
+add_test(NAME Fortran_fcn COMMAND ex_fcn)
+
+# --- example 2
+add_executable(ex_oo ex_oo.f90)
+target_link_libraries(ex_oo h5fortran::h5fortran)
+add_test(NAME Fortran_oo COMMAND ex_oo)
+
+# --- example 3
+add_executable(c_fcn ex_fcn.c)
+target_link_libraries(c_fcn fortran_interface)
+target_compile_features(c_fcn PRIVATE c_std_99)
+# https://en.cppreference.com/w/c/types/integer
+add_test(NAME C_fcn COMMAND c_fcn)
+
+# --- example 4
+add_executable(cpp_fcn ex_fcn.cpp)
+target_link_libraries(cpp_fcn fortran_interface)
+target_compile_features(cpp_fcn PRIVATE cxx_std_11)
+# https://en.cppreference.com/w/cpp/types/integer
+add_test(NAME CPP_fcn COMMAND cpp_fcn)
+
+# properties
+get_property(test_names DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY TESTS)
+set_tests_properties(${test_names} PROPERTIES
+TIMEOUT 10
+WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+if(WIN32 AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.22)
+  set_tests_properties(${test_names} PROPERTIES
+  ENVIRONMENT_MODIFICATION "PATH=path_list_append:${ZLIB_INCLUDE_DIRS}/../bin;PATH=path_list_append:${ZLIB_INCLUDE_DIR}/../bin;PATH=path_list_append:${PROJECT_BINARY_DIR}/bin;PATH=path_list_append:${h5fortran_DIR}/../bin"
+  )
+endif()
