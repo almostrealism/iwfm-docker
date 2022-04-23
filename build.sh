@@ -8,7 +8,7 @@ cd szip
 make
 make install
 cd ..
-cp szip/lib/* libs/lib/
+cp szip/szip/lib/* libs/lib/
 
 cmake -S h5fortran/scripts -B build/hdf5 -DCMAKE_INSTALL_PREFIX=$(pwd)/libs
 cmake -S heclib -B build/heclib
