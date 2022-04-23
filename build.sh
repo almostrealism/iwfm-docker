@@ -3,6 +3,13 @@ CC=cc
 CXX=c++
 CF=ifort
 
+cd szip
+./configure
+make
+make install
+cd ..
+cp szip/lib/* libs/lib/
+
 cmake -S h5fortran/scripts -B build/hdf5 -DCMAKE_INSTALL_PREFIX=$(pwd)/libs
 cmake -S heclib -B build/heclib
 cmake --build build/hdf5
