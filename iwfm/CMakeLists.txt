@@ -55,12 +55,9 @@ add_library(Package_AppGW
   ${SOURCE_DIR}/Package_AppGW/BC/Class_LayerBC.f90
   ${SOURCE_DIR}/Package_AppGW/BC/Class_TSBCDataFile.f90
   ${SOURCE_DIR}/Package_AppGW/Class_AppGW.f90
-  ${SOURCE_DIR}/Package_AppGW/Class_BaseHydrograph.f90
   ${SOURCE_DIR}/Package_AppGW/Class_GWState.f90
-  ${SOURCE_DIR}/Package_AppGW/Class_TecplotOutput.f90
   ${SOURCE_DIR}/Package_AppGW/GWHydrograph.f90
   ${SOURCE_DIR}/Package_AppGW/Package_AppGW.f90
-  ${SOURCE_DIR}/Package_AppGW/Package_AppSubsidence/Class_AppSubsidence.f90
   ${SOURCE_DIR}/Package_AppGW/VerticalFlow.f90
   )
 add_library(Package_AppLake
@@ -106,11 +103,23 @@ add_library(Package_AppStream
   ${SOURCE_DIR}/Package_AppStream/VERSION_4.1/Class_StrmNode_v41.f90
   ${SOURCE_DIR}/Package_AppStream/VERSION_4.2/AppStream_v42_Revision.fi
   ${SOURCE_DIR}/Package_AppStream/VERSION_4.2/Class_AppStream_v42.f90
+  ${SOURCE_DIR}/Package_AppStream/VERSION_4.21/Class_AppStream_v421.f90
+  ${SOURCE_DIR}/Package_AppStream/VERSION_4.21/AppStream_v421_Revision.fi
   ${SOURCE_DIR}/Package_AppStream/VERSION_5.0/AppStream_v50_Revision.fi
   ${SOURCE_DIR}/Package_AppStream/VERSION_5.0/Class_AppStream_v50.f90
   ${SOURCE_DIR}/Package_AppStream/VERSION_5.0/Class_StrmNode_v50.f90
   )
+add_library(Package_AppSubsidence
+  ${SOURCE_DIR}/Package_AppSubsidence/VERSION_4.0/Class_AppSubsidence_v40.f90
+  ${SOURCE_DIR}/Package_AppSubsidence/VERSION_4.0/AppSubsidence_v40_Revision.fi
+  ${SOURCE_DIR}/Package_AppSubsidence/Package_AppSubsidence_Revision.fi
+  ${SOURCE_DIR}/Package_AppSubsidence/Package_AppSubsidence.f90
+  ${SOURCE_DIR}/Package_AppSubsidence/VERSION_5.0/AppSubsidence_v50_Revision.fi
+  ${SOURCE_DIR}/Package_AppSubsidence/VERSION_5.0/Class_AppSubsidence_v50.f90
+  ${SOURCE_DIR}/Package_AppSubsidence/Class_BaseAppSubsidence.f90
+  )
 add_library(Package_AppTileDrain
+  ${SOURCE_DIR}/Package_AppTileDrain/AppTileDrain_Parameters.f90
   ${SOURCE_DIR}/Package_AppTileDrain/Class_BaseTileDrain.f90
   ${SOURCE_DIR}/Package_AppTileDrain/Package_AppTileDrain.f90
   ${SOURCE_DIR}/Package_AppTileDrain/TileDrainHydrograph.f90
@@ -135,6 +144,7 @@ add_library(Package_ComponentConnectors
   ${SOURCE_DIR}/Package_ComponentConnectors/StrmGWConnector/Class_StrmGWConnector_v41.f90
   ${SOURCE_DIR}/Package_ComponentConnectors/StrmGWConnector/Class_StrmGWConnector_v42.f90
   ${SOURCE_DIR}/Package_ComponentConnectors/StrmGWConnector/Class_StrmGWConnector_v50.f90
+  ${SOURCE_DIR}/Package_ComponentConnectors/StrmGWConnector/Class_StrmGWConnector_v421.f90
   ${SOURCE_DIR}/Package_ComponentConnectors/StrmLakeConnector.f90
   ${SOURCE_DIR}/Package_ComponentConnectors/SupplyDestinationConnector.f90
   )
@@ -161,10 +171,12 @@ add_library(Package_Matrix
   )
 add_library(Package_Miscellaneous
   ${SOURCE_DIR}/Package_Miscellaneous/AbstractFunction.f90
+  ${SOURCE_DIR}/Package_Miscellaneous/Class_BaseHydrograph.f90
   ${SOURCE_DIR}/Package_Miscellaneous/Class_GeneralHeadBoundary.f90
   ${SOURCE_DIR}/Package_Miscellaneous/Class_PairedData.f90
   ${SOURCE_DIR}/Package_Miscellaneous/Class_SolverData.f90
-  ${SOURCE_DIR}/Package_Miscellaneous/Opening_screen.f90
+  ${SOURCE_DIR}/Package_Miscellaneous/Class_TecplotOutput.f90
+  ${SOURCE_DIR}/Package_Miscellaneous/Opening_screen_LINUX.f90
   ${SOURCE_DIR}/Package_Miscellaneous/Package_Misc.f90
   ${SOURCE_DIR}/Package_Miscellaneous/Package_Misc_Revision.fi
   ${SOURCE_DIR}/Package_Miscellaneous/TSDFileHandler.f90
@@ -238,10 +250,11 @@ add_library(Package_ZBudget
 #---------- DEFINE DEPENDENCIES -------------#
 # Talk with Can Dogrul about correcting these dependencies. Too much fluff
 add_dependencies(IWFM_Core_Version IWFM_Util)
-add_dependencies(Package_AppGW IWFM_Core_Version Package_ComponentConnectors Package_AppTileDrain Package_AppPumping Package_Budget Package_Matrix Package_Miscellaneous Package_Discretization)
+add_dependencies(Package_AppGW IWFM_Core_Version Package_ComponentConnectors Package_AppTileDrain Package_AppSubsidence Package_AppPumping Package_Budget Package_Matrix Package_Miscellaneous Package_Discretization)
 add_dependencies(Package_AppLake IWFM_Core_Version Package_PrecipitationET Package_Matrix Package_Miscellaneous Package_Discretization Package_ComponentConnectors)
 add_dependencies(Package_AppStream IWFM_Core_Version Package_Matrix Package_Miscellaneous Package_Discretization Package_ComponentConnectors)
 add_dependencies(Package_AppSmallWatershed IWFM_Core_Version Package_UnsatZone Package_Matrix Package_Miscellaneous Package_Discretization)
+add_dependencies(Package_AppSubsidence Package_Matrix)
 add_dependencies(Package_AppPumping IWFM_Core_Version Package_Miscellaneous Package_ComponentConnectors Package_Discretization)
 add_dependencies(Package_AppTileDrain IWFM_Core_Version Package_Miscellaneous Package_Discretization Package_Matrix)
 add_dependencies(Package_AppUnsatZone IWFM_Core_Version Package_Discretization Package_Miscellaneous Package_Budget Package_ZBudget Package_UnsatZone)
@@ -250,7 +263,7 @@ add_dependencies(Package_ComponentConnectors IWFM_Core_Version Package_Matrix Pa
 add_dependencies(Package_Discretization IWFM_Core_Version)
 add_dependencies(Package_GWZBudget IWFM_Core_Version Package_AppStream Package_AppGW Package_AppStream Package_AppSmallWatershed)
 add_dependencies(Package_Matrix IWFM_Core_Version Package_Miscellaneous)
-add_dependencies(Package_Miscellaneous IWFM_Core_Version)
+add_dependencies(Package_Miscellaneous IWFM_Core_Version Package_Discretization)
 add_dependencies(Package_Model IWFM_Core_Version Package_Discretization Package_AppGW Package_GWZBudget Package_AppStream Package_AppLake Package_AppUnsatZone Package_RootZone Package_Supply)
 add_dependencies(Package_PrecipitationET IWFM_Core_Version Package_Miscellaneous)
 add_dependencies(Package_RootZone IWFM_Core_Version Package_Budget Package_UnsatZone)
@@ -277,7 +290,7 @@ target_link_libraries(Budget ${HECLIB_RELEASE})
 add_executable(PreProcessor ${SOURCE_DIR}/PreProcessor/Iwfm_f1.f90)
 target_link_libraries(PreProcessor ${LINKER_START_GROUP} IWFM_Core_Version IWFM_Util 
   Package_AppGW Package_AppLake Package_AppPumping Package_AppSmallWatershed
-  Package_AppStream Package_AppTileDrain Package_AppUnsatZone
+  Package_AppStream Package_AppSubsidence Package_AppTileDrain Package_AppUnsatZone
   Package_Budget Package_ComponentConnectors Package_Discretization Package_GWZBudget
   Package_Matrix Package_Miscellaneous Package_Model Package_PrecipitationET Package_RootZone
   Package_Supply Package_UnsatZone Package_ZBudget ${LINKER_END_GROUP})
@@ -288,7 +301,7 @@ target_include_directories(PreProcessor PUBLIC "${CMAKE_Fortran_MODULE_DIRECTORY
 add_executable(Simulation ${SOURCE_DIR}/Simulation/Iwfm_f2.f90)
 target_link_libraries(Simulation ${LINKER_START_GROUP} IWFM_Core_Version IWFM_Util 
     Package_AppGW Package_AppLake Package_AppPumping Package_AppSmallWatershed
-    Package_AppStream Package_AppTileDrain Package_AppUnsatZone
+    Package_AppStream Package_AppSubsidence Package_AppTileDrain Package_AppUnsatZone
     Package_Budget Package_ComponentConnectors Package_Discretization Package_GWZBudget
     Package_Matrix Package_Miscellaneous Package_Model Package_PrecipitationET Package_RootZone
     Package_Supply Package_UnsatZone Package_ZBudget ${LINKER_END_GROUP})
