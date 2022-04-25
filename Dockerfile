@@ -9,3 +9,5 @@ COPY iwfm iwfm
 COPY build.sh /build.sh
 
 RUN /build.sh
+
+ENTRYPOINT /build/iwfm/PreProcessor
