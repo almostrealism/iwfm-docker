@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -26,7 +26,7 @@ MODULE Class_BaseAppLake
    USE MessageLogger               , ONLY: EchoProgress            , &
                                            SetLastMessage          , &
                                            MessageArray            , &
-                                           iFatal
+                                           f_iFatal
    USE GeneralUtilities            , ONLY: ArrangeText             , &
                                            UpperCase               , &
                                            IntToText               , &
@@ -38,28 +38,30 @@ MODULE Class_BaseAppLake
                                            IncrementTimeStamp
    USE IOInterface                 , ONLY: GenericFileType
    USE Package_Misc                , ONLY: PairedDataType          , &
-                                           iLakeComp               , &
-                                           iLocationType_Lake      , &
-                                           iAllLocationIDsListed
+                                           f_iLakeComp             , &
+                                           f_iLocationType_Lake    , &
+                                           f_iAllLocationIDsListed , &
+                                           f_iFlowDest_StrmNode
    USE Package_Budget              , ONLY: BudgetType              , &
                                            BudgetHeaderType        , &
-                                           VolumeUnitMarker        , &
-                                           AreaUnitMarker          , &
-                                           LengthUnitMarker        , &
-                                           LocationNameMarker      , &
-                                           AreaMarker              , &
-                                           VR                      , &
-                                           VLE                     , &
-                                           VLB                     , &
-                                           LT                      , &
-                                           PER_CUM                 , &
-                                           PER_AVER
+                                           f_cVolumeUnitMarker     , &
+                                           f_cAreaUnitMarker       , &
+                                           f_cLengthUnitMarker     , &
+                                           f_cLocationNameMarker   , &
+                                           f_cAreaMarker           , &
+                                           f_iColumnHeaderLen      , &
+                                           f_iVR                   , &
+                                           f_iVLE                  , &
+                                           f_iVLB                  , &
+                                           f_iLT                   , &
+                                           f_iPER_CUM              , &
+                                           f_iPER_AVER
    USE Package_Discretization      , ONLY: AppGridType             , &
                                            StratigraphyType
    USE Package_ComponentConnectors , ONLY: StrmLakeConnectorType   , &
                                            LakeGWConnectorType     , &
-                                           iStrmToLakeType         , &
-                                           iBypassToLakeType
+                                           f_iStrmToLakeFlow       , &
+                                           f_iBypassToLakeFlow
    USE Package_PrecipitationET     , ONLY: ETType                  , &
                                            PrecipitationType
    USE Package_Matrix              , ONLY: MatrixType
@@ -85,7 +87,8 @@ MODULE Class_BaseAppLake
   PRIVATE
   PUBLIC :: BaseAppLakeType         , &
             PrepareLakeBudgetHeader , &
-            GenerateRatingTable
+            GenerateRatingTable     , &
+            f_iBudgetType_Lake 
 
 
   ! -------------------------------------------------------------
@@ -112,13 +115,17 @@ MODULE Class_BaseAppLake
       PROCEDURE(Abstract_CheckExternalTSDataPointers),PASS,DEFERRED    :: CheckExternalTSDataPointers
       PROCEDURE(Abstract_ConvertTimeUnit),PASS,DEFERRED                :: ConvertTimeUnit
       PROCEDURE,PASS                                                   :: Kill
-      PROCEDURE,PASS                                                   :: GetNDataList_AtLocationType
-      PROCEDURE,PASS                                                   :: GetDataList_AtLocationType
-      PROCEDURE,PASS                                                   :: GetLocationsWithData
-      PROCEDURE,PASS                                                   :: GetSubDataList_AtLocation
-      PROCEDURE,PASS                                                   :: GetModelData_AtLocation
+      PROCEDURE,PASS                                                   :: GetBudget_List
+      PROCEDURE,PASS                                                   :: GetBudget_NColumns
+      PROCEDURE,PASS                                                   :: GetBudget_ColumnTitles
+      PROCEDURE,PASS                                                   :: GetBudget_MonthlyFlows_GivenAppLake
+      PROCEDURE,NOPASS                                                 :: GetBudget_MonthlyFlows_GivenFile
+      PROCEDURE,PASS                                                   :: GetBudget_TSData
       PROCEDURE,PASS                                                   :: GetNLakes 
       PROCEDURE,PASS                                                   :: GetNames
+      PROCEDURE,PASS                                                   :: GetLakeIDs
+      PROCEDURE,PASS                                                   :: GetLakeID
+      PROCEDURE,PASS                                                   :: GetLakeIndex
       PROCEDURE,PASS                                                   :: GetNTotalLakeNodes          
       PROCEDURE,PASS                                                   :: GetNElementsInLake          
       PROCEDURE,PASS                                                   :: GetNodes                    
@@ -137,6 +144,7 @@ MODULE Class_BaseAppLake
       PROCEDURE,PASS                                                   :: AdvanceState  
       PROCEDURE,PASS                                                   :: UpdateHeads 
       PROCEDURE,PASS                                                   :: ComputeLakeETa
+      PROCEDURE,PASS                                                   :: DestinationIDs_To_Indices
       GENERIC                                                          :: New                            => SetStaticComponent             , &
                                                                                                             SetStaticComponentFromBinFile  , &
                                                                                                             SetDynamicComponent            , &
@@ -148,26 +156,27 @@ MODULE Class_BaseAppLake
   ! -------------------------------------------------------------
   ! --- DATA TYPES FOR POST-PROCESSING
   ! -------------------------------------------------------------
-  CHARACTER(LEN=11),PARAMETER :: cDataList_AtLake = 'Lake budget'
+  INTEGER,PARAMETER           :: f_iBudgetType_Lake        = f_iLakeComp*1000 + 1
+  CHARACTER(LEN=11),PARAMETER :: f_cDescription_LakeBudget = 'Lake budget'
   
   
   ! -------------------------------------------------------------
   ! --- BUDGET RELATED DATA
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER           :: NLakeBudColumns = 13
-  CHARACTER(LEN=27),PARAMETER :: cBudgetColumnTitles(NLakeBudColumns) = ['Beginning Storage (+)'       , &
-                                                                         'Ending Storage (-)'          , &
-                                                                         'Flow from Upstream Lake (+)' , &
-                                                                         'Flow from Streams (+)'       , &
-                                                                         'Flow from Bypasses (+)'      , &
-                                                                         'Runoff (+)'                  , &
-                                                                         'Return Flow (+)'             , &
-                                                                         'Precipitation (+)'           , &
-                                                                         'Gain from Groundwater (+)'   , &
-                                                                         'Lake Evaporation (-)'        , &
-                                                                         'Lake Outflow (-)'            , &
-                                                                         'Discrepancy (=)'             , &
-                                                                         'Lake Surface Elevation'      ]
+  INTEGER,PARAMETER           :: f_iNLakeBudColumns = 13
+  CHARACTER(LEN=27),PARAMETER :: f_cBudgetColumnTitles(f_iNLakeBudColumns) = ['Beginning Storage (+)'       , &
+                                                                              'Ending Storage (-)'          , &
+                                                                              'Flow from Upstream Lake (+)' , &
+                                                                              'Flow from Streams (+)'       , &
+                                                                              'Flow from Bypasses (+)'      , &
+                                                                              'Runoff (+)'                  , &
+                                                                              'Return Flow (+)'             , &
+                                                                              'Precipitation (+)'           , &
+                                                                              'Gain from Groundwater (+)'   , &
+                                                                              'Lake Evaporation (-)'        , &
+                                                                              'Lake Outflow (-)'            , &
+                                                                              'Discrepancy (=)'             , &
+                                                                              'Lake Surface Elevation'      ]
   
 
   ! -------------------------------------------------------------
@@ -182,13 +191,12 @@ MODULE Class_BaseAppLake
   ! -------------------------------------------------------------
   ABSTRACT INTERFACE
 
-    SUBROUTINE Abstract_SetStaticComponent(AppLake,cFileName,Stratigraphy,AppGrid,NStrmNodes,StrmLakeConnector,LakeGWConnector,iStat)
+    SUBROUTINE Abstract_SetStaticComponent(AppLake,cFileName,Stratigraphy,AppGrid,StrmLakeConnector,LakeGWConnector,iStat)
       IMPORT                                :: BaseAppLakeType,StratigraphyType,AppGridType,StrmLakeConnectorType,LakeGWConnectorType
       CLASS(BaseAppLakeType),INTENT(OUT)    :: AppLake
       CHARACTER(LEN=*),INTENT(IN)           :: cFileName
       TYPE(StratigraphyType),INTENT(IN)     :: Stratigraphy
       TYPE(AppGridType),INTENT(IN)          :: AppGrid
-      INTEGER,INTENT(IN)                    :: NStrmNodes
       TYPE(StrmLakeConnectorType)           :: StrmLakeConnector
       TYPE(LakeGWConnectorType),INTENT(OUT) :: LakeGWConnector
       INTEGER,INTENT(OUT)                   :: iStat
@@ -230,7 +238,7 @@ MODULE Class_BaseAppLake
     END SUBROUTINE Abstract_SetAllComponents
 
     
-    SUBROUTINE Abstract_SetAllComponentsWithoutBinFile(AppLake,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,NStrmNodes,StrmLakeConnector,LakeGWConnector,iStat)
+    SUBROUTINE Abstract_SetAllComponentsWithoutBinFile(AppLake,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,StrmLakeConnector,LakeGWConnector,iStat)
       IMPORT                                :: BaseAppLakeType,AppGridType,StratigraphyType,TimeStepType,StrmLakeConnectorType,LakeGWConnectorType
       CLASS(BaseAppLakeType),INTENT(OUT)    :: AppLake
       LOGICAL,INTENT(IN)                    :: IsForInquiry
@@ -238,7 +246,7 @@ MODULE Class_BaseAppLake
       TYPE(AppGridType),INTENT(IN)          :: AppGrid
       TYPE(StratigraphyType),INTENT(IN)     :: Stratigraphy
       TYPE(TimeStepType),INTENT(IN)         :: TimeStep
-      INTEGER,INTENT(IN)                    :: NTIME,NStrmNodes
+      INTEGER,INTENT(IN)                    :: NTIME
       TYPE(StrmLakeConnectorType)           :: StrmLakeConnector
       TYPE(LakeGWConnectorType),INTENT(OUT) :: LakeGWConnector
       INTEGER,INTENT(OUT)                   :: iStat
@@ -369,6 +377,246 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
+  ! --- GET BUDGET LIST 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_List(AppLake,iBudgetTypeList,iBudgetLocationTypeList,cBudgetDescriptions,cBudgetFiles)
+    CLASS(BaseAppLakeType),INTENT(IN)        :: AppLake
+    INTEGER,ALLOCATABLE,INTENT(OUT)          :: iBudgetTypeList(:),iBudgetLocationTypeList(:)          
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cBudgetDescriptions(:),cBudgetFiles(:)
+    
+    !Local variables
+    INTEGER                  :: iErrorCode
+    CHARACTER(:),ALLOCATABLE :: cFileName
+    
+    !Initialize
+    DEALLOCATE (iBudgetTypeList , iBudgetLocationTypeList , cBudgetDescriptions , cBudgetFiles , STAT=iErrorCode)
+         
+    !Get the list if there is a Budget generated
+    IF (AppLake%LakeBudRawFile_Defined) THEN
+        ALLOCATE (iBudgetTypeList(1) , iBudgetLocationTypeList(1) , cBudgetDescriptions(1) , cBudgetFiles(1))
+        CALL AppLake%LakeBudRawFile%GetFileName(cFileName)
+        cBudgetFiles(1)            = cFileName
+        iBudgetTypeList(1)         = f_iBudgetType_Lake
+        iBudgetLocationTypeList(1) = f_iLocationType_Lake
+        cBudgetDescriptions(1)     = f_cDescription_LakeBudget
+    ELSE
+        ALLOCATE (iBudgetTypeList(0) , iBudgetLocationTypeList(0) , cBudgetDescriptions(0) , cBudgetFiles(0))
+    END IF
+     
+  END SUBROUTINE GetBudget_List
+
+
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF BUDGET COLUMNS (EXCLUDES TIME COLUMN)
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_NColumns(AppLake,iLocationIndex,iNCols,iStat)
+    CLASS(BaseAppLakeType),INTENT(IN) :: AppLake
+    INTEGER,INTENT(IN)                :: iLocationIndex          
+    INTEGER,INTENT(OUT)               :: iNCols,iStat       
+    
+    IF (AppLake%LakeBudRawFile_Defined) THEN
+        CALL AppLake%LakeBudRawFile%GetNDataColumns(iLocationIndex,iNCols,iStat)  !Includes Time column 
+        iNCols = iNCols - 1  !Exclude Time column
+    ELSE
+        iStat  = 0
+        iNCols = 0
+    END IF
+     
+  END SUBROUTINE GetBudget_NColumns
+
+
+  ! -------------------------------------------------------------
+  ! --- GET COLUMN TITLES IN BUDGET FILE (EXCLUDING TIME COLUMN) 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_ColumnTitles(AppLake,iLocationIndex,cUnitLT,cUnitAR,cUnitVL,cColTitles,iStat)
+    CLASS(BaseAppLakeType),INTENT(IN)        :: AppLake
+    INTEGER,INTENT(IN)                       :: iLocationIndex
+    CHARACTER(LEN=*),INTENT(IN)              :: cUnitLT,cUnitAR,cUnitVL
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cColTitles(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    !Local variables
+    INTEGER                                       :: iNCols,iErrorCode
+    CHARACTER(LEN=f_iColumnHeaderLen),ALLOCATABLE :: cColTitles_Local(:)
+    
+    IF (AppLake%LakeBudRawFile_Defined) THEN
+        !Get number of columns (includes Time column)
+        CALL AppLake%LakeBudRawFile%GetNDataColumns(iLocationIndex,iNCols,iStat)  
+        IF (iStat .NE. 0) RETURN
+        
+        !Get column titles (includes (Time column)
+        ALLOCATE (cColTitles_Local(iNCols))
+        cColTitles_Local = AppLake%LakeBudRawFile%GetFullColumnHeaders(iLocationIndex,iNCols)
+        
+        !Insert units
+        CALL AppLake%LakeBudRawFile%ModifyFullColumnHeaders(cUnitLT,cUnitAR,cUnitVL,cColTitles_Local)
+        
+        !Remove time column
+        iNCols = iNCols - 1
+        ALLOCATE (cColTitles(iNCols))
+        cColTitles = ADJUSTL(cColTitles_Local(2:))
+        
+        !Clear memory
+        DEALLOCATE (cColTitles_Local , STAT=iErrorCode)
+    ELSE
+        iStat = 0
+        ALLOCATE (cColTitles(0))
+    END IF
+     
+  END SUBROUTINE GetBudget_ColumnTitles
+
+
+  ! -------------------------------------------------------------
+  ! --- GET MONTHLY BUDGET FLOWS FROM AppLake OBJECT FOR A SPECIFED LAKE
+  ! --- (Assumes cBeginDate and cEndDate are adjusted properly)
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_MonthlyFlows_GivenAppLake(AppLake,iLakeIndex,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    CLASS(BaseAppLakeType),INTENT(IN)        :: AppLake
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate
+    INTEGER,INTENT(IN)                       :: iLakeIndex
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)  !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    !Local variables
+    INTEGER :: ID
+    
+    IF (AppLake%LakeBudRawFile_Defined) THEN
+        ID = AppLake%Lakes(iLakeIndex)%ID
+        CALL GetBudget_MonthlyFlows_GivenFile(AppLake%LakeBudRawFile,ID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)  
+    ELSE
+        iStat = 0
+        ALLOCATE (rFlows(0,0) , cFlowNames(0))
+    END IF
+    
+  END SUBROUTINE GetBudget_MonthlyFlows_GivenAppLake
+
+
+  ! -------------------------------------------------------------
+  ! --- GET MONTHLY BUDGET FLOWS FROM A DEFINED BUDGET FILE FOR A SPECIFED LAKE
+  ! --- (Assumes cBeginDate and cEndDate are adjusted properly)
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_MonthlyFlows_GivenFile(Budget,iLakeID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    TYPE(BudgetType),INTENT(IN)              :: Budget      !Assumes Budget file is already open
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate
+    INTEGER,INTENT(IN)                       :: iLakeID
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)  !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    !Local variables
+    INTEGER,PARAMETER   :: iReadCols(11) = [1,2,3,4,5,6,7,8,9,10,11]
+    INTEGER             :: iDimActual,iNTimeSteps
+    REAL(8),ALLOCATABLE :: rValues(:,:)
+    
+    !Get simulation time steps and allocate array to read data
+    iNTimeSteps = Budget%GetNTimeSteps()
+    ALLOCATE (rValues(12,iNTimeSteps)) !Adding 1 to the first dimension for Time column; it will be removed later
+    
+    !Read data
+    CALL Budget%ReadData(iLakeID,iReadCols,'1MON',cBeginDate,cEndDate,0d0,0d0,0d0,1d0,1d0,rFactVL,iDimActual,rValues,iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Store values in return argument
+    ALLOCATE (rFlows(10,iDimActual) , cFlowNames(10))
+    rFlows(1,:)  = rValues(2,1:iDimActual) - rValues(3,1:iDimActual)   !Change in storage
+    rFlows(2,:)  = rValues(4,1:iDimActual)                             !Flow from Upstream Lake (+)  
+    rFlows(3,:)  = rValues(5,1:iDimActual)                             !Flow from Streams (+)      
+    rFlows(4,:)  = rValues(6,1:iDimActual)                             !Flow from Bypasses (+)    
+    rFlows(5,:)  = rValues(7,1:iDimActual)                             !Runoff (+)                
+    rFlows(6,:)  = rValues(8,1:iDimActual)                             !Return Flow (+)           
+    rFlows(7,:)  = rValues(9,1:iDimActual)                             !Precipitation (+)         
+    rFlows(8,:)  = rValues(10,1:iDimActual)                            !Gain from Groundwater (+) 
+    rFlows(9,:)  = -rValues(11,1:iDimActual)                           !Lake Evaporation (-)      
+    rFlows(10,:) = -rValues(12,1:iDimActual)                           !Lake Outflow (-)          
+    
+    !Flow names
+    cFlowNames     = ''
+    cFlowNames(1)  = 'Change in Storage'      
+    cFlowNames(2)  = 'Flow from Upstream Lakes' 
+    cFlowNames(3)  = 'Flow from Streams'         
+    cFlowNames(4)  = 'Flow from Bypasses'        
+    cFlowNames(5)  = 'Runoff'                    
+    cFlowNames(6)  = 'Return Flow'               
+    cFlowNames(7)  = 'Precipitation'             
+    cFlowNames(8)  = 'Gain from Groundwater'      
+    cFlowNames(9)  = 'Evaporation'          
+    cFlowNames(10) = 'Outflow'              
+    
+  END SUBROUTINE GetBudget_MonthlyFlows_GivenFile
+
+
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET TIME SERIES DATA FOR A SET OF COLUMNS 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_TSData(AppLake,iLakeIndex,iCols,cBeginDate,cEndDate,cInterval,rFactLT,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+    CLASS(BaseAppLakeType),INTENT(IN) :: AppLake
+    INTEGER,INTENT(IN)                :: iLakeIndex,iCols(:)
+    CHARACTER(LEN=*),INTENT(IN)       :: cBeginDate,cEndDate,cInterval
+    REAL(8),INTENT(IN)                :: rFactLT,rFactAR,rFactVL
+    REAL(8),INTENT(OUT)               :: rOutputDates(:),rOutputValues(:,:)    !rOutputValues is in (timestep,column) format
+    INTEGER,INTENT(OUT)               :: iDataTypes(:),inActualOutput,iStat
+    
+    !Local variables
+    INTEGER :: indx,ID
+    
+    IF (AppLake%LakeBudRawFile_Defined) THEN
+        !Read data
+        ID = AppLake%Lakes(iLakeIndex)%ID
+        DO indx=1,SIZE(iCols)
+            CALL AppLake%LakeBudRawFile%ReadData(ID,iCols(indx),cInterval,cBeginDate,cEndDate,1d0,0d0,0d0,rFactLT,rFactAR,rFactVL,iDataTypes(indx),inActualOutput,rOutputDates,rOutputValues(:,indx),iStat)
+        END DO
+    ELSE
+        inActualOutput = 0
+        iDataTypes     = -1
+        rOutputDates   = 0.0
+        rOutputValues  = 0.0
+    END IF
+                       
+  END SUBROUTINE GetBudget_TSData
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET LAKE IDs
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetLakeIDs(AppLake,iLakeIDs)
+    CLASS(BaseAppLakeType),INTENT(IN) :: AppLake
+    INTEGER,INTENT(OUT)               :: iLakeIDs(:)
+    
+    iLakeIDs = AppLake%Lakes%ID
+    
+  END SUBROUTINE GetLakeIDs
+  
+    
+  ! -------------------------------------------------------------
+  ! --- GET LAKE ID GIVEN INDEX
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetLakeID(AppLake,indx) RESULT(ID)
+    CLASS(BaseAppLakeType),INTENT(IN) :: AppLake
+    INTEGER,INTENT(IN)                :: indx
+    INTEGER                           :: ID
+    
+    ID = AppLake%LAkes(indx)%ID
+    
+  END FUNCTION GetLakeID
+  
+      
+  ! -------------------------------------------------------------
+  ! --- GET LAKE INDEX GIVEN ID
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetLakeIndex(AppLake,iLakeID) RESULT(iIndex)
+    CLASS(BaseAppLakeType),INTENT(IN) :: AppLake
+    INTEGER,INTENT(IN)                :: iLakeID
+    INTEGER                           :: iIndex
+    
+    iIndex = LocateInList(iLakeID,AppLake%Lakes%ID)
+    
+  END FUNCTION GetLakeIndex
+  
+      
+  ! -------------------------------------------------------------
   ! --- GET MAX LAKE ELEVS
   ! -------------------------------------------------------------
   FUNCTION GetMaxElevs(AppLake) RESULT(MaxElevs)
@@ -492,14 +740,6 @@ CONTAINS
         
         !Lake ID
         ID = DummyArray(1)
-        IF (ID .NE. indxLake) THEN
-            MessageArray(1) = 'Lake data should be entered sequentially!'
-            MessageArray(2) = 'Lake number expected = '//TRIM(IntToText(indxLake))
-            MessageArray(3) = 'Lake number entered  = '//TRIM(IntToText(ID))
-            CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-            iStat = -1
-            RETURN
-        END IF
         
         !Lake elements
         NElements = DummyArray(4)
@@ -519,7 +759,7 @@ CONTAINS
         iElem =  iListElems(indxElem)
         DO indxElem1=indxElem+1,SIZE(iListElems)
             IF (iElem .EQ. iListElems(indxElem1)) THEN
-                CALL SetLastMessage('Element '//TRIM(IntToText(iElem))//' is listed more than once as a lake element!' ,iFatal,ThisProcedure)
+                CALL SetLastMessage('Element '//TRIM(IntToText(iElem))//' is listed more than once as a lake element!' ,f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
@@ -559,7 +799,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET NUMBER OF ELEMENTS IN A LAKE
   ! -------------------------------------------------------------
-  FUNCTION GetNElementsInLake(AppLake,iLake) RESULT(NElems)
+  PURE FUNCTION GetNElementsInLake(AppLake,iLake) RESULT(NElems)
     CLASS(BaseAppLakeType),INTENT(IN) :: AppLake
     INTEGER,INTENT(IN)                :: iLake
     INTEGER                           :: NElems
@@ -603,163 +843,6 @@ CONTAINS
     cNamesList = AppLake%Lakes%cName
     
   END SUBROUTINE GetNames
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET THE NUMBER OF DATA TYPES FOR POST-PROCESSING AT A LAKE
-  ! -------------------------------------------------------------
-  FUNCTION GetNDataList_AtLocationType(AppLake)  RESULT(NData)
-    CLASS(BaseAppLakeType),INTENT(IN) :: AppLake
-    INTEGER                           :: NData
-    
-    !Is lake budget defined?
-    IF (AppLake%LakeBudRawFile_Defined) THEN
-        NData = 1
-    ELSE
-        NData = 0
-    END IF
-    
-  END FUNCTION GetNDataList_AtLocationType
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET A LIST OF DATA TYPES FOR POST-PROCESSING AT A LAKE
-  ! -------------------------------------------------------------
-  SUBROUTINE GetDataList_AtLocationType(AppLake,iLocationType,cDataList,cFileList,lBudgetType) 
-    CLASS(BaseAppLakeType),INTENT(IN) :: AppLake
-    INTEGER,INTENT(IN)                :: iLocationType
-    CHARACTER(LEN=*),ALLOCATABLE      :: cDataList(:),cFileList(:)
-    LOGICAL,ALLOCATABLE               :: lBudgetType(:)
-    
-    !Local variables
-    INTEGER                  :: ErrorCode
-    CHARACTER(:),ALLOCATABLE :: cFileName
-    
-    !Initialize
-    DEALLOCATE (cDataList , cFileList , lBudgetType , STAT=ErrorCode)
-    
-    !If loaction type is not lake return
-    IF (iLocationType .NE. iLocationType_Lake) RETURN
-    
-    !Is lake budget defined?
-    IF (AppLake%LakeBudRawFile_Defined) THEN
-        ALLOCATE (cDataList(1) , cFileList(1) , lBudgetType(1))
-        cDataList   = cDataList_AtLake
-        lBudgetType = .TRUE.
-        CALL AppLake%LakeBudRawFile%GetFileName(cFileName)
-        cFileList = ''
-        cFileList = cFileName
-    END IF
-    
-  END SUBROUTINE GetDataList_AtLocationType
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET LOCATIONS THAT HAS A DATA TYPE FOR POST-PROCESSING
-  ! -------------------------------------------------------------
-  SUBROUTINE GetLocationsWithData(AppLake,iLocationType,cDataType,iLocations) 
-    CLASS(BaseAppLakeType),INTENT(IN) :: AppLake
-    INTEGER,INTENT(IN)                :: iLocationType
-    CHARACTER(LEN=*),INTENT(IN)       :: cDataType   !Not used since there is only one data type for lakes for post-processing
-    INTEGER,ALLOCATABLE,INTENT(OUT)   :: iLocations(:)
-    
-    !Local variables
-    INTEGER :: ErrorCode
-    
-    !Return if location type is not a lake
-    IF (iLocationType .NE. iLocationType_Lake) THEN
-        DEALLOCATE (iLocations , STAT=ErrorCode)
-        RETURN
-    END IF
-    
-    !Is lake budget defined?
-    IF (AppLake%LakeBudRawFile_Defined) THEN
-        ALLOCATE (iLocations(1))
-        iLocations = iAllLocationIDsListed
-    END IF
-    
-  END SUBROUTINE GetLocationsWithData
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET A LIST OF FILES WHERE DATA FOR POST-PROCESSING RESIDE
-  ! -------------------------------------------------------------
-  SUBROUTINE GetFileList_AtLocationType(AppLake,cFileList) 
-    CLASS(BaseAppLakeType),INTENT(IN) :: AppLake
-    CHARACTER(LEN=*),ALLOCATABLE      :: cFileList(:)
-    
-    !Local variables
-    INTEGER                  :: ErrorCode
-    CHARACTER(:),ALLOCATABLE :: cFileName
-    
-    !Initialize
-    DEALLOCATE (cFileList , STAT=ErrorCode)
-    
-    !Is lake budget defined?
-    IF (AppLake%LakeBudRawFile_Defined) THEN
-        CALL AppLake%LakeBudRawFile%GetFileName(cFileName)
-        ALLOCATE (cFileList(1))
-        cFileList(1) = ''
-        cFileList(1) = cFileName
-    END IF
-    
-  END SUBROUTINE GetFileList_AtLocationType
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET SUB-COMPONENTS OF A DATA TYPE FOR POST-PROCESSING AT A LOCATION TYPE
-  ! -------------------------------------------------------------
-  SUBROUTINE GetSubDataList_AtLocation(AppLake,iLocationType,cDataType,cSubDataList) 
-    CLASS(BaseAppLakeType),INTENT(IN)        :: AppLake
-    INTEGER,INTENT(IN)                       :: iLocationType
-    CHARACTER(LEN=*),INTENT(IN)              :: cDataType
-    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cSubDataList(:)
-    
-    !Local variables
-    INTEGER :: ErrorCode
-    
-    !Initialize
-    DEALLOCATE (cSubDataList , STAT=ErrorCode)
-    
-    !Only lake budget has sub-data
-    IF (iLocationType .EQ. iLocationType_Lake) THEN
-        IF (TRIM(cDataType) .EQ. cDataList_AtLake) THEN
-            IF (AppLake%LakeBudRawFile_Defined) THEN
-                ALLOCATE (cSubDataList(NLakeBudColumns))
-                cSubDataList = cBudgetColumnTitles
-            END IF
-        END IF
-    END IF
-    
-  END SUBROUTINE GetSubDataList_AtLocation
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET MODEL DATA AT A LAKE FOR POST-PROCESSING
-  ! -------------------------------------------------------------
-  SUBROUTINE GetModelData_AtLocation(AppLake,iLocationType,iLocationID,cDataType,iCol,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-    CLASS(BaseAppLakeType)      :: AppLake
-    INTEGER,INTENT(IN)          :: iLocationType,iLocationID,iCol
-    CHARACTER(LEN=*),INTENT(IN) :: cDataType,cOutputBeginDateAndTime,cOutputEndDAteAndTime,cOutputInterval
-    REAL(8),INTENT(IN)          :: rFact_LT,rFact_AR,rFact_VL
-    INTEGER,INTENT(OUT)         :: iDataUnitType,nActualOutput
-    REAL(8),INTENT(OUT)         :: rOutputDates(:),rOutputValues(:)
-    INTEGER,INTENT(OUT)         :: iStat
-    
-    !Initialize
-    iStat         = 0
-    nActualOutput = 0
-    
-    !Only lake budget data can be returned
-    IF (.NOT. (iLocationType.EQ.iLocationType_Lake  .AND.  TRIM(cDataType).EQ.cDataList_AtLake)) RETURN
-    
-    !If lake budget output is not defined return
-    IF (.NOT. AppLake%LakeBudRawFile_Defined) RETURN
-    
-    !Get the data for the specified budget column for the specified period with specified interval
-    CALL AppLake%LakeBudRawFile%ReadData(iLocationID,iCol,cOutputInterval,cOutputBeginDateAndTime,cOutputEndDateAndTime,1d0,0d0,0d0,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-    
-  END SUBROUTINE GetModelData_AtLocation
   
   
 
@@ -812,33 +895,34 @@ CONTAINS
     !Allocate memory
     ALLOCATE (AppLake%Lakes(NLakes) , STAT=ErrorCode)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for application lakes!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for application lakes!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
 
     !Lake data
     DO indxLake=1,NLakes
-      ASSOCIATE (pLake => AppLake%Lakes(indxLake))
-        CALL InFile%ReadData(pLake%NElements,iStat)  ;  IF (iStat .EQ. -1) RETURN
-        CALL InFile%ReadData(pLake%NNodes,iStat)     ;  IF (iStat .EQ. -1) RETURN
-        ALLOCATE (pLake%Elements(pLake%NElements) , &
-                  pLake%Nodes(pLake%NNodes)       , &
-                  pLake%NodeAreas(pLake%NNodes)   , &
-                  STAT=ErrorCode                  )
-        IF (ErrorCode .NE. 0) THEN
-            CALL SetLastMessage('Error in allocating memory for lake '//TRIM(IntToText(indxLake))//'!',iFatal,ThisProcedure)
-            iStat = -1
-            RETURN
-        END IF
-        CALL InFile%ReadData(pLake%Area,iStat)             ;  IF (iStat .EQ. -1) RETURN
-        CALL InFile%ReadData(pLake%OutflowDestType,iStat)  ;  IF (iStat .EQ. -1) RETURN
-        CALL InFile%ReadData(pLake%OutflowDest,iStat)      ;  IF (iStat .EQ. -1) RETURN
-        CALL InFile%ReadData(pLake%Elements,iStat)         ;  IF (iStat .EQ. -1) RETURN
-        CALL InFile%ReadData(pLake%Nodes,iStat)            ;  IF (iStat .EQ. -1) RETURN
-        CALL InFile%ReadData(pLake%NodeAreas,iStat)        ;  IF (iStat .EQ. -1) RETURN
-        CALL pLake%RatingTable%New(InFile,iStat)           ;  IF (iStat .EQ. -1) RETURN
-      END ASSOCIATE
+        ASSOCIATE (pLake => AppLake%Lakes(indxLake))
+            CALL InFile%ReadData(pLake%ID,iStat)         ;  IF (iStat .EQ. -1) RETURN
+            CALL InFile%ReadData(pLake%NElements,iStat)  ;  IF (iStat .EQ. -1) RETURN
+            CALL InFile%ReadData(pLake%NNodes,iStat)     ;  IF (iStat .EQ. -1) RETURN
+            ALLOCATE (pLake%Elements(pLake%NElements) , &
+                      pLake%Nodes(pLake%NNodes)       , &
+                      pLake%NodeAreas(pLake%NNodes)   , &
+                      STAT=ErrorCode                  )
+            IF (ErrorCode .NE. 0) THEN
+                CALL SetLastMessage('Error in allocating memory for lake '//TRIM(IntToText(pLake%ID))//'!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            CALL InFile%ReadData(pLake%Area,iStat)             ;  IF (iStat .EQ. -1) RETURN
+            CALL InFile%ReadData(pLake%OutflowDestType,iStat)  ;  IF (iStat .EQ. -1) RETURN
+            CALL InFile%ReadData(pLake%OutflowDest,iStat)      ;  IF (iStat .EQ. -1) RETURN
+            CALL InFile%ReadData(pLake%Elements,iStat)         ;  IF (iStat .EQ. -1) RETURN
+            CALL InFile%ReadData(pLake%Nodes,iStat)            ;  IF (iStat .EQ. -1) RETURN
+            CALL InFile%ReadData(pLake%NodeAreas,iStat)        ;  IF (iStat .EQ. -1) RETURN
+            CALL pLake%RatingTable%New(InFile,iStat)           ;  IF (iStat .EQ. -1) RETURN
+        END ASSOCIATE
     END DO
     
   END SUBROUTINE ReadPreprocessedData
@@ -872,6 +956,7 @@ CONTAINS
     !Lake data
     DO indxLake=1,AppLake%NLakes
       ASSOCIATE (pLake => AppLake%Lakes(indxLake))
+        CALL OutFile%WriteData(pLake%ID)
         CALL OutFile%WriteData(pLake%NElements)
         CALL OutFile%WriteData(pLake%NNodes)
         CALL OutFile%WriteData(pLake%Area)
@@ -915,7 +1000,7 @@ CONTAINS
     
     !Local variables
     INTEGER                           :: indxLake
-    REAL(8)                           :: DummyArray(NLakeBudColumns,AppLake%NLakes)
+    REAL(8)                           :: DummyArray(f_iNLakeBudColumns,AppLake%NLakes)
     REAL(8),DIMENSION(AppLake%NLakes) :: Error,StrmInflows,LakeGWFlows,LakePrecip,BypassInflows
     
     !Return if raw budget output file is not defined
@@ -928,8 +1013,8 @@ CONTAINS
     LakeGWFlows = LakeGWConnector%GetFlowAtLakes()
     LakePrecip  = AppLake%Lakes%PrecipRate * AppLake%Lakes%Area
     DO indxLake=1,AppLake%NLakes
-      StrmInflows(indxLake)   = StrmLakeConnector%GetFlow(iStrmToLakeType,indxLake)   
-      BypassInflows(indxLake) = StrmLakeConnector%GetFlow(iBypassToLakeType,indxLake)
+      StrmInflows(indxLake)   = StrmLakeConnector%GetFlow(f_iStrmToLakeFlow,indxLake)   
+      BypassInflows(indxLake) = StrmLakeConnector%GetFlow(f_iBypassToLakeFlow,indxLake)
     END DO
      
     ASSOCIATE (pLakes => AppLake%Lakes)
@@ -964,7 +1049,7 @@ CONTAINS
     
     !If end-of-simulation, print final lake elevations
     IF (lEndOfSimulation) THEN
-        IF (AppLake%lFinalElevFile_Defined) CALL PrintFinalElevs(AppLake%Lakes%Elev,TimeStep,AppLake%FinalElevFile)
+        IF (AppLake%lFinalElevFile_Defined) CALL PrintFinalElevs(AppLake%Lakes%ID,AppLake%Lakes%Elev,TimeStep,AppLake%FinalElevFile)
     END IF
 
   END SUBROUTINE PrintResults
@@ -973,7 +1058,8 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- PRINT END-OF-SIMULATION LAKE ELEVATIONS
   ! -------------------------------------------------------------
-  SUBROUTINE PrintFinalElevs(Elevs,TimeStep,OutFile) 
+  SUBROUTINE PrintFinalElevs(iLakeIDs,Elevs,TimeStep,OutFile) 
+    INTEGER,INTENT(IN)            :: iLakeIDs(:)
     REAL(8),INTENT(IN)            :: Elevs(:)
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
     TYPE(GenericFileType)         :: OutFile
@@ -1002,7 +1088,7 @@ CONTAINS
     
     !Print final elevations
     DO indxLake=1,SIZE(Elevs)
-        WRITE (Text,'(I8,100F16.6)') indxLake,Elevs(indxLake)
+        WRITE (Text,'(I8,100F16.6)') iLakeIDs(indxLake),Elevs(indxLake)
         CALL OutFile%WriteData(TRIM(Text))
     END DO
     
@@ -1021,6 +1107,39 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
+  ! --- CONVERT IDs (MAINLY STREAM NODE IDs) TO INDICES
+  ! -------------------------------------------------------------
+  SUBROUTINE DestinationIDs_To_Indices(AppLake,iStrmNodeIDs,iStat)
+    CLASS(BaseAppLakeType) :: AppLake
+    INTEGER,INTENT(IN)     :: iStrmNodeIDs(:)
+    INTEGER,INTENT(OUT)    :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+25),PARAMETER :: ThisProcedure = ModName // 'DestinationIDs_To_Indices'
+    INTEGER                                :: indx,iLakeID,iDestID,iDest
+    
+    !Initialize
+    iStat = 0
+    
+    !Convert destination stream node IDs to indices
+    DO indx=1,AppLake%NLakes
+        IF (AppLake%Lakes(indx)%OutflowDestType .EQ. f_iFlowDest_StrmNode) THEN
+            iDestID = AppLake%Lakes(indx)%OutflowDest
+            iDest   = LocateInList(iDestID,iStrmNodeIDs)
+            IF (iDest .EQ. 0) THEN
+                iLakeID = AppLake%Lakes(indx)%ID
+                CALL SetLastMessage('Stream node '//TRIM(IntToText(iDestID))//' that receive outflow from lake '//TRIM(IntToText(iLakeID))//' is not in the model!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            AppLake%Lakes(indx)%OutflowDest = iDest
+        END IF
+    END DO
+    
+  END SUBROUTINE DestinationIDs_To_Indices
+  
+  
+  ! -------------------------------------------------------------
   ! --- ADD LAKE COMPONENT TO MATRIX
   ! -------------------------------------------------------------
   SUBROUTINE RegisterWithMatrix(AppLake,Matrix,iStat)
@@ -1038,13 +1157,13 @@ CONTAINS
     CALL EchoProgress('Registering lake component with matrix...')
     
     !Add component to matrix
-    CALL Matrix%AddComponent(iLakeComp,AppLake%NLakes,iStat)
+    CALL Matrix%AddComponent(f_iLakeComp,AppLake%NLakes,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Add connectivity
     DO indxLake=1,AppLake%NLakes
         LakeNode(1) = indxLake
-        CALL Matrix%AddConnectivity(iLakeComp,indxLake,iLakeComp,LakeNode,iStat)
+        CALL Matrix%AddConnectivity(f_iLakeComp,indxLake,f_iLakeComp,LakeNode,iStat)
         IF (iStat .EQ. -1) RETURN
     END DO
        
@@ -1069,36 +1188,36 @@ CONTAINS
     INTEGER           :: iCount,indxLocation,indxCol,indx,NLakes
     CHARACTER         :: UnitT*10,TextTime*17
     CHARACTER         :: Text1*12
-    CHARACTER(LEN=6)  :: CParts(NLakeBudColumns) = (/'VOLUME' , &
-                                                     'VOLUME' , &
-                                                     'VOLUME' , &
-                                                     'VOLUME' , &
-                                                     'VOLUME' , &
-                                                     'VOLUME' , &
-                                                     'VOLUME' , &
-                                                     'VOLUME' , &
-                                                     'VOLUME' , &
-                                                     'VOLUME' , &
-                                                     'VOLUME' , &
-                                                     'VOLUME' , &
-                                                     'ELEV'   /)
-    CHARACTER(LEN=17),PARAMETER :: FParts(NLakeBudColumns)=(/'BEGIN_STORAGE'      ,&
-                                                             'END_STORAGE'        ,&
-                                                             'FLOW_FROM_UP_LAKE'  ,&    
-                                                             'FLOW_FROM_STRM'     ,&
-                                                             'FLOW_FROM_BYPASS'   ,&
-                                                             'RUNOFF'             ,&
-                                                             'RETURN_FLOW'        ,&
-                                                             'PRECIP'             ,&
-                                                             'GAIN_FROM_GW'       ,&
-                                                             'EVAPOTR'            ,&
-                                                             'OUTFLOW'            ,&
-                                                             'DISCREPANCY'        ,&
-                                                             'SURFACE_ELEV'       /)
+    CHARACTER(LEN=6)  :: CParts(f_iNLakeBudColumns) = ['VOLUME' , &
+                                                       'VOLUME' , &
+                                                       'VOLUME' , &
+                                                       'VOLUME' , &
+                                                       'VOLUME' , &
+                                                       'VOLUME' , &
+                                                       'VOLUME' , &
+                                                       'VOLUME' , &
+                                                       'VOLUME' , &
+                                                       'VOLUME' , &
+                                                       'VOLUME' , &
+                                                       'VOLUME' , &
+                                                       'ELEV'   ]
+    CHARACTER(LEN=17),PARAMETER :: FParts(f_iNLakeBudColumns) = ['BEGIN_STORAGE'      ,&
+                                                                 'END_STORAGE'        ,&
+                                                                 'FLOW_FROM_UP_LAKE'  ,&    
+                                                                 'FLOW_FROM_STRM'     ,&
+                                                                 'FLOW_FROM_BYPASS'   ,&
+                                                                 'RUNOFF'             ,&
+                                                                 'RETURN_FLOW'        ,&
+                                                                 'PRECIP'             ,&
+                                                                 'GAIN_FROM_GW'       ,&
+                                                                 'EVAPOTR'            ,&
+                                                                 'OUTFLOW'            ,&
+                                                                 'DISCREPANCY'        ,&
+                                                                 'SURFACE_ELEV'       ]
     
     !Initialize
     NLakes = SIZE(Lakes)
-    Text1  = '('//TRIM(LengthUnitMarker)//')'
+    Text1  = '('//TRIM(f_cLengthUnitMarker)//')'
 
     !Increment the initial simulation time to represent the data begin date for budget binary output files  
     TimeStepLocal = TimeStep
@@ -1129,8 +1248,8 @@ CONTAINS
       pASCIIOutput%NTitles  = NTitles
       ALLOCATE(pASCIIOutput%cTitles(NTitles)  ,  pASCIIOutput%lTitlePersist(NTitles))
         pASCIIOutput%cTitles(1)         = ArrangeText('IWFM LAKE PACKAGE (v'//TRIM(cVersion)//')' , pASCIIOutput%TitleLen)
-        pASCIIOutput%cTitles(2)         = ArrangeText('LAKE BUDGET IN '//VolumeUnitMarker//' FOR '//LocationNameMarker , pASCIIOutput%TitleLen)
-        pASCIIOutput%cTitles(3)         = ArrangeText('LAKE AREA: '//AreaMarker//' '//AreaUnitMarker , pASCIIOutput%TitleLen)
+        pASCIIOutput%cTitles(2)         = ArrangeText('LAKE BUDGET IN '//f_cVolumeUnitMarker//' FOR '//f_cLocationNameMarker , pASCIIOutput%TitleLen)
+        pASCIIOutput%cTitles(3)         = ArrangeText('LAKE AREA: '//f_cAreaMarker//' '//f_cAreaUnitMarker , pASCIIOutput%TitleLen)
         pASCIIOutput%cTitles(4)         = REPEAT('-',pASCIIOutput%TitleLen)
         pASCIIOutput%lTitlePersist(1:3) = .TRUE.
         pASCIIOutput%lTitlePersist(4)   = .FALSE.
@@ -1146,31 +1265,31 @@ CONTAINS
     END DO
    
     !Locations
-    ALLOCATE (Header%Locations(1)                                                          , &
-              Header%Locations(1)%cFullColumnHeaders(NLakeBudColumns+1)                    , &
-              Header%Locations(1)%iDataColumnTypes(NLakeBudColumns)                        , &
-              Header%Locations(1)%iColWidth(NLakeBudColumns+1)                             , &
-              Header%Locations(1)%cColumnHeaders(NLakeBudColumns+1,NColumnHeaderLines)     , &
-              Header%Locations(1)%cColumnHeadersFormatSpec(NColumnHeaderLines)             )  
+    ALLOCATE (Header%Locations(1)                                                             , &
+              Header%Locations(1)%cFullColumnHeaders(f_iNLakeBudColumns+1)                    , &
+              Header%Locations(1)%iDataColumnTypes(f_iNLakeBudColumns)                        , &
+              Header%Locations(1)%iColWidth(f_iNLakeBudColumns+1)                             , &
+              Header%Locations(1)%cColumnHeaders(f_iNLakeBudColumns+1,NColumnHeaderLines)     , &
+              Header%Locations(1)%cColumnHeadersFormatSpec(NColumnHeaderLines)                )  
     ASSOCIATE (pLocation => Header%Locations(1))
-      pLocation%NDataColumns                          = NLakeBudColumns
-      pLocation%cFullColumnHeaders(1)                 = 'Time'                                           
-      pLocation%cFullColumnHeaders(2:)                = cBudgetColumnTitles
-      pLocation%cFullColumnHeaders(NLakeBudColumns+1) = TRIM(pLocation%cFullColumnHeaders(NLakeBudColumns+1)) // ' ('//LengthUnitMarker//')'
-      pLocation%iDataColumnTypes                      = [VLB,&  !Beginning storage
-                                                         VLE,&  !Ending storage
-                                                         VR ,&  !Flow from upstream lake
-                                                         VR ,&  !Flow from streams
-                                                         VR ,&  !Flow from bypasses
-                                                         VR ,&  !Runoff into lake
-                                                         VR ,&  !return flow into lake
-                                                         VR ,&  !Precip
-                                                         VR ,&  !Gain from groundwater
-                                                         VR ,&  !Lake evaporation
-                                                         VR ,&  !Lake outflow
-                                                         VR ,&  !Discrepency
-                                                         LT ]  !Lake surface elevation
-      pLocation%iColWidth                             = [17,(12,indx=1,NLakeBudColumns)]
+      pLocation%NDataColumns                             = f_iNLakeBudColumns
+      pLocation%cFullColumnHeaders(1)                    = 'Time'                                           
+      pLocation%cFullColumnHeaders(2:)                   = f_cBudgetColumnTitles
+      pLocation%cFullColumnHeaders(f_iNLakeBudColumns+1) = TRIM(pLocation%cFullColumnHeaders(f_iNLakeBudColumns+1)) // ' ('//f_cLengthUnitMarker//')'
+      pLocation%iDataColumnTypes                         = [f_iVLB,&  !Beginning storage
+                                                            f_iVLE,&  !Ending storage
+                                                            f_iVR ,&  !Flow from upstream lake
+                                                            f_iVR ,&  !Flow from streams
+                                                            f_iVR ,&  !Flow from bypasses
+                                                            f_iVR ,&  !Runoff into lake
+                                                            f_iVR ,&  !return flow into lake
+                                                            f_iVR ,&  !Precip
+                                                            f_iVR ,&  !Gain from groundwater
+                                                            f_iVR ,&  !Lake evaporation
+                                                            f_iVR ,&  !Lake outflow
+                                                            f_iVR ,&  !Discrepency
+                                                            f_iLT ]  !Lake surface elevation
+      pLocation%iColWidth                             = [17,(12,indx=1,f_iNLakeBudColumns)]
       ASSOCIATE (pColumnHeaders => pLocation%cColumnHeaders           , &
                  pFormatSpecs   => pLocation%cColumnHeadersFormatSpec )
         pColumnHeaders(:,1) = (/'                 ','    Beginning','    Ending   ','  Flow from  ','  Flow from  ','  Flow from  ','             ','    Return   ','             ','   Gain from ','     Lake    ','      Lake   ','             ','Lake Surface '/)
@@ -1180,16 +1299,16 @@ CONTAINS
         pFormatSpecs(1)     = '(A17,13A13)'
         pFormatSpecs(2)     = '(A17,13A13)'
         pFormatSpecs(3)     = '(A17,13A13)'
-        pFormatSpecs(4)     = '('//TRIM(IntToText(TitleLen))//'(1H-),'//TRIM(IntToText(NLakeBudColumns+1))//'A0)'
+        pFormatSpecs(4)     = '('//TRIM(IntToText(TitleLen))//'(1H-),'//TRIM(IntToText(f_iNLakeBudColumns+1))//'A0)'
       END ASSOCIATE
     END ASSOCIATE
 
     !Data for DSS output  
     ASSOCIATE (pDSSOutput => Header%DSSOutput)
-      ALLOCATE (pDSSOutput%cPathNames(NLakeBudColumns*NLakes) , pDSSOutput%iDataTypes(NLakeBudColumns))
+      ALLOCATE (pDSSOutput%cPathNames(f_iNLakeBudColumns*NLakes) , pDSSOutput%iDataTypes(f_iNLakeBudColumns))
       iCount = 1
       DO indxLocation=1,NLakes
-        DO indxCol=1,NLakeBudColumns
+        DO indxCol=1,f_iNLakeBudColumns
           pDSSOutput%cPathNames(iCount) = '/IWFM_LAKE_BUD/'                                      //  &  !A part
                                           UpperCase(TRIM(Lakes(indxLocation)%cName))//'/'        //  &  !B part
                                           TRIM(CParts(indxCol))//'/'                             //  &  !C part
@@ -1199,7 +1318,7 @@ CONTAINS
           iCount = iCount+1
         END DO
       END DO
-      pDSSOutput%iDataTypes = (/(PER_CUM,indxCol=1,NLakeBudColumns-1),PER_AVER/)
+      pDSSOutput%iDataTypes = [(f_iPER_CUM,indxCol=1,f_iNLakeBudColumns-1),f_iPER_AVER]
     END ASSOCIATE
 
   END FUNCTION PrepareLakeBudgetHeader
@@ -1329,8 +1448,8 @@ CONTAINS
     !Compute points of lake elevation vs storage rating table
     DO indx=1,SIZE(Elements)
         ElemNo                = Elements(indx)
-        NVertex               = AppGrid%Element(ElemNo)%NVertex
-        iVertex               = AppGrid%Element(ElemNo)%Vertex
+        NVertex               = AppGrid%NVertex(ElemNo)
+        iVertex               = AppGrid%Vertex(:,ElemNo)
         VertexArea(1:NVertex) = AppGrid%AppElement(ElemNo)%VertexArea
         DO indxNode=1,NVertex
             Node = iVertex(indxNode)

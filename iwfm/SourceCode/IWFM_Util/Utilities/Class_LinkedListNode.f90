@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2019  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -22,7 +22,7 @@
 !***********************************************************************
 MODULE Class_LLNode
   USE MessageLogger  , ONLY: SetLastMessage , &
-                             iFatal
+                             f_iFatal
   IMPLICIT NONE
   
   
@@ -190,7 +190,7 @@ CONTAINS
     
     !Make sure next node is not defined
     IF (ASSOCIATED(aNode%Next))  THEN
-        CALL SetLastMessage('Can only add a node to the end of a linked-list.',iFatal,ThisProcedure)
+        CALL SetLastMessage('Can only add a node to the end of a linked-list.',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF

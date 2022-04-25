@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018
+!  Copyright (C) 2005-2021
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,7 +21,8 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Package_GWZBudget
-  USE Class_GWZBudget  , ONLY: GWZBudgetType
+  USE Class_GWZBudget  , ONLY: GWZBudgetType    , &
+                               f_iZBudgetType_GW 
   IMPLICIT NONE
   
   PUBLIC

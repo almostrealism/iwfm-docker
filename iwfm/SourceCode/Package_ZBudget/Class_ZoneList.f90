@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018
+!  Copyright (C) 2005-2021
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,23 +21,24 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_ZoneList
-  USE MessageLogger       , ONLY: SetLastMessage           , &
-                                  MessageArray             , &
-                                  iFatal
-  USE Class_BinaryTree    , ONLY: BinaryTreeType 
-  USE GeneralUtilities    , ONLY: GetUniqueArrayComponents , &
-                                  IntToText                , &
-                                  CleanSpecialCharacters   , &
-                                  StripTextUntilCharacter  , &
-                                  LocateInList             , &
-                                  ShellSort                , &
-                                  FirstLocation
-  USE IOInterface         , ONLY: GenericFileType
-  USE Class_SystemData    , ONLY: SystemDataType
-  USE ZBudget_Parameters  , ONLY: iZoneHorizontal          , &
-                                  iZoneVertical            , &
-                                  iVerticalFlowType        , &
-                                  iUndefinedZone 
+  USE MessageLogger          , ONLY: SetLastMessage           , &
+                                     MessageArray             , &
+                                     f_iFatal
+  USE Class_BinaryTree       , ONLY: BinaryTreeType 
+  USE GeneralUtilities       , ONLY: GetUniqueArrayComponents , &
+                                     IntToText                , &
+                                     CleanSpecialCharacters   , &
+                                     StripTextUntilCharacter  , &
+                                     LocateInList             , &
+                                     ShellSort                , &
+                                     FirstLocation            , &
+                                     ConvertID_To_Index
+  USE IOInterface            , ONLY: GenericFileType
+  USE Class_SystemData       , ONLY: SystemDataType
+  USE ZBudget_Parameters     , ONLY: f_iZoneHorizontal        , &
+                                     f_iZoneVertical          , &
+                                     f_iVerticalFlowType      , &
+                                     f_iUndefinedZone 
   IMPLICIT NONE
   
 
@@ -65,7 +66,7 @@ MODULE Class_ZoneList
   ! --- DATA TYPE THAT STORES ADJACENT ZONE INFORMATION
   ! -------------------------------------------------------------
   TYPE AdjacentZoneType
-      INTEGER                      :: ZoneNumber      =  iUndefinedZone
+      INTEGER                      :: ZoneNumber      =  f_iUndefinedZone
       REAL(8)                      :: FLOW_IN         =  0.0
       REAL(8)                      :: FLOW_OUT        =  0.0
       TYPE(BinaryTreeType),POINTER :: iFaceNumberList => NULL()          !List of faces between the zone and the adjacent zone for horizontal flow exchnage calculations
@@ -86,7 +87,7 @@ MODULE Class_ZoneList
   ! --- DATA TYPE THAT STORES ZONE INFORMATION
   ! -------------------------------------------------------------
   TYPE ZoneType
-      INTEGER                             :: ZoneNumber             =  iUndefinedZone
+      INTEGER                             :: ZoneNumber             =  f_iUndefinedZone
       CHARACTER(LEN=50)                   :: cName                  = ''
       REAL(8)                             :: Area                   =  0.0            !Zone area    
       TYPE(LayerZoneElemType),ALLOCATABLE :: LayerZoneElements(:)                     !Elements in the zone at each layer; if zones are defined only in horizontal this data is defined only for top layer
@@ -107,9 +108,9 @@ MODULE Class_ZoneList
   ! --- DATA TYPE THAT STORES LIST OF ZONES IN A BINARY TREE
   ! -------------------------------------------------------------
   TYPE,EXTENDS(BinaryTreeType) :: ZoneListType
-      INTEGER             :: iZoneExtent         = iZoneHorizontal  !Type of zonation
-      INTEGER,ALLOCATABLE :: ElemZones(:,:)                         !Zone numbers that each element belong to; listed for each (element,layer) combination
-      INTEGER,ALLOCATABLE :: iOrderedZoneList(:)                    !Ordered list of zone numbers
+      INTEGER             :: iZoneExtent         = f_iZoneHorizontal  !Type of zonation
+      INTEGER,ALLOCATABLE :: ElemZones(:,:)                           !Zone numbers that each element belong to; listed for each (element,layer) combination
+      INTEGER,ALLOCATABLE :: iOrderedZoneList(:)                      !Ordered list of zone numbers
   CONTAINS
       PROCEDURE,PASS :: GenerateZoneList_DataFromASCIIFile
       PROCEDURE,PASS :: GenerateZoneList
@@ -117,6 +118,7 @@ MODULE Class_ZoneList
       PROCEDURE,PASS :: GetNZones
       PROCEDURE,PASS :: GetNames
       PROCEDURE,PASS :: GetNMaxAdjacentZones
+      PROCEDURE,PASS :: GetNAdjacentZones
       GENERIC        :: New                                => GenerateZoneList_DataFromASCIIFile , &
                                                               GenerateZoneList
   END TYPE ZoneListType
@@ -167,7 +169,7 @@ CONTAINS
     
     !Initialize
     NNodes = SystemData%NNodes
-    IF (ZoneList%iZoneExtent .EQ. iZoneVertical) THEN
+    IF (ZoneList%iZoneExtent .EQ. f_iZoneVertical) THEN
         NLayers = SystemData%NLayers
     ELSE
         NLayers = 1
@@ -200,7 +202,7 @@ CONTAINS
                 !Zonation in horizontal
                 CALL ZoneList%AddNode(ZoneData,ZoneData%ZoneNumber,pCurrentZone,lZonePreviouslyAdded)
                 !Zonation in vertical
-                IF (ZoneList%iZoneExtent .EQ. iZoneVertical) CALL ProcessVerticalZones(ZoneList,ZoneData%ZoneNumber,indxLayer,iElem1,Vertex1(1:NVertex1))
+                IF (ZoneList%iZoneExtent .EQ. f_iZoneVertical) CALL ProcessVerticalZones(ZoneList,ZoneData%ZoneNumber,indxLayer,iElem1,Vertex1(1:NVertex1))
 
             !Internal face 
             ELSE
@@ -251,7 +253,7 @@ CONTAINS
                 END IF
                 
                 !Zonation in vertical
-                IF (ZoneList%iZoneExtent .EQ. iZoneVertical) THEN
+                IF (ZoneList%iZoneExtent .EQ. f_iZoneVertical) THEN
                     CALL ProcessVerticalZones(ZoneList,ZoneNum1,indxLayer,iElem1,Vertex1(1:NVertex1))   
                     CALL ProcessVerticalZones(ZoneList,ZoneNum2,indxLayer,iElem2,Vertex2(1:NVertex2)) 
                 END IF
@@ -266,7 +268,7 @@ CONTAINS
     
     !Store element numbers within each zone, calculate zone areas,assign zone names and find the number of adjacent zones to each zone
     !... when zonation is defined for horizontal
-    IF (ZoneList%iZoneExtent .EQ. iZoneHorizontal) THEN
+    IF (ZoneList%iZoneExtent .EQ. f_iZoneHorizontal) THEN
         DO indxZone=1,NZones
             iZone =  ZoneList%iOrderedZoneList(indxZone)
             iLoc  = LocateInList(iZone,iZoneListWithNames)
@@ -298,7 +300,7 @@ CONTAINS
                     END IF
                     
                     !Zone area
-                    IF (iZone .NE. iUndefinedZone) &
+                    IF (iZone .NE. f_iUndefinedZone) &
                         pCurrentZone%Area = SUM(SystemData%rElementAreas(pCurrentZone%LayerZoneElements(1)%Elements))
                     
                     !Zone name
@@ -340,7 +342,7 @@ CONTAINS
                     END IF
                     
                     !Zone area (plan-view area for 3-D zones)
-                    IF (iZone .NE. iUndefinedZone) THEN
+                    IF (iZone .NE. f_iUndefinedZone) THEN
                         NTotalElements = 0
                         DO indxLayer=1,SystemData%NLayers
                             NTotalElements = NTotalElements + SIZE(pCurrentZone%LayerZoneElements(indxLayer)%Elements)
@@ -390,7 +392,7 @@ CONTAINS
       
       
       !Return if zonation is not defined in vertical, if it is the last layer, or all the nodes of the element are inactive nodes
-      IF (ZoneList%iZoneExtent .EQ. iZoneHorizontal) RETURN
+      IF (ZoneList%iZoneExtent .EQ. f_iZoneHorizontal) RETURN
       IF (iLayerUp .EQ. NLayers) RETURN
       IF (.NOT. ANY(SystemData%lActiveNode(Vertex,iLayerUp))) RETURN
       
@@ -488,8 +490,8 @@ CONTAINS
     
     !Zone definition (in horizontal or vertical)
     CALL ZoneDefFile%ReadData(ZoneList%iZoneExtent,iStat)  ;  IF (iStat .EQ. -1) GOTO 100
-    IF (ZoneList%iZoneExtent .NE. iZoneHorizontal  .AND.  ZoneList%iZoneExtent .NE. iZoneVertical) THEN
-        CALL SetLastMessage('Value entered for ZExtent variable is not recognized in file '//TRIM(cZoneDefFileName)//'!',iFatal,ThisProcedure)
+    IF (ZoneList%iZoneExtent .NE. f_iZoneHorizontal  .AND.  ZoneList%iZoneExtent .NE. f_iZoneVertical) THEN
+        CALL SetLastMessage('Value entered for ZExtent variable is not recognized in file '//TRIM(cZoneDefFileName)//'!',f_iFatal,ThisProcedure)
         iStat = -1
         GOTO 100
     END IF
@@ -512,7 +514,7 @@ CONTAINS
         DO indx1=indx+1,nZonesWithNames
             iZone1 = iZonesWithNames(indx1)
             IF (iZone1 .EQ. iZone) THEN
-                CALL SetLastMessage('Zone number '//TRIM(IntToText(iZone1))//' is given two seperate names!',iFatal,ThisProcedure)
+                CALL SetLastMessage('Zone number '//TRIM(IntToText(iZone1))//' is given two seperate names!',f_iFatal,ThisProcedure)
                 iStat = -1
                 GOTO 100
             END IF
@@ -527,7 +529,7 @@ CONTAINS
     ALLOCATE (ElemZones(SystemData%NElements,SystemData%NLayers))
     
     !Read element zonal data
-    CALL ReadElemZoneInformation(ZoneDefFile,SystemData%NElements,SystemData%NLayers,ZoneList%iZoneExtent,ElemZones,iStat)
+    CALL ReadElemZoneInformation(ZoneDefFile,SystemData%NElements,SystemData%NLayers,ZoneList%iZoneExtent,SystemData%iElementIDs,ElemZones,iStat)
     IF (iStat .EQ. -1) GOTO 100
     
     !Compile zone list in a binary tree
@@ -552,7 +554,8 @@ CONTAINS
     
     !Local variables
     CHARACTER(LEN=ModNameLen+16),PARAMETER :: ThisProcedure = ModName // 'GenerateZoneList'
-    INTEGER                                :: indxElem,indxLayer,iZonesWithNames_Local(SIZE(iZonesWithNames)),nZonesWithNames,indx,indx1,iZone,iZone1
+    INTEGER                                :: indxElem,indxLayer,iZonesWithNames_Local(SIZE(iZonesWithNames)),nZonesWithNames,  &
+                                              indx,indx1,iZone,iZone1,iElemIndices(SIZE(iElems))
     INTEGER,ALLOCATABLE                    :: iElemZones(:,:)
     CHARACTER(LEN=50)                      :: cZoneNames_Local(SIZE(iZonesWithNames))
     
@@ -569,7 +572,7 @@ CONTAINS
         DO indx1=indx+1,nZonesWithNames
             iZone1 = iZonesWithNames_Local(indx1)
             IF (iZone1 .EQ. iZone) THEN
-                CALL SetLastMessage('Zone number '//TRIM(IntToText(iZone1))//' is given two seperate names!',iFatal,ThisProcedure)
+                CALL SetLastMessage('Zone number '//TRIM(IntToText(iZone1))//' is given two seperate names!',f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
@@ -578,24 +581,32 @@ CONTAINS
     
     !Order zones with names
     CALL ShellSort(iZonesWithNames_Local,cZoneNames_Local)
+    
+    !Convert element IDs to element indices
+    CALL ConvertID_To_Index(iElems,SystemData%iElementIDs,iElemIndices)
+    IF (ANY(iElemIndices.EQ.0)) THEN
+        CALL SetLastMessage('One or more element numbers defined for zonation are not in the model!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
         
     !Compile iElemZones array
     ALLOCATE (iElemZones(SystemData%NElements,SystemData%NLayers))
-    iElemZones = iUndefinedZone
-    IF (iZExtent .EQ. iZoneHorizontal) THEN
+    iElemZones = f_iUndefinedZone
+    IF (iZExtent .EQ. f_iZoneHorizontal) THEN
         DO indxLayer=1,SystemData%NLayers
-            iElemZones(iElems,indxLayer) = iZones
+            iElemZones(iElemIndices,indxLayer) = iZones
         END DO
     ELSE
         DO indxElem=1,SIZE(iElems)
             !Make sure specified layer for zonation is not greater than the available layers
             IF (iLayers(indxElem) .GT. SystemData%NLayers) THEN
-                CALL SetLastMessage('Zonation layer at element '//TRIM(IntToText(iElems(indxElem)))//' is larger than the simulated number of layers!',iFatal,ThisProcedure)
+                CALL SetLastMessage('Zonation layer at element '//TRIM(IntToText(iElems(indxElem)))//' is larger than the simulated number of layers!',f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
             !Assign zone
-            iElemZones(iElems(indxElem),iLayers(indxElem)) = iZones(indxElem)
+            iElemZones(iElemIndices(indxElem),iLayers(indxElem)) = iZones(indxElem)
         END DO
     END IF
     
@@ -836,7 +847,7 @@ CONTAINS
     
     DO indx=1,SIZE(ZoneList%iOrderedZoneList)
         iZone = ZoneList%iOrderedZoneList(indx)
-        IF (iZone .EQ. iUndefinedZone) CYCLE
+        IF (iZone .EQ. f_iUndefinedZone) CYCLE
         pZone => ZoneList%GetPointerToNode(iZone)
         SELECT TYPE (pZone)
             TYPE IS (ZoneType)
@@ -847,7 +858,28 @@ CONTAINS
   END FUNCTION GetNMaxAdjacentZones
 
 
+  ! -------------------------------------------------------------
+  ! --- GET THE NUMBER OF ADJACENT ZONES FOR A ZONE
+  ! -------------------------------------------------------------
+  FUNCTION GetNAdjacentZones(ZoneList,iZone) RESULT(iNAdjZones)
+    CLASS(ZoneListType),INTENT(IN) :: ZoneList
+    INTEGER,INTENT(IN)             :: iZone
+    INTEGER                        :: iNAdjZones
+    
+    !Local variables
+    CLASS(*),POINTER :: pZone
+    
+    !Get a pointer to the zone and find the number of adjacanet zones
+    pZone => ZoneList%GetPointerToNode(iZone)
+    SELECT TYPE (pZone)
+        TYPE IS (ZoneType)
+            iNAdjZones = pZone%NAdjacentZones
+    END SELECT
+        
+  END FUNCTION GetNAdjacentZones
   
+  
+    
   
 ! ******************************************************************
 ! ******************************************************************
@@ -912,20 +944,20 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ IN THE ZONE NUMBERING FROM MAIN CONTROL FILE
   ! -------------------------------------------------------------
-  SUBROUTINE ReadElemZoneInformation(InputFile,NElements,NLayers,ZExtent,ElemZones,iStat)
+  SUBROUTINE ReadElemZoneInformation(InputFile,NElements,NLayers,ZExtent,ElementIDs,ElemZones,iStat)
     TYPE(GenericFileType) :: InputFile
-    INTEGER,INTENT(IN)    :: NElements,NLayers,ZExtent
-    INTEGER,INTENT(OUT)   :: ElemZones(:,:),iStat
+    INTEGER,INTENT(IN)    :: NElements,NLayers,ZExtent,ElementIDs(NElements)
+    INTEGER,INTENT(OUT)   :: ElemZones(NElements,NLayers),iStat
 
     !Local variables
     CHARACTER(LEN=ModNameLen+23)   :: ThisProcedure = ModName // 'ReadElemZoneInformation'
-    INTEGER                        :: ElementNo,LayerNo,indx,ZoneNo
+    INTEGER                        :: ElementID,LayerNo,indx,ZoneNo,ElementIndex
     CHARACTER(LEN=300),ALLOCATABLE :: DummyCharArray(:)
     CHARACTER(:),ALLOCATABLE       :: cFileName
 
     !Initialize
     iStat     = 0
-    ElemZones = iUndefinedZone      !Initially zone numbers have not been assigned
+    ElemZones = f_iUndefinedZone      !Initially zone numbers have not been assigned
 
     !Read element zonation information
     CALL InputFile%ReadData(DummyCharArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
@@ -934,7 +966,7 @@ CONTAINS
     !If none of the elements are assigned zone numbers, stop
     IF (SIZE(DummyCharArray) .EQ. 0) THEN
         CALL InpuTFile%GetName(cFileName)
-        CALL SetLastMessage('Element zone information is not found in file '//TRIM(CFileName)//'!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Element zone information is not found in file '//TRIM(CFileName)//'!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -945,54 +977,57 @@ CONTAINS
         IF (DummyCharArray(indx) .EQ. '') EXIT
         
         !Zone numbering applies to all layers
-        IF (ZExtent .EQ. iZoneHorizontal) THEN
-            READ (DummyCharArray(indx),*) ElementNo,ZoneNo
+        IF (ZExtent .EQ. f_iZoneHorizontal) THEN
+            READ (DummyCharArray(indx),*) ElementID,ZoneNo
           
         !Zone numbering is different for each layer
         ELSE
-            READ (DummyCharArray(indx),*) ElementNo,LayerNo,ZoneNo
+            READ (DummyCharArray(indx),*) ElementID,LayerNo,ZoneNo
             IF (LayerNo .GT. NLayers) THEN
-                MessageArray(1) = 'Zone layer number at element '//TRIM(IntToText(ElementNo))//' is specified as '//TRIM(IntToText(LayerNo))
+                MessageArray(1) = 'Zone layer number at element '//TRIM(IntToText(ElementID))//' is specified as '//TRIM(IntToText(LayerNo))
                 MessageArray(2) = 'when the number of layers simulated is '//TRIM(IntToText(NLayers))//'!' 
-                CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+                CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
         END IF
         
-        !Make sure that zone number is not specified as -999
-        IF (ZoneNo .EQ. -999) THEN
-            CALL SetLastMessage('-999 cannot be used as a zone number!',iFatal,ThisProcedure)
+        !Convert element ID to element index
+        CALL ConvertID_To_Index(ElementID,ElementIDs,ElementIndex)
+        
+        !Make sure element id is in the model
+        IF (ElementIndex .EQ. 0) THEN
+            CALL SetLastMessage('Element number '//TRIM(IntToText(ElementID))//' is not in the model!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
         
-        !Make sure element number id is not greater than the simulated
-        IF (ElementNo .GT. NElements) THEN
-            CALL SetLastMessage('Element number '//TRIM(IntToText(ElementNo))//' is greater than the simulated number of elements!',iFatal,ThisProcedure)
+        !Make sure that zone number is not specified as -999
+        IF (ZoneNo .EQ. -999) THEN
+            CALL SetLastMessage('-999 cannot be used as a zone number!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
         
         !Assign zone number to the elements of all layers when zone numbering applies to all layers
-        IF (ZExtent .EQ. iZoneHorizontal) THEN
+        IF (ZExtent .EQ. f_iZoneHorizontal) THEN
             !Check if zone number for elements have already been specified
-            IF (ANY(ElemZones(ElementNo,:) .NE. iUndefinedZone)) THEN
-                CALL SetLastMessage('Multiple zone numbers are specified for element '//TRIM(IntToText(ElementNo))//'!',iFatal,ThisProcedure)
+            IF (ANY(ElemZones(ElementIndex,:) .NE. f_iUndefinedZone)) THEN
+                CALL SetLastMessage('Multiple zone numbers are specified for element '//TRIM(IntToText(ElementID))//'!',f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
-            ElemZones(ElementNo,:) = ZoneNo
+            ElemZones(ElementIndex,:) = ZoneNo
           
         !Assign zone number to the individual element of the given layer
         ELSE
             !Check if zone number for elements have already been specified
-            IF (ElemZones(ElementNo,LayerNo) .NE. iUndefinedZone) THEN
-                CALL SetLastMessage('Multiple zone numbers are specified for element '//TRIM(IntToText(ElementNo))//' in layer '//TRIM(IntToText(LayerNo))//'!',iFatal,ThisProcedure)
+            IF (ElemZones(ElementIndex,LayerNo) .NE. f_iUndefinedZone) THEN
+                CALL SetLastMessage('Multiple zone numbers are specified for element '//TRIM(IntToText(ElementID))//' in layer '//TRIM(IntToText(LayerNo))//'!',f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
-            ElemZones(ElementNo,LayerNo) = ZoneNo
+            ElemZones(ElementIndex,LayerNo) = ZoneNo
         END IF
     END DO
 

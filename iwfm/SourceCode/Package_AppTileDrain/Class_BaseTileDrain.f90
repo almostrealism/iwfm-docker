@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -45,11 +45,12 @@ MODULE Class_BaseTileDrain
   ! --- GENERIC TILE DRAIN TYPE
   ! -------------------------------------------------------------
   TYPE BaseTileDrainType
-    INTEGER :: iGWNode      = 0
-    INTEGER :: iGWNodeLayer = 0
-    REAL(8) :: rElevation   = 0.0
-    REAL(8) :: rConductance = 0.0
-    REAL(8) :: rFlow        = 0.0
+      INTEGER :: ID           = 0
+      INTEGER :: iGWNode      = 0
+      INTEGER :: iGWNodeLayer = 0
+      REAL(8) :: rElevation   = 0.0
+      REAL(8) :: rConductance = 0.0
+      REAL(8) :: rFlow        = 0.0
   END TYPE BaseTileDrainType 
 
   

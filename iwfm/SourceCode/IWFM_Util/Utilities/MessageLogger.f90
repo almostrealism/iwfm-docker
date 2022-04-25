@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2019  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -54,48 +54,48 @@ MODULE MessageLogger
             IsLogFileDefined             , &
             PrintRunTime                 , &
             MessageArray                 , &
-            YesEchoProgress              , &
-            NoEchoProgress               , &
             EchoProgress                 , &
-            SCREEN_FILE                  , &
-            SCREEN                       , &
-            FILE                         , &
-            iMessage                     , &
-            iInfo                        , &
-            iWarn                        , &
-            iFatal    
+            f_iYesEchoProgress           , &
+            f_iNoEchoProgress            , &
+            f_iSCREEN_FILE               , &
+            f_iSCREEN                    , &
+            f_iFILE                      , &
+            f_iMessage                   , &
+            f_iInfo                      , &
+            f_iWarn                      , &
+            f_iFatal    
 
 
   ! -------------------------------------------------------------
   ! --- FLAG DEFINITIONS TO ECHO PROGRAM PROGRESS
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER      :: YesEchoProgress   = 1  , &
-                            NoEchoProgress    = 0
-  INTEGER,PROTECTED,SAVE :: iFlagEchoProgress = NoEchoProgress
+  INTEGER,PARAMETER      :: f_iYesEchoProgress = 1  , &
+                            f_iNoEchoProgress  = 0
+  INTEGER,PROTECTED,SAVE :: iFlagEchoProgress  = f_iNoEchoProgress
   
   
   ! -------------------------------------------------------------
   ! --- FLAGS FOR MESSAGE DESTINATION
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER :: SCREEN_FILE = 1 , &
-                       SCREEN      = 2 , &
-                       FILE        = 3
+  INTEGER,PARAMETER :: f_iSCREEN_FILE = 1 , &
+                       f_iSCREEN      = 2 , &
+                       f_iFILE        = 3
 
 
   ! -------------------------------------------------------------
   ! --- MESSAGE SEVERITY LEVELS
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER :: iMessage = 0 , &
-                       iInfo    = 1 , &
-                       iWarn    = 2 , &
-                       iFatal   = 3
+  INTEGER,PARAMETER :: f_iMessage = 0 , &
+                       f_iInfo    = 1 , &
+                       f_iWarn    = 2 , &
+                       f_iFatal   = 3
 
   
   ! -------------------------------------------------------------
   ! --- LAST SAVED MESSAGE
   ! -------------------------------------------------------------
   CHARACTER(LEN=5000),SAVE :: cLastMessage          = ''
-  INTEGER,SAVE             :: iLastMessageType      = iInfo
+  INTEGER,SAVE             :: iLastMessageType      = f_iInfo
   CHARACTER(LEN=200),SAVE  :: cLastMessageProcedure = ''
   
   
@@ -103,12 +103,12 @@ MODULE MessageLogger
   ! --- DATA DEFINITIONS
   ! -------------------------------------------------------------
   CHARACTER(LEN=13),PARAMETER :: ThisProcedure='MessageLogger'
-  CHARACTER(LEN=1),PARAMETER  :: LineFeed = CHAR(10)
-  CHARACTER(LEN=11),PARAMETER :: DefaultLogFileName='Message.log'
+  CHARACTER(LEN=1),PARAMETER  :: f_cLineFeed = CHAR(10)
+  CHARACTER(LEN=11),PARAMETER :: f_cDefaultLogFileName='Message.log'
   CHARACTER(LEN=300)          :: MessageArray(200)
   LOGICAL,PROTECTED,SAVE      :: WarningsGenerated = .FALSE. , &
                                  ConsoleExists     = .TRUE.
-  INTEGER,SAVE                :: DefaultMessageDestination = SCREEN_FILE
+  INTEGER,SAVE                :: DefaultMessageDestination = f_iSCREEN_FILE
 
   TYPE LogFile
     PRIVATE
@@ -177,9 +177,9 @@ CONTAINS
       END IF
     END IF
 
-    ALLOCATE (CHARACTER(LEN(DefaultLogFileName)) :: ThisLogFile%Name)
+    ALLOCATE (CHARACTER(LEN(f_cDefaultLogFileName)) :: ThisLogFile%Name)
     ThisLogFile%UnitN = GetAUnitNumber()
-    ThisLogFile%Name  = DefaultLogFileName
+    ThisLogFile%Name  = f_cDefaultLogFileName
     IF (PRESENT(LogFileName)) THEN
         DEALLOCATE (ThisLogFile%Name , STAT=ErrorCode)
         ALLOCATE (CHARACTER(LEN(LogFileName)) :: ThisLogFile%Name)
@@ -236,8 +236,8 @@ CONTAINS
     iStat = 0
     
     !Check if iFlag is recognized
-    IF (iFlag.NE.YesEchoProgress .AND. iFlag.NE.NoEchoProgress) THEN
-        CALL SetLastMessage('Flag to echo program progress is not recognized!',iFatal,ThisProcedure)
+    IF (iFlag.NE.f_iYesEchoProgress .AND. iFlag.NE.f_iNoEchoProgress) THEN
+        CALL SetLastMessage('Flag to echo program progress is not recognized!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -262,12 +262,12 @@ CONTAINS
     iStat = 0
 
     !Check if Destination is recognized
-    Test=Destination .EQ. SCREEN      .OR.  &
-         Destination .EQ. FILE        .OR.  &
-         Destination .EQ. SCREEN_FILE     
+    Test=Destination .EQ. f_iSCREEN      .OR.  &
+         Destination .EQ. f_iFILE        .OR.  &
+         Destination .EQ. f_iSCREEN_FILE     
     IF (.NOT. Test) THEN
       IF (ALLOCATED(ThisLogFile)) THEN 
-        CALL SetLastMessage('Message destination is not recognized!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Message destination is not recognized!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
       ELSE
@@ -294,7 +294,7 @@ CONTAINS
 
     !Check if log file is already instantiated
     IF (ALLOCATED(ThisLogFile)) THEN
-      CALL SetLastMessage('Error in opening new log file! A log file is already created',iFatal,ThisProcedure) 
+      CALL SetLastMessage('Error in opening new log file! A log file is already created',f_iFatal,ThisProcedure) 
       iStat = -1
     ELSE
       CALL MakeLogFile(FileName,iStat)     
@@ -318,7 +318,7 @@ CONTAINS
     
     !Stich the message arrays into a single string
     DO indx=2,SIZE(cMessageArray)
-        cLastMessage = TRIM(cLastMessage) // LineFeed // '*   ' // TRIM(cMessageArray(indx))
+        cLastMessage = TRIM(cLastMessage) // f_cLineFeed // '*   ' // TRIM(cMessageArray(indx))
     END DO
 
     !Program name 
@@ -369,15 +369,15 @@ CONTAINS
     CHARACTER(LEN=LEN_TRIM(cLastMessage)+110) :: cMessageLocal
     
     SELECT CASE (iLastMessageType)
-        CASE (iInfo)
+        CASE (f_iInfo)
             cMessageLocal = '* INFO:'  
-        CASE (iWarn)
+        CASE (f_iWarn)
             cMessageLocal = '* WARN:' 
-        CASE (iFatal)
+        CASE (f_iFatal)
             cMessageLocal = '* FATAL:' 
     END SELECT
-    cMessageLocal = TRIM(cMessageLocal) // LineFeed // TRIM(cLastMessage)
-    cMessageLocal = TRIM(cMessageLocal) // LineFeed // '*   (' // TRIM(cLastMessageProcedure) // ')'     
+    cMessageLocal = TRIM(cMessageLocal) // f_cLineFeed // TRIM(cLastMessage)
+    cMessageLocal = TRIM(cMessageLocal) // f_cLineFeed // '*   (' // TRIM(cLastMessageProcedure) // ')'     
     
     iLenMessage     = LEN(cMessage)
     iLenLastMessage = LEN_TRIM(cMessageLocal)
@@ -491,10 +491,10 @@ CONTAINS
     CHARACTER(LEN=*),INTENT(IN) :: Message
     INTEGER,INTENT(OUT)         :: iStat
 
-    CALL SetDefaultMessageDestination(SCREEN,iStat)
-    CALL LogMessage(Message,iFatal,ThisProcedure)
+    CALL SetDefaultMessageDestination(f_iSCREEN,iStat)
+    CALL LogMessage(Message,f_iFatal,ThisProcedure)
     
-    CALL SetLastMessage(Message,iFatal,ThisProcedure)
+    CALL SetLastMessage(Message,f_iFatal,ThisProcedure)
     iStat = -1
 
   END SUBROUTINE PrimitiveErrorHandler
@@ -518,13 +518,13 @@ CONTAINS
     WillPrintToFile   = .FALSE.
     WillPrintToScreen = .FALSE.
     SELECT CASE (Destination)
-      CASE (SCREEN_FILE)
+      CASE (f_iSCREEN_FILE)
         WillPrintToFile   = .TRUE.
         WillPrintToScreen = .TRUE.
-      CASE (FILE)
+      CASE (f_iFILE)
         WillPrintToFile   = .TRUE.
         WillPrintToScreen = .FALSE.
-      CASE (SCREEN)
+      CASE (f_iSCREEN)
         WillPrintToFile   = .FALSE.
         WillPrintToScreen = .TRUE.
     END SELECT
@@ -533,7 +533,7 @@ CONTAINS
     SeveralMessages(1:NMessage) = MessageArray
 
     !Check if a log file is instantiated
-    IF (Destination .NE. SCREEN) THEN
+    IF (Destination .NE. f_iSCREEN) THEN
       IF (.NOT. ALLOCATED(ThisLogFile)) CALL MakeLogFile(iStat=iStat)
     END IF
 
@@ -571,38 +571,38 @@ CONTAINS
         CALL CloseMessageFile()
         STOP 
 
-      CASE (iMessage)
-        IF (WillPrintToFile) CALL PrintMessageArray(FILE)
-        IF (WillPrintToScreen) CALL PrintMessageArray(SCREEN)
-      CASE (iInfo)
+      CASE (f_iMessage)
+        IF (WillPrintToFile) CALL PrintMessageArray(f_iFILE)
+        IF (WillPrintToScreen) CALL PrintMessageArray(f_iSCREEN)
+      CASE (f_iInfo)
         WarningsGenerated = .TRUE.
         IF (WillPrintToFile) THEN
           WRITE (UnitN,FMT=Fmt,ADVANCE=Advance) '* INFO : '
-          CALL PrintMessageArray(FILE)
+          CALL PrintMessageArray(f_iFILE)
           WRITE (UnitN,FMT=Fmt,ADVANCE=Advance) '*   ('//TRIM(ADJUSTL(ProgName))//')'
         END IF
         !Always print to screen
         WRITE (*,FMT=Fmt,ADVANCE=Advance) '* INFO : '
-        CALL PrintMessageArray(SCREEN)
+        CALL PrintMessageArray(f_iSCREEN)
         WRITE (*,FMT=Fmt,ADVANCE=Advance) '*   ('//TRIM(ADJUSTL(ProgName))//')'
-      CASE (iWarn)
+      CASE (f_iWarn)
         WarningsGenerated = .TRUE.
         IF (WillPrintToFile) THEN
           WRITE (UnitN,FMT=Fmt,ADVANCE=Advance) '* WARN : '
-          CALL PrintMessageArray(FILE)
+          CALL PrintMessageArray(f_iFILE)
           WRITE (UnitN,FMT=Fmt,ADVANCE=Advance) '*   ('//TRIM(ADJUSTL(ProgName))//')'
         END IF
         !Always write to screen  
         WRITE (*,FMT=Fmt,ADVANCE=Advance) '* WARN : '
-        CALL PrintMessageArray(SCREEN)
+        CALL PrintMessageArray(f_iSCREEN)
         WRITE (*,FMT=Fmt,ADVANCE=Advance) '*   ('//TRIM(ADJUSTL(ProgName))//')'
 
-      CASE (iFatal)
+      CASE (f_iFatal)
         IF (WillPrintToFile) THEN
           WRITE (UnitN,FMT=Fmt,ADVANCE=Advance) ' '
           WRITE (UnitN,FMT=Fmt,ADVANCE=Advance) '*******************************************************************************'
           WRITE (UnitN,FMT=Fmt,ADVANCE=Advance) '* FATAL: '
-          CALL PrintMessageArray(FILE)
+          CALL PrintMessageArray(f_iFILE)
           WRITE (UnitN,FMT=Fmt,ADVANCE=Advance) '*   ('//TRIM(ADJUSTL(ProgName))//')'
           WRITE (UnitN,FMT=Fmt,ADVANCE=Advance) '*******************************************************************************'
         END IF
@@ -610,7 +610,7 @@ CONTAINS
         WRITE (*,FMT=Fmt,ADVANCE=Advance) ' '
         WRITE (*,FMT=Fmt,ADVANCE=Advance) '*******************************************************************************'
         WRITE (*,FMT=Fmt,ADVANCE=Advance) '* FATAL: '
-        CALL PrintMessageArray(SCREEN)
+        CALL PrintMessageArray(f_iSCREEN)
         WRITE (*,FMT=Fmt,ADVANCE=Advance) '*   ('//TRIM(ADJUSTL(ProgName))//')'
         WRITE (*,FMT=Fmt,ADVANCE=Advance) '*******************************************************************************'
         CALL PrintRunTime()
@@ -629,11 +629,11 @@ CONTAINS
       INTEGER :: indxMessage
       
       !Print
-      IF (iDest .EQ. FILE) THEN
+      IF (iDest .EQ. f_iFILE) THEN
         DO indxMessage=1,NMessage
           WRITE (UnitN,FMT=Fmt,ADVANCE=Advance) TRIM(SeveralMessages(indxMessage))
         END DO
-      ELSE IF (iDest .EQ. SCREEN) THEN
+      ELSE IF (iDest .EQ. f_iSCREEN) THEN
         DO indxMessage=1,NMessage
           WRITE (*,FMT=Fmt,ADVANCE=Advance) TRIM(SeveralMessages(indxMessage))
         END DO
@@ -753,18 +753,18 @@ CONTAINS
     !Prepare message for logging
     cMessageLocal = '*******************************************************************************'
     SELECT CASE (iLastMessageType)
-        CASE (iInfo)
-            cMessageLocal = TRIM(cMessageLocal) //  LineFeed // '* INFO: '  
-        CASE (iWarn)
-            cMessageLocal = TRIM(cMessageLocal) // LineFeed // '* WARN: ' 
-        CASE (iFatal)
-            cMessageLocal = TRIM(cMessageLocal) // LineFeed // '* FATAL: ' 
+        CASE (f_iInfo)
+            cMessageLocal = TRIM(cMessageLocal) //  f_cLineFeed // '* INFO: '  
+        CASE (f_iWarn)
+            cMessageLocal = TRIM(cMessageLocal) // f_cLineFeed // '* WARN: ' 
+        CASE (f_iFatal)
+            cMessageLocal = TRIM(cMessageLocal) // f_cLineFeed // '* FATAL: ' 
     END SELECT
-    cMessageLocal = TRIM(cMessageLocal) // LineFeed // TRIM(cLastMessage)
-    cMessageLocal = TRIM(cMessageLocal) // LineFeed // '*   (' // TRIM(cLastMessageProcedure) // ')' // LineFeed // '*******************************************************************************'
+    cMessageLocal = TRIM(cMessageLocal) // f_cLineFeed // TRIM(cLastMessage)
+    cMessageLocal = TRIM(cMessageLocal) // f_cLineFeed // '*   (' // TRIM(cLastMessageProcedure) // ')' // f_cLineFeed // '*******************************************************************************'
     
     !Log the message
-    CALL LogMessage(TRIM(cMessageLocal),iMessage,'',Destination=Destination_Local,Advance=Advance_Local)
+    CALL LogMessage(TRIM(cMessageLocal),f_iMessage,'',Destination=Destination_Local,Advance=Advance_Local)
     
   END SUBROUTINE LogLastMessage
   
@@ -825,9 +825,9 @@ CONTAINS
     END IF
     WRITE (MessageArray(2),'(A,1X,F6.3,A)') TRIM(MessageArray(2)),Second,' SECONDS'
     IF (WarningsGenerated) THEN
-        MessageArray(3) = 'WARNINGS/INFORMATIONAL MESSAGES ARE GENERATED!'//LineFeed
+        MessageArray(3) = 'WARNINGS/INFORMATIONAL MESSAGES ARE GENERATED!'//f_cLineFeed
         IF (ALLOCATED(ThisLogFile))  &
-            MessageArray(3) = TRIM(MessageArray(3)) // 'FOR DETAILS CHECK FILE ''' // TRIM(ThisLogFile%Name) // '''.' // LineFeed
+            MessageArray(3) = TRIM(MessageArray(3)) // 'FOR DETAILS CHECK FILE ''' // TRIM(ThisLogFile%Name) // '''.' // f_cLineFeed
         MessageArray(3) = TRIM(MessageArray(3)) // REPEAT('*',50)
     ELSE                               
         MessageArray(3) = REPEAT('*',50)
@@ -835,9 +835,9 @@ CONTAINS
 
     !Print the final message
     IF (PRESENT(iDestination)) THEN
-        CALL LogMessage(MessageArray(1:3),iMessage,'',Destination=iDestination)
+        CALL LogMessage(MessageArray(1:3),f_iMessage,'',Destination=iDestination)
     ELSE
-        CALL LogMessage(MessageArray(1:3),iMessage,'')
+        CALL LogMessage(MessageArray(1:3),f_iMessage,'')
     END IF
 
   END SUBROUTINE PrintRunTime
@@ -874,7 +874,7 @@ CONTAINS
         cAdvance = 'YES'
     END IF
 
-    IF (iFlagEchoProgress .EQ. YesEchoProgress) CALL LogMessage(Text,iMessage,'',Advance=cAdvance)
+    IF (iFlagEchoProgress .EQ. f_iYesEchoProgress) CALL LogMessage(Text,f_iMessage,'',Advance=cAdvance)
         
   END SUBROUTINE EchoProgress
   

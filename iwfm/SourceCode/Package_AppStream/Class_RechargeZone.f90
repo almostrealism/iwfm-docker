@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -23,7 +23,7 @@
 MODULE Class_RechargeZone
   USE MessageLogger     , ONLY: SetLastMessage , &
                                 MessageArray   , &
-                                iFatal
+                                f_iFatal
   USE GeneralUtilities
   USE IOInterface
   USE Package_Misc
@@ -84,39 +84,49 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ FROM FILE
   ! -------------------------------------------------------------
-  SUBROUTINE RechargeZone_New(NDiver,InFile,RechargeZones,iStat)
-    INTEGER,INTENT(IN)            :: NDiver
+  SUBROUTINE RechargeZone_New(NDiver,iDiverIDs,iElemIDs,cDescription,InFile,RechargeZones,iStat)
+    INTEGER,INTENT(IN)            :: NDiver,iDiverIDs(NDiver),iElemIDs(:)
+    CHARACTER(LEN=*),INTENT(IN)   :: cDescription
     TYPE(GenericFileType)         :: InFile
     TYPE(RechargeZoneType),TARGET :: RechargeZones(NDiver)
     INTEGER,INTENT(OUT)           :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+16)   :: ThisProcedure = ModName // 'RechargeZone_New'
-    INTEGER                        :: NZones,indxDiver,ID,iZone,ErrorCode
+    INTEGER                        :: NZones,indxDiver,ID,iZone,ErrorCode,iDiver
     REAL(8)                        :: DummyArray(4),DummyArray2(2)
+    LOGICAL                        :: lProcessed(NDiver)
+    INTEGER,ALLOCATABLE            :: iZones(:)
     TYPE(RechargeZoneType),POINTER :: pZone
     
     !Initialize
-    iStat = 0
+    iStat      = 0
+    lProcessed = .FALSE.
     
     !Iterate over diversions
     DO indxDiver=1,NDiver
-        pZone => RechargeZones(indxDiver)
-        
         !Read data
         CALL InFile%ReadData(DummyArray,iStat)  
         IF (iStat .EQ. -1) RETURN
         
         !Diversion ID
         ID = INT(DummyArray(1))
-        IF (ID .NE. indxDiver) THEN
-            MessageArray(1) = 'Diversions for recharge zone data should be entered sequentialy.'
-            MessageArray(2) = 'Diversion number expected='//TRIM(IntToText(indxDiver))
-            MessageArray(3) = 'Diversion number entered ='//TRIM(IntToText(ID))
-            CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+        CALL ConvertID_To_Index(ID,iDiverIDs,iDiver)
+        IF (iDiver .EQ. 0) THEN
+            CALL SetLastMessage(TRIM(cDescription)//' ID '//TRIM(IntToText(ID))//' listed for recharge zones is not in the model!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
+        
+        !Make sure same ID is not used
+        IF (lProcessed(iDiver)) THEN
+            CALL SetLastMessage(TRIM(cDescription)//' ID '//TRIM(IntToText(ID))//' is used more than once for recharge zone description!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iDiver) = .TRUE.
+        
+        pZone => RechargeZones(iDiver)
         
         !Number of zones
         NZones       = INT(DummyArray(2))
@@ -124,21 +134,32 @@ CONTAINS
         IF (NZones .EQ. 0) CYCLE
         
         !Allocate memory
-        ALLOCATE (pZone%Zones(NZones) , pZone%Fracs(NZones) ,STAT=ErrorCode)
+        DEALLOCATE (iZones , STAT=ErrorCode)
+        ALLOCATE (iZones(NZones) , pZone%Zones(NZones) , pZone%Fracs(NZones) ,STAT=ErrorCode)
         IF (ErrorCode .NE. 0) THEN
-            CALL SetLastMessage('Error allocating memory for recharge zones for diversion '//TRIM(IntToText(indxDiver))//'!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Error allocating memory for recharge zones for '//TRIM(LowerCase(cDescription))//' '//TRIM(IntToText(ID))//'!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
-        pZone%Zones(1) = INT(DummyArray(3))
+        iZones(1)      = INT(DummyArray(3))
         pZone%Fracs(1) =     DummyArray(4)
         
         !Read and assign rest of data
         DO iZone=2,NZones
             CALL InFile%ReadData(DummyArray2,iStat)  ;  IF (iStat .EQ. -1) RETURN
-            pZone%Zones(iZone) = INT(DummyArray2(1))
+            iZones(iZone)      = INT(DummyArray2(1))
             pZone%Fracs(iZone) =     DummyArray2(2)
         END DO
+        
+        !Convert element IDs to indices
+        IF (NZones .GT. 0) THEN
+            CALL ConvertID_To_Index(iZones,iElemIDs,pZone%Zones)
+            IF (ANY(pZone%Zones.EQ.0)) THEN
+                CALL SetLastMessage('One or more elements listed as recharge zones for '//TRIM(LowerCase(cDescription))//' ID '//TRIM(IntToText(ID))//' are not in the model!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+        END IF
         
         !Normalize the fractions
         IF (NZones .GT. 0) CALL NormalizeArray(pZone%Fracs)

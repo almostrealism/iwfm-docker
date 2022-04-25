@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018
+!  Copyright (C) 2005-2021
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -51,46 +51,46 @@ MODULE GWZBudget_Parameters
   ! -------------------------------------------------------------
   ! --- FLOW NAMES FOR USE IN GW ZONE BUDGET OUTPUT
   ! -------------------------------------------------------------
-  CHARACTER(LEN=27),PARAMETER :: FlowNames(NFlowID) = (/'GW Storage'                   , &              
-                                                        'Streams'                      , &      
-                                                        'Tile Drains'                  , &      
-                                                        'Subsurface Irrigation'        , &      
-                                                        'Subsidence'                   , &      
-                                                        'Deep Percolation'             , &      
-                                                        'Specified Flow BC'            , &      
-                                                        'Specified Head BC'            , &      
-                                                        'General Head BC'              , &  
-                                                        'Constrained General Head BC'  , &
-                                                        'Small Watershed Baseflow'     , &      
-                                                        'Small Watershed Percolation'  , &      
-                                                        'Diversion Recoverable Loss'   , &      
-                                                        'Bypass Recoverable Loss'      , &      
-                                                        'Lakes'                        , &      
-                                                        'Pumping by Element'           , &      
-                                                        'Pumping by Well'              , &
-                                                        'Root Water Uptake'            /)
+  CHARACTER(LEN=27),PARAMETER :: FlowNames(NFlowID) = ['GW Storage                 '  , &              
+                                                       'Streams                    '  , &      
+                                                       'Tile Drains                '  , &      
+                                                       'Subsurface Irrigation      '  , &      
+                                                       'Subsidence                 '  , &      
+                                                       'Deep Percolation           '  , &      
+                                                       'Specified Flow BC          '  , &      
+                                                       'Specified Head BC          '  , &      
+                                                       'General Head BC            '  , &  
+                                                       'Constrained General Head BC'  , &
+                                                       'Small Watershed Baseflow   '  , &      
+                                                       'Small Watershed Percolation'  , &      
+                                                       'Diversion Recoverable Loss '  , &      
+                                                       'Bypass Recoverable Loss    '  , &      
+                                                       'Lakes                      '  , &      
+                                                       'Pumping by Element         '  , &      
+                                                       'Pumping by Well            '  , &
+                                                       'Root Water Uptake          '  ]
                 
 
   ! -------------------------------------------------------------
   ! --- FLOW NAMES FOR USE IN DSS OUTPUT
   ! -------------------------------------------------------------
-  CHARACTER(LEN=20),PARAMETER :: DSSFParts(NFlowID) = (/'STORAGE'              , &              
-                                                        'STREAMS'              , &      
-                                                        'TILE_DRAINS'          , &      
-                                                        'SUB_IRRIG'            , &      
-                                                        'SUBSIDENCE'           , &      
-                                                        'DEEP_PERC'            , &      
-                                                        'FLOW_BC'              , &      
-                                                        'HEAD_BC'              , &      
-                                                        'GENERAL_HEAD_BC'      , &
-                                                        'CNSTRT_GENRL_HEAD_BC' , &
-                                                        'SMALL_WSHED_BASEFLOW' , &      
-                                                        'SMALL_WSHED_PERC'     , &      
-                                                        'DIVER_RCVRBL_LOSS'    , &      
-                                                        'BYPASS_RCVRBL_LOSS'   , &      
-                                                        'LAKES'                , &      
-                                                        'ELEM_PUMP'            , &      
-                                                        'WELL_PUMP'            , &
-                                                        'FLOW_TO_ROOT_ZONE'    /)
+  CHARACTER(LEN=20),PARAMETER :: DSSFParts(NFlowID) = ['STORAGE             ' , &              
+                                                       'STREAMS             ' , &      
+                                                       'TILE_DRAINS         ' , &      
+                                                       'SUB_IRRIG           ' , &      
+                                                       'SUBSIDENCE          ' , &      
+                                                       'DEEP_PERC           ' , &      
+                                                       'FLOW_BC             ' , &      
+                                                       'HEAD_BC             ' , &      
+                                                       'GENERAL_HEAD_BC     ' , &
+                                                       'CNSTRT_GENRL_HEAD_BC' , &
+                                                       'SMALL_WSHED_BASEFLOW' , &      
+                                                       'SMALL_WSHED_PERC    ' , &      
+                                                       'DIVER_RCVRBL_LOSS   ' , &      
+                                                       'BYPASS_RCVRBL_LOSS  ' , &      
+                                                       'LAKES               ' , &      
+                                                       'ELEM_PUMP           ' , &      
+                                                       'WELL_PUMP           ' , &
+                                                       'FLOW_TO_ROOT_ZONE   ' ]
   
 END MODULE

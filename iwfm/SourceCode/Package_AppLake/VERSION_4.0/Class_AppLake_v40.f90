@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -25,31 +25,33 @@ MODULE Class_AppLake_v40
   USE MessageLogger                , ONLY: SetLastMessage                , &
                                            EchoProgress                  , &
                                            MessageArray                  , &
-                                           iFatal                        
+                                           f_iFatal                        
   USE GeneralUtilities             , ONLY: StripTextUntilCharacter       , &
                                            IntToText                     , &
                                            FirstLocation                 , &
                                            ShellSort                     , &
+                                           LocateInList                  , &
                                            EstablishAbsolutePathFilename , &
-                                           CleanSpecialCharacters
+                                           CleanSpecialCharacters        , &
+                                           ConvertID_To_Index
   USE TimeSeriesUtilities          , ONLY: TimeStepType                              
   USE IOInterface                  , ONLY: GenericFileType                               
   USE Package_Misc                 , ONLY: PairedDataType                , &
-                                           FlowDest_Outside              , &
-                                           FlowDest_StrmNode             , &
-                                           FlowDest_Lake                 , &
-                                           iLakeComp                      
+                                           f_iFlowDest_Outside           , &
+                                           f_iFlowDest_StrmNode          , &
+                                           f_iFlowDest_Lake              , &
+                                           f_iLakeComp                      
   USE Package_Discretization       , ONLY: AppGridType                   , &
                                            StratigraphyType
   USE Package_Budget               , ONLY: BudgetHeaderType              
   USE Package_ComponentConnectors  , ONLY: LakeGWConnectorType           , &
                                            StrmLakeConnectorType         , &
-                                           iStrmToLakeType               , &
-                                           iBypassToLakeType             , &
-                                           iLakeToStrmType              
+                                           f_iStrmToLakeFlow             , &
+                                           f_iBypassToLakeFlow           , &
+                                           f_iLakeToStrmFlow              
   USE Class_Lake                   , ONLY: LakeType                      , &
                                            ReadInitialLakeElevs          
-  USE Class_MaxLakeElevFile                                              
+  USE Class_MaxLakeElevFile        , ONLY: MaxLakeElevFileType                                      
   USE Package_PrecipitationET      , ONLY: ETType                        , &
                                            PrecipitationType             
   USE Package_Matrix               , ONLY: MatrixType                    
@@ -86,17 +88,17 @@ MODULE Class_AppLake_v40
       INTEGER,ALLOCATABLE                   :: iColMaxElev(:)        !Pointer to data column in the maximum lake elevation data file
       TYPE(MaxLakeElevFileType),ALLOCATABLE :: MaxLakeElevFile
   CONTAINS
-    PROCEDURE,PASS :: SetStaticComponent              => AppLake_v40_SetStaticComponent
-    PROCEDURE,PASS :: SetStaticComponentFromBinFile   => AppLake_v40_SetStaticComponentFromBinFile
-    PROCEDURE,PASS :: SetDynamicComponent             => AppLake_v40_SetDynamicComponent
-    PROCEDURE,PASS :: SetAllComponents                => AppLake_v40_SetAllComponents
-    PROCEDURE,PASS :: SetAllComponentsWithoutBinFile  => AppLake_v40_SetAllComponentsWithoutBinFile
-    PROCEDURE,PASS :: KillImplementation              => AppLake_v40_Kill  
-    PROCEDURE,PASS :: GetVersion                      => AppLake_v40_GetVersion
-    PROCEDURE,PASS :: Simulate                        => AppLake_v40_Simulate
-    PROCEDURE,PASS :: ReadTSData                      => AppLake_v40_ReadTSData
-    PROCEDURE,PASS :: CheckExternalTSDataPointers     => AppLake_v40_CheckExternalTSDataPointers
-    PROCEDURE,PASS :: ConvertTimeUnit                 => AppLake_v40_ConvertTimeUnit
+      PROCEDURE,PASS :: SetStaticComponent              => AppLake_v40_SetStaticComponent
+      PROCEDURE,PASS :: SetStaticComponentFromBinFile   => AppLake_v40_SetStaticComponentFromBinFile
+      PROCEDURE,PASS :: SetDynamicComponent             => AppLake_v40_SetDynamicComponent
+      PROCEDURE,PASS :: SetAllComponents                => AppLake_v40_SetAllComponents
+      PROCEDURE,PASS :: SetAllComponentsWithoutBinFile  => AppLake_v40_SetAllComponentsWithoutBinFile
+      PROCEDURE,PASS :: KillImplementation              => AppLake_v40_Kill  
+      PROCEDURE,PASS :: GetVersion                      => AppLake_v40_GetVersion
+      PROCEDURE,PASS :: Simulate                        => AppLake_v40_Simulate
+      PROCEDURE,PASS :: ReadTSData                      => AppLake_v40_ReadTSData
+      PROCEDURE,PASS :: CheckExternalTSDataPointers     => AppLake_v40_CheckExternalTSDataPointers
+      PROCEDURE,PASS :: ConvertTimeUnit                 => AppLake_v40_ConvertTimeUnit
   END TYPE AppLake_v40_Type  
       
   
@@ -136,12 +138,11 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW LAKE FROM RAW DATA (GENERALLY CALLED IN PRE-PROCESSOR)
   ! -------------------------------------------------------------
-  SUBROUTINE AppLake_v40_SetStaticComponent(AppLake,cFileName,Stratigraphy,AppGrid,NStrmNodes,StrmLakeConnector,LakeGWConnector,iStat)
+  SUBROUTINE AppLake_v40_SetStaticComponent(AppLake,cFileName,Stratigraphy,AppGrid,StrmLakeConnector,LakeGWConnector,iStat)
     CLASS(AppLake_v40_Type),INTENT(OUT)   :: AppLake
     CHARACTER(LEN=*),INTENT(IN)           :: cFileName
     TYPE(StratigraphyType),INTENT(IN)     :: Stratigraphy
     TYPE(AppGridType),INTENT(IN)          :: AppGrid
-    INTEGER,INTENT(IN)                    :: NStrmNodes
     TYPE(StrmLakeConnectorType)           :: StrmLakeConnector
     TYPE(LakeGWConnectorType),INTENT(OUT) :: LakeGWConnector
     INTEGER,INTENT(OUT)                   :: iStat
@@ -149,13 +150,16 @@ CONTAINS
     !Local variables
     CHARACTER(LEN=ModNameLen+30) :: ThisProcedure = ModName // 'AppLake_v40_SetStaticComponent'
     INTEGER                      :: NLakes,ErrorCode,indxLake,DummyArray(5),ID,iDestType,NElements, &
-                                    indxElem,iDest,iElem,indxLake1
-    INTEGER,PARAMETER            :: iDestTypes(3) = [FlowDest_Outside,FlowDest_StrmNode,FlowDest_Lake]
+                                    indxElem,iDestID,iElem,indxLake1,iElemIDs(AppGrid%NElements),   &
+                                    iDest
+    INTEGER,ALLOCATABLE          :: iElems_Work(:),iLakeIDs(:)
+    INTEGER,PARAMETER            :: f_iDestTypes(3) = [f_iFlowDest_Outside , f_iFlowDest_StrmNode , f_iFlowDest_Lake]
     CHARACTER(:),ALLOCATABLE     :: cVersion
     TYPE(GenericFileType)        :: InFile
     
     !Initialize
-    iStat = 0
+    iStat    = 0
+    iElemIDs = AppGrid%AppElement%ID
 
     !Return if filename is empty
     IF (cFileName .EQ. '') RETURN
@@ -178,7 +182,7 @@ CONTAINS
     !Allocate memory
     ALLOCATE (AppLake%Lakes(NLakes) , STAT=ErrorCode)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for lakes!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for lakes!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -189,66 +193,46 @@ CONTAINS
         CALL InFile%ReadData(DummyArray,iStat)  ;  IF(iStat .EQ. -1) RETURN
        
         !Lake ID
-        ID = DummyArray(1)
-        IF (ID .NE. indxLake) THEN
-            MessageArray(1) = 'Lake data should be entered sequentially!'
-            MessageArray(2) = 'Lake number expected = '//TRIM(IntToText(indxLake))
-            MessageArray(3) = 'Lake number entered  = '//TRIM(IntToText(ID))
-            CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-            iStat = -1
-            RETURN
-        END IF
+        ID                         = DummyArray(1)
+        AppLake%Lakes(indxLake)%ID = ID
+        
+        !Make sure lake ID is not used more than once
+        DO indxLake1=1,indxLake-1
+            IF (ID .EQ. AppLake%Lakes(indxLake1)%ID) THEN
+                CALL SetLastMessage('Lake ID '//TRIM(IntToText(ID))//' is used more than once!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+        END DO
        
         !Outflow destination type
         iDestType = DummyArray(2)
-        IF (.NOT. ANY(iDestType.EQ.iDestTypes)) THEN
-            CALL SetLastMessage('Outflow destination type for lake '//TRIM(IntToText(indxLake))//' is not recognized!',iFatal,ThisProcedure)
+        IF (.NOT. ANY(iDestType.EQ.f_iDestTypes)) THEN
+            CALL SetLastMessage('Outflow destination type for lake '//TRIM(IntToText(ID))//' is not recognized!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
         AppLake%Lakes(indxLake)%OutflowDestType = iDestType
             
         !Outflow destination
-        iDest                               = DummyArray(3)
-        AppLake%Lakes(indxLake)%OutflowDest = iDest
+        AppLake%Lakes(indxLake)%OutflowDest = DummyArray(3)
         
-        !Process outflow destination
-        SELECT CASE (iDestType)
-          !If flow to stream, make sure that stream node is modeled
-          CASE (FlowDest_StrmNode)
-            IF (iDest .GT. NStrmNodes) THEN
-                CALL SetLastMessage('Stream node '//TRIM(IntToText(iDest))//' as outflow destination for lake '//TRIM(IntToText(indxLake))//' is not modeled!',iFatal,ThisProcedure) 
-                iStat = -1
-                RETURN
-            END IF
-            CALL StrmLakeConnector%AddData(iLakeToStrmType,indxLake,iDest)
-          
-          !If flow to lake, make sure it is a downstream lake and it is modeled
-          CASE (FlowDest_Lake)
-            IF (iDest .LE. indxLake) THEN
-                MessageArray(1) = 'Outflow from a lake can only flow into a lake with a higher ID number.'
-                MessageArray(2) = ' Outflow lake = '//TRIM(IntToText(indxLake))
-                MessageArray(3) = ' Inflow lake  = '//TRIM(IntToText(iDest))
-                CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-                iStat = -1
-                RETURN
-            END IF
-            IF (iDest .GT. NLakes) THEN
-                CALL SetLastMessage('Lake ID '//TRIM(IntToText(iDest))//' as outflow destination for lake '//TRIM(IntToText(indxLake))//' is not modeled!',iFatal,ThisProcedure) 
-                iStat = -1
-                RETURN
-            END IF
-        END SELECT
-                    
         !Lake elements
         NElements                         = DummyArray(4)
-        AppLake%Lakes(indxLake)%NElements = NElements  
-        ALLOCATE (AppLake%Lakes(indxLake)%Elements(NElements))
-        AppLake%Lakes(indxLake)%Elements(1) = DummyArray(5)
+        AppLake%Lakes(indxLake)%NElements = NElements 
+        DEALLOCATE (iElems_Work , STAT=ErrorCode)
+        ALLOCATE (AppLake%Lakes(indxLake)%Elements(NElements) , iElems_Work(NElements))
+        iElems_Work(1) = DummyArray(5)
         DO indxElem=2,NElements
-            CALL InFile%ReadData(AppLake%Lakes(indxLake)%Elements(indxElem),iStat)  
+            CALL InFile%ReadData(iElems_Work(indxElem),iStat)  
             IF(iStat .EQ. -1) RETURN
         END DO
+        CALL ConvertID_To_Index(iElems_Work,iElemIDs,AppLake%Lakes(indxLake)%Elements)
+        IF (ANY(AppLake%Lakes(indxLake)%Elements.EQ.0)) THEN
+            CALL SetLastMessage('One or more elements listed for lake '//TRIM(IntToText(ID))//' are not in the model!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
         CALL ShellSort(AppLake%Lakes(indxLake)%Elements)
         
         !Make sure lake elements are not listed for more than one lake
@@ -256,7 +240,7 @@ CONTAINS
             iElem = AppLake%Lakes(indxLake)%Elements(indxElem)
             DO indxLake1=1,indxLake-1
                 IF (ANY(iElem .EQ. AppLake%Lakes(indxLake1)%Elements)) THEN
-                    CALL SetLastMessage('Element '//TRIM(IntToText(iElem))//' listed for lake '//TRIM(IntToText(indxLake))//' is also listed for lake '//TRIM(IntToText(indxLake1))//'!',iFatal,ThisProcedure)
+                    CALL SetLastMessage('Element '//TRIM(IntToText(iElemIDs(iElem)))//' listed for lake '//TRIM(IntToText(ID))//' is also listed for lake '//TRIM(IntToText(AppLake%Lakes(indxLake1)%ID))//'!',f_iFatal,ThisProcedure)
                     iStat = -1
                     RETURN
                 END IF
@@ -277,6 +261,35 @@ CONTAINS
         !Add GW nodes to LakeGWConnector
         CALL LakeGWConnector%AddGWNodes(indxLake,AppLake%Lakes(indxLake)%Elements,AppGrid,Stratigraphy)
         
+    END DO
+    
+    !Process outflow destinations
+    ALLOCATE (iLakeIDs(NLakes))
+    iLakeIDs = AppLake%Lakes%ID
+    DO indxLake=1,NLakes
+        ID      = iLakeIDs(indxLake)
+        iDestID = AppLake%Lakes(indxLake)%OutflowDest
+        SELECT CASE (AppLake%Lakes(indxLake)%OutflowDestType)
+            !If flow to stream, make sure that stream node is modeled
+            CASE (f_iFlowDest_StrmNode)
+                AppLake%Lakes(indxLake)%OutflowDest = iDestID
+                CALL StrmLakeConnector%AddData(f_iLakeToStrmFlow,indxLake,iDestID)
+            
+            !If flow to lake, make sure downstream lake is modeled
+            CASE (f_iFlowDest_Lake)
+                IF (iDestID .EQ. ID) THEN
+                    CALL SetLastMessage('Outflow from lake '//TRIM(IntToText(ID))//' cannot flow into itself!',f_iFatal,ThisProcedure)
+                    iStat = -1
+                    RETURN
+                END IF
+                iDest = LocateInList(iDestID,iLakeIDs)
+                IF (iDest .EQ. 0) THEN
+                    CALL SetLastMessage('Lake '//TRIM(IntToText(iDestID))//' as outflow destination for lake '//TRIM(IntToText(ID))//' is not in the model!',f_iFatal,ThisProcedure) 
+                    iStat = -1
+                    RETURN
+                END IF
+                AppLake%Lakes(indxLake)%OutflowDest = iDest                
+        END SELECT
     END DO
     
     !Close lake data file
@@ -321,8 +334,9 @@ CONTAINS
     CHARACTER                    :: ALine*2000,TimeUnitConductance*6,cLakeBudgetFileName*2000
     TYPE(BudgetHeaderType)       :: BudHeader
     REAL(8)                      :: FactK,DummyArray(6),FactL,CLAKE,DLAKE,FactC
-    INTEGER                      :: indxLake,ID,indx,iLoc
+    INTEGER                      :: indxLake,ID,indx,iLoc,iLakeIDs(AppLake%NLakes),iLake
     CHARACTER(:),ALLOCATABLE     :: cVersion,cAbsPathFileName
+    LOGICAL                      :: lProcessed(AppLake%NLakes)
     
     !Initialize
     iStat = 0
@@ -346,13 +360,13 @@ CONTAINS
     ALine = StripTextUntilCharacter(ALine,'/') 
     CALL CleanSpecialCharacters(ALine)
     IF (ALine .EQ. '') THEN
-        CALL SetLastMessage('Maximum lake elevations file must be specified when lakes are simulated!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Maximum lake elevations file must be specified when lakes are simulated!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
     ALLOCATE (AppLake%MaxLakeElevFile , AppLake%iColMaxElev(AppLake%NLakes))
     CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-    CALL AppLake%MaxLakeElevFile%New(cAbsPathFileName,TimeStep,iStat)
+    CALL AppLake%MaxLakeElevFile%New(cAbsPathFileName,cWorkingDirectory,TimeStep,iStat)
     IF (iStat .EQ. -1) RETURN
         
     !Lake budget raw file name
@@ -384,48 +398,58 @@ CONTAINS
     CALL LakeDataFile%ReadData(FactL,iStat)  ;  IF(iStat .EQ. -1) RETURN
 
     !Read lake parameters
+    lProcessed = .FALSE.
+    iLakeIDs   = AppLake%Lakes%ID
     DO indxLake=1,AppLake%NLakes
-      CALL LakeDataFile%ReadData(ALine,iStat)  ;  IF(iStat .EQ. -1) RETURN
-      READ (ALine,*) DummyArray
-      
-      !Make sure that lake data is entered sequentially
-      ID = INT(DummyArray(1))
-      IF (ID .NE. indxLake) THEN 
-          MessageArray(1) = 'Lake data should be entered sequentialy.'
-          MessageArray(2) = 'Expected lake = '//TRIM(IntToText(indxLake))
-          MessageArray(3) = 'Entered lake  = '//TRIM(IntToText(ID))
-          CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-          iStat = -1
-          RETURN
-      END IF
-      CLAKE                               = DummyArray(2)*FactK
-      DLAKE                               = DummyArray(3)*FactL
-      AppLake%iColMaxElev(indxLake)       = INT(DummyArray(4))
-      AppLake%Lakes(indxLake)%iColET      = INT(DummyArray(5))
-      AppLake%Lakes(indxLake)%iColPrecip  = INT(DummyArray(6))
-      FactC                               = CLAKE / DLAKE
-      
-      !Compile lake-gw connector
-      CALL LakeGWConnector%SetConductance(AppGrid,indxLake,TimeUnitConductance,FactC,iStat)
-      IF (iStat .EQ. -1) RETURN
- 
-      !Make sure that iColMaxElev is consistent with the data columns in the file
-      IF (AppLake%iColMaxElev(indxLake) .GT. AppLake%MaxLakeElevFile%iSize) THEN
-          MessageArray(1) = 'Maximum lake elevation data column for lake '//TRIM(IntToText(indxLake))//' is greater than the'
-          MessageArray(2) = 'available data columns in the Maximum Lake Elevations Data File!'
-          CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
-          iStat = -1
-          RETURN
-      END IF
-      
-      !Extract the name of the lake from ALine
-      CALL CleanSpecialCharacters(ALine)
-      ALine = ADJUSTL(ALine)
-      DO indx=1,SIZE(DummyArray)
-        iLoc  = FirstLocation(' ',ALine)
-        ALine = ADJUSTL(ALine(iLoc+1:))
-      END DO
-      AppLake%Lakes(indxLake)%cName = StripTextUntilCharacter(ADJUSTL(ALine),'/')
+        CALL LakeDataFile%ReadData(ALine,iStat)  ;  IF(iStat .EQ. -1) RETURN
+        READ (ALine,*) DummyArray
+        
+        !Make sure that lake ID number is recognized
+        ID = INT(DummyArray(1))
+        CALL ConvertID_To_Index(ID,iLakeIDs,iLake)
+        IF (iLake .EQ. 0) THEN 
+            CALL SetLastMessage('Lake ID '//TRIM(IntToText(ID))//' listed for lake parameters is not recognized!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        
+        !Make sure lake data was not entered previously
+        IF (lProcessed(iLake)) THEN
+            CALL SetLastMessage('Parameters for lake '//TRIM(IntToText(ID))//' are entered more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iLake) = .TRUE.
+        
+        !Process parameters
+        CLAKE                               = DummyArray(2)*FactK
+        DLAKE                               = DummyArray(3)*FactL
+        AppLake%iColMaxElev(iLake)       = INT(DummyArray(4))
+        AppLake%Lakes(iLake)%iColET      = INT(DummyArray(5))
+        AppLake%Lakes(iLake)%iColPrecip  = INT(DummyArray(6))
+        FactC                               = CLAKE / DLAKE
+        
+        !Compile lake-gw connector
+        CALL LakeGWConnector%SetConductance(AppGrid,iLake,TimeUnitConductance,FactC,iStat)
+        IF (iStat .EQ. -1) RETURN
+        
+        !Make sure that iColMaxElev is consistent with the data columns in the file
+        IF (AppLake%iColMaxElev(iLake) .GT. AppLake%MaxLakeElevFile%iSize) THEN
+            MessageArray(1) = 'Maximum lake elevation data column for lake '//TRIM(IntToText(ID))//' is greater than the'
+            MessageArray(2) = 'available data columns in the Maximum Lake Elevations Data File!'
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        
+        !Extract the name of the lake from ALine
+        CALL CleanSpecialCharacters(ALine)
+        ALine = ADJUSTL(ALine)
+        DO indx=1,SIZE(DummyArray)
+          iLoc  = FirstLocation(' ',ALine)
+          ALine = ADJUSTL(ALine(iLoc+1:))
+        END DO
+        AppLake%Lakes(iLake)%cName = StripTextUntilCharacter(ADJUSTL(ALine),'/')
       
     END DO
     
@@ -445,7 +469,7 @@ CONTAINS
     END IF
 
     !Initial lake elevations
-    CALL ReadInitialLakeElevs(LakeDataFile,AppLake%Lakes,iStat)
+    CALL ReadInitialLakeElevs(LakeDataFile,AppLake%Lakes,iLakeIDs,iStat)
     
     !Close file
     CALL LakeDataFile%Kill()
@@ -489,7 +513,7 @@ CONTAINS
         IF (cFileName .EQ. '') THEN
             MessageArray(1) = 'For proper simulation of lakes, relevant lake data files must'
             MessageArray(2) = 'be specified when lakes are defined in Pre-Processor.'
-            CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -501,14 +525,14 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INSTANTIATE COMPLETE LAKE DATA WITHOUT INTERMEDIATE BINARY FILE
   ! -------------------------------------------------------------
-  SUBROUTINE AppLake_v40_SetAllComponentsWithoutBinFile(AppLake,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,NStrmNodes,StrmLakeConnector,LakeGWConnector,iStat)
+  SUBROUTINE AppLake_v40_SetAllComponentsWithoutBinFile(AppLake,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,StrmLakeConnector,LakeGWConnector,iStat)
     CLASS(AppLake_v40_Type),INTENT(OUT)   :: AppLake
     LOGICAL,INTENT(IN)                    :: IsForInquiry
     CHARACTER(LEN=*),INTENT(IN)           :: cPPFileName,cSimFileName,cSimWorkingDirectory
     TYPE(AppGridType),INTENT(IN)          :: AppGrid
     TYPE(StratigraphyType),INTENT(IN)     :: Stratigraphy
     TYPE(TimeStepType),INTENT(IN)         :: TimeStep
-    INTEGER,INTENT(IN)                    :: NTIME,NStrmNodes
+    INTEGER,INTENT(IN)                    :: NTIME
     TYPE(StrmLakeConnectorType)           :: StrmLakeConnector
     TYPE(LakeGWConnectorType),INTENT(OUT) :: LakeGWConnector
     INTEGER,INTENT(OUT)                   :: iStat
@@ -520,7 +544,7 @@ CONTAINS
     iStat = 0
     
     !Instantiate the static components of the AppLake data
-    CALL AppLake%SetStaticComponent(cPPFileName,Stratigraphy,AppGrid,NStrmNodes,StrmLakeConnector,LakeGWConnector,iStat)
+    CALL AppLake%SetStaticComponent(cPPFileName,Stratigraphy,AppGrid,StrmLakeConnector,LakeGWConnector,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Instantiate the dynamic component of the AppLake data
@@ -532,7 +556,7 @@ CONTAINS
         IF (AppLake%MaxLakeElevFile%iSize .EQ. 0) THEN
             MessageArray(1) = 'For proper simulation of lakes, relevant lake data files must'
             MessageArray(2) = 'be specified when lakes are defined in Pre-Processor.'
-            CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -624,7 +648,7 @@ CONTAINS
     
     !Local variables
     CHARACTER(LEN=ModNameLen+22) :: ThisProcedure = ModName // 'AppLake_v40_ReadTSData'
-    INTEGER                      :: indxLake
+    INTEGER                      :: indxLake,ID
     REAL(8)                      :: rLowGSElev,rMaxElev
     
     !Initialzie
@@ -647,10 +671,11 @@ CONTAINS
             rLowGSElev = AppLake%Lakes(indxLake)%RatingTable%XPoint(1)
             rMaxElev   = AppLake%Lakes(indxLake)%MaxElev
             IF (rLowGSElev .GT. rMaxElev) THEN
-                MessageArray(1) = 'Maximum lake elevation at lake '//TRIM(IntToText(indxLake))//' is lower than lake bottom!'
+                ID              = AppLake%Lakes(indxLake)%ID
+                MessageArray(1) = 'Maximum lake elevation at lake '//TRIM(IntToText(ID))//' is lower than lake bottom!'
                 WRITE (MessageArray(2),'(A,F6.2)') 'Maximum lake elevation = ',rMaxElev
                 WRITE (MessageArray(3),'(A,F6.2)') 'Lake bottom elevation  = ',rLowGSElev
-                CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+                CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
@@ -686,7 +711,7 @@ CONTAINS
     INTEGER                           :: indxLake,NLakes,iDest,iNodeIDs(1)
     REAL(8),DIMENSION(AppLake%NLakes) :: StrmInflows,LakeGWFlow_AtMaxLakeElev
     REAL(8)                           :: Elev,rOutflow,rUpdateValues(1),rUpdateRHS(AppLake%NLakes),OtherInflow
-    INTEGER,PARAMETER                 :: iCompIDs(1) = [iLakeComp]
+    INTEGER,PARAMETER                 :: iCompIDs(1) = [f_iLakeComp]
     
     !Initialize
     NLakes                     =  AppLake%NLakes
@@ -696,8 +721,8 @@ CONTAINS
     
     !Compute inflows from streams
     DO indxLake=1,NLakes
-      StrmInflows(indxLake) = StrmLakeConnector%GetFlow(iStrmToLakeType,indxLake)  &
-                            + StrmLakeConnector%GetFlow(iBypassToLakeType,indxLake)
+      StrmInflows(indxLake) = StrmLakeConnector%GetFlow(f_iStrmToLakeFlow,indxLake)  &
+                            + StrmLakeConnector%GetFlow(f_iBypassToLakeFlow,indxLake)
     END DO
     
     !Lake-gw interaction at maximum lake elevations
@@ -726,21 +751,21 @@ CONTAINS
       IF (rOutflow .GT. 0.0) THEN
           iDest = AppLake%Lakes(indxLake)%OutflowDest
           SELECT CASE (AppLake%Lakes(indxLake)%OutflowDestType)
-              CASE (FlowDest_Lake)
+              CASE (f_iFlowDest_Lake)
                   AppLake%Lakes(iDest)%InflowUpLake = AppLake%Lakes(iDest)%InflowUpLake + rOutflow
-              CASE (FlowDest_StrmNode)
-                  CALL StrmLakeConnector%SetFlow(iLakeToStrmType,indxLake,iDest,rOutflow)
+              CASE (f_iFlowDest_StrmNode)
+                  CALL StrmLakeConnector%SetFlow(f_iLakeToStrmFlow,indxLake,iDest,rOutflow)
           END SELECT
       END IF
 
       !Update COEFF matrix
       rUpdateValues(1) = AppLake%Lakes(indxLake)%RatingTable%Derivative(Elev)
-      CALL Matrix%UpdateCOEFF(iLakeComp,indxLake,iCompIDs,iNodeIDs,rUpdateValues)
+      CALL Matrix%UpdateCOEFF(f_iLakeComp,indxLake,1,iCompIDs,iNodeIDs,rUpdateValues)
         
     END DO
     
     !Update RHS vector
-    CALL Matrix%UpdateRHS(iLakeComp,1,rUpdateRHS)
+    CALL Matrix%UpdateRHS(f_iLakeComp,1,rUpdateRHS)
 
   END SUBROUTINE AppLake_v40_Simulate
   
@@ -780,7 +805,7 @@ CONTAINS
     
     !Local variables
     CHARACTER(Len=ModNameLen+39) :: ThisProcedure = ModName // 'AppLake_v40_CheckExternalTSDataPointers'
-    INTEGER                      :: iLake(1)
+    INTEGER                      :: iLake(1),ID
     
     !Initialize
     iStat = 0
@@ -788,9 +813,10 @@ CONTAINS
     !Check precip columns
     IF (Precip%GetNDataColumns() .LT. MAXVAL(AppLake%Lakes%iColPrecip)) THEN
         iLake = MAXLOC(AppLake%Lakes%iColPrecip)
-        MessageArray(1) = 'Precipitation data column for lake '//TRIM(IntToText(iLake(1)))//' is greater than the'
+        ID    = AppLake%Lakes(iLake(1))%ID
+        MessageArray(1) = 'Precipitation data column for lake '//TRIM(IntToText(ID))//' is greater than the'
         MessageArray(2) = 'available data columns in the Precipitation Data file!'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -798,9 +824,10 @@ CONTAINS
     !Check ET columns
     IF (ET%GetNDataColumns() .LT. MAXVAL(AppLake%Lakes%iColET)) THEN
         iLake = MAXLOC(AppLake%Lakes%iColET)
-        MessageArray(1) = 'Evapotranspiration data column for lake '//TRIM(IntToText(iLake(1)))//' is greater than the'
+        ID    = AppLake%Lakes(iLake(1))%ID
+        MessageArray(1) = 'Evapotranspiration data column for lake '//TRIM(IntToText(ID))//' is greater than the'
         MessageArray(2) = 'available data columns in the Evapotranspiration Data file!'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF

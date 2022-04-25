@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,27 +21,39 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Package_RootZone
-  USE Class_Version              , ONLY : VersionType                        ,  &
+  USE Class_Version              , ONLY : VersionType                        , &
                                           ReadVersion                        
-  USE MessageLogger              , ONLY : SetLastMessage                     ,  & 
-                                          EchoProgress                       ,  &
-                                          MessageArray                       ,  &
-                                          iFatal                             
+  USE MessageLogger              , ONLY : SetLastMessage                     , & 
+                                          EchoProgress                       , &
+                                          MessageArray                       , &
+                                          f_iFatal                             
   USE TimeSeriesUtilities        , ONLY : TimeStepType                       
-  USE GeneralUtilities           , ONLY : FirstLocation                      ,  &
-                                          CleanSpecialCharacters             ,  &
-                                          NormalizeArray
+  USE GeneralUtilities           , ONLY : FirstLocation                      , &
+                                          CleanSpecialCharacters             , &
+                                          FindSubStringInString              , &
+                                          NormalizeArray                     , &
+                                          IntToText                          , &
+                                          ConvertID_To_Index
   USE IOInterface                , ONLY : GenericFileType                    
-  USE Package_Misc               , ONLY : FlowDest_Element                   ,  &
-                                          FlowDest_Subregion                 ,  &
-                                          iSupply_Diversion                  ,  &
-                                          iSupply_ElemPump                   ,  &
-                                          iSupply_Well
+  USE Package_Misc               , ONLY : f_iLocationType_Subregion          , &
+                                          f_iFlowDest_Element                , &
+                                          f_iFlowDest_Subregion              , &
+                                          f_iSupply_Diversion                , &
+                                          f_iSupply_ElemPump                 , &
+                                          f_iSupply_Well                     
   USE Package_Discretization     , ONLY : AppGridType
   USE Class_BaseRootZone         , ONLY : BaseRootZoneType                   , &
                                           ElementLU_InterpolateExtrapolate   , &
                                           iMeasuredLUDataForSubregion        , &
                                           iMeasuredLUDataForModelDomain 
+  USE Util_Package_RootZone      , ONLY : f_iBudgetType_LWU                  , &
+                                          f_iBudgetType_RootZone             , &
+                                          f_iBudgetType_NonPondedCrop_LWU    , &
+                                          f_iBudgetType_NonPondedCrop_RZ     , & 
+                                          f_iBudgetType_PondedCrop_LWU       , &
+                                          f_iBudgetType_PondedCrop_RZ        , & 
+                                          f_iZBudgetType_RootZone            , &
+                                          f_iZBudgetType_LWU             
   USE RootZone_v40               , ONLY : RootZone_v40_Type
   USE RootZone_v401              , ONLY : RootZone_v401_Type
   USE RootZone_v41               , ONLY : RootZone_v41_Type
@@ -49,6 +61,10 @@ MODULE Package_RootZone
   USE RootZone_v50               , ONLY : RootZone_v50_Type 
   USE Package_PrecipitationET    , ONLY : PrecipitationType                  ,  &
                                           ETType
+  USE Package_ComponentConnectors, ONLY : SupplyDestinationConnectorType
+  USE Package_ZBudget            , ONLY : ZBudgetType                        , &
+                                          ZoneListType
+  USE Package_Budget             , ONLY : BudgetType
   IMPLICIT NONE
   
   
@@ -70,7 +86,15 @@ MODULE Package_RootZone
   PUBLIC :: RootZoneType                       , &
             ElementLU_InterpolateExtrapolate   , &
             iMeasuredLUDataForSubregion        , &
-            iMeasuredLUDataForModelDomain 
+            iMeasuredLUDataForModelDomain      , &
+            f_iBudgetType_LWU                  , &
+            f_iBudgetType_RootZone             , &
+            f_iBudgetType_NonPondedCrop_LWU    , &
+            f_iBudgetType_NonPondedCrop_RZ     , & 
+            f_iBudgetType_PondedCrop_LWU       , &
+            f_iBudgetType_PondedCrop_RZ        , &
+            f_iZBudgetType_RootZone            , &
+            f_iZBudgetType_LWU             
   
   
   ! -------------------------------------------------------------
@@ -83,20 +107,29 @@ MODULE Package_RootZone
   CONTAINS
       PROCEDURE,PASS   :: New
       PROCEDURE,PASS   :: Kill
-      PROCEDURE,PASS   :: GetNDataList_AtLocationType
-      PROCEDURE,PASS   :: GetDataList_AtLocationType
-      PROCEDURE,PASS   :: GetLocationsWithData
-      PROCEDURE,PASS   :: GetSubDataList_AtLocation
-      PROCEDURE,PASS   :: GetModelData_AtLocation
+      PROCEDURE,PASS   :: GetMaxAndMinNetReturnFlowFrac
+      PROCEDURE,PASS   :: GetBudget_NColumns
+      PROCEDURE,PASS   :: GetBudget_ColumnTitles
+      PROCEDURE,PASS   :: GetBudget_List
+      PROCEDURE,PASS   :: GetBudget_MonthlyFlows_GivenRootZone
+      PROCEDURE,NOPASS :: GetBudget_MonthlyFlows_GivenFile
+      PROCEDURE,PASS   :: GetBudget_TSData
+      PROCEDURE,PASS   :: GetZBudget_List
+      PROCEDURE,PASS   :: GetZBudget_NColumns
+      PROCEDURE,PASS   :: GetZBudget_ColumnTitles
+      PROCEDURE,PASS   :: GetZBudget_MonthlyFlows_GivenRootZone
+      PROCEDURE,NOPASS :: GetZBudget_MonthlyFlows_GivenFile
+      PROCEDURE,PASS   :: GetZBudget_TSData
       PROCEDURE,PASS   :: GetNAgCrops
       PROCEDURE,PASS   :: GetNDemandLocations
       PROCEDURE,PASS   :: GetDemandCalcLocation
+      PROCEDURE,PASS   :: GetElementPrecip
       PROCEDURE,PASS   :: GetElementPrecipInfilt
       PROCEDURE,PASS   :: GetElementActualET
-      PROCEDURE,PASS   :: GetWaterDemand_Ag                     
-      PROCEDURE,PASS   :: GetWaterDemand_Urb                    
-      PROCEDURE,PASS   :: GetWaterSupply_Ag                      
-      PROCEDURE,PASS   :: GetWaterSupply_Urb
+      PROCEDURE,PASS   :: GetWaterDemandAll                     
+      PROCEDURE,PASS   :: GetWaterDemandAtLocations                     
+      PROCEDURE,PASS   :: GetWaterSupply                      
+      PROCEDURE,PASS   :: GetSupplyShortAtDestination_ForSomeSupplies
       PROCEDURE,PASS   :: GetElementAgAreas                            
       PROCEDURE,PASS   :: GetElementUrbanAreas 
       PROCEDURE,PASS   :: GetElementNativeVegAreas 
@@ -122,6 +155,7 @@ MODULE Package_RootZone
       PROCEDURE,PASS   :: GetRegionalPerc 
       PROCEDURE,PASS   :: GetRegionalReturnFlow_Ag 
       PROCEDURE,PASS   :: GetRegionalReturnFlow_Urb 
+      PROCEDURE,PASS   :: GetFutureWaterDemands
       PROCEDURE,NOPASS :: GetVersion 
       PROCEDURE,PASS   :: SetSupply
       PROCEDURE,PASS   :: SetLakeElemFlag                       
@@ -129,15 +163,23 @@ MODULE Package_RootZone
       PROCEDURE,PASS   :: IsDefined
       PROCEDURE,PASS   :: IsLandUseUpdated
       PROCEDURE,PASS   :: ComputeWaterDemand
+      PROCEDURE,PASS   :: ComputeFutureWaterDemands
       PROCEDURE,PASS   :: Simulate 
       PROCEDURE,PASS   :: ConvertTimeUnit   
       PROCEDURE,PASS   :: ReadTSData                            
       PROCEDURE,PASS   :: ReadRestartData
       PROCEDURE,PASS   :: AdvanceState                          
       PROCEDURE,PASS   :: ZeroSupply                            
+      PROCEDURE,PASS   :: ZeroSurfaceFlows                            
       PROCEDURE,PASS   :: PrintResults
       PROCEDURE,PASS   :: PrintRestartData
       PROCEDURE,PASS   :: ComputeGWInflow
+      GENERIC          :: GetWaterDemand          => GetWaterDemandAll                      , &
+                                                     GetWaterDemandAtLocations 
+      GENERIC          :: GetBudget_MonthlyFlows  => GetBudget_MonthlyFlows_GivenFile       , &
+                                                     GetBudget_MonthlyFlows_GivenRootZone 
+      GENERIC          :: GetZBudget_MonthlyFlows => GetZBudget_MonthlyFlows_GivenFile      , &
+                                                     GetZBudget_MonthlyFlows_GivenRootZone 
   END TYPE RootZoneType
   
 
@@ -175,21 +217,22 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW ROOT ZONE DATA
   ! -------------------------------------------------------------
-  SUBROUTINE New(RootZone,IsForInquiry,cFileName,cWorkingDirectory,AppGrid,NStrmNodes,NLakes,TimeStep,NTIME,ET,Precip,iStat)
+  SUBROUTINE New(RootZone,IsForInquiry,cFileName,cWorkingDirectory,AppGrid,TimeStep,NTIME,ET,Precip,iStat,iStrmNodeIDs,iLakeIDs)
     CLASS(RootZoneType),INTENT(OUT)    :: RootZone
     LOGICAL,INTENT(IN)                 :: IsForInquiry
     CHARACTER(LEN=*),INTENT(IN)        :: cFileName,cWorkingDirectory
     TYPE(AppGridType),INTENT(IN)       :: AppGrid
     TYPE(TimeStepType),INTENT(IN)      :: TimeStep
-    INTEGER,INTENT(IN)                 :: NStrmNodes,NLakes,NTIME
+    INTEGER,INTENT(IN)                 :: NTIME
     TYPE(ETType),INTENT(IN)            :: ET
     TYPE(PrecipitationType),INTENT(IN) :: Precip
     INTEGER,INTENT(OUT)                :: iStat
+    INTEGER,OPTIONAL,INTENT(IN)        :: iStrmNodeIDs(:),iLakeIDs(:)
     
     !Local variables
-    CHARACTER(LEN=ModNameLen+3)          :: ThisProcedure = ModName // 'New'
-    TYPE(GenericFileType)                :: RootZoneParamFile
-    CHARACTER(:),ALLOCATABLE             :: cVersion
+    CHARACTER(LEN=ModNameLen+3) :: ThisProcedure = ModName // 'New'
+    TYPE(GenericFileType)       :: RootZoneParamFile
+    CHARACTER(:),ALLOCATABLE    :: cVersion
     
     !Initialize
     iStat = 0
@@ -208,38 +251,43 @@ CONTAINS
     !If instantaited, kill RootZone object
     IF (ALLOCATED(RootZone%Me)) CALL RootZone%Kill()
     
-    !Instantiate root zone data based on version
+    !Allocate memory based on version
     SELECT CASE (TRIM(cVersion))
         CASE ('5.0')
             ALLOCATE(RootZone_v50_Type :: RootZone%Me)
-            CALL RootZone%Me%New(IsForInquiry,cFileName,cWorkingDirectory,AppGrid,NStrmNodes,NLakes,TimeStep,NTIME,ET,Precip,iStat)
-            IF (iStat .EQ. -1) RETURN
             RootZone%iVersion = 50
         CASE ('4.0')
             ALLOCATE(RootZone_v40_Type :: RootZone%Me)
-            CALL RootZone%Me%New(IsForInquiry,cFileName,cWorkingDirectory,AppGrid,NStrmNodes,NLakes,TimeStep,NTIME,ET,Precip,iStat)
-            IF (iStat .EQ. -1) RETURN
             RootZone%iVersion = 40
         CASE ('4.01')
             ALLOCATE(RootZone_v401_Type :: RootZone%Me)
-            CALL RootZone%Me%New(IsForInquiry,cFileName,cWorkingDirectory,AppGrid,NStrmNodes,NLakes,TimeStep,NTIME,ET,Precip,iStat)
-            IF (iStat .EQ. -1) RETURN
             RootZone%iVersion = 401
         CASE ('4.1')
             ALLOCATE(RootZone_v41_Type :: RootZone%Me)
-            CALL RootZone%Me%New(IsForInquiry,cFileName,cWorkingDirectory,AppGrid,NStrmNodes,NLakes,TimeStep,NTIME,ET,Precip,iStat)
-            IF (iStat .EQ. -1) RETURN
             RootZone%iVersion = 41
         CASE ('4.11')
             ALLOCATE(RootZone_v411_Type :: RootZone%Me)
-            CALL RootZone%Me%New(IsForInquiry,cFileName,cWorkingDirectory,AppGrid,NStrmNodes,NLakes,TimeStep,NTIME,ET,Precip,iStat)
-            IF (iStat .EQ. -1) RETURN
             RootZone%iVersion = 411
         CASE DEFAULT
-            CALL SetLastMessage('Root Zone Component version number is not recognized ('//TRIM(cVersion)//')!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Root Zone Component version number is not recognized ('//TRIM(cVersion)//')!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
     END SELECT
+        
+    !Now, instantiate
+    IF (PRESENT(iStrmNodeIDs)) THEN
+        IF (PRESENT(iLakeIDs)) THEN
+            CALL RootZone%Me%New(IsForInquiry,cFileName,cWorkingDirectory,AppGrid,TimeStep,NTIME,ET,Precip,iStat,iStrmNodeIDs=iStrmNodeIDs,iLakeIDs=iLakeIDs)
+        ELSE
+            CALL RootZone%Me%New(IsForInquiry,cFileName,cWorkingDirectory,AppGrid,TimeStep,NTIME,ET,Precip,iStat,iStrmNodeIDs=iStrmNodeIDs)
+        END IF
+    ELSE
+        IF (PRESENT(iLakeIDs)) THEN
+            CALL RootZone%Me%New(IsForInquiry,cFileName,cWorkingDirectory,AppGrid,TimeStep,NTIME,ET,Precip,iStat,iLakeIDs=iLakeIDs)
+        ELSE
+            CALL RootZone%Me%New(IsForInquiry,cFileName,cWorkingDirectory,AppGrid,TimeStep,NTIME,ET,Precip,iStat)
+        END IF
+    END IF
     
   END SUBROUTINE New
   
@@ -265,7 +313,7 @@ CONTAINS
     !Local variables
     TYPE(RootZoneType) :: Dummy
     
-    IF (RootZone%iVersion .EQ. 0) RETURN
+    IF (.NOT. ALLOCATED(RootZone%Me)) RETURN
     
     CALL RootZone%Me%Kill()
     DEALLOCATE (RootZone%Me)
@@ -319,6 +367,7 @@ CONTAINS
   
   
 
+  
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
@@ -330,108 +379,398 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
-  ! --- GET NUMBER OF DATA TYPES FOR POST-PROCESSING AT A LOCATION TYPE
+  ! --- GET BUDGET LIST 
   ! -------------------------------------------------------------
-  FUNCTION GetNDataList_AtLocationType(RootZone,iLocationType) RESULT(NData)
-    CLASS(RootZoneType),INTENT(IN) :: RootZone
-    INTEGER,INTENT(IN)             :: iLocationType
-    INTEGER                        :: NData
-    
-    IF (ALLOCATED(RootZone%Me)) THEN
-        NData = RootZone%Me%GetNDataList_AtLocationType(iLocationType)
-    ELSE
-        NData = 0
-    END IF
-    
-  END FUNCTION GetNDataList_AtLocationType
-
-  
-  ! -------------------------------------------------------------
-  ! --- GET THE LIST OF DATA TYPES FOR POST-PROCESSING AT A LOCATION TYPE
-  ! -------------------------------------------------------------
-  SUBROUTINE GetDataList_AtLocationType(RootZone,iLocationType,cDataList,cFileList,lBudgetType)
-    CLASS(RootZoneType),INTENT(IN) :: RootZone
-    INTEGER,INTENT(IN)             :: iLocationType
-    CHARACTER(LEN=*),ALLOCATABLE   :: cDataList(:),cFileList(:)
-    LOGICAL,ALLOCATABLE            :: lBudgetType(:)
-    
-    !Local variables
-    INTEGER :: ErrorCode
-    
-    IF (ALLOCATED(RootZone%Me)) THEN
-        CALL RootZone%Me%GetDataList_AtLocationType(iLocationType,cDataList,cFileList,lBudgetType)
-    ELSE
-        DEALLOCATE (cDataList ,STAT=ErrorCode)
-        DEALLOCATE (cFileList ,STAT=ErrorCode)
-        DEALLOCATE (lBudgetType ,STAT=ErrorCode)
-    END IF
-    
-  END SUBROUTINE GetDataList_AtLocationType
-
-  
-  ! -------------------------------------------------------------
-  ! --- GET LOCATIONS THAT HAS A DATA TYPE FOR POST-PROCESSING
-  ! -------------------------------------------------------------
-  SUBROUTINE GetLocationsWithData(RootZone,iLocationType,cDataType,iLocations)
-    CLASS(RootZoneType),INTENT(IN)     :: RootZone
-    INTEGER,INTENT(IN)                 :: iLocationType
-    CHARACTER(LEN=*),INTENT(IN)        :: cDataType
-    INTEGER,ALLOCATABLE,INTENT(OUT)    :: iLocations(:)
-    
-    !Local variables
-    INTEGER :: ErrorCode
-    
-    IF (ALLOCATED(RootZone%Me)) THEN
-        CALL RootZone%Me%GetLocationsWithData(iLocationType,cDataType,iLocations)
-    ELSE
-        DEALLOCATE (iLocations ,STAT=ErrorCode)
-    END IF
-    
-  END SUBROUTINE GetLocationsWithData
-
-  
-  ! -------------------------------------------------------------
-  ! --- GET THE LIST OF SUB-DATA TYPES FOR POST-PROCESSING AT A LOCATION TYPE
-  ! -------------------------------------------------------------
-  SUBROUTINE GetSubDataList_AtLocation(RootZone,iLocationType,cDataType,cSubDataList)
+  SUBROUTINE GetBudget_List(RootZone,iBudgetTypeList,iBudgetLocationTypeList,cBudgetDescriptions,cBudgetFiles)
     CLASS(RootZoneType),INTENT(IN)           :: RootZone
-    INTEGER,INTENT(IN)                       :: iLocationType
-    CHARACTER(LEN=*),INTENT(IN)              :: cDataType
-    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cSubDataList(:)
-    
-    !Local variables
-    INTEGER :: ErrorCode
+    INTEGER,ALLOCATABLE,INTENT(OUT)          :: iBudgetTypeList(:),iBudgetLocationTypeList(:)          
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cBudgetDescriptions(:),cBudgetFiles(:)
     
     IF (ALLOCATED(RootZone%Me)) THEN
-        CALL RootZone%Me%GetSubDataList_AtLocation(iLocationType,cDataType,cSubDataList)
+        CALL RootZone%Me%GetBudget_List(iBudgetTypeList,iBudgetLocationTypeList,cBudgetDescriptions,cBudgetFiles)
     ELSE
-        DEALLOCATE (cSubDataList , STAT=ErrorCode)
+        ALLOCATE (iBudgetTypeList(0) , iBudgetLocationTypeList(0) , cBudgetDescriptions(0) , cBudgetFiles(0))
     END IF
-    
-  END SUBROUTINE GetSubDataList_AtLocation
+        
+  END SUBROUTINE GetBudget_List
   
   
   ! -------------------------------------------------------------
-  ! --- GET MODEL DATA AT A LOCATION FOR POST-PROCESSING
+  ! --- GET NUMBER OF BUDGET FILE COLUMNS
   ! -------------------------------------------------------------
-  SUBROUTINE GetModelData_AtLocation(RootZone,iZExtent,iElems,iLayers,iZones,iZonesWithNames,cZoneNames,iLocationType,iLocationID,cDataType,iCol,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-    CLASS(RootZoneType)         :: RootZone
-    INTEGER,INTENT(IN)          :: iZExtent,iElems(:),iLayers(:),iZones(:),iZonesWithNames(:),iLocationType,iLocationID,iCol
-    CHARACTER(LEN=*),INTENT(IN) :: cZoneNames(:),cDataType,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval
-    REAL(8),INTENT(IN)          :: rFact_LT,rFact_AR,rFact_VL
-    INTEGER,INTENT(OUT)         :: iDataUnitType,nActualOutput
-    REAL(8),INTENT(OUT)         :: rOutputDates(:),rOutputValues(:)
-    INTEGER,INTENT(OUT)         :: iStat
+  SUBROUTINE GetBudget_NColumns(RootZone,iBudgetType,iLocationIndex,iNCols,iStat)
+    CLASS(RootZoneType),INTENT(IN) :: RootZone
+    INTEGER,INTENT(IN)             :: iBudgetType,iLocationIndex
+    INTEGER,INTENT(OUT)            :: iNCols,iStat
     
     IF (ALLOCATED(RootZone%Me)) THEN
-        CALL RootZone%Me%GetModelData_AtLocation(iZExtent,iElems,iLayers,iZones,iZonesWithNames,cZoneNames,iLocationType,iLocationID,cDataType,iCol,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
+        CALL RootZone%Me%GetBudget_NColumns(iBudgetType,iLocationIndex,iNCols,iStat)
     ELSE
+        iStat  = 0
+        iNCols = 0
+    END IF
+                
+  END SUBROUTINE GetBudget_NColumns
+     
+     
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET COLUMN TITLES
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_ColumnTitles(RootZone,iBudgetType,iLocationIndex,cUnitLT,cUnitAR,cUnitVL,cColTitles,iStat)
+    CLASS(RootZoneType),INTENT(IN)           :: RootZone
+    INTEGER,INTENT(IN)                       :: iBudgetType,iLocationIndex
+    CHARACTER(LEN=*),INTENT(IN)              :: cUnitLT,cUnitAR,cUnitVL
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cColTitles(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+
+    IF (ALLOCATED(RootZone%Me)) THEN
+        CALL RootZone%Me%GetBudget_ColumnTitles(iBudgetType,iLocationIndex,cUnitLT,cUnitAR,cUnitVL,cColTitles,iStat)
+    ELSE
+        iStat = 0
+        ALLOCATE (cColTitles(0))
+    END IF
+
+  END SUBROUTINE GetBudget_ColumnTitles
+     
+     
+  ! -------------------------------------------------------------
+  ! --- GET MONTHLY BUDGET FLOWS FROM RootZone OBJECT
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_MonthlyFlows_GivenRootZone(RootZone,iBudgetType,iLUType,iSubregionID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    CLASS(RootZoneType),INTENT(IN)           :: RootZone
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate
+    INTEGER,INTENT(IN)                       :: iBudgetType,iLUType,iSubregionID  
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)     !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    IF (ALLOCATED(RootZone%Me)) THEN
+        CALL RootZone%Me%GetBudget_MonthlyFlows_GivenRootZone(iBudgetType,iLUType,iSubregionID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    ELSE
+        ALLOCATE (rFlows(0,0) , cFlowNames(0))
         iStat = 0
     END IF
     
-  END SUBROUTINE GetModelData_AtLocation
+  END SUBROUTINE GetBudget_MonthlyFlows_GivenRootZone
   
+  
+  ! -------------------------------------------------------------
+  ! --- GET MONTHLY BUDGET FLOWS FROM A DEFINED BUDGET FILE
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_MonthlyFlows_GivenFile(Budget,iBudgetType,iLUType,iSubregionID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    TYPE(BudgetType),INTENT(IN)              :: Budget          !Assumes Budget file is already open
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate
+    INTEGER,INTENT(IN)                       :: iBudgetType,iLUType,iSubregionID  
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)     !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat
     
+    !Local variables
+    CHARACTER(LEN=ModNameLen+32) :: ThisProcedure = ModName // 'GetBudget_MonthlyFlows_GivenFile'
+    INTEGER                      :: iErrorCode  
+    CHARACTER(:),ALLOCATABLE     :: cVersion
+    TYPE(RootZoneType)           :: RootZone
+    
+    !Get version number
+    CALL GetPackageVersion(Budget,cVersion)
+    
+    !Based on component version, allocate base stream type
+    SELECT CASE (cVersion)
+        CASE ('4.0')
+            ALLOCATE(RootZone_v40_Type :: RootZone%Me)
+        CASE ('4.01')
+            ALLOCATE(RootZone_v401_Type :: RootZone%Me)
+        CASE ('4.1')
+            ALLOCATE(RootZone_v41_Type :: RootZone%Me)
+        CASE ('4.11')
+            ALLOCATE(RootZone_v411_Type :: RootZone%Me)
+        CASE ('5.0')
+            ALLOCATE(RootZone_v50_Type :: RootZone%Me)
+        CASE DEFAULT
+            CALL SetLastMessage('Root Zone Component version number is not recognized ('//TRIM(cVersion)//')!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+    END SELECT
+        
+    !Get monthly data    
+    CALL RootZone%Me%GetBudget_MonthlyFlows_GivenFile(Budget,iBudgetType,iLUType,iSubregionID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    
+    !Clear memory
+    DEALLOCATE (RootZone%Me , cVersion , STAT=iErrorCode)
+    
+  CONTAINS
+   
+    !#######################################################
+    !### FIND THE VERSION NUMBER OF THE STREAM PACKAGE USED
+    !#######################################################
+    SUBROUTINE GetPackageVersion(Budget,cVersion)
+      TYPE(BudgetType),INTENT(IN) :: Budget
+      CHARACTER(:),ALLOCATABLE,INTENT(OUT) :: cVersion
+      
+      !Local variables
+      INTEGER                      :: iNTitles,iLenTitles,indx,iLoc
+      CHARACTER(LEN=:),ALLOCATABLE :: cTitles(:)
+      CHARACTER(:),ALLOCATABLE     :: cTitlesConc
+     
+      !Get the ASCII titles from the Budget file; one of these titles include component version number
+      iNTitles   = Budget%GetNPersistentTitles()
+      iLenTitles = Budget%GetTitleLen()
+      ALLOCATE (CHARACTER(iLenTitles) :: cTitles(iNTitles))
+      cTitles = Budget%GetPersistentTitles(iNTitles)
+      
+      !Concotonate titles
+      ALLOCATE (CHARACTER(LEN=iNTitles*iLenTitles) :: cTitlesConc)
+      cTitlesConc = ''
+      DO indx=1,iNTitles
+          cTitlesConc = TRIM(cTitlesConc) // TRIM(ADJUSTL(cTitles(indx)))
+      END DO  
+      
+      !Check for version 4.0
+      CALL FindSubStringInString('v4.0.',TRIM(cTitlesConc),iLoc)
+      IF (iLoc .GT. 0) THEN
+          ALLOCATE (CHARACTER(3) :: cVersion)
+          cVersion = '4.0'
+          RETURN
+      END IF 
+      
+      !Check for version 4.01
+      CALL FindSubStringInString('v4.01.',TRIM(cTitlesConc),iLoc)
+      IF (iLoc .GT. 0) THEN
+          ALLOCATE (CHARACTER(4) :: cVersion)
+          cVersion = '4.01'
+          RETURN
+      END IF  
+
+      !Check for version 4.1
+      CALL FindSubStringInString('v4.1.',TRIM(cTitlesConc),iLoc)
+      IF (iLoc .GT. 0) THEN
+          ALLOCATE (CHARACTER(3) :: cVersion)
+          cVersion = '4.1'
+          RETURN
+      END IF  
+
+      !Check for version 4.11
+      CALL FindSubStringInString('v4.11.',TRIM(cTitlesConc),iLoc)
+      IF (iLoc .GT. 0) THEN
+          ALLOCATE (CHARACTER(4) :: cVersion)
+          cVersion = '4.11'
+          RETURN
+      END IF  
+
+      !Check for version 5.0
+      CALL FindSubStringInString('v5.0.',TRIM(cTitlesConc),iLoc)
+      IF (iLoc .GT. 0) THEN
+          ALLOCATE (CHARACTER(3) :: cVersion)
+          cVersion = '5.0'
+          RETURN
+      END IF 
+      
+      !If made to this point, something is wrong
+      ALLOCATE (CHARACTER(3) :: cVersion)
+      cVersion = '0.0'
+
+    END SUBROUTINE GetPackageVersion
+    
+  END SUBROUTINE GetBudget_MonthlyFlows_GivenFile
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET TIME SERIES DATA FOR A SET OF COLUMNS 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_TSData(RootZone,iBudgetType,iSubregionID,iCols,cBeginDate,cEndDate,cInterval,rFactLT,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+    CLASS(RootZoneType),INTENT(IN) :: RootZone
+    INTEGER,INTENT(IN)             :: iBudgetType,iSubregionID,iCols(:)
+    CHARACTER(LEN=*),INTENT(IN)    :: cBeginDate,cEndDate,cInterval
+    REAL(8),INTENT(IN)             :: rFactLT,rFactAR,rFactVL
+    REAL(8),INTENT(OUT)            :: rOutputDates(:),rOutputValues(:,:)    !rOutputValues is in (timestep,column) format
+    INTEGER,INTENT(OUT)            :: iDataTypes(:),inActualOutput,iStat
+    
+    IF (ALLOCATED(RootZone%Me)) THEN    
+        CALL RootZone%Me%GetBudget_TSData(iBudgetType,iSubregionID,iCols,cBeginDate,cEndDate,cInterval,rFactLT,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+    ELSE
+        iStat          = 0
+        inActualOutput = 0
+        iDataTypes     = -1
+        rOutputDates   = 0.0
+        rOutputValues  = 0.0
+    END IF
+           
+  END SUBROUTINE GetBudget_TSData
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET MAXIMUM AND MINIMUM NET RETURN FLOW FRACTIONS USED DURING THE ENTIRE SIMULATION PERIOD
+  ! -------------------------------------------------------------
+  SUBROUTINE GetMaxAndMinNetReturnFlowFrac(RootZone,FirstTimeStep,rMaxFrac,rMinFrac,iStat)
+    CLASS(RootZoneType)           :: RootZone
+    TYPE(TimeStepType),INTENT(IN) :: FirstTimeStep
+    REAL(8),INTENT(OUT)           :: rMaxFrac,rMinFrac
+    INTEGER,INTENT(OUT)           :: iStat
+    
+    IF (ALLOCATED(RootZone%Me)) THEN
+        CALL RootZone%Me%GetMaxAndMinNetReturnFlowFrac(FirstTimeStep,rMaxFrac,rMinFrac,iStat)
+    ELSE
+        rMaxFrac = 1.0
+        rMinFrac = 0.0
+        iStat    = 0
+    END IF
+    
+  END SUBROUTINE GetMaxAndMinNetReturnFlowFrac
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET Z-BUDGET LIST (THIS WILL BE OVERWRITTEN WITH VERSIONS THAT HAVE ZBUDGET OUTPUT)
+  ! -------------------------------------------------------------
+  SUBROUTINE GetZBudget_List(RootZone,iZBudgetTypeList,cZBudgetDescriptions,cZBudgetFiles)
+     CLASS(RootZoneType),INTENT(IN)           :: RootZone
+     INTEGER,ALLOCATABLE,INTENT(OUT)          :: iZBudgetTypeList(:)          
+     CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cZBudgetDescriptions(:),cZBudgetFiles(:)
+     
+    IF (ALLOCATED(RootZone%Me)) THEN
+        CALL RootZone%Me%GetZBudget_List(iZBudgetTypeList,cZBudgetDescriptions,cZBudgetFiles)
+    ELSE
+        ALLOCATE (iZBudgetTypeList(0) , cZBudgetDescriptions(0) , cZBudgetFiles(0))
+    END IF
+     
+  END SUBROUTINE GetZBudget_List
+
+
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF COLUMNS FOR A ZBUDGET FILE (TIME COLUMN EXCLUDED)
+  ! -------------------------------------------------------------
+  FUNCTION GetZBudget_NColumns(RootZone,iZBudgetType) RESULT(iNCols)
+     CLASS(RootZoneType),INTENT(IN) :: RootZone
+     INTEGER,INTENT(IN)             :: iZBudgetType
+     INTEGER                        :: iNCols
+     
+    IF (ALLOCATED(RootZone%Me)) THEN
+        iNCols = RootZone%Me%GetZBudget_NColumns(iZBudgetType)
+    ELSE
+        iNCols = 0
+    END IF
+    
+  END FUNCTION GetZBudget_NColumns
+
+
+  ! -------------------------------------------------------------
+  ! --- GET COLUMN TITLES FOR A ZBUDGET FILE (TIME COlUMN EXCLUDED)
+  ! -------------------------------------------------------------
+  SUBROUTINE GetZBudget_ColumnTitles(RootZone,iZBudgetType,cUnitAR,cUnitVL,cColTitles,iStat)
+     CLASS(RootZoneType),INTENT(IN)           :: RootZone
+     INTEGER,INTENT(IN)                       :: iZBudgetType
+     CHARACTER(LEN=*),INTENT(IN)              :: cUnitAR,cUnitVL
+     CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cColTitles(:)
+     INTEGER,INTENT(OUT)                      :: iStat
+     
+    IF (ALLOCATED(RootZone%Me)) THEN
+        CALL RootZone%Me%GetZBudget_ColumnTitles(iZBudgetType,cUnitAR,cUnitVL,cColTitles,iStat)
+    ELSE
+        iStat = 0
+        ALLOCATE (cColTitles(0))
+    END IF
+    
+  END SUBROUTINE GetZBudget_ColumnTitles
+
+
+  ! -------------------------------------------------------------
+  ! --- RETRIEVE MONTHLY FLOW TERMS FROM RootZone OBJECT
+  ! -------------------------------------------------------------
+  SUBROUTINE GetZBudget_MonthlyFlows_GivenRootZone(RootZone,iZBudgetType,iLUType,iZoneID,iZExtent,iElems,iLayers,iZoneIDs,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    CLASS(RootZoneType),INTENT(IN)           :: RootZone 
+    INTEGER,INTENT(IN)                       :: iZBudgetType,iZoneID,iLUType,iZExtent,iElems(:),iLayers(:),iZoneIDs(:)
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate  !Assumes cBeginDate and cEndDate are properly set for monthly average values
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)          !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    IF (ALLOCATED(RootZone%Me)) THEN
+        CALL RootZone%Me%GetZBudget_MonthlyFlows_GivenRootZone(iZBudgetType,iLUType,iZoneID,iZExtent,iElems,iLayers,iZoneIDs,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    ELSE
+        iStat = 0
+        ALLOCATE (rFlows(0,0) , cFlowNames(0))
+    END IF
+    
+  END SUBROUTINE GetZBudget_MonthlyFlows_GivenRootZone
+    
+  
+  ! -------------------------------------------------------------
+  ! --- RETRIEVE MONTHLY FLOW TERMS FROM ZBUDGET FILE
+  ! -------------------------------------------------------------
+  SUBROUTINE GetZBudget_MonthlyFlows_GivenFile(ZBudget,iZBudgetType,ZoneList,iZoneID,iLUType,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    TYPE(ZBudgetType),INTENT(IN)             :: ZBudget              !Assumes ZBudget file is already open 
+    TYPE(ZoneListType),INTENT(IN)            :: ZoneList
+    INTEGER,INTENT(IN)                       :: iZBudgetType,iZoneID,iLUType
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate  !Assumes cBeginDate and cEndDate are properly set for monthly average values
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)          !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    !Local variables
+    INTEGER            :: iLoc
+    TYPE(RootZoneType) :: RootZone
+    
+    !Is this root zone v4.01?
+    CALL FindSubStringInString('v4.01',ZBudget%Header%cSoftwareVersion,iLoc)
+    IF (iLoc .GT. 0) THEN
+        ALLOCATE (RootZone_v401_Type :: RootZone%Me)
+        CALL RootZone%Me%GetZBudget_MonthlyFlows_GivenFile(ZBudget,iZBudgetType,ZoneList,iZoneID,iLUType,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+        CALL RootZone%Kill()
+        RETURN
+    END IF
+
+    !Is this root zone v4.11?
+    CALL FindSubStringInString('v4.11',ZBudget%Header%cSoftwareVersion,iLoc)
+    IF (iLoc .GT. 0) THEN
+        ALLOCATE (RootZone_v411_Type :: RootZone%Me)
+        CALL RootZone%Me%GetZBudget_MonthlyFlows_GivenFile(ZBudget,iZBudgetType,ZoneList,iZoneID,iLUType,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+        CALL RootZone%Kill()
+        RETURN
+    END IF
+    
+    !Is this root zone v5.0?
+    CALL FindSubStringInString('v5.0',ZBudget%Header%cSoftwareVersion,iLoc)
+    IF (iLoc .GT. 0) THEN
+        ALLOCATE (RootZone_v50_Type :: RootZone%Me)
+        CALL RootZone%Me%GetZBudget_MonthlyFlows_GivenFile(ZBudget,iZBudgetType,ZoneList,iZoneID,iLUType,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+        CALL RootZone%Kill()
+        RETURN
+    END IF
+    
+    !Otherwise, allocate all return data with null values
+    iStat = 0
+    ALLOCATE (rFlows(0,0) , cFlowNames(0))
+    
+  END SUBROUTINE GetZBudget_MonthlyFlows_GivenFile
+    
+  
+  ! -------------------------------------------------------------
+  ! --- GET TIME SERIES DATA FROM ZBUDGET FILE FOR A SELECTED ZONE AND SELECTED COLUMNS
+  ! -------------------------------------------------------------
+  SUBROUTINE GetZBudget_TSData(RootZone,iZBudgetType,iZoneID,iCols,iZExtent,iElems,iLayers,iZoneIDs,cBeginDate,cEndDate,cInterval,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+    CLASS(RootZoneType),INTENT(IN) :: RootZone
+    INTEGER,INTENT(IN)             :: iZBudgetType,iZoneID,iCols(:),iZExtent,iElems(:),iLayers(:),iZoneIDs(:)
+    CHARACTER(LEN=*),INTENT(IN)    :: cBeginDate,cEndDate,cInterval
+    REAL(8),INTENT(IN)             :: rFactAR,rFactVL
+    REAL(8),INTENT(OUT)            :: rOutputDates(:),rOutputValues(:,:)    !rOutputValues is in (timestep,column) format
+    INTEGER,INTENT(OUT)            :: iDataTypes(:),inActualOutput,iStat
+    
+    IF (ALLOCATED(RootZone%Me)) THEN
+        CALL RootZone%Me%GetZBudget_TSData(iZBudgetType,iZoneID,iCols,iZExtent,iElems,iLayers,iZoneIDs,cBeginDate,cEndDate,cInterval,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+    ELSE
+        iStat         = 0
+        rOutputDates  = 0.0
+        rOutputValues = 0.0
+        iDataTypes    = -1
+        inActualOutput = 0
+    END IF
+    
+  END SUBROUTINE GetZBudget_TSData
+
+  
   ! -------------------------------------------------------------
   ! --- GET WHERE THE DEMAND IS CALCULATED (ELEMENT OR SUBREGION)
   ! -------------------------------------------------------------
@@ -444,9 +783,9 @@ CONTAINS
     ELSE
         SELECT TYPE (p => RootZone%Me)
             CLASS IS (RootZone_v50_Type)
-                iCalcLocation = FlowDest_Subregion
+                iCalcLocation = f_iFlowDest_Subregion
             CLASS DEFAULT
-                iCalcLocation = FlowDest_Element
+                iCalcLocation = f_iFlowDest_Element
         END SELECT
     END IF    
     
@@ -502,39 +841,23 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
-  ! --- GET TOTAL AG SUPPLIES TO DEMAND LOCATIONS 
+  ! --- GET TOTAL WATER SUPPLIES TO DEMAND LOCATIONS 
   ! -------------------------------------------------------------
-  SUBROUTINE GetWaterSupply_Ag(RootZone,AppGrid,Supply)
+  SUBROUTINE GetWaterSupply(RootZone,AppGrid,iSupplyFor,rSupply)
     CLASS(RootZoneType),INTENT(IN) :: RootZone
     TYPE(AppGridType),INTENT(IN)   :: AppGrid
-    REAL(8)                        :: Supply(:)
+    INTEGER,INTENT(IN)             :: iSupplyFor
+    REAL(8)                        :: rSupply(:)
     
     IF (RootZone%iVersion .EQ. 0) THEN
-        Supply = 0.0
+        rSupply = 0.0
     ELSE
-        CALL RootZone%Me%GetWaterSupply_Ag(AppGrid,Supply)
+        CALL RootZone%Me%GetWaterSupply(AppGrid,iSupplyFor,rSupply)
     END IF
         
-  END SUBROUTINE GetWaterSupply_Ag      
+  END SUBROUTINE GetWaterSupply      
   
   
-  ! -------------------------------------------------------------
-  ! --- GET TOTAL URBAN SUPPLIES TO DEMAND LOCATIONS 
-  ! -------------------------------------------------------------
-  SUBROUTINE GetWaterSupply_Urb(RootZone,AppGrid,Supply)
-    CLASS(RootZoneType),INTENT(IN) :: RootZone
-    TYPE(AppGridType),INTENT(IN)   :: AppGrid
-    REAL(8)                        :: Supply(:)
-    
-    IF (RootZone%iVersion .EQ. 0) THEN
-        Supply = 0.0
-    ELSE
-        CALL RootZone%Me%GetWaterSupply_Urb(AppGrid,Supply)
-    END IF
-        
-  END SUBROUTINE GetWaterSupply_Urb     
- 
-    
   ! -------------------------------------------------------------
   ! --- GET RATIO OF DESTINATION SUPPLIES TO REGIONAL SUPLLIES FOR AG 
   ! -------------------------------------------------------------
@@ -581,6 +904,23 @@ CONTAINS
     END IF
 
   END FUNCTION GetNDemandLocations
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET PRECIPITATION AT EACH ELEMENT
+  ! -------------------------------------------------------------
+  SUBROUTINE GetElementPrecip(RootZone,rElemArea,rPrecip)
+    CLASS(RootZoneType),INTENT(IN) :: RootZone
+    REAL(8),INTENT(IN)             :: rElemArea(:)
+    REAL(8)                        :: rPrecip(:)
+    
+    IF (RootZone%iVersion .EQ. 0) THEN
+        rPrecip = 0.0
+    ELSE
+        CALL RootZone%Me%GetElementPrecip(rElemArea,rPrecip)
+    END IF
+
+  END SUBROUTINE GetElementPrecip
   
   
   ! -------------------------------------------------------------
@@ -634,29 +974,74 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
-  ! --- GET AG WATER DEMAND
+  ! --- GET WATER DEMAND AT ALL DEMAND LOCATIONS
   ! -------------------------------------------------------------
-  SUBROUTINE GetWaterDemand_Ag(RootZone,Demand)
+  SUBROUTINE GetWaterDemandAll(RootZone,iDemandFor,rDemand)
     CLASS(RootZoneType),INTENT(IN) :: RootZone
-    REAL(8)                        :: Demand(:)
+    INTEGER,INTENT(IN)             :: iDemandFor
+    REAL(8)                        :: rDemand(:)
     
-    CALL RootZone%Me%GetWaterDemand_Ag(Demand)
+    CALL RootZone%Me%GetWaterDemandAll(iDemandFor,rDemand)
 
-  END SUBROUTINE GetWaterDemand_Ag
+  END SUBROUTINE GetWaterDemandAll
   
   
   ! -------------------------------------------------------------
-  ! --- GET URBAN WATER DEMAND
+  ! --- GET WATER DEMAND AT SOME LOCATIONS
   ! -------------------------------------------------------------
-  SUBROUTINE GetWaterDemand_Urb(RootZone,Demand)
+  SUBROUTINE GetWaterDemandAtLocations(RootZone,AppGrid,iLocationTypeID,iLocationList,iDemandFor,rDemand,iStat)
     CLASS(RootZoneType),INTENT(IN) :: RootZone
-    REAL(8)                        :: Demand(:)
+    TYPE(AppGridType),INTENT(IN)   :: AppGrid 
+    INTEGER,INTENT(IN)             :: iLocationTypeID,iLocationList(:),iDemandFor
+    REAL(8)                        :: rDemand(:)
+    INTEGER,INTENT(OUT)            :: iStat
     
-    CALL RootZone%Me%GetWaterDemand_Urb(Demand)
+    CALL RootZone%Me%GetWaterDemandAtLocations(AppGrid,iLocationTypeID,iLocationList,iDemandFor,rDemand,iStat)
 
-  END SUBROUTINE GetWaterDemand_Urb
+  END SUBROUTINE GetWaterDemandAtLocations
   
+  
+  ! -------------------------------------------------------------
+  ! --- GET FUTURE DEMANDS AT A SPECIFIED DATE
+  ! --- Note: Must be called after ReadTSData method for proper operation
+  ! -------------------------------------------------------------
+  SUBROUTINE GetFutureWaterDemands(RootZone,AppGrid,TimeStep,Precip,ET,cFutureDemandDate,rElemAgDemand,rElemUrbDemand,iStat)
+    CLASS(RootZoneType)           :: RootZone
+    TYPE(AppGridType),INTENT(IN)  :: AppGrid
+    TYPE(TimeStepType),INTENT(IN) :: TimeStep
+    TYPE(PrecipitationType)       :: Precip
+    TYPE(ETType)                  :: ET
+    CHARACTER(LEN=*),INTENT(IN)   :: cFutureDemandDate
+    REAL(8),INTENT(OUT)           :: rElemAgDemand(:),rElemUrbDemand(:)  !Return data for each (element) combination
+    INTEGER,INTENT(OUT)           :: iStat
+    
+    
+    IF (RootZone%iVersion .NE. 0) THEN
+        CALL RootZone%Me%GetFutureDemands(AppGrid,TimeStep,Precip,ET,cFutureDemandDate,rElemAgDemand,rElemUrbDemand,iStat)
+    ELSE
+        iStat          = 0
+        rElemAgDemand  = 0.0
+        rElemUrbDemand = 0.0
+    END IF
+    
+  END SUBROUTINE GetFutureWaterDemands
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET SUPPLY SHORTAGE AT DESTINATIONS FOR SOME SUPPLIES
+  ! -------------------------------------------------------------
+  SUBROUTINE GetSupplyShortAtDestination_ForSomeSupplies(RootZone,AppGrid,iSupplyList,iSupplyFor,SupplyDestConnector,rSupplyShortAtDest)
+    CLASS(RootZoneType),INTENT(IN)                  :: RootZone
+    TYPE(AppGridType),INTENT(IN)                    :: AppGrid
+    INTEGER,INTENT(IN)                              :: iSupplyList(:),iSupplyFor
+    TYPE(SupplyDestinationConnectorType),INTENT(IN) :: SupplyDestConnector
+    REAL(8),INTENT(OUT)                             :: rSupplyShortAtDest(:) 
+  
+    CALL RootZone%Me%GetSupplyShortAtDestination_ForSomeSupplies(AppGrid,iSupplyList,iSupplyFor,SupplyDestConnector,rSupplyShortAtDest)
+    
+  END SUBROUTINE GetSupplyShortAtDestination_ForSomeSupplies
 
+  
   ! -------------------------------------------------------------
   ! --- GET ELEMENTAL AG AREAS
   ! -------------------------------------------------------------
@@ -887,7 +1272,7 @@ CONTAINS
     TYPE(VersionType)        :: MyVersion
     
     MyVersion = MyVersion%New(iLenVersion,cVersion,cRevision)
-    cVrs      = TRIM(MyVersion%GetVersion()) // ' (Interface) ; ' // TRIM(v50%GetVersion()) // ', ' // TRIM(v40%GetVersion()) // ', ' // TRIM(v401%GetVersion()) //  ', ' // TRIM(v41%GetVersion()) //  ', ' // TRIM(v411%GetVersion()) // ' (Components)'
+    cVrs      = TRIM(MyVersion%GetVersion()) // ' (Interface) ; ' // TRIM(v40%GetVersion()) // ', ' // TRIM(v401%GetVersion()) //  ', ' // TRIM(v41%GetVersion()) //  ', ' // TRIM(v411%GetVersion()) // ', ' // TRIM(v50%GetVersion()) // ' (Components)'
     
   END FUNCTION GetVersion
 
@@ -982,14 +1367,14 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- SET SUPPLY TO DEMAND LOCATIONS
   ! -------------------------------------------------------------
-  SUBROUTINE SetSupply(RootZone,Supply,SupplyType)
+  SUBROUTINE SetSupply(RootZone,rSupply,iSupplyType,iSupplyFor)
     CLASS(RootZoneType) :: RootZone
-    REAL(8),INTENT(IN)  :: Supply(:)
-    INTEGER,INTENT(IN)  :: SupplyType
+    REAL(8),INTENT(IN)  :: rSupply(:)
+    INTEGER,INTENT(IN)  :: iSupplyType,iSupplyFor
     
     IF (RootZone%iVersion .EQ. 0) RETURN
     
-    CALL RootZone%Me%SetSupply(Supply,SupplyType)
+    CALL RootZone%Me%SetSupply(rSupply,iSupplyType,iSupplyFor)
     
   END SUBROUTINE SetSupply
   
@@ -1138,9 +1523,10 @@ CONTAINS
     CALL RootZone%Me%ComputeWaterDemand(AppGrid,TimeStep,ETData,iStat)
     
   END SUBROUTINE ComputeWaterDemand
+      
     
     
-    
+  
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
@@ -1186,6 +1572,17 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
+  ! --- ZERO OUT SURFACE FLOWS
+  ! -------------------------------------------------------------
+  SUBROUTINE ZeroSurfaceFlows(RootZone)
+    CLASS(RootZoneType) :: RootZone
+  
+    CALL RootZone%Me%ZeroSurfaceFlows()
+    
+  END SUBROUTINE ZeroSurfaceFlows
+  
+  
+  ! -------------------------------------------------------------
   ! --- SIMULATE SOIL MOISTURE IN ROOT ZONE
   ! -------------------------------------------------------------
   SUBROUTINE Simulate(RootZone,AppGrid,TimeStep,ETData,iStat)
@@ -1218,6 +1615,28 @@ CONTAINS
   END SUBROUTINE ComputeGWInflow
 
 
+  ! -------------------------------------------------------------
+  ! --- COMPUTE FUTURE DEMANDS NTIL A SPECIFIED DATE
+  ! --- Note: Must be called after ReadTSData method for proper operation
+  ! -------------------------------------------------------------
+  SUBROUTINE ComputeFutureWaterDemands(RootZone,AppGrid,TimeStep,Precip,ET,cEndFutureDemandDate,iStat)
+    CLASS(RootZoneType)           :: RootZone
+    TYPE(AppGridType),INTENT(IN)  :: AppGrid
+    TYPE(TimeStepType),INTENT(IN) :: TimeStep
+    TYPE(PrecipitationType)       :: Precip
+    TYPE(ETType)                  :: ET
+    CHARACTER(LEN=*),INTENT(IN)   :: cEndFutureDemandDate
+    INTEGER,INTENT(OUT)           :: iStat
+    
+    
+    IF (RootZone%iVersion .NE. 0) THEN
+        CALL RootZone%Me%ComputeFutureWaterDemand(AppGrid,TimeStep,Precip,ET,cEndFutureDemandDate,iStat)
+    ELSE
+        iStat = 0
+    END IF
+    
+  END SUBROUTINE ComputeFutureWaterDemands
+    
 END MODULE
 
 

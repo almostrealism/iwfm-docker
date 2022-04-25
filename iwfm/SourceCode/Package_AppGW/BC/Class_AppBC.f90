@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -28,12 +28,12 @@ MODULE Class_AppBC
   USE MessageLogger           , ONLY: SetLastMessage          , &
                                       EchoProgress            , &
                                       MessageArray            , &
-                                      iFatal
+                                      f_iFatal
   USE Package_Misc            , ONLY: RealTSDataInFileType    , &
                                       PrepareTSDOutputFile    
   USE Package_Discretization  , ONLY: AppGridType             , &
                                       StratigraphyType        , &
-                                      AppFaceType
+                                      ConvertID_To_Index
   USE Class_LayerBC
   USE Class_TSBCDataFile
   USE Package_Matrix          , ONLY: MatrixType
@@ -88,7 +88,9 @@ MODULE Class_AppBC
       PROCEDURE,PASS :: GetNodesWithBCType    
       PROCEDURE,PASS :: GetBoundaryFlowAtFaceLayer
       PROCEDURE,PASS :: GetBoundaryFlowAtElementNodeLayer 
-      PROCEDURE,PASS :: GetSubregionalFlows               
+      PROCEDURE,PASS :: GetSubregionalFlows 
+      PROCEDURE,PASS :: SetBCNodes
+      PROCEDURE,PASS :: SetBC
       PROCEDURE,PASS :: IsDefined  
       PROCEDURE,PASS :: IsBoundaryFlowNode
       PROCEDURE,PASS :: ReadTSData                         => AppBC_ReadTSData                       
@@ -96,6 +98,7 @@ MODULE Class_AppBC
       PROCEDURE,PASS :: ConvertTimeUnit                   
       PROCEDURE,PASS :: ResetSpecifiedHeadBC
       PROCEDURE,PASS :: Simulate
+      PROCEDURE,PASS :: RemoveBC
   END TYPE AppBCType
   
   
@@ -125,12 +128,13 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INSTANTIATE APPLICATION BOUNDARY CONDITIONS
   ! -------------------------------------------------------------
-  SUBROUTINE New(AppBC,IsForInquiry,cFileName,cWorkingDirectory,AppGrid,Stratigraphy,UNITVLOU,TimeStep,GWHeads,iStat)
+  SUBROUTINE New(AppBC,IsForInquiry,cFileName,cWorkingDirectory,AppGrid,Stratigraphy,iGWNodeIDs,UNITVLOU,TimeStep,GWHeads,iStat)
     CLASS(AppBCType),INTENT(OUT)      :: AppBC
     LOGICAL,INTENT(IN)                :: IsForInquiry
     CHARACTER(LEN=*),INTENT(IN)       :: cFileName,cWorkingDirectory,UNITVLOU
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
+    INTEGER,INTENT(IN)                :: iGWNodeIDs(:)
     TYPE(TimeStepType),INTENT(IN)     :: TimeStep
     REAL(8)                           :: GWHeads(:,:)
     INTEGER,INTENT(OUT)               :: iStat
@@ -144,7 +148,7 @@ CONTAINS
     CHARACTER(:),ALLOCATABLE    :: cAbsPathFileName
     
     !Initialize
-    iStat = 0
+    iStat   = 0
     
     !Return if no filename is specified
     IF (cFileName .EQ. '') RETURN
@@ -159,7 +163,7 @@ CONTAINS
     !Allocate memory
     ALLOCATE (AppBC%LayerBC(NLayers) ,STAT=ErrorCode , ERRMSG=cErrorMsg)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for groundwater boundary conditions for each layer.'//NEW_LINE('')//TRIM(cErrorMsg),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for groundwater boundary conditions for each layer.'//NEW_LINE('')//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -174,7 +178,7 @@ CONTAINS
     CALL CleanSpecialCharacters(ALine)
     IF (ALine .NE. '') THEN
         CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-        CALL LayerBC_InitSpecifiedFlowBC(cAbsPathFileName,NNodes,Stratigraphy,AppBC%TimeUnit_SpecifiedFlowBC,AppBC%LayerBC,iStat)
+        CALL LayerBC_InitSpecifiedFlowBC(cAbsPathFileName,NNodes,iGWNodeIDs,Stratigraphy,AppBC%TimeUnit_SpecifiedFlowBC,AppBC%LayerBC,iStat)
         IF (iStat .EQ. -1) RETURN
     END IF
 
@@ -184,7 +188,7 @@ CONTAINS
     CALL CleanSpecialCharacters(ALine)
     IF (ALine .NE. '') THEN
         CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-        CALL LayerBC_InitSpecifiedHeadBC(cAbsPathFileName,NNodes,Stratigraphy,GWHeads,AppBC%LayerBC,iStat)
+        CALL LayerBC_InitSpecifiedHeadBC(cAbsPathFileName,NNodes,iGWNodeIDs,Stratigraphy,GWHeads,AppBC%LayerBC,iStat)
         IF (iStat .EQ. -1) RETURN
     END IF
     
@@ -194,7 +198,7 @@ CONTAINS
     CALL CleanSpecialCharacters(ALine)
     IF (ALine .NE. '') THEN
         CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-        CALL LayerBC_InitGeneralHeadBC(cAbsPathFileName,NNodes,Stratigraphy,AppBC%TimeUnit_GHBC,AppBC%LayerBC,iStat)
+        CALL LayerBC_InitGeneralHeadBC(cAbsPathFileName,NNodes,iGWNodeIDs,Stratigraphy,AppBC%TimeUnit_GHBC,AppBC%LayerBC,iStat)
         IF (iStat .EQ. -1) RETURN
     END IF
     
@@ -204,7 +208,7 @@ CONTAINS
     CALL CleanSpecialCharacters(ALine)
     IF (ALine .NE. '') THEN
         CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-        CALL LayerBC_InitConstrainedGeneralHeadBC(cAbsPathFileName,NNodes,Stratigraphy,AppBC%TimeUnit_ConstrainedGHBC,AppBC%LayerBC,iStat)
+        CALL LayerBC_InitConstrainedGeneralHeadBC(cAbsPathFileName,NNodes,iGWNodeIDs,Stratigraphy,AppBC%TimeUnit_ConstrainedGHBC,AppBC%LayerBC,iStat)
         IF (iStat .EQ. -1) RETURN
     END IF
     
@@ -221,35 +225,35 @@ CONTAINS
     IF (NFlowBCCols .GT. 0   .OR.   NHeadBCCols .GT. 0) THEN
         IF (ALine .NE. '') THEN
             CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-            CALL TSBCDataFile_New(cAbsPathFileName,iTSFlowBCColumns,TimeStep,AppBC%TSBCDataFile,iStat)
+            CALL TSBCDataFile_New(cAbsPathFileName,cWorkingDirectory,iTSFlowBCColumns,TimeStep,AppBC%TSBCDataFile,iStat)
             IF (iStat .EQ. -1) RETURN
         ELSE
             MessageArray(1) = 'Time Series Boundary Conditions Data File must be specified when'
             MessageArray(2) = 'one or more time series boundary condition data columns are referred!'
-            CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
     END IF
     
     !Make sure there are no errors in b.c. data
-    CALL LayerBC_CheckConsistency(AppBC%LayerBC,iStat)
+    CALL LayerBC_CheckConsistency(AppBC%LayerBC,iGWNodeIDs,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Apply time series b.c. that is initially read
     IF (AppBC%TSBCDataFile%lUpdated)  &
-        CALL LayerBC_SetTSBoundaryConditions(Stratigraphy%BottomElev,AppBC%TSBCDataFile%rValues,GWHeads,AppBC%LayerBC)
+        CALL LayerBC_SetTSBoundaryConditions(iGWNodeIDs,Stratigraphy%BottomElev,AppBC%TSBCDataFile%rValues,GWHeads,AppBC%LayerBC)
     
     !Instantiate boundary node flow hydrograph output data
     ALLOCATE (AppBC%BCFlowOutput , STAT=ErrorCode ,ERRMSG=cErrorMsg)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for boundary node flow hydrograph printing!'//NEW_LINE('')//TRIM(cErrorMsg),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for boundary node flow hydrograph printing!'//NEW_LINE('')//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
-    CALL BCFlowOutput_New(IsForInquiry,BCFile,cWorkingDirectory,NLayers,AppBC%LayerBC,UNITVLOU,TimeStep,AppBC%BCFlowOutput,iStat)
+    CALL BCFlowOutput_New(IsForInquiry,BCFile,cWorkingDirectory,iGWNodeIDs,NLayers,AppBC%LayerBC,UNITVLOU,TimeStep,AppBC%BCFlowOutput,iStat)
     IF (iStat .EQ. -1) RETURN
-    IF (AppBC%BCFlowOutput%OutFile%iGetFileType() .EQ. UNKNOWN) THEN
+    IF (AppBC%BCFlowOutput%OutFile%iGetFileType() .EQ. f_iUNKNOWN) THEN
         DEALLOCATE (AppBC%BCFlowOutput , STAT=ErrorCode)
     ELSE
         AppBC%lBCFlowOutput_Defined = .TRUE.
@@ -265,10 +269,10 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW BOUNDARY NODE FLOW OUTPUT DATASET
   ! -------------------------------------------------------------
-  SUBROUTINE BCFlowOutput_New(IsForInquiry,InFile,cWorkingDirectory,NLayers,LayerBC,UNITVLOU,TimeStep,BCFlowOutput,iStat)
+  SUBROUTINE BCFlowOutput_New(IsForInquiry,InFile,cWorkingDirectory,NodeIDs,NLayers,LayerBC,UNITVLOU,TimeStep,BCFlowOutput,iStat)
     LOGICAL,INTENT(IN)            :: IsForInquiry
     TYPE(GenericFileType)         :: InFile
-    INTEGER,INTENT(IN)            :: NLayers
+    INTEGER,INTENT(IN)            :: NodeIDs(:),NLayers
     TYPE(LayerBCType),INTENT(IN)  :: LayerBC(:)
     CHARACTER(LEN=*),INTENT(IN)   :: cWorkingDirectory,UNITVLOU
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
@@ -277,8 +281,8 @@ CONTAINS
     
     !Local variables
     CHARACTER(LEN=ModNameLen+16) :: ThisProcedure = ModName // 'BCFlowOutput_New'
-    INTEGER                      :: NOUTB,ErrorCode,indx,indx1,ID,iHydLayer,iHydNode,iDummyArray(3), &
-                                    iLoc
+    INTEGER                      :: NOUTB,ErrorCode,indx,indx1,iHydLayer,iHydNode,iDummyArray(3), &
+                                    iLoc,IDNode,ID
     CHARACTER                    :: cFileName*1200,ALine*1000,cErrorMsg*300
     CHARACTER(:),ALLOCATABLE     :: cAbsPathFileName
     
@@ -308,7 +312,7 @@ CONTAINS
     !Allocate memory
     ALLOCATE (BCFlowOutput%iBCNodes(NOUTB) , BCFlowOutput%iLayers(NOUTB) , STAT=ErrorCode , ERRMSG=cErrorMsg)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for boundary node flow hydrograph list!'//NEW_LINE(' ')//TRIM(cErrorMsg),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for boundary node flow hydrograph list!'//NEW_LINE(' ')//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -321,7 +325,7 @@ CONTAINS
             READ (ALine,*) iDummyArray(indx1)
             iLoc = FirstLocation(' ',ALine)
             IF (iLoc .EQ. 0) THEN
-                CALL SetLastMessage('Error in data entry for face flow hydrograph specification '//TRIM(IntToText(indx))//'!',iFatal,ThisProcedure)
+                CALL SetLastMessage('Error in data entry for boundary node flow hydrograph specification '//TRIM(IntToText(indx))//'!',f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
@@ -329,21 +333,17 @@ CONTAINS
         END DO
         ID        = iDummyArray(1)
         iHydLayer = iDummyArray(2)
-        iHydNode  = iDummyArray(3)
-
-        !Make sure hydrographs are entered sequentially
-        IF (ID .NE. indx) THEN
-            MessageArray(1) = 'Boundary node flow hydrograph print-out specifications must be entered sequentially.'
-            MessageArray(2) = 'Expected hydrograph ID = ' // TRIM(IntToText(indx))
-            MessageArray(3) = 'Entered hydrograph ID  = ' // TRIM(IntToText(ID))
-            CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+        IDNode    = iDummyArray(3)
+        CALL ConvertID_To_Index(IDNode,NodeIDs,iHydNode)
+        IF (iHydNode .EQ. 0) THEN
+            CALL SetLastMessage('Node '//TRIM(IntToText(IDNode))//' listed for boundary node hydrograph printing is not in the model!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
-        
+
         !Make sure layer is modeled
         IF (iHydLayer .LT. 1   .OR.   iHydLayer .GT. NLayers) THEN
-            CALL SetLastMessage('Boundary node flow hydrograph layer listed for hydrograph ID '//TRIM(IntToText(ID))//' is outside model bounds!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Boundary node flow hydrograph layer listed for hydrograph ID '//TRIM(IntToText(ID))//' is outside model bounds!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -353,9 +353,9 @@ CONTAINS
             BCFlowOutput%iLayers(indx)  = iHydLayer
             BCFlowOutput%iBCNodes(indx) = iHydNode
         ELSE
-            MessageArray(1) = 'Node '//TRIM(IntToText(iHydNode))//' in layer '//TRIM(IntToText(iHydLayer))//' for boundary flow printing'
+            MessageArray(1) = 'Node '//TRIM(IntToText(IDNode))//' in layer '//TRIM(IntToText(iHydLayer))//' for boundary flow printing'
             MessageArray(2) = 'is not specified as a boundary node.'
-            CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure) 
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure) 
             iStat = -1
             RETURN
         END IF           
@@ -364,7 +364,7 @@ CONTAINS
     
     !Instantiate the output file 
     CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(cFileName)),cWorkingDirectory,cAbsPathFileName)
-    CALL PrepBCFlowOutFile(IsForInquiry,cAbsPathFileName,UNITVLOU,NOUTB,BCFlowOutput%iBCNodes,BCFlowOutput%iLayers,TimeStep,BCFlowOutput%OutFile,iStat)
+    CALL PrepBCFlowOutFile(IsForInquiry,cAbsPathFileName,UNITVLOU,NOUTB,NodeIDs(BCFlowOutput%iBCNodes),BCFlowOutput%iLayers,TimeStep,BCFlowOutput%OutFile,iStat)
 
   END SUBROUTINE BCFlowOutput_New
 
@@ -458,16 +458,16 @@ CONTAINS
     !Compile subregional flows
     DO indxLayer=1,SIZE(AppBC%LayerBC)
         !Specified flow b.c.
-        rRegionFlows = rRegionFlows + SubregionalFlowsForBCType(indxLayer,SpFlowBCID,AppGrid,AppBC)
+        rRegionFlows = rRegionFlows + SubregionalFlowsForBCType(indxLayer,f_iSpFlowBCID,AppGrid,AppBC)
         
         !Specified head b.c.
-        rRegionFlows = rRegionFlows + SubregionalFlowsForBCType(indxLayer,SpHeadBCID,AppGrid,AppBC)
+        rRegionFlows = rRegionFlows + SubregionalFlowsForBCType(indxLayer,f_iSpHeadBCID,AppGrid,AppBC)
         
         !General head b.c.
-        rRegionFlows = rRegionFlows + SubregionalFlowsForBCType(indxLayer,GHBCID,AppGrid,AppBC)
+        rRegionFlows = rRegionFlows + SubregionalFlowsForBCType(indxLayer,f_iGHBCID,AppGrid,AppBC)
         
         !Constrained general head b.c.
-        rRegionFlows = rRegionFlows + SubregionalFlowsForBCType(indxLayer,ConstrainedGHBCID,AppGrid,AppBC)
+        rRegionFlows = rRegionFlows + SubregionalFlowsForBCType(indxLayer,f_iConstrainedGHBCID,AppGrid,AppBC)
     END DO
     
     
@@ -501,7 +501,7 @@ CONTAINS
           DO indxElem=1,SIZE(AppGrid%AppNode(iNode)%SurroundingElement)
               iElem                 = AppGrid%AppNode(iNode)%SurroundingElement(indxElem)
               iRegion               = AppGrid%AppElement(iElem)%Subregion
-              indxVertex            = LocateInList(iNode,AppGrid%Element(iElem)%Vertex) 
+              indxVertex            = LocateInList(iNode,AppGrid%Vertex(:,iElem)) 
               CALL AppBC%GetBoundaryFlowAtElementNodeLayer(iBCType,iElem,indxVertex,iLayer,AppGrid,rFlow)
               rRegionFlows(iRegion) = rRegionFlows(iRegion) + rFlow
           END DO
@@ -524,13 +524,14 @@ CONTAINS
     REAL(8),INTENT(OUT)          :: rFlow
     
     !Local variables
-    INTEGER :: iNodes(2),indxNode,iNode,iElem,iVertex
+    INTEGER :: iNodes(2),indxNode,iNode,iElem,iVertex,Vertex(4)
     REAL(8) :: rFlowTemp
     
     !Initialize
     rFlow  = 0.0
-    iNodes = AppGrid%AppFace(iFace)%Node
-    iElem  = MAXVAL(AppGrid%AppFace(iFace)%Element)
+    iNodes = AppGrid%AppFace%Node(:,iFace)
+    iElem  = MAXVAL(AppGrid%AppFace%Element(:,iFace))
+    Vertex = AppGrid%Vertex(:,iElem)
     
     !Find flows for each node
     DO indxNode=1,2
@@ -540,18 +541,18 @@ CONTAINS
         IF (.NOT. LayerBC_IsBCNode(iNode,AppBC%LayerBC(iLayer))) CYCLE
         
         !Vertex index for the element
-        iVertex = LocateInList(iNode,AppGrid%Element(iElem)%Vertex)
+        iVertex = LocateInList(iNode,Vertex)
         
         !Specified flow
-        CALL GetBoundaryFlowAtElementNodeLayer(AppBC,SpFlowBCID,iElem,iVertex,iLayer,AppGrid,rFlowTemp)
+        CALL GetBoundaryFlowAtElementNodeLayer(AppBC,f_iSpFlowBCID,iElem,iVertex,iLayer,AppGrid,rFlowTemp)
         rFlow = rFlow - rFlowTemp
         
         !Specified head
-        CALL GetBoundaryFlowAtElementNodeLayer(AppBC,SpHeadBCID,iElem,iVertex,iLayer,AppGrid,rFlowTemp)
+        CALL GetBoundaryFlowAtElementNodeLayer(AppBC,f_iSpHeadBCID,iElem,iVertex,iLayer,AppGrid,rFlowTemp)
         rFlow = rFlow - rFlowTemp
         
         !General head boundary condition
-        CALL GetBoundaryFlowAtElementNodeLayer(AppBC,GHBCID,iElem,iVertex,iLayer,AppGrid,rFlowTemp)
+        CALL GetBoundaryFlowAtElementNodeLayer(AppBC,f_iGHBCID,iElem,iVertex,iLayer,AppGrid,rFlowTemp)
         rFlow = rFlow - rFlowTemp
         
         !Constrained general head boundary condition
@@ -578,7 +579,7 @@ CONTAINS
     LOGICAL :: lAddToRHSLocal
     
     !Initialize
-    iNode          = AppGrid%Element(iElem)%Vertex(indxVertex)
+    iNode          = AppGrid%Vertex(indxVertex,iElem)
     iRHSRow        = LocateInList(iElem,AppGrid%AppNode(iNode)%ElemID_OnCCWSide)  !Locate the row number for node RHS that correspond to element
     NFaceID        = AppGrid%AppNode(iNode)%NFaceID
     rFlow          = LayerBC_GetNetBCFlowWithBCType(iNode,iBCType,AppBC%LayerBC(iLayer))
@@ -640,24 +641,24 @@ CONTAINS
     !Count nodes with the specified b.c.
     SELECT CASE (iBCType)
       !Specified flow
-      CASE (SpFlowBCID)
+      CASE (f_iSpFlowBCID)
         ALLOCATE (iNodes(AppBC%LayerBC(iLayer)%NSpecFlowBC))
-        iNodes = AppBC%LayerBC(iLayer)%SpecFlowBC%iNode
+        IF (SIZE(iNodes) .GT. 0) iNodes = AppBC%LayerBC(iLayer)%SpecFlowBC%iNode
 
       !Specified head
-      CASE (SpHeadBCID)
+      CASE (f_iSpHeadBCID)
         ALLOCATE (iNodes(AppBC%LayerBC(iLayer)%NSpecHeadBC))
-        iNodes = AppBC%LayerBC(iLayer)%SpecHeadBC%iNode
+        IF (SIZE(iNodes) .GT. 0) iNodes = AppBC%LayerBC(iLayer)%SpecHeadBC%iNode
 
       !General head
-      CASE (GHBCID)
+      CASE (f_iGHBCID)
         ALLOCATE (iNodes(AppBC%LayerBC(iLayer)%NGHBC))
-        iNodes = AppBC%LayerBC(iLayer)%GHBC%iNode
+        IF (SIZE(iNodes) .GT. 0) iNodes = AppBC%LayerBC(iLayer)%GHBC%iNode
 
       !Constrained general head
-      CASE (ConstrainedGHBCID)
+      CASE (f_iConstrainedGHBCID)
         ALLOCATE (iNodes(AppBC%LayerBC(iLayer)%NConstrainedGHBC))
-        iNodes = AppBC%LayerBC(iLayer)%ConstrainedGHBC%iNode
+        IF (SIZE(iNodes) .GT. 0) iNodes = AppBC%LayerBC(iLayer)%ConstrainedGHBC%iNode
         
       END SELECT
 
@@ -678,19 +679,19 @@ CONTAINS
     !Count nodes with the specified b.c.
     SELECT CASE (iBCType)
       !Specified flow
-      CASE (SpFlowBCID)
+      CASE (f_iSpFlowBCID)
         NNodes = AppBC%LayerBC(iLayer)%NSpecFlowBC
 
       !Specified head
-      CASE (SpHeadBCID)
+      CASE (f_iSpHeadBCID)
         NNodes = AppBC%LayerBC(iLayer)%NSpecHeadBC
 
       !General head
-      CASE (GHBCID)
+      CASE (f_iGHBCID)
         NNodes = AppBC%LayerBC(iLayer)%NGHBC
 
       !Constrained general head
-      CASE (ConstrainedGHBCID)
+      CASE (f_iConstrainedGHBCID)
         NNodes = AppBC%LayerBC(iLayer)%NConstrainedGHBC
         
     END SELECT
@@ -704,6 +705,81 @@ CONTAINS
 ! ******************************************************************
 ! ******************************************************************
 ! ***
+! *** SETTERS
+! ***
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+
+  ! -------------------------------------------------------------
+  ! --- SET BOUNDARY CONDITION NODES WITH A B.C. TYPE
+  ! -------------------------------------------------------------
+  SUBROUTINE SetBCNodes(AppBC,iNodes,iLayers,iBCType,iStat,iTSCols,iTSColsMaxBCFlow,rConductances,rConstrainingBCHeads)
+    CLASS(AppBCType)            :: AppBC
+    INTEGER,INTENT(IN)          :: iNodes(:),iLayers(:),iBCType
+    INTEGER,INTENT(OUT)         :: iStat
+    INTEGER,OPTIONAL,INTENT(IN) :: iTSCols(:),iTSColsMaxBCFlow(:)
+    REAL(8),OPTIONAL,INTENT(IN) :: rConductances(:),rConstrainingBCHeads(:)
+    
+    !Local variables
+    INTEGER :: indx,iTSColsLocal(SIZE(iNodes)),iTSColsMaxBCFlowLocal(SIZE(iNodes))
+    
+    !Optional arguments to local arguments
+    IF (PRESENT(iTSCols)) THEN
+        iTSColsLocal = iTSCols
+    ELSE
+        iTSColsLocal = 0
+    END IF
+    IF (PRESENT(iTSColsMaxBCFlow)) THEN
+        iTSColsMaxBCFlowLocal = iTSColsMaxBCFlow
+    ELSE
+        iTSColsMaxBCFlowLocal = 0
+    END IF
+    
+    SELECT CASE (iBCType)
+        CASE (f_iSpFlowBCID)
+            DO indx=1,SIZE(iNodes)
+                CALL AppBC%LayerBC(iLayers(indx))%SetBCNode(iNodes(indx),f_iSpFlowBCID,iStat,iTSCol=iTSColsLocal(indx))
+            END DO
+            
+        CASE (f_iSpHeadBCID)
+            DO indx=1,SIZE(iNodes)
+                CALL AppBC%LayerBC(iLayers(indx))%SetBCNode(iNodes(indx),f_iSpHeadBCID,iStat,iTSCol=iTSColsLocal(indx))
+            END DO
+            
+        CASE (f_iGHBCID)
+            DO indx=1,SIZE(iNodes)
+                CALL AppBC%LayerBC(iLayers(indx))%SetBCNode(iNodes(indx),f_iGHBCID,iStat,iTSCol=iTSColsLocal(indx),rConductance=rConductances(indx))
+            END DO
+            
+        CASE (f_iConstrainedGHBCID)
+            DO indx=1,SIZE(iNodes)
+                CALL AppBC%LayerBC(iLayers(indx))%SetBCNode(iNodes(indx),f_iConstrainedGHBCID,iStat,iTSCol=iTSColsLocal(indx),iTSColMaxBCFlow=iTSColsMaxBCFlowLocal(indx),rConductance=rConductances(indx),rConstrainingBCHead=rConstrainingBCHeads(indx))
+            END DO
+    END SELECT 
+    
+  END SUBROUTINE SetBCNodes
+  
+  
+  ! -------------------------------------------------------------
+  ! --- SET BOUNDARY CONDITION
+  ! -------------------------------------------------------------
+  SUBROUTINE SetBC(AppBC,iNode,iLayer,iBCType,iStat,rFlow,rHead,rMaxBCFlow)
+    CLASS(AppBCType)            :: AppBC
+    INTEGER,INTENT(IN)          :: iNode,iLayer,iBCType
+    INTEGER,INTENT(OUT)         :: iStat
+    REAL(8),OPTIONAL,INTENT(IN) :: rFlow,rHead,rMaxBCFlow
+    
+    CALL AppBC%LayerBC(iLayer)%SetBC(iNode,iBCType,iStat,rFlow,rHead,rMaxBCFlow)
+    
+  END SUBROUTINE SetBC
+  
+  
+
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+! ***
 ! *** DATA READERS
 ! ***
 ! ******************************************************************
@@ -713,8 +789,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ TIME SERIES BOUNDARY CONDITIONS
   ! -------------------------------------------------------------
-  SUBROUTINE AppBC_ReadTSData(AppBC,TimeStep,BottomElev,Heads,iStat)
+  SUBROUTINE AppBC_ReadTSData(AppBC,NodeIDs,TimeStep,BottomElev,Heads,iStat)
     CLASS(AppBCType)              :: AppBC
+    INTEGER,INTENT(IN)            :: NodeIDs(:)
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
     REAL(8),INTENT(IN)            :: BottomElev(:,:)
     REAL(8)                       :: Heads(:,:)
@@ -726,7 +803,7 @@ CONTAINS
     
     !Use the newly read time series b.c. data to set the layer b.c. data
     IF (AppBC%TSBCDataFile%lUpdated)   &
-        CALL LayerBC_SetTSBoundaryConditions(BottomElev,AppBC%TSBCDataFile%rValues,Heads,AppBC%LayerBC)
+        CALL LayerBC_SetTSBoundaryConditions(NodeIDs,BottomElev,AppBC%TSBCDataFile%rValues,Heads,AppBC%LayerBC)
     
   END SUBROUTINE AppBC_ReadTSData
   
@@ -811,13 +888,13 @@ CONTAINS
   ! --- CHECK IF ANY BOUNDARY NODE IS A FLOW NODE
   ! --- Note: It is assumed that the node is on the boundary
   ! -------------------------------------------------------------
-  FUNCTION IsBoundaryFlowNode(AppBC,iNode,iLayer) RESULT(lFlowNode)
+  PURE FUNCTION IsBoundaryFlowNode(AppBC,iNode,iLayer) RESULT(lFlowNode)
     CLASS(AppBCType),INTENT(IN) :: AppBC
     INTEGER,INTENT(IN)          :: iNode,iLayer
     LOGICAL                     :: lFlowNode
     
     !Local variables
-    INTEGER,PARAMETER :: iBCTypes(3) = [SpFlowBCID,SpHeadBCID,GHBCID]
+    INTEGER,PARAMETER :: iBCTypes(3) = [f_iSpFlowBCID,f_iSpHeadBCID,f_iGHBCID]
     
     !No-flow node if no b.c. are defined
     IF (.NOT. AppBC%IsDefined()) THEN
@@ -898,9 +975,9 @@ CONTAINS
     END IF
 
     !Make sure that DSS file is used only if it is a time tracking simulation
-    IF (OutFile%iGetFileType() .EQ. DSS) THEN
+    IF (OutFile%iGetFileType() .EQ. f_iDSS) THEN
         IF (.NOT. TimeStep%TrackTime) THEN
-            CALL SetLastMessage('DSS files for boundary node flow hydrograph printing can only be used for time-tracking simulations.',iFatal,ThisProcedure)
+            CALL SetLastMessage('DSS files for boundary node flow hydrograph printing can only be used for time-tracking simulations.',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -1000,14 +1077,14 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- SIMULATE BOUNDARY CONDITIONS
   ! -------------------------------------------------------------
-  SUBROUTINE Simulate(AppBC,NNodes,Heads,Matrix)
+  SUBROUTINE Simulate(AppBC,iNNodes,rHeads,rBottomElevs,rStorage,rdStorage,Matrix)
     CLASS(AppBCType)   :: AppBC
-    INTEGER,INTENT(IN) :: NNodes
-    REAL(8),INTENT(IN) :: Heads(:,:)
+    INTEGER,INTENT(IN) :: iNNodes
+    REAL(8),INTENT(IN) :: rHeads(:,:),rBottomElevs(:,:),rStorage(:,:),rdStorage(:,:)
     TYPE(MatrixType)   :: Matrix
     
     !Simulate boundary conditions
-    CALL LayerBC_Simulate(AppBC%LayerBC,NNodes,Heads,Matrix)
+    CALL LayerBC_Simulate(AppBC%LayerBC,iNNodes,rHeads,rBottomElevs,rStorage,rdStorage,Matrix)
     
   END SUBROUTINE Simulate
   
@@ -1032,4 +1109,26 @@ CONTAINS
   END SUBROUTINE ResetSpecifiedHeadBC
 
 
+  ! -------------------------------------------------------------
+  ! --- REMOVE ALL BOUNDARY CONDITIONS AT A NODE, LAYER
+  ! -------------------------------------------------------------
+  SUBROUTINE RemoveBC(AppBC,iNodes,iLayers,iStat)
+    CLASS(AppBCType)    :: AppBC
+    INTEGER,INTENT(IN)  :: iNodes(:),iLayers(:)
+    INTEGER,INTENT(OUT) :: iStat
+    
+    !Local variables
+    INTEGER :: indx
+    
+    !Initialize
+    iStat = 0
+    
+    IF (ALLOCATED(AppBC%LayerBC)) THEN
+        DO indx=1,SIZE(iLayers)
+            CALL AppBC%LayerBC(iLayers(indx))%RemoveBC(iNodes(indx),iStat)
+        END DO
+    END IF
+    
+  END SUBROUTINE RemoveBC
+  
 END MODULE

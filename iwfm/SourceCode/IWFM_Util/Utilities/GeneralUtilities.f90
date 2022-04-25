@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2019  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -25,12 +25,59 @@ MODULE GeneralUtilities
   USE ISO_C_BINDING , ONLY: C_CHAR      , &
                             C_NULL_CHAR 
   USE MessageLogger , ONLY: SetLastMessage  , &
-                            iFatal
+                            f_iFatal
   IMPLICIT NONE
-  CHARACTER(LEN=16),PARAMETER::ThisProcedure='GeneralUtilities'
-  CHARACTER(LEN=1),PARAMETER::LineFeed=CHAR(10)
-  INTEGER::ErrorCode
+  
+  
   PRIVATE
+  PUBLIC :: IntToText                     , &
+            TextToInt                     , &
+            ArrangeText                   , &
+            ReplaceString                 , &
+            FirstLocation                 , &
+            CountOccurance                , &
+            FindSubStringInString         , &
+            CleanSpecialCharacters        , &
+            UpperCase                     , &
+            LowerCase                     , &
+            StripTextUntilCharacter       , &
+            GetStartLocation              , &
+            f_cLineFeed                   , &
+            LEN_TRIM_ARRAY                , &
+            PrepareTitle                  , &
+            String_Copy_C_F               , &
+            String_Copy_F_C               , &
+            CString_Len                   , &
+            GenericString                 , &
+            GenericString_To_String       , &
+            String_To_GenericString       , &
+            AppendString_To_GenericString 
+
+  !Public array utilities
+  PUBLIC :: AllocArray                    , &
+            AllocPointerToArray           , &
+            LocateInList                  , &
+            NormalizeArray                , &
+            ShellSort                     , &
+            GetUniqueArrayComponents      , &
+            GetArrayData                  , &
+            L2Norm
+                                            
+  !Public directory utilities               
+  PUBLIC :: ConvertPathToWindowsStyle     , &
+            ConvertPathToLinuxStyle       , &
+            IsPathWindowsStyle            , &
+            IsAbsolutePathname            , &
+            StripFileNameFromPath         , &
+            EstablishAbsolutePathFileName , &
+            GetFileDirectory                
+                                            
+  !Public misc. utilities                   
+  PUBLIC :: GetDate                       , &
+            GetTime                       , &
+            Tolerance                     , &
+            ConvertID_To_Index            , &
+            FEXP
 
 
   !Data type for a generic string
@@ -121,53 +168,9 @@ MODULE GeneralUtilities
   END INTERFACE ConvertID_To_Index
   
 
-  !Public text utilities
-  PUBLIC :: IntToText                     , &
-            TextToInt                     , &
-            ArrangeText                   , &
-            ReplaceString                 , &
-            FirstLocation                 , &
-            CountOccurance                , &
-            FindSubStringInString         , &
-            CleanSpecialCharacters        , &
-            UpperCase                     , &
-            LowerCase                     , &
-            StripTextUntilCharacter       , &
-            GetStartLocation              , &
-            LineFeed                      , &
-            LEN_TRIM_ARRAY                , &
-            PrepareTitle                  , &
-            String_Copy_C_F               , &
-            String_Copy_F_C               , &
-            CString_Len                   , &
-            GenericString                 , &
-            GenericString_To_String       , &
-            String_To_GenericString       , &
-            AppendString_To_GenericString 
-
-  !Public array utilities
-  PUBLIC :: AllocArray                    , &
-            AllocPointerToArray           , &
-            LocateInList                  , &
-            NormalizeArray                , &
-            ShellSort                     , &
-            GetUniqueArrayComponents      , &
-            GetArrayData                    
-                                            
-  !Public directory utilities               
-  PUBLIC :: ConvertPathToWindowsStyle     , &
-            ConvertPathToLinuxStyle       , &
-            IsPathWindowsStyle            , &
-            IsAbsolutePathname            , &
-            StripFileNameFromPath         , &
-            EstablishAbsolutePathFileName , &
-            GetFileDirectory                
-                                            
-  !Public misc. utilities                   
-  PUBLIC :: GetDate                       , &
-            GetTime                       , &
-            Tolerance                     , &
-            ConvertID_To_Index
+  CHARACTER(LEN=16),PARAMETER :: ThisProcedure = 'GeneralUtilities'
+  CHARACTER(LEN=1),PARAMETER  :: f_cLineFeed   = CHAR(10)
+  INTEGER                     :: ErrorCode
           
           
           
@@ -235,7 +238,8 @@ CONTAINS
       
       DO indx=1,SIZE(c_string) 
           IF (c_string(indx) .EQ. C_NULL_CHAR) THEN
-              f_string(indx:indx) = ' '
+              f_string(indx:) = ' '
+              RETURN
           ELSE
               f_string(indx:indx) = c_string(indx)
           END IF
@@ -359,7 +363,7 @@ CONTAINS
     
     !Make sure that string to be replaced and string to replace with has the same length
     IF (LEN(StringToReplace) .NE. LEN(StringToReplaceWith)) THEN
-        CALL SetLastMessage('String to be replaced with must have the same length as the replacing string!',iFatal,ThisProcedure)
+        CALL SetLastMessage('String to be replaced with must have the same length as the replacing string!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -802,6 +806,42 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
+  ! --- COMPUTE L2-NORM (PARALLEL OR SEQUENTIAL)
+  ! -------------------------------------------------------------
+  FUNCTION L2Norm(iDim,dVector) RESULT(dNorm)
+    INTEGER,INTENT(IN) :: iDim
+    REAL(8),INTENT(IN) :: dVector(iDim)
+    REAL(8)            :: dNorm
+    
+    !Local variables
+    INTEGER             :: iNThreads,iThread,indx
+    REAL(8),ALLOCATABLE :: dNormThread(:)
+    
+    !Initialize
+    iNThreads    = 1
+    iThread      = 1
+    !$ iNThreads = OMP_GET_NUM_PROCS() - 1
+    
+    !Allocate memory for thread-based norm variable
+    ALLOCATE (dNormThread(iNThreads))
+    dNormThread = 0.0
+    
+    !Calculate L2-Norm
+    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(indx,iThread) NUM_THREADS(iNThreads)
+    !$ iThread = OMP_GET_THREAD_NUM() + 1
+    !$OMP DO SCHEDULE(STATIC,500) 
+    DO indx=1,iDim
+        dNormThread(iThread) = dNormThread(iThread) + (dVector(indx) * dVector(indx))
+    END DO
+    !$OMP END DO
+    !$OMP END PARALLEL
+    
+    dNorm = SQRT(SUM(dNormThread))
+    
+  END FUNCTION L2Norm
+
+  
+  ! -------------------------------------------------------------
   ! --- ALLOCATE MEMORY FOR 1-D INTEGER ARRAY
   ! -------------------------------------------------------------
   SUBROUTINE Alloc1DIntArray(IntArray,ncolumn,SendingProcedure,iStat)
@@ -816,7 +856,7 @@ CONTAINS
     IF (ALLOCATED(IntArray)) DEALLOCATE(IntArray) 
     ALLOCATE (IntArray(ncolumn) ,STAT=ErrorCode)
     IF (ErrorCode.NE.0) THEN
-        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -840,7 +880,7 @@ CONTAINS
     IF (ALLOCATED(RealArray)) DEALLOCATE(RealArray) 
     ALLOCATE (RealArray(ncolumn) ,STAT=ErrorCode)
     IF (ErrorCode.NE.0) THEN
-        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -864,7 +904,7 @@ CONTAINS
     IF (ALLOCATED(LogicalArray)) DEALLOCATE(LogicalArray) 
     ALLOCATE (LogicalArray(ncolumn) ,STAT=ErrorCode)
     IF (ErrorCode.NE.0) THEN
-        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -888,7 +928,7 @@ CONTAINS
     IF (ALLOCATED(CharacterArray)) DEALLOCATE(CharacterArray) 
     ALLOCATE (CharacterArray(ncolumn) ,STAT=ErrorCode)
     IF (ErrorCode.NE.0) THEN
-        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -912,7 +952,7 @@ CONTAINS
     IF (ALLOCATED(CharacterArray)) DEALLOCATE(CharacterArray) 
     ALLOCATE (CharacterArray(nrow,ncolumn) ,STAT=ErrorCode)
     IF (ErrorCode.NE.0) THEN
-        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -936,7 +976,7 @@ CONTAINS
     IF (ALLOCATED(RealArray)) DEALLOCATE(RealArray) 
     ALLOCATE (RealArray(nrow,ncolumn) ,STAT=ErrorCode)
     IF (ErrorCode.NE.0) THEN
-        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -960,7 +1000,7 @@ CONTAINS
     IF (ALLOCATED(RealArray)) DEALLOCATE(RealArray) 
     ALLOCATE (RealArray(n1,n2,n3) ,STAT=ErrorCode)
     IF (ErrorCode.NE.0) THEN
-        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -984,7 +1024,7 @@ CONTAINS
     IF (ALLOCATED(IntArray)) DEALLOCATE(IntArray) 
     ALLOCATE (IntArray(nrow,ncolumn) ,STAT=ErrorCode)
     IF (ErrorCode.NE.0) THEN
-        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -1008,7 +1048,7 @@ CONTAINS
     IF (ASSOCIATED(LogicalArray)) DEALLOCATE(LogicalArray) 
     ALLOCATE (LogicalArray(ncolumn) ,STAT=ErrorCode)
     IF (ErrorCode.NE.0) THEN
-        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -1032,7 +1072,7 @@ CONTAINS
     IF (ASSOCIATED(RealArray)) DEALLOCATE(RealArray) 
     ALLOCATE (RealArray(ncolumn) ,STAT=ErrorCode)
     IF (ErrorCode.NE.0) THEN
-        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -1056,7 +1096,7 @@ CONTAINS
     IF (ASSOCIATED(CharacterArray)) DEALLOCATE(CharacterArray) 
     ALLOCATE (CharacterArray(ncolumn) ,STAT=ErrorCode)
     IF (ErrorCode.NE.0) THEN
-        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory in '//TRIM(ADJUSTL(SendingProcedure)),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -1392,7 +1432,7 @@ CONTAINS
     
     !MAke sure arrays are matched properly
     IF (iSizeA - iRewound*iSizeSA .GT. 0) THEN
-        CALL SetLastMessage('Sizes of source array and destination arrays are not matched properly!',iFatal,cProcess)
+        CALL SetLastMessage('Sizes of source array and destination arrays are not matched properly!',f_iFatal,cProcess)
         iStat = -1
         RETURN
     END IF
@@ -1429,7 +1469,7 @@ CONTAINS
     
     !MAke sure arrays are matched properly
     IF (iSizeA - iRewound*iSizeSA .GT. 0) THEN
-        CALL SetLastMessage('Sizes of source array and destination arrays are not matched properly!',iFatal,cProcess)
+        CALL SetLastMessage('Sizes of source array and destination arrays are not matched properly!',f_iFatal,cProcess)
         iStat = -1
         RETURN
     END IF
@@ -1466,7 +1506,7 @@ CONTAINS
     
     !MAke sure arrays are matched properly
     IF (iSizeA - iRewound*iSizeSA .GT. 0) THEN
-        CALL SetLastMessage('Sizes of source array and destination arrays are not matched properly!',iFatal,cProcess)
+        CALL SetLastMessage('Sizes of source array and destination arrays are not matched properly!',f_iFatal,cProcess)
         iStat = -1
         RETURN
     END IF
@@ -1503,7 +1543,7 @@ CONTAINS
     
     !Make sure arrays are matched properly
     IF (iSizeA - iRewound*iSizeSA .GT. 0) THEN
-        CALL SetLastMessage('Sizes of source array and destination arrays are not matched properly!',iFatal,cProcess)
+        CALL SetLastMessage('Sizes of source array and destination arrays are not matched properly!',f_iFatal,cProcess)
         iStat = -1
         RETURN
     END IF
@@ -1543,7 +1583,7 @@ CONTAINS
       READ (SourceString,*) rArray(indx)
       iLoc         = FirstLocation(' ',SourceString)
       IF (iLoc .EQ. 0) THEN
-          CALL SetLastMessage('Error in data entry for '//TRIM(cProcess)//'!',iFatal,ThisProcedure)
+          CALL SetLastMessage('Error in data entry for '//TRIM(cProcess)//'!',f_iFatal,ThisProcedure)
           iStat = -1
           RETURN
       END IF
@@ -1577,7 +1617,7 @@ CONTAINS
       READ (SourceString,*) iArray(indx)
       iLoc         = FirstLocation(' ',SourceString)
       IF (iLoc .EQ. 0) THEN
-          CALL SetLastMessage('Error in data entry for '//TRIM(cProcess)//'!',iFatal,ThisProcedure)
+          CALL SetLastMessage('Error in data entry for '//TRIM(cProcess)//'!',f_iFatal,ThisProcedure)
           iStat = -1
           RETURN
       END IF
@@ -1887,71 +1927,34 @@ CONTAINS
   
 
   ! -------------------------------------------------------------
-  ! --- CONVERT FEATURE IDs TO FEATURE INDICES (GATEWAY)
+  ! --- FAST EXP FUNCTION
+  ! --- (Based on Schraudolph, 1999. A fast, compact approximation of the Exp function
   ! -------------------------------------------------------------
-  SUBROUTINE ConvertID_To_Index_Array(IDs,AllIDs,Indices)
-    INTEGER,INTENT(IN)  :: IDs(:),AllIDs(:)
-    INTEGER,INTENT(OUT) :: Indices(:)
-    
-!DIR$ IF (_OPENMP .NE. 0) 
-    !$ CALL ConvertID_To_Index_Array_OMP(IDs,AllIDs,Indices)
-!DIR$ ELSE
-    CALL ConvertID_To_Index_Array_Sequential(IDs,AllIDs,Indices)
-!DIR$ END IF
-    
-  END SUBROUTINE ConvertID_To_Index_Array
-  
-  
-  ! -------------------------------------------------------------
-  ! --- CONVERT SINGLE FEATURE ID TO FEATURE INDEX (GATEWAY)
-  ! -------------------------------------------------------------
-  SUBROUTINE ConvertID_To_Index_Scalar(ID,AllIDs,Index)
-    INTEGER,INTENT(IN)  :: ID,AllIDs(:)
-    INTEGER,INTENT(OUT) :: Index
-    
-!DIR$ IF (_OPENMP .NE. 0) 
-    !$ CALL ConvertID_To_Index_Scalar_OMP(ID,AllIDs,Index)
-!DIR$ ELSE
-    CALL ConvertID_To_Index_Scalar_Sequential(ID,AllIDs,Index)
-!DIR$ END IF
-    
-  END SUBROUTINE ConvertID_To_Index_Scalar
-
-  
-  ! -------------------------------------------------------------
-  ! --- CONVERT FEATURE IDs TO FEATURE INDICES (OPENMP VERSION)
-  ! -------------------------------------------------------------
-  SUBROUTINE ConvertID_To_Index_Array_OMP(IDs,AllIDs,Indices)
-    INTEGER,INTENT(IN)  :: IDs(:),AllIDs(:)
-    INTEGER,INTENT(OUT) :: Indices(:)
+  PURE FUNCTION FEXP(rArg) RESULT(rExp)
+    REAL(8),INTENT(IN) :: rArg
+    REAL(8)            :: rExp
     
     !Local variables
-    INTEGER :: indx,indx1
+    INTEGER(8) :: i8
+    REAL(8)    :: r8
+    EQUIVALENCE (r8,i8)
     
-    !Initialize
-    Indices = 0
+    IF (rArg .LT. -500.0) THEN
+        rExp = 0.0
+    ELSEIF (rArg .GT. 500.0) THEN
+        rExp = HUGE(0d0)
+    ELSE
+        i8   = 6497320848556798 * rArg + 4607182418800017408
+        rExp = r8
+    END IF
     
-    DO indx=1,SIZE(IDs)
-        IF (IDs(indx) .EQ. 0) CYCLE
-        
-        !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(indx,IDs,AllIDs,Indices) NUM_THREADS(OMP_GET_NUM_PROCS()-1)
-        !$OMP DO SCHEDULE(STATIC,500)
-        DO indx1=1,SIZE(AllIDs)
-            IF (IDs(indx) .EQ. AllIDs(indx1)) THEN
-                Indices(indx) = indx1
-            END IF
-        END DO
-        !$OMP END DO
-        !$OMP END PARALLEL
-    END DO
-    
-  END SUBROUTINE ConvertID_To_Index_Array_OMP
+  END FUNCTION FEXP
   
-
+  
   ! -------------------------------------------------------------
-  ! --- CONVERT FEATURE IDs TO FEATURE INDICES (SEQUENTIAL VERSION)
+  ! --- CONVERT FEATURE IDs TO FEATURE INDICES
   ! -------------------------------------------------------------
-  SUBROUTINE ConvertID_To_Index_Array_Sequential(IDs,AllIDs,Indices)
+  SUBROUTINE ConvertID_To_Index_Array(IDs,AllIDs,Indices)
     INTEGER,INTENT(IN)  :: IDs(:),AllIDs(:)
     INTEGER,INTENT(OUT) :: Indices(:)
     
@@ -1971,42 +1974,14 @@ CONTAINS
             END IF
         END DO
     END DO
-    
-  END SUBROUTINE ConvertID_To_Index_Array_Sequential
-  
 
-  ! -------------------------------------------------------------
-  ! --- CONVERT SINGLE FEATURE ID TO FEATURE INDEX (OPENMP VERSION)
-  ! -------------------------------------------------------------
-  SUBROUTINE ConvertID_To_Index_Scalar_OMP(ID,AllIDs,Index)
-    INTEGER,INTENT(IN)  :: ID,AllIDs(:)
-    INTEGER,INTENT(OUT) :: Index
-    
-    !Local variables
-    INTEGER :: indx
-    
-    !Initialize
-    Index = 0
-    
-    IF (ID .EQ. 0) RETURN
-    
-    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(ID,AllIDs,Index) NUM_THREADS(OMP_GET_NUM_PROCS()-1)
-    !$OMP DO SCHEDULE(STATIC,500)
-    DO indx=1,SIZE(AllIDs)
-        IF (ID .EQ. AllIDs(indx)) THEN
-            Index = indx
-        END IF
-    END DO
-    !$OMP END DO
-    !$OMP END PARALLEL
-    
-  END SUBROUTINE ConvertID_To_Index_Scalar_OMP
+  END SUBROUTINE ConvertID_To_Index_Array
   
-
+  
   ! -------------------------------------------------------------
-  ! --- CONVERT SINGLE FEATURE ID TO FEATURE INDEX (SEQUENTIAL VERSION)
+  ! --- CONVERT SINGLE FEATURE ID TO FEATURE INDEX
   ! -------------------------------------------------------------
-  SUBROUTINE ConvertID_To_Index_Scalar_Sequential(ID,AllIDs,Index)
+  SUBROUTINE ConvertID_To_Index_Scalar(ID,AllIDs,Index)
     INTEGER,INTENT(IN)  :: ID,AllIDs(:)
     INTEGER,INTENT(OUT) :: Index
     
@@ -2025,6 +2000,7 @@ CONTAINS
         END IF
     END DO
     
-  END SUBROUTINE ConvertID_To_Index_Scalar_Sequential
+  END SUBROUTINE ConvertID_To_Index_Scalar
+
   
 END MODULE

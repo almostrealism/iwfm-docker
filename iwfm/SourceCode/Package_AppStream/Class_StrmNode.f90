@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -23,6 +23,7 @@
 MODULE Class_StrmNode
   USE Class_PairedData
   USE IOInterface
+  USE Package_Matrix     , ONLY: ConnectivityListType
   IMPLICIT NONE
   
   
@@ -50,10 +51,10 @@ MODULE Class_StrmNode
   ! --- STREAM NODE DATA TYPE
   ! -------------------------------------------------------------
   TYPE StrmNodeType
-      REAL(8)              :: BottomElev                      !Stream bottom elevation
-      TYPE(PairedDataType) :: RatingTable                     !Stage vs. flow rating table
-      INTEGER              :: NUpstrmNodes       = 0          !Number of stream nodes whose flows directly flow into this node
-      INTEGER,ALLOCATABLE  :: UpstrmNodes(:)                  !List of stream nodes whose flows directly flow into this node
+      INTEGER                    :: ID           = 0                !Stream node ID
+      REAL(8)                    :: BottomElev                      !Stream bottom elevation
+      TYPE(PairedDataType)       :: RatingTable                     !Stage vs. flow rating table
+      TYPE(ConnectivityListType) :: Connectivity                    !List of stream nodes upstream from this node
   END TYPE StrmNodeType 
   
   
@@ -94,12 +95,13 @@ CONTAINS
     INTEGER :: indxNode,NUpstrmNodes
     
     DO indxNode=1,NNodes
+      CALL InFile%ReadData(Nodes(indxNode)%ID,iStat)          ;  IF (iStat .EQ. -1) RETURN
       CALL InFile%ReadData(Nodes(indxNode)%BottomElev,iStat)  ;  IF (iStat .EQ. -1) RETURN
-      CALL Nodes(indxNode)%RatingTable%New(InFile,iStat)  ;  IF (iStat .EQ. -1) RETURN
-      CALL InFile%ReadData(NUpstrmNodes,iStat)  ;  IF (iStat .EQ. -1) RETURN  ;  Nodes(indxNode)%NUpstrmNodes = NUpstrmNodes
-      ALLOCATE (Nodes(indxNode)%UpstrmNodes(NUpstrmNodes))
+      CALL Nodes(indxNode)%RatingTable%New(InFile,iStat)      ;  IF (iStat .EQ. -1) RETURN
+      CALL InFile%ReadData(NUpstrmNodes,iStat)                ;  IF (iStat .EQ. -1) RETURN  ;  Nodes(indxNode)%Connectivity%nConnectedNodes = NUpstrmNodes
+      ALLOCATE (Nodes(indxNode)%Connectivity%ConnectedNodes(NUpstrmNodes))
       IF (NUpstrmNodes .GT. 0) THEN
-          CALL InFile%ReadData(Nodes(indxNode)%UpstrmNodes,iStat)  
+          CALL InFile%ReadData(Nodes(indxNode)%Connectivity%ConnectedNodes,iStat)  
           IF (iStat .EQ. -1) RETURN
       END IF
     END DO
@@ -129,10 +131,11 @@ CONTAINS
     INTEGER :: indxNode
     
     DO indxNode=1,SIZE(Nodes)
+      CALL Outfile%WriteData(Nodes(indxNode)%ID)
       CALL Outfile%WriteData(Nodes(indxNode)%BottomElev)
       CALL Nodes(indxNode)%RatingTable%WriteToFile(Outfile)
-      CALL Outfile%WriteData(Nodes(indxNode)%NUpstrmNodes)
-      CALL Outfile%WriteData(Nodes(indxNode)%UpstrmNodes)
+      CALL Outfile%WriteData(Nodes(indxNode)%Connectivity%nConnectedNodes)
+      CALL Outfile%WriteData(Nodes(indxNode)%Connectivity%ConnectedNodes)
     END DO
     
   END SUBROUTINE StrmNode_WritePreprocessedData

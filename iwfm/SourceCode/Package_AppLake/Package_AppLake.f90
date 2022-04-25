@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -26,10 +26,11 @@ MODULE Package_AppLake
   USE MessageLogger               , ONLY: SetLastMessage          , &
                                           EchoProgress            , &
                                           MessageArray            , &
-                                          iFatal                  
+                                          f_iFatal                  
   USE IOInterface                 , ONLY: GenericFileType         , &
-                                          UNKNOWN
-  USE GeneralUtilities            , ONLY: IntToText
+                                          f_iUNKNOWN
+  USE GeneralUtilities            , ONLY: IntToText               , &
+                                          FindSubstringInString
   USE TimeSeriesUtilities         , ONLY: TimeStepType
   USE Package_Discretization      , ONLY: AppGridType             , &
                                           StratigraphyType
@@ -38,9 +39,11 @@ MODULE Package_AppLake
   USE Package_Matrix              , ONLY: MatrixType
   USE Package_PrecipitationET     , ONLY: ETType                  , &
                                           PrecipitationType
-  USE Class_BaseAppLake           , ONLY: BaseAppLakeType
+  USE Class_BaseAppLake           , ONLY: BaseAppLakeType         , &
+                                          f_iBudgetType_Lake
   USE Class_AppLake_v40           , ONLY: AppLake_v40_Type
   USE Class_AppLake_v50           , ONLY: AppLake_v50_Type
+  USE Package_Budget              , ONLY: BudgetType
   IMPLICIT NONE
 
   
@@ -60,7 +63,8 @@ MODULE Package_AppLake
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC :: AppLakeType 
+  PUBLIC :: AppLakeType        , &
+            f_iBudgetType_Lake
   
   
   ! -------------------------------------------------------------
@@ -78,13 +82,17 @@ MODULE Package_AppLake
       PROCEDURE,PASS   :: SetAllComponents
       PROCEDURE,PASS   :: SetAllComponentsWithoutBinFile
       PROCEDURE,PASS   :: Kill
-      PROCEDURE,PASS   :: GetNDataList_AtLocationType
-      PROCEDURE,PASS   :: GetDataList_AtLocationType
-      PROCEDURE,PASS   :: GetLocationsWithData
-      PROCEDURE,PASS   :: GetSubDataList_AtLocation
-      PROCEDURE,PASS   :: GetModelData_AtLocation
+      PROCEDURE,PASS   :: GetBudget_List
+      PROCEDURE,PASS   :: GetBudget_NColumns
+      PROCEDURE,PASS   :: GetBudget_ColumnTitles
+      PROCEDURE,PASS   :: GetBudget_MonthlyFlows_GivenAppLake
+      PROCEDURE,NOPASS :: GetBudget_MonthlyFlows_GivenFile
+      PROCEDURE,PASS   :: GetBudget_TSData
       PROCEDURE,PASS   :: GetNLakes
       PROCEDURE,PASS   :: GetNames
+      PROCEDURE,PASS   :: GetLakeIDs
+      PROCEDURE,PASS   :: GetLakeID
+      PROCEDURE,PASS   :: GetLakeIndex
       PROCEDURE,PASS   :: GetMaxElevs
       PROCEDURE,PASS   :: GetNTotalLakeNodes
       PROCEDURE,PASS   :: GetNElementsInLake
@@ -107,11 +115,14 @@ MODULE Package_AppLake
       PROCEDURE,PASS   :: CheckExternalTSDataPointers
       PROCEDURE,PASS   :: AdvanceState
       PROCEDURE,PASS   :: UpdateHeads
-      GENERIC          :: New                            => SetStaticComponent             , &
-                                                            SetStaticComponentFromBinFile  , &
-                                                            SetDynamicComponent            , &
-                                                            SetAllComponents               , &
+      PROCEDURE,PASS   :: DestinationIDs_To_Indices
+      GENERIC          :: New                            => SetStaticComponent                 , &
+                                                            SetStaticComponentFromBinFile      , &
+                                                            SetDynamicComponent                , &
+                                                            SetAllComponents                   , &
                                                             SetAllComponentsWithoutBinFile
+      GENERIC          :: GetBudget_MonthlyFlows         => GetBudget_MonthlyFlows_GivenFile   , &
+                                                            GetBudget_MonthlyFlows_GivenAppLake
   END TYPE AppLakeType
   
   
@@ -150,12 +161,11 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW APPLICATION LAKES FROM RAW DATA (GENERALLY CALLED IN PRE-PROCESSOR)
   ! -------------------------------------------------------------
-  SUBROUTINE SetStaticComponent(AppLake,cFileName,Stratigraphy,AppGrid,NStrmNodes,StrmLakeConnector,LakeGWConnector,iStat)
+  SUBROUTINE SetStaticComponent(AppLake,cFileName,Stratigraphy,AppGrid,StrmLakeConnector,LakeGWConnector,iStat)
     CLASS(AppLakeType),INTENT(OUT)        :: AppLake
     CHARACTER(LEN=*),INTENT(IN)           :: cFileName
     TYPE(StratigraphyType),INTENT(IN)     :: Stratigraphy
     TYPE(AppGridType),INTENT(IN)          :: AppGrid
-    INTEGER,INTENT(IN)                    :: NStrmNodes
     TYPE(StrmLakeConnectorType)           :: StrmLakeConnector
     TYPE(LakeGWConnectorType),INTENT(OUT) :: LakeGWConnector
     INTEGER,INTENT(OUT)                   :: iStat
@@ -184,7 +194,7 @@ CONTAINS
     SELECT CASE (TRIM(cVersionLocal))
         CASE ('4.0')
             ALLOCATE(AppLake_v40_Type :: AppLake%Me)
-            CALL AppLake%Me%New(cFileName,Stratigraphy,AppGrid,NStrmNodes,StrmLakeConnector,LakeGWConnector,iStat)
+            CALL AppLake%Me%New(cFileName,Stratigraphy,AppGrid,StrmLakeConnector,LakeGWConnector,iStat)
             IF (iStat .EQ. -1) RETURN
             IF (AppLake%Me%NLakes .EQ. 0) THEN
                 CALL AppLake%Me%Kill()
@@ -196,7 +206,7 @@ CONTAINS
             
         CASE ('5.0')
             ALLOCATE(AppLake_v50_Type :: AppLake%Me)
-            CALL AppLake%Me%New(cFileName,Stratigraphy,AppGrid,NStrmNodes,StrmLakeConnector,LakeGWConnector,iStat)
+            CALL AppLake%Me%New(cFileName,Stratigraphy,AppGrid,StrmLakeConnector,LakeGWConnector,iStat)
             IF (iStat .EQ. -1) RETURN
             IF (AppLake%Me%NLakes .EQ. 0) THEN
                 CALL AppLake%Me%Kill()
@@ -207,7 +217,7 @@ CONTAINS
             AppLake%lDefined = .TRUE.
             
         CASE DEFAULT
-            CALL SetLastMessage('Lake Component version number is not recognized ('//TRIM(cVersionLocal)//')!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Lake Component version number is not recognized ('//TRIM(cVersionLocal)//')!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END SELECT
@@ -264,7 +274,7 @@ CONTAINS
             AppLake%lDefined = .TRUE.
             
         CASE DEFAULT
-            CALL SetLastMessage('Lake Component version number is not recognized ('//TRIM(IntToText(iVersion))//')!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Lake Component version number is not recognized ('//TRIM(IntToText(iVersion))//')!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
     END SELECT
@@ -301,7 +311,7 @@ CONTAINS
         IF (AppLake%iVersion .GT. 0) THEN
             MessageArray(1) = 'For proper simulation of lakes, relevant lake data files must'
             MessageArray(2) = 'be specified when lakes are defined in Pre-Processor.'
-            CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         ELSE
@@ -328,7 +338,7 @@ CONTAINS
             IF (AppLake%iVersion .NE. 50) ErrorCode = 1
             
         CASE DEFAULT
-            CALL SetLastMessage('Lake Component version number is not recognized ('//TRIM(cVersionSim)//')!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Lake Component version number is not recognized ('//TRIM(cVersionSim)//')!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
     END SELECT
@@ -336,7 +346,7 @@ CONTAINS
         MessageArray(1) = 'Lake Component versions used in Pre-Processor and Simulation must match!'
         WRITE(MessageArray(2),'(A,F3.1)') 'Version number in Pre-Processor = ',rVersionPre
         MessageArray(3) = 'Version number in Simulation    = ' // TRIM(cVersionSim)
-        CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -366,14 +376,14 @@ CONTAINS
     INTEGER                      :: iVersion,ErrorCode
     
     !If a binary file is supplied, read the flag to see if lake are simulated 
-    IF (BinFile%iGetFileType() .NE. UNKNOWN) THEN
+    IF (BinFile%iGetFileType() .NE. f_iUNKNOWN) THEN
         CALL BinFile%ReadData(iVersion,iStat)  
         IF (iStat .EQ. -1) RETURN
         IF (iVersion .EQ. 0) RETURN
     END IF
 
     !Return if a Simulation filename is not specified
-    IF (cFileName .EQ. ''  .OR.  BinFile%iGetFileType() .EQ. UNKNOWN) RETURN
+    IF (cFileName .EQ. ''  .OR.  BinFile%iGetFileType() .EQ. f_iUNKNOWN) RETURN
     
     !Instantiate lake component based on version
     SELECT CASE (iVersion)
@@ -402,7 +412,7 @@ CONTAINS
             AppLake%lDefined = .TRUE.
             
         CASE DEFAULT
-            CALL SetLastMessage('Lake Component version number is not recognized ('//TRIM(IntToText(iVersion))//')!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Lake Component version number is not recognized ('//TRIM(IntToText(iVersion))//')!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
     END SELECT
@@ -413,14 +423,14 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INSTANTIATE COMPLETE LAKE DATA WITHOUT INTERMEDIATE BINARY FILE
   ! -------------------------------------------------------------
-  SUBROUTINE SetAllComponentsWithoutBinFile(AppLake,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,NStrmNodes,StrmLakeConnector,LakeGWConnector,iStat)
+  SUBROUTINE SetAllComponentsWithoutBinFile(AppLake,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,StrmLakeConnector,LakeGWConnector,iStat)
     CLASS(AppLakeType),INTENT(OUT)        :: AppLake
     LOGICAL,INTENT(IN)                    :: IsForInquiry
     CHARACTER(LEN=*),INTENT(IN)           :: cPPFileName,cSimFileName,cSimWorkingDirectory
     TYPE(AppGridType),INTENT(IN)          :: AppGrid
     TYPE(StratigraphyType),INTENT(IN)     :: Stratigraphy
     TYPE(TimeStepType),INTENT(IN)         :: TimeStep
-    INTEGER,INTENT(IN)                    :: NTIME,NStrmNodes
+    INTEGER,INTENT(IN)                    :: NTIME
     TYPE(StrmLakeConnectorType)           :: StrmLakeConnector
     TYPE(LakeGWConnectorType),INTENT(OUT) :: LakeGWConnector
     INTEGER,INTENT(OUT)                   :: iStat
@@ -449,7 +459,7 @@ CONTAINS
     SELECT CASE (TRIM(cVersionPre))
         CASE ('4.0')
             ALLOCATE(AppLake_v40_Type :: AppLake%Me)
-            CALL AppLake%Me%New(IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,NStrmNodes,StrmLakeConnector,LakeGWConnector,iStat)
+            CALL AppLake%Me%New(IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,StrmLakeConnector,LakeGWConnector,iStat)
             IF (iStat .EQ. -1) RETURN
             IF (AppLake%Me%NLakes .EQ. 0) THEN
                 CALL AppLake%Me%Kill()
@@ -461,7 +471,7 @@ CONTAINS
             
         CASE ('5.0')
             ALLOCATE(AppLake_v50_Type :: AppLake%Me)
-            CALL AppLake%Me%New(IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,NStrmNodes,StrmLakeConnector,LakeGWConnector,iStat)
+            CALL AppLake%Me%New(IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,StrmLakeConnector,LakeGWConnector,iStat)
             IF (iStat .EQ. -1) RETURN
             IF (AppLake%Me%NLakes .EQ. 0) THEN
                 CALL AppLake%Me%Kill()
@@ -472,7 +482,7 @@ CONTAINS
             AppLake%lDefined = .TRUE.
             
         CASE DEFAULT
-            CALL SetLastMessage('Lake Component version number is not recognized ('//TRIM(cVersionPre)//')!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Lake Component version number is not recognized ('//TRIM(cVersionPre)//')!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
     END SELECT
@@ -523,6 +533,248 @@ CONTAINS
 ! ******************************************************************
 ! ******************************************************************
 
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET LIST 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_List(AppLake,iBudgetTypeList,iBudgetLocationTypeList,cBudgetDescriptions,cBudgetFiles)
+    CLASS(AppLakeType),INTENT(IN)            :: AppLake
+    INTEGER,ALLOCATABLE,INTENT(OUT)          :: iBudgetTypeList(:),iBudgetLocationTypeList(:)          
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cBudgetDescriptions(:),cBudgetFiles(:)
+    
+    IF (AppLake%lDefined) THEN
+        CALL AppLake%Me%GetBudget_List(iBudgetTypeList,iBudgetLocationTypeList,cBudgetDescriptions,cBudgetFiles)
+    ELSE
+        ALLOCATE (iBudgetTypeList(0) , iBudgetLocationTypeList(0) , cBudgetDescriptions(0) , cBudgetFiles(0))
+    END IF
+  
+  END SUBROUTINE GetBudget_List
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF BUDGET COLUMNS 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_NColumns(AppLake,iLocationIndex,iNCols,iStat)
+    CLASS(AppLakeType),INTENT(IN) :: AppLake
+    INTEGER,INTENT(IN)            :: iLocationIndex          
+    INTEGER,INTENT(OUT)           :: iNCols,iStat          
+    
+    IF (AppLake%lDefined) THEN
+        CALL AppLake%Me%GetBudget_NColumns(iLocationIndex,iNCols,iStat)
+    ELSE
+        iStat  = 0
+        iNCols = 0
+    END IF
+     
+  END SUBROUTINE GetBudget_NColumns
+
+
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET COLUMN TITLES (EXCLUDING Time COLUMN) 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_ColumnTitles(AppLake,iLocationIndex,cUnitLT,cUnitAR,cUnitVL,cColTitles,iStat)
+    CLASS(AppLakeType),INTENT(IN)            :: AppLake
+    INTEGER,INTENT(IN)                       :: iLocationIndex
+    CHARACTER(LEN=*),INTENT(IN)              :: cUnitLT,cUnitAR,cUnitVL
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cColTitles(:)
+    INTEGER,INTENT(OUT)                      :: iStat         
+    
+    IF (AppLake%lDefined) THEN
+        CALL AppLake%Me%GetBudget_ColumnTitles(iLocationIndex,cUnitLT,cUnitAR,cUnitVL,cColTitles,iStat)
+    ELSE
+        iStat = 0
+        ALLOCATE (cColTitles(0))
+    END IF
+     
+  END SUBROUTINE GetBudget_ColumnTitles
+
+
+  ! -------------------------------------------------------------
+  ! --- GET MONTHLY BUDGET FLOWS FROM AppLake OBJECT FOR A SPECIFED LAKE
+  ! --- (Assumes cBeginDate and cEndDate are adjusted properly)
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_MonthlyFlows_GivenAppLake(AppLake,iLakeIndex,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    CLASS(AppLakeType),INTENT(IN)            :: AppLake
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate
+    INTEGER,INTENT(IN)                       :: iLakeIndex
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)  !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    IF (AppLake%lDefined) THEN
+        CALL AppLake%Me%GetBudget_MonthlyFlows_GivenAppLake(iLakeIndex,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)  
+    ELSE
+        iStat = 0
+        ALLOCATE (rFlows(0,0) , cFlowNames(0))
+    END IF
+    
+  END SUBROUTINE GetBudget_MonthlyFlows_GivenAppLake
+
+
+  ! -------------------------------------------------------------
+  ! --- GET MONTHLY BUDGET FLOWS FROM A DEFINED BUDGET FILE FOR A SPECIFED LAKE
+  ! --- (Assumes cBeginDate and cEndDate are adjusted properly)
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_MonthlyFlows_GivenFile(Budget,iLakeID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    TYPE(BudgetType),INTENT(IN)              :: Budget      !Assumes Budget file is already open
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate
+    INTEGER,INTENT(IN)                       :: iLakeID
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)  !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+32) :: ThisProcedure = ModName // 'GetBudget_MonthlyFlows_GivenFile'
+    INTEGER                      :: iErrorCode  
+    CHARACTER(:),ALLOCATABLE     :: cVersion
+    TYPE(AppLakeType)            :: AppLake
+    
+    !Get version number
+    CALL GetPackageVersion(Budget,cVersion)
+    
+    !Based on component version, allocate base stream type
+    SELECT CASE (cVersion)
+        CASE ('4.0')
+            ALLOCATE(AppLake_v40_Type :: AppLake%Me)
+        CASE ('5.0')
+            ALLOCATE(AppLake_v50_Type :: AppLake%Me)
+        CASE DEFAULT
+            CALL SetLastMessage('Lake Component version number is not recognized ('//TRIM(cVersion)//')!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+    END SELECT
+        
+    !Get monthly data    
+    CALL AppLake%Me%GetBudget_MonthlyFlows_GivenFile(Budget,iLakeID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    
+    !Clear memory
+    DEALLOCATE (AppLake%Me , cVersion , STAT=iErrorCode)
+
+  CONTAINS
+   
+    !#######################################################
+    !### FIND THE VERSION NUMBER OF THE LAKE PACKAGE USED
+    !#######################################################
+    SUBROUTINE GetPackageVersion(Budget,cVersion)
+      TYPE(BudgetType),INTENT(IN) :: Budget
+      CHARACTER(:),ALLOCATABLE,INTENT(OUT) :: cVersion
+      
+      !Local variables
+      INTEGER                      :: iNTitles,iLenTitles,indx,iLoc
+      CHARACTER(LEN=:),ALLOCATABLE :: cTitles(:)
+      CHARACTER(:),ALLOCATABLE     :: cTitlesConc
+     
+      !Get the ASCII titles from the Budget file; one of these titles include component version number
+      iNTitles   = Budget%GetNPersistentTitles()
+      iLenTitles = Budget%GetTitleLen()
+      ALLOCATE (CHARACTER(iLenTitles) :: cTitles(iNTitles))
+      cTitles = Budget%GetPersistentTitles(iNTitles)
+      
+      !Concotonate titles
+      ALLOCATE (CHARACTER(LEN=iNTitles*iLenTitles) :: cTitlesConc)
+      cTitlesConc = ''
+      DO indx=1,iNTitles
+          cTitlesConc = TRIM(cTitlesConc) // TRIM(ADJUSTL(cTitles(indx)))
+      END DO  
+      
+      !Check for version 4.0
+      CALL FindSubStringInString('v4.0.',TRIM(cTitlesConc),iLoc)
+      IF (iLoc .GT. 0) THEN
+          ALLOCATE (CHARACTER(3) :: cVersion)
+          cVersion = '4.0'
+          RETURN
+      END IF 
+      
+      !Check for version 5.0
+      CALL FindSubStringInString('v5.0.',TRIM(cTitlesConc),iLoc)
+      IF (iLoc .GT. 0) THEN
+          ALLOCATE (CHARACTER(3) :: cVersion)
+          cVersion = '5.0'
+          RETURN
+      END IF 
+      
+      !If made to this point, something is wrong
+      ALLOCATE (CHARACTER(3) :: cVersion)
+      cVersion = '0.0'
+
+    END SUBROUTINE GetPackageVersion
+    
+  END SUBROUTINE GetBudget_MonthlyFlows_GivenFile
+
+
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET TIME SERIES DATA FOR A SET OF COLUMNS 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_TSData(AppLake,iLakeIndex,iCols,cBeginDate,cEndDate,cInterval,rFactLT,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+    CLASS(AppLakeType),INTENT(IN) :: AppLake
+    INTEGER,INTENT(IN)            :: iLakeIndex,iCols(:)
+    CHARACTER(LEN=*),INTENT(IN)   :: cBeginDate,cEndDate,cInterval
+    REAL(8),INTENT(IN)            :: rFactLT,rFactAR,rFactVL
+    REAL(8),INTENT(OUT)           :: rOutputDates(:),rOutputValues(:,:)    !rOutputValues is in (timestep,column) format
+    INTEGER,INTENT(OUT)           :: iDataTypes(:),inActualOutput,iStat
+    
+    IF (AppLake%lDefined) THEN    
+        CALL AppLake%Me%GetBudget_TSData(iLakeIndex,iCols,cBeginDate,cEndDate,cInterval,rFactLT,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+    ELSE
+        iStat          = 0
+        inActualOutput = 0
+        iDataTypes     = -1
+        rOutputDates   = 0.0
+        rOutputValues  = 0.0
+    END IF
+           
+  END SUBROUTINE GetBudget_TSData
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET LAKE IDs
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetLakeIDs(AppLake,iLakeIDs)
+    CLASS(AppLakeType),INTENT(IN) :: AppLake
+    INTEGER,INTENT(OUT)           :: iLakeIDs(:)
+    
+    IF (AppLake%lDefined) THEN
+        CALL AppLake%Me%GetLakeIDs(iLakeIDs)
+    END IF
+    
+  END SUBROUTINE GetLakeIDs
+  
+    
+  ! -------------------------------------------------------------
+  ! --- GET LAKE INDEX GIVEN ID
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetLakeIndex(AppLake,iLakeID) RESULT(iIndex)
+    CLASS(AppLakeType),INTENT(IN) :: AppLake
+    INTEGER,INTENT(IN)            :: iLakeID
+    INTEGER                       :: iIndex
+    
+    IF (AppLake%lDefined) THEN
+        iIndex = AppLake%Me%GetLakeIndex(iLakeID)
+    ELSE
+        iIndex = 0
+    END IF
+    
+  END FUNCTION GetLakeIndex
+  
+      
+  ! -------------------------------------------------------------
+  ! --- GET LAKE ID GIVEN INDEX
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetLakeID(AppLake,indx) RESULT(ID)
+    CLASS(AppLakeType),INTENT(IN) :: AppLake
+    INTEGER,INTENT(IN)            :: indx
+    INTEGER                       :: ID
+    
+    IF (AppLake%lDefined) THEN
+        ID = AppLake%Me%GetLakeID(indx)
+    ELSE
+        ID = 0
+    END IF
+    
+  END FUNCTION GetLakeID
+  
+      
   ! -------------------------------------------------------------
   ! --- GET LAKE ELEVS
   ! -------------------------------------------------------------
@@ -611,7 +863,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET NUMBER OF ELEMENTS IN A LAKE
   ! -------------------------------------------------------------
-  FUNCTION GetNElementsInLake(AppLake,iLake) RESULT(NElems)
+  PURE FUNCTION GetNElementsInLake(AppLake,iLake) RESULT(NElems)
     CLASS(AppLakeType),INTENT(IN) :: AppLake
     INTEGER,INTENT(IN)            :: iLake
     INTEGER                       :: NElems
@@ -683,98 +935,6 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
-  ! --- GET THE NUMBER OF DATA TYPES FOR POST-PROCESSING AT A LAKE
-  ! -------------------------------------------------------------
-  FUNCTION GetNDataList_AtLocationType(AppLake) RESULT(NData)
-    CLASS(AppLakeType),INTENT(IN) :: AppLake
-    INTEGER                       :: NData
-    
-    IF (AppLake%lDefined) THEN
-        NData = AppLake%Me%GetNDataList_AtLocationType()
-    ELSE
-        NData = 0
-    END IF
-    
-  END FUNCTION GetNDataList_AtLocationType
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET A LIST OF DATA TYPES FOR POST-PROCESSING AT A LAKE
-  ! -------------------------------------------------------------
-  SUBROUTINE GetDataList_AtLocationType(AppLake,iLocationType,cDataList,cFileList,lBudgetType) 
-    CLASS(AppLakeType),INTENT(IN) :: AppLake
-    INTEGER,INTENT(IN)            :: iLocationType    
-    CHARACTER(LEN=*),ALLOCATABLE  :: cDataList(:),cFileList(:)
-    LOGICAL,ALLOCATABLE           :: lBudgetType(:)
-    
-    !Local variables
-    INTEGER :: ErrorCode
-    
-    IF (AppLake%lDefined) THEN
-        CALL AppLake%Me%GetDataList_AtLocationType(iLocationType,cDataList,cFileList,lBudgetType)
-    ELSE
-        DEALLOCATE (cDataList , STAT=ErrorCode)
-        DEALLOCATE (cFileList , STAT=ErrorCode)
-        DEALLOCATE (lBudgetType , STAT=ErrorCode)
-    END IF
-    
-  END SUBROUTINE GetDataList_AtLocationType
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET LOCATIONS THAT HAS A DATA TYPE FOR POST-PROCESSING
-  ! -------------------------------------------------------------
-  SUBROUTINE GetLocationsWithData(AppLake,iLocationType,cDataType,iLocations) 
-    CLASS(AppLakeType),INTENT(IN)   :: AppLake
-    INTEGER,INTENT(IN)              :: iLocationType
-    CHARACTER(LEN=*),INTENT(IN)     :: cDataType  
-    INTEGER,ALLOCATABLE,INTENT(OUT) :: iLocations(:)
-    
-    !Local variables
-    INTEGER :: ErrorCode
-    
-    IF (AppLake%lDefined) THEN
-        CALL AppLake%Me%GetLocationsWithData(iLocationType,cDataType,iLocations)
-    ELSE
-        DEALLOCATE (iLocations , STAT=ErrorCode)
-    END IF
-    
-  END SUBROUTINE GetLocationsWithData
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET SUB-COMPONENTS OF A DATA TYPE FOR POST-PROCESSING AT A LOCATION TYPE
-  ! -------------------------------------------------------------
-  SUBROUTINE GetSubDataList_AtLocation(AppLake,iLocationType,cDataType,cSubDataList) 
-    CLASS(AppLakeType),INTENT(IN)            :: AppLake
-    INTEGER,INTENT(IN)                       :: iLocationType
-    CHARACTER(LEN=*),INTENT(IN)              :: cDataType
-    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cSubDataList(:)
-    
-    IF (AppLake%lDefined) CALL AppLake%Me%GetSubDataList_AtLocation(iLocationType,cDataType,cSubDataList) 
-    
-  END SUBROUTINE GetSubDataList_AtLocation
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET MODEL DATA AT A LAKE FOR POST-PROCESSING
-  ! -------------------------------------------------------------
-  SUBROUTINE GetModelData_AtLocation(AppLake,iLocationType,iLocationID,cDataType,iCol,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-    CLASS(AppLakeType)          :: AppLake
-    INTEGER,INTENT(IN)          :: iLocationType,iLocationID,iCol
-    CHARACTER(LEN=*),INTENT(IN) :: cDataType,cOutputBeginDateAndTime,cOutputEndDAteAndTime,cOutputInterval
-    REAL(8),INTENT(IN)          :: rFact_LT,rFact_AR,rFact_VL
-    INTEGER,INTENT(OUT)         :: iDataUnitType,nActualOutput
-    REAL(8),INTENT(OUT)         :: rOutputDates(:),rOutputValues(:)
-    INTEGER,INTENT(OUT)         :: iStat
-    
-    iStat = 0
-    IF (AppLake%lDefined) CALL AppLake%Me%GetModelData_AtLocation(iLocationType,iLocationID,cDataType,iCol,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-
-  END SUBROUTINE GetModelData_AtLocation
-  
-  
-  ! -------------------------------------------------------------
   ! --- GET VERSION NUMBER
   ! -------------------------------------------------------------
   FUNCTION GetVersion() RESULT(cVrs)
@@ -831,6 +991,8 @@ CONTAINS
     
   END SUBROUTINE ReadTSData
     
+  
+  
   
 ! ******************************************************************
 ! ******************************************************************
@@ -899,6 +1061,23 @@ CONTAINS
 ! ******************************************************************
 ! ******************************************************************
 
+  ! -------------------------------------------------------------
+  ! --- CONVERT IDs (MAINLY STREAM NODE IDs) TO INDICES
+  ! -------------------------------------------------------------
+  SUBROUTINE DestinationIDs_To_Indices(AppLake,iStrmNodeIDs,iStat)
+    CLASS(AppLakeType)  :: AppLake
+    INTEGER,INTENT(IN)  :: iStrmNodeIDs(:)
+    INTEGER,INTENT(OUT) :: iStat
+    
+    IF (AppLake%lDefined) THEN
+        CALL AppLake%Me%DestinationIDs_To_Indices(iStrmNodeIDs,iStat)
+    ELSE
+        iStat = 0
+    END IF
+    
+  END SUBROUTINE DestinationIDs_To_Indices
+  
+  
   ! -------------------------------------------------------------
   ! --- SIMULATE LAKES
   ! -------------------------------------------------------------

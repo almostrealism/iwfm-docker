@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2019  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -22,7 +22,7 @@
 !***********************************************************************
 MODULE Class_BaseFileType
   USE MessageLogger     , ONLY: SetLastMessage  , &
-                                iFatal
+                                f_iFatal
   USE GeneralUtilities
   USE,INTRINSIC :: ISO_FORTRAN_ENV
   IMPLICIT NONE
@@ -51,19 +51,18 @@ MODULE Class_BaseFileType
   ! -------------------------------------------------------------
   ! --- PARAMETERS
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER :: FileTypeLength    = 3      ,&
-                       DefaultUnitNumber = -200   ,&
-                       MinUnitNumber     = 8      ,&
-                       MaxUnitNumber     = 50008     
-  INTEGER,SAVE      :: LastUnitConnected = MinUnitNumber - 1
+  INTEGER,PARAMETER :: f_iDefaultUnitNumber = -200   ,&
+                       f_iMinUnitNumber     = 8      ,&
+                       f_iMaxUnitNumber     = 50008     
+  INTEGER,SAVE      :: LastUnitConnected    = f_iMinUnitNumber - 1
   
   
   ! -------------------------------------------------------------
   ! --- BASE FILE DATA TYPE
   ! -------------------------------------------------------------
   TYPE,ABSTRACT :: BaseFileType
-      INTEGER                  :: UnitN = DefaultUnitNumber   !File unit number
-      CHARACTER(:),ALLOCATABLE :: Name                        !Name of file
+      INTEGER                  :: UnitN = f_iDefaultUnitNumber   !File unit number
+      CHARACTER(:),ALLOCATABLE :: Name                           !Name of file
   CONTAINS
       PROCEDURE(Abstract_New),PASS,DEFERRED             :: New
       PROCEDURE(Abstract_Kill),PASS,DEFERRED            :: Kill
@@ -156,7 +155,7 @@ CONTAINS
     CLASS(BaseFileType) :: ThisFile
     
     !Kill basefile
-    ThisFile%UnitN = DefaultUnitNumber
+    ThisFile%UnitN = f_iDefaultUnitNumber
     DEALLOCATE(ThisFile%Name)
     
   END SUBROUTINE KillBaseFile
@@ -195,13 +194,13 @@ CONTAINS
     IF (Error .EQ. 0) THEN
       !Do nothing; read/write action was successful
     ELSEIF (IS_IOSTAT_END(Error)) THEN
-      CALL SetLastMessage('Error in reading data! End-of-file reached in file '//TRIM(ThisFile%Name),iFatal,ThisProcedure)
+      CALL SetLastMessage('Error in reading data! End-of-file reached in file '//TRIM(ThisFile%Name),f_iFatal,ThisProcedure)
       iStat = -1
     ELSEIF (Error .EQ. 47) THEN
-      CALL SetLastMessage('Error in writing out to file! File '//TRIM(ThisFile%Name)//' is read-only',iFatal,ThisProcedure)
+      CALL SetLastMessage('Error in writing out to file! File '//TRIM(ThisFile%Name)//' is read-only',f_iFatal,ThisProcedure)
       iStat = -1
     ELSE
-      CALL SetLastMessage('Error in reading data from file '//TRIM(ThisFile%Name),iFatal,ThisProcedure)
+      CALL SetLastMessage('Error in reading data from file '//TRIM(ThisFile%Name),f_iFatal,ThisProcedure)
       iStat = -1
     END IF 
 
@@ -214,7 +213,7 @@ CONTAINS
   FUNCTION GetAUnitNumber() RESULT(UnitNumber)
     INTEGER :: UnitNumber
 
-    DO UnitNumber=LastUnitConnected+1,MaxUnitNumber
+    DO UnitNumber=LastUnitConnected+1,f_iMaxUnitNumber
       IF (UnitNumber .EQ. ERROR_UNIT) CYCLE
       IF (UnitNumber .EQ. INPUT_UNIT) CYCLE
       IF (UnitNumber .EQ. OUTPUT_UNIT) CYCLE

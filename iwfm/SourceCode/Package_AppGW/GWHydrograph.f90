@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -24,24 +24,35 @@ MODULE GWHydrograph
   USE MessageLogger          , ONLY: SetLastMessage            , &
                                      EchoProgress              , &
                                      MessageArray              , &
-                                     iFatal
-  USE IOInterface
-  USE GeneralUtilities
+                                     f_iFatal
+  USE IOInterface            , ONLY: GenericFileType           , &
+                                     iGetFileType_FromName     , &
+                                     f_iUNKNOWN                , &
+                                     f_iTXT                    , &
+                                     f_iDSS
+  USE GeneralUtilities       , ONLY: ArrangeText               , &
+                                     f_cLineFeed               , &
+                                     StripTextUntilCharacter   , &
+                                     CleanSpecialCharacters    , &
+                                     PrepareTitle              , &
+                                     FirstLocation             , &
+                                     IntToText                 , &
+                                     UpperCase                 , &
+                                     LocateInList
   USE TimeSeriesUtilities    , ONLY: TimeStepType              , &
                                      TimeStampToJulian         , &
                                      IncrementTimeStamp        , &
                                      OPERATOR(.TSGT.)          
-  USE GenericLinkedList                                        
-  USE Package_Misc           , ONLY: Real2DTSDataInFileType    , &
+  USE Package_Misc           , ONLY: BaseHydrographType        , &
+                                     HydOutputType             , &
+                                     TecplotOutputType         , &
+                                     Real2DTSDataInFileType    , &
                                      PrepareTSDOutputFile      , &
-                                     ReadTSData                
-  USE Package_Discretization , ONLY: NodeType                  , &
-                                     AppGridType               , &
+                                     ReadTSData                , &
+                                     f_iHyd_GWHead             
+  USE Package_Discretization , ONLY: AppGridType               , &
                                      StratigraphyType          , &
-                                     AppFaceType               , &
-                                     AppFace_GetFaceGivenNodes
-  USE Class_TecplotOutput    , ONLY: TecplotOutputType
-  USE Class_BaseHydrograph
+                                     AppFaceType               
   USE Class_GWState          , ONLY: GWStateType
   USE Class_AppBC            , ONLY: AppBCType
   IMPLICIT NONE
@@ -62,9 +73,7 @@ MODULE GWHydrograph
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC :: GWHydrographType                     , &
-            AllHeadOutFile_ForInquiry_New        , &
-            AllHeadOutFile_ForInquiry_ReadGWHead
+  PUBLIC :: GWHydrographType 
   
   
   ! -------------------------------------------------------------
@@ -104,6 +113,7 @@ MODULE GWHydrograph
   CONTAINS
       PROCEDURE,PASS :: New
       PROCEDURE,PASS :: Kill
+      PROCEDURE,PASS :: ReadGWHeadsAll_ForALayer
       PROCEDURE,PASS :: ReadGWHead_AtNodeLayer
       PROCEDURE,PASS :: ReadGWHead_AtWell
       PROCEDURE,PASS :: PrintInitialValues
@@ -116,6 +126,7 @@ MODULE GWHydrograph
       PROCEDURE,PASS :: GetAllHeadOutputFileName
       PROCEDURE,PASS :: GetGWHydOutputFileName
       PROCEDURE,PASS :: GetNGWHeadHydrographs
+      PROCEDURE,PASS :: GetGWHeadHydrographIDs
       PROCEDURE,PASS :: GetGWHeadHydrographCoordinates
       PROCEDURE,PASS :: GetGWHeadHydrographNames
       PROCEDURE,PASS :: TransferOutputToHDF
@@ -149,11 +160,12 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW GW HYDROGRAPH DATA
   ! -------------------------------------------------------------
-  SUBROUTINE New(GWHydData,IsForInquiry,AppGrid,Stratigraphy,cWorkingDirectory,FACTLTOU,UNITLTOU,UNITVLOU,UNITVROU,cAllHeadOutFileName,cCellVelocityFileName,cHeadTecplotFileName,cVelTecplotFileName,TimeStep,InFile,iStat) 
+  SUBROUTINE New(GWHydData,IsForInquiry,AppGrid,Stratigraphy,cWorkingDirectory,iGWNodeIDs,FACTLTOU,UNITLTOU,UNITVLOU,UNITVROU,cAllHeadOutFileName,cCellVelocityFileName,cHeadTecplotFileName,cVelTecplotFileName,TimeStep,InFile,iStat) 
     CLASS(GWHydrographType),INTENT(OUT) :: GWHydData
     LOGICAL,INTENT(IN)                  :: IsForInquiry
     TYPE(AppGridType),INTENT(IN)        :: AppGrid
     TYPE(StratigraphyType),INTENT(IN)   :: Stratigraphy
+    INTEGER,INTENT(IN)                  :: iGWNodeIDs(:)
     REAL(8),INTENT(IN)                  :: FACTLTOU
     CHARACTER(LEN=*),INTENT(IN)         :: cWorkingDirectory,UNITLTOU,UNITVLOU,UNITVROU,cAllHeadOutFileName,cCellVelocityFileName,cHeadTecplotFileName,cVelTecplotFileName
     TYPE(TimeStepType),INTENT(IN)       :: TimeStep
@@ -178,9 +190,9 @@ CONTAINS
     !Instantiate file for the output of all heads
     IF (cAllHeadOutFileName .NE. '') THEN
         IF (IsForInquiry) THEN
-            CALL AllHeadOutFile_ForInquiry_New(cAllHeadOutFileName,AppGrid%NNodes,NLayers,TimeStep,GWHydData%AllHeadOutFile_ForInquiry,iStat)
+            CALL AllHeadOutFile_ForInquiry_New(cAllHeadOutFileName,AppGrid%NNodes,NLayers,iGWNodeIDs,TimeStep,GWHydData%AllHeadOutFile_ForInquiry,iStat)
         ELSE
-            CALL AllHeadOutFile_New(cAllHeadOutFileName,UNITLTOU,AppGrid%NNodes,NLayers,TimeStep,GWHydData%AllHeadOutFile,iStat)
+            CALL AllHeadOutFile_New(cAllHeadOutFileName,UNITLTOU,AppGrid%NNodes,NLayers,iGWNodeIDs,TimeStep,GWHydData%AllHeadOutFile,iStat)
         END IF
         IF (iStat .EQ. -1) RETURN
         GWHydData%lAllHeadOutFile_Defined = .TRUE.
@@ -193,7 +205,7 @@ CONTAINS
                   GWHydData%ElemCentroid_Y(NElements)  , &
                   STAT=ErrorCode ,ERRMSG=cErrorMsg     )
         IF (ErrorCode .NE. 0) THEN
-            CALL SetLastMessage('Error in allocating memory for the print-out of groundwater velocities at cell centroids!'//NEW_LINE('')//TRIM(cErrorMsg),iFatal,ThisProcedure)
+            CALL SetLastMessage('Error in allocating memory for the print-out of groundwater velocities at cell centroids!'//NEW_LINE('')//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -206,7 +218,7 @@ CONTAINS
     IF (cHeadTecplotFileName .NE. '') THEN
         ALLOCATE (GWHydData%HeadTecplotFile , STAT=ErrorCode ,ERRMSG=cErrorMsg)
         IF (ErrorCode .NE. 0) THEN
-            CALL SetLastMessage('Error in allocating memory for groundwater head print-out for TecPlot!'//NEW_LINE('')//TRIM(cErrorMsg),iFatal,ThisProcedure)
+            CALL SetLastMessage('Error in allocating memory for groundwater head print-out for TecPlot!'//NEW_LINE('')//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -218,7 +230,7 @@ CONTAINS
     IF (cVelTecplotFileName .NE. '') THEN
         ALLOCATE (GWHydData%VelocityTecplotFile , STAT=ErrorCode ,ERRMSG=cErrorMsg)
         IF (ErrorCode .NE. 0) THEN
-            CALL SetLastMessage('Error in allocating memory for groundwater velocities print-out for TecPlot!'//NEW_LINE('')//TRIM(cErrorMsg),iFatal,ThisProcedure)
+            CALL SetLastMessage('Error in allocating memory for groundwater velocities print-out for TecPlot!'//NEW_LINE('')//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -230,25 +242,25 @@ CONTAINS
     !Instantiate the user-specified hydrographs output data
     ALLOCATE (GWHydData%GWHydOutput , STAT=ErrorCode ,ERRMSG=cErrorMsg)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for groundwater hydrograph printing at user-specified locations!'//NEW_LINE('')//TRIM(cErrorMsg),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for groundwater hydrograph printing at user-specified locations!'//NEW_LINE('')//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
-    CALL HydOutput_New(IsForInquiry,InFile,cWorkingDirectory,AppGrid,Stratigraphy,iHyd_GWHead,UNITLTOU,'HEAD',TimeStep,GWHydData%GWHydOutput,iStat)
+    CALL GWHydData%GWHydOutput%New(IsForInquiry,InFile,cWorkingDirectory,AppGrid,Stratigraphy,iGWNodeIDs,f_iHyd_GWHead,UNITLTOU,'HEAD',TimeStep,iStat)
     IF (iStat .EQ. -1) RETURN
-    GWHydData%lGWHydOutput_Defined = HydOutput_IsDefined(GWHydData%GWHydOutput)
+    GWHydData%lGWHydOutput_Defined = GWHydData%GWHydOutput%IsDefined()
     IF (.NOT. GWHydData%lGWHydOutput_Defined) DEALLOCATE (GWHydData%GWHydOutput , STAT=ErrorCode)
 
     !Instantiate face flow hydrographs output data
     ALLOCATE (GWHydData%FaceFlowOutput , STAT=ErrorCode ,ERRMSG=cErrorMsg)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for face flow hydrograph printing!'//NEW_LINE('')//TRIM(cErrorMsg),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for face flow hydrograph printing!'//NEW_LINE('')//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
-    CALL FaceFlowOutput_New(IsForInquiry,InFile,cWorkingDirectory,AppGrid%AppFace,NLayers,UNITVLOU,TimeStep,GWHydData%FaceFlowOutput,iStat)
+    CALL FaceFlowOutput_New(IsForInquiry,InFile,cWorkingDirectory,AppGrid%AppFace,NLayers,AppGrid%AppElement%ID,UNITVLOU,TimeStep,GWHydData%FaceFlowOutput,iStat)
     IF (iStat .EQ. -1) RETURN
-    IF (GWHydData%FaceFlowOutput%OutFile%iGetFileType() .EQ. UNKNOWN) THEN
+    IF (GWHydData%FaceFlowOutput%OutFile%iGetFileType() .EQ. f_iUNKNOWN) THEN
         DEALLOCATE (GWHydData%FaceFlowOutput , STAT=ErrorCode)
     ELSE
         GWHydData%lFaceFlowOutput_Defined = .TRUE.
@@ -290,8 +302,8 @@ CONTAINS
     END IF
 
     !Make sure that the file is a text file
-    IF (CellVelocityFile%iGetFileType() .NE. TXT) THEN
-        CALL SetLastMessage('Output file ('//TRIM(cFileName)//') for cell groundwater velocities must be a text file!',iFatal,ThisProcedure)
+    IF (CellVelocityFile%iGetFileType() .NE. f_iTXT) THEN
+        CALL SetLastMessage('Output file ('//TRIM(cFileName)//') for cell groundwater velocities must be a text file!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -304,12 +316,12 @@ CONTAINS
     CALL CellVelocityFile%WriteData('*  ELEMENT                 X                 Y')
     DO indxElem=1,AppGrid%NElements
         CALL AppGrid%Centroid(indxElem,XCL,YCL)
-        WRITE (Text,'(I7,5X,2(F16.4,2X))') indxElem,XCL*FACTLTOU,YCL*FACTLTOU
+        WRITE (Text,'(I7,5X,2(F16.4,2X))') AppGrid%AppElement(indxElem)%ID,XCL*FACTLTOU,YCL*FACTLTOU
         XC(indxElem) = XCL
         YC(indxElem) = YCL
         CALL CellVelocityFile%WriteData(TRIM(Text))        
     END DO
-    CALL CellVelocityFile%WriteData(LineFeed)
+    CALL CellVelocityFile%WriteData(f_cLineFeed)
     
     !Print title lines for cell velocities
     CALL CellVelocityFile%WriteData('*'//REPEAT(' ',30)//REPEAT('*',50))
@@ -327,12 +339,12 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW OUTPUT FOR FACE FLOW HYDROGRAPH PRINTING
   ! -------------------------------------------------------------
-  SUBROUTINE FaceFlowOutput_New(IsForInquiry,InFile,cWorkingDirectory,AppFace,NLayers,UNITVLOU,TimeStep,FaceFlowOutput,iStat)
+  SUBROUTINE FaceFlowOutput_New(IsForInquiry,InFile,cWorkingDirectory,AppFace,NLayers,ElementIDs,UNITVLOU,TimeStep,FaceFlowOutput,iStat)
     LOGICAL,INTENT(IN)            :: IsForInquiry
     TYPE(GenericFileType)         :: InFile
     CHARACTER(LEN=*),INTENT(IN)   :: cWorkingDirectory
-    TYPE(AppFaceType),INTENT(IN)  :: AppFace(:)
-    INTEGER,INTENT(IN)            :: NLayers
+    TYPE(AppFaceType),INTENT(IN)  :: AppFace
+    INTEGER,INTENT(IN)            :: NLayers,ElementIDs(:)
     CHARACTER(LEN=*),INTENT(IN)   :: UNITVLOU
     TYPE(TImeStepType),INTENT(IN) :: TimeStep
     TYPE(FaceFlowOutputType)      :: FaceFlowOutput
@@ -365,7 +377,7 @@ CONTAINS
     !Allocate memory
     ALLOCATE (FaceFlowOutput%HydList(NOUTF) ,STAT=ErrorCode , ERRMSG=cErrorMsg)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for face flow hydrograph list!'//NEW_LINE(' ')//TRIM(cErrorMsg),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for face flow hydrograph list!'//NEW_LINE(' ')//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -378,7 +390,7 @@ CONTAINS
             READ (ALine,*) iDummyArray(indx1)
             iLoc = FirstLocation(' ',ALine)
             IF (iLoc .EQ. 0) THEN
-                CALL SetLastMessage('Error in data entry for face flow hydrograph specification '//TRIM(IntToText(indx))//'!',iFatal,ThisProcedure)
+                CALL SetLastMessage('Error in data entry for face flow hydrograph specification '//TRIM(IntToText(indx))//'!',f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
@@ -394,25 +406,25 @@ CONTAINS
             MessageArray(1) = 'Face flow hydrograph print-out specifications must be entered sequentially.'
             MessageArray(2) = 'Expected hydrograph ID = ' // TRIM(IntToText(indx))
             MessageArray(3) = 'Entered hydrograph ID  = ' // TRIM(IntToText(ID))
-            CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+            CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
         
         !Make sure layer is modeled
         IF (iHydLayer .LT. 1   .OR.   iHydLayer .GT. NLayers) THEN
-            CALL SetLastMessage('Face flow hydrograph layer listed for hydrograph ID '//TRIM(IntToText(ID))//' is outside model bounds!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Face flow hydrograph layer listed for hydrograph ID '//TRIM(IntToText(ID))//' is outside model bounds!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
         FaceFlowOutput%HydList(indx)%iLayer = iHydLayer
         
         !Find the element face id that corresponds to given nodes
-        iFace = AppFace_GetFaceGivenNodes(AppFace,iNodes)
+        iFace = AppFace%GetFaceGivenNodes(iNodes)
         IF (iFace .EQ. 0) THEN
             MessageArray(1) = 'Groundwater nodes '//TRIM(IntToText(iNodes(1)))//' and '//TRIM(IntToText(iNodes(2)))//' do not define a face'
             MessageArray(2) = 'for element face flow printing!'
-            CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)            
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)            
             iStat = -1
             RETURN
         END IF 
@@ -424,7 +436,7 @@ CONTAINS
     END DO
     
     !Instantiate the output file 
-    CALL PrepFaceFlowOutFile(IsForInquiry,cFileName,UNITVLOU,NOUTF,FaceFlowOutput%HydList,AppFace,TimeStep,FaceFlowOutput%OutFile,iStat)
+    CALL PrepFaceFlowOutFile(IsForInquiry,cFileName,ElementIDs,UNITVLOU,NOUTF,FaceFlowOutput%HydList,AppFace,TimeStep,FaceFlowOutput%OutFile,iStat)
     
   END SUBROUTINE FaceFlowOutput_New
   
@@ -432,9 +444,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW OUTPUT FILE FOR ALL HEADS
   ! -------------------------------------------------------------
-  SUBROUTINE AllHeadOutFile_New(cFileName,UNITLTOU,NNodes,NLayers,TimeStep,OutFile,iStat)
+  SUBROUTINE AllHeadOutFile_New(cFileName,UNITLTOU,NNodes,NLayers,NodeIDs,TimeStep,OutFile,iStat)
     CHARACTER(LEN=*),INTENT(IN)       :: cFileName,UNITLTOU
-    INTEGER,INTENT(IN)                :: NNodes,NLayers
+    INTEGER,INTENT(IN)                :: NNodes,NLayers,NodeIDs(NNodes)
     TYPE(TimeStepType),INTENT(IN)     :: TimeStep
     TYPE(GenericFileType),ALLOCATABLE :: OutFile
     INTEGER,INTENT(OUT)               :: iStat
@@ -460,7 +472,7 @@ CONTAINS
     !Allocate memory for the file
     ALLOCATE (OutFile , STAT=ErrorCode ,ERRMSG=cErrorMsg)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for groundwater head print-out at all nodes!'//NEW_LINE('')//TRIM(cErrorMsg),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for groundwater head print-out at all nodes!'//NEW_LINE('')//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -470,16 +482,16 @@ CONTAINS
     IF (iStat .EQ. -1) RETURN
     
     !Make sure DSS file is used only if it is a time-tracking simulation
-    IF (OutFile%iGetFileType() .EQ. DSS) THEN
+    IF (OutFile%iGetFileType() .EQ. f_iDSS) THEN
         IF (.NOT. TimeStep%TrackTime) THEN
-            CALL SetLastMessage('DSS files for groundwater head printing at all nodes can only be used for time-tracking simulations.',iFatal,ThisProcedure)
+            CALL SetLastMessage('DSS files for groundwater head printing at all nodes can only be used for time-tracking simulations.',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
     END IF
 
     !Prepare file for print-out
-    Text                    = TRIM(IntToText(NNodes))//'(2X,F10.4)'
+    Text = TRIM(IntToText(NNodes))//'(2X,F10.4)'
     SELECT CASE (NLayers)
       CASE (1)
         FormatSpec='(A21,'//TRIM(Text)//')'
@@ -502,29 +514,29 @@ CONTAINS
     WRITE (Header(1,1),'(A1,28X,A4)') '*','NODE'
     WRITE (Header(2,1),'(A1,8X,A4)')  '*','TIME'
     DO indx=1,NNodes
-      WRITE (Header(2,indx+1),'(I7)') indx
+      WRITE (Header(2,indx+1),'(I7)') NodeIDs(indx)
     END DO
     HeaderFormat(1)='(A33,'//TRIM(Text)//'(A))'
     HeaderFormat(2)='(A13,8X,'//TRIM(Text)//'(5X,A7))'
 
     !Prepare the time series output file
-    CALL PrepareTSDOutputFile(OutFile                                  , &
-                              NColumnsOfData          = NNodes         , &
-                              NRowsOfData             = NLayers        , &
-                              OverwriteNColumnsOfData = .FALSE.        , &
-                              FormatSpec              = FormatSpec     , &
-                              Title                   = TitleLines     , &
-                              Header                  = Header         , &
-                              HeaderFormat            = HeaderFormat   , &
-                              PrintColumnNo           = .FALSE.        , &
-                              DataUnit                = DataUnit       , &
-                              DataType                = DataType       , &
-                              CPart                   = CPart          , &
-                              FPart                   = FPart          , &
-                              UnitT                   = TimeStep%Unit  , &
-                              Layers=[((I,J=1,NNodes),I=1,NLayers)]    , &
-                              GWNodes=[((I,I=1,NNodes),J=1,NLayers)]   , &
-                              iStat=iStat                              )
+    CALL PrepareTSDOutputFile(OutFile                                           , &
+                              NColumnsOfData          = NNodes                  , &
+                              NRowsOfData             = NLayers                 , &
+                              OverwriteNColumnsOfData = .FALSE.                 , &
+                              FormatSpec              = FormatSpec              , &
+                              Title                   = TitleLines              , &
+                              Header                  = Header                  , &
+                              HeaderFormat            = HeaderFormat            , &
+                              PrintColumnNo           = .FALSE.                 , &
+                              DataUnit                = DataUnit                , &
+                              DataType                = DataType                , &
+                              CPart                   = CPart                   , &
+                              FPart                   = FPart                   , &
+                              UnitT                   = TimeStep%Unit           , &
+                              Layers=[((I,J=1,NNodes),I=1,NLayers)]             , &
+                              GWNodes=[((NodeIDs(I),I=1,NNodes),J=1,NLayers)]   , &
+                              iStat=iStat                                       )
 
   END SUBROUTINE AllHeadOutFile_New
   
@@ -532,9 +544,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW FILE FOR ALL HEADS OPENED FOR INPUT FOR POST-PROCESSING
   ! -------------------------------------------------------------
-  SUBROUTINE AllHeadOutFile_ForInquiry_New(cFileName,NNodes,NLayers,TimeStep,InFile,iStat)
+  SUBROUTINE AllHeadOutFile_ForInquiry_New(cFileName,NNodes,NLayers,NodeIDs,TimeStep,InFile,iStat)
     CHARACTER(LEN=*),INTENT(IN)              :: cFileName
-    INTEGER,INTENT(IN)                       :: NNodes,NLayers
+    INTEGER,INTENT(IN)                       :: NNodes,NLayers,NodeIDs(NNodes)
     TYPE(TimeStepType),INTENT(IN)            :: TimeStep
     TYPE(Real2DTSDataInFileType),ALLOCATABLE :: InFile
     INTEGER,INTENT(OUT)                      :: iStat
@@ -550,18 +562,18 @@ CONTAINS
     !Allocate memory for the file
     ALLOCATE (InFile , STAT=ErrorCode , ERRMSG=cErrorMsg)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for groundwater head print-out at all nodes!'//NEW_LINE('')//TRIM(cErrorMsg),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for groundwater head print-out at all nodes!'//NEW_LINE('')//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
       
     !Instantiate file according to its type
-    IF (iGetFileType_FromName(cFileName) .EQ. DSS) THEN
+    IF (iGetFileType_FromName(cFileName) .EQ. f_iDSS) THEN
         !Form pathnames
         iCount = 1
         DO indxLayer=1,NLayers
             DO indxNode=1,NNodes
-                cPathnames(iCount) = '/IWFM/L' // TRIM(IntToText(indxLayer)) // ':GW' // TRIM(IntToText(indxNode)) // '/HEAD//' // UpperCase(TRIM(TimeStep%Unit)) // '/GW_HEAD_AT_ALL_NODES/' 
+                cPathnames(iCount) = '/IWFM/L' // TRIM(IntToText(indxLayer)) // ':GW' // TRIM(IntToText(NodeIDs(indxNode))) // '/HEAD//' // UpperCase(TRIM(TimeStep%Unit)) // '/GW_HEAD_AT_ALL_NODES/' 
                 iCount             = iCount + 1
             END DO
         END DO
@@ -597,7 +609,7 @@ CONTAINS
     
     !Kill groundwater hydrograph output data
     IF (GWHydData%lGWHydOutput_Defined) THEN
-        CALL HydOutput_Kill(GWHydData%GWHydOutput)
+        CALL GWHydData%GWHydOutput%Kill()
         DEALLOCATE (GWHydData%GWHydOutput , STAT=ErrorCode)
         GWHydData%lGWHydOutput_Defined = .FALSE.
     END IF
@@ -780,6 +792,10 @@ CONTAINS
     CLASS(GWHydrographType),INTENT(IN)   :: GWHydData
     CHARACTER(:),ALLOCATABLE,INTENT(OUT) :: cFileName
     
+    !Local variables
+    INTEGER :: ErrorCode
+    
+    DEALLOCATE (cFileName , STAT=ErrorCode)
     CALL GWHydData%GWHydOutput%GetFileName(cFileName)
 
   END SUBROUTINE GetGWHydOutputFileName
@@ -802,15 +818,27 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
+  ! --- GET GW HEAD HYDROGRAPH IDS
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetGWHeadHydrographIDs(GWHydData,IDs)
+    CLASS(GWHydrographType),INTENT(IN) :: GWHydData
+    INTEGER,INTENT(OUT)                :: IDs(:)
+    
+    IF (GWHydData%lGWHydOutput_Defined) CALL GWHydData%GWHydOutput%GetHydrographIDs(IDs)
+    
+  END SUBROUTINE GetGWHeadHydrographIDs
+  
+  
+  ! -------------------------------------------------------------
   ! --- GET GW HEAD HYDROGRAPH COORDINATES
   ! -------------------------------------------------------------
-  SUBROUTINE GetGWHeadHydrographCoordinates(GWHydData,GridNodeCoordinates,X,Y)
+  SUBROUTINE GetGWHeadHydrographCoordinates(GWHydData,GridX,GridY,XHyd,YHyd)
     CLASS(GWHydrographType),INTENT(IN) :: GWHydData
-    TYPE(NodeType),INTENT(IN)          :: GridNodeCoordinates(:)
-    REAL(8),INTENT(OUT)                :: X(:),Y(:)
+    REAL(8),INTENT(IN)                 :: GridX(:),GridY(:)
+    REAL(8),INTENT(OUT)                :: XHyd(:),YHyd(:)
     
     IF (GWHydData%lGWHydOutput_Defined) THEN
-        CALL GWHydData%GWHydOutput%GetHydrographCoordinates(GridNodeCoordinates,X,Y)
+        CALL GWHydData%GWHydOutput%GetHydrographCoordinates(GridX,GridY,XHyd,YHyd)
     END IF
     
   END SUBROUTINE GetGWHeadHydrographCoordinates
@@ -844,26 +872,75 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
-  ! --- READ SIMULATED GW HEADS AT A NODE AT A LAYER DIRECTLY FROM FILE
+  ! --- READ SIMULATED GW HEADS AT ALL NODES AT A LAYER FOR A PERIOD OF TIME DIRECTLY FROM FILE
+  ! --- Note: Assumes AllHeadOutFile_ForInquiry file exists
   ! -------------------------------------------------------------
-  SUBROUTINE AllHeadOutFile_ForInquiry_ReadGWHead(InFile,iNodeID,iLayerID,cOutputBeginDateAndTime,cOutputEndDateAndTime,rOutputFactor,rConversionFactor,nActualOutput,rOutputDates,rOutputValues,iStat)
-    TYPE(Real2DTSDataInFileType) :: InFile
-    INTEGER,INTENT(IN)           :: iNodeID,iLayerID
-    CHARACTER(LEN=*),INTENT(IN)  :: cOutputBeginDateAndTime,cOutputEndDateAndTime
-    REAL(8),INTENT(IN)           :: rOutputFactor,rConversionFactor   !rOutputFactor is the conversion factor when the heads were being printed out during simulation; rConversionFactor is the factor to convert the heads in the simulation units to the output units for post-processing
-    INTEGER,INTENT(OUT)          :: nActualOutput
-    REAL(8),INTENT(OUT)          :: rOutputDates(:),rOutputValues(:)
-    INTEGER,INTENT(OUT)          :: iStat
+  SUBROUTINE ReadGWHeadsAll_ForALayer(GWHydData,iNNodes,iLayer,cOutputBeginDateAndTime,cOutputEndDateAndTime,rOutputFactor,rConversionFactor,rOutputDates,rGWHeads,iStat)
+    CLASS(GWHydrographType)     :: GWHydData
+    INTEGER,INTENT(IN)          :: iNNodes,iLayer
+    CHARACTER(LEN=*),INTENT(IN) :: cOutputBeginDateAndTime,cOutputEndDateAndTime
+    REAL(8),INTENT(IN)          :: rOutputFactor,rConversionFactor   !rOutputFactor is the conversion factor when the heads were being printed out during simulation; rConversionFactor is the factor to convert the heads in the simulation units to the output units for post-processing
+    REAL(8),INTENT(OUT)         :: rOutputDates(:),rGWHeads(:,:)     !rGWHeads are given in (node,time) format 
+    INTEGER,INTENT(OUT)         :: iStat
+    
+    !Local variables
+    INTEGER :: ErrorCode,iPathNameIndex,indxNode,nActualOutput,iOffset
+    REAL(8) :: rEffectiveFactor,rValues(SIZE(rOutputDates)),rGWHeadsTemp(SIZE(rGWHeads,DIM=2),SIZE(rGWHeads,DIM=1))
+    
+    !Initialize
+    iOffset = (iLayer - 1) * GWHydData%AllHeadOutFile_ForInquiry%nCol
+    
+    !Loop over nodes
+    DO indxNode=1,iNNodes
+        !Define the pathname index to read from DSS file
+        iPathNameIndex = iOffset + indxNode
+        
+        !Rewind file
+        CALL GWHydData%AllHeadOutFile_ForInquiry%File%RewindFile_To_BeginningOfTSData(iStat)
+    
+        !Read data
+        CALL GWHydData%AllHeadOutFile_ForInquiry%ReadData(iLayer,indxNode,iPathNameIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rValues,rOutputDates,ErrorCode,iStat)  
+        IF (iStat .EQ. -1) RETURN
+        
+        !Transfer to temporary array
+        rGWHeadsTemp(:,indxNode) = rValues
+    END DO
+    
+    !Transpose and store heads in persistent array
+    rGWHeads = TRANSPOSE(rGWHeadsTemp)
+    
+    !Convert unit
+    rEffectiveFactor = rOutputFactor / rConversionFactor 
+    IF (rEffectiveFactor .NE. 1d0) rGWHeads = rGWHeads * rEffectiveFactor
+    
+    !Rewind file
+    CALL GWHydData%AllHeadOutFile_ForInquiry%File%RewindFile_To_BeginningOfTSData(iStat)
+    
+  END SUBROUTINE ReadGWHeadsAll_ForALayer
+  
+  
+  ! -------------------------------------------------------------
+  ! --- READ SIMULATED GW HEADS AT A NODE AT A LAYER WHEN FILE IS PART OF GWHydrographType OBJECT
+  ! --- Note: Assumes AllHeadOutFile_ForInquiry file exists
+  ! -------------------------------------------------------------
+  SUBROUTINE ReadGWHead_AtNodeLayer(GWHydData,iNode,iLayer,cOutputBeginDateAndTime,cOutputEndDateAndTime,rOutputFactor,rConversionFactor,nActualOutput,rOutputDates,rOutputValues,iStat)
+    CLASS(GWHydrographType)     :: GWHydData
+    INTEGER,INTENT(IN)          :: iNode,iLayer
+    CHARACTER(LEN=*),INTENT(IN) :: cOutputBeginDateAndTime,cOutputEndDateAndTime
+    REAL(8),INTENT(IN)          :: rOutputFactor,rConversionFactor   !rOutputFactor is the conversion factor when the heads were being printed out during simulation; rConversionFactor is the factor to convert the heads in the simulation units to the output units for post-processing
+    INTEGER,INTENT(OUT)         :: nActualOutput
+    REAL(8),INTENT(OUT)         :: rOutputDates(:),rOutputValues(:)
+    INTEGER,INTENT(OUT)         :: iStat
     
     !Local variables
     INTEGER :: ErrorCode,iPathNameIndex
     REAL(8) :: rEffectiveFactor
     
     !Define the pathname index to read from DSS file
-    iPathNameIndex = (iLayerID - 1) * InFile%nCol + iNodeID
+    iPathNameIndex = (iLayer - 1) * GWHydData%AllHeadOutFile_ForInquiry%nCol + iNode
     
     !Read data
-    CALL InFile%ReadData(iLayerID,iNodeID,iPathNameIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)  
+    CALL GWHydData%AllHeadOutFile_ForInquiry%ReadData(iLayer,iNode,iPathNameIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)  
     IF (iStat .EQ. -1) RETURN
     
     !Convert unit
@@ -871,25 +948,7 @@ CONTAINS
     IF (rEffectiveFactor .NE. 1d0) rOutputValues = rOutputValues * rEffectiveFactor
     
     !Rewind file
-    CALL InFile%File%RewindFile_To_BeginningOfTSData(iStat)
-    
-  END SUBROUTINE AllHeadOutFile_ForInquiry_ReadGWHead
-  
-  
-  ! -------------------------------------------------------------
-  ! --- READ SIMULATED GW HEADS AT A NODE AT A LAYER WHEN FILE IS PART OF GWHydrographType OBJECT
-  ! --- Note: Assumes AllHeadOutFile_ForInquiry file exists
-  ! -------------------------------------------------------------
-  SUBROUTINE ReadGWHead_AtNodeLayer(GWHydData,iNodeID,iLayerID,cOutputBeginDateAndTime,cOutputEndDateAndTime,rOutputFactor,rConversionFactor,nActualOutput,rOutputDates,rOutputValues,iStat)
-    CLASS(GWHydrographType)     :: GWHydData
-    INTEGER,INTENT(IN)          :: iNodeID,iLayerID
-    CHARACTER(LEN=*),INTENT(IN) :: cOutputBeginDateAndTime,cOutputEndDateAndTime
-    REAL(8),INTENT(IN)          :: rOutputFactor,rConversionFactor   !rOutputFactor is the conversion factor when the heads were being printed out during simulation; rConversionFactor is the factor to convert the heads in the simulation units to the output units for post-processing
-    INTEGER,INTENT(OUT)         :: nActualOutput
-    REAL(8),INTENT(OUT)         :: rOutputDates(:),rOutputValues(:)
-    INTEGER,INTENT(OUT)         :: iStat
-    
-    CALL AllHeadOutFile_ForInquiry_ReadGWHead(GWHydData%AllHeadOutFile_ForInquiry,iNodeID,iLayerID,cOutputBeginDateAndTime,cOutputEndDateAndTime,rOutputFactor,rConversionFactor,nActualOutput,rOutputDates,rOutputValues,iStat)
+    CALL GWHydData%AllHeadOutFile_ForInquiry%File%RewindFile_To_BeginningOfTSData(iStat)
     
   END SUBROUTINE ReadGWHead_AtNodeLayer
   
@@ -947,7 +1006,7 @@ CONTAINS
     
     !Print user-specified hydrographs
     IF (GWHydData%lGWHydOutput_Defined)  &
-        CALL HydOutput_PrintResults(Stratigraphy,iHyd_GWHead,Heads,FACTLTOU,TimeStep,.FALSE.,GWHydData%GWHydOutput)
+        CALL GWHydData%GWHydOutput%PrintResults(Stratigraphy,f_iHyd_GWHead,Heads,FACTLTOU,TimeStep,.FALSE.)
     
     !Print heads at all nodes
     IF (GWHydData%lAllHeadOutFile_Defined)  &
@@ -981,18 +1040,18 @@ CONTAINS
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
     TYPE(AppBCType),INTENT(IN)        :: AppBC
-    TYPE(GWStateType),INTENT(IN)      :: GWState(:,:)
+    TYPE(GWStateType),INTENT(IN)      :: GWState
     REAL(8),INTENT(IN)                :: FaceFlows(:,:),SWShedFaceFlows(:,:),FACTLTOU,FACTVLOU,FACTVROU
     TYPE(TimeStepType),INTENT(IN)     :: TimeStep
     LOGICAL,INTENT(IN)                :: lEndOfSimulation
     
     !Local variables
     INTEGER :: indx,indxLayer
-    REAL(8) :: Vels(SIZE(GWState,DIM=1),3*Stratigraphy%NLayers)
+    REAL(8) :: Vels(AppGrid%NNodes,3*Stratigraphy%NLayers)
     
     !Print user-specified hydrographs
     IF (GWHydData%lGWHydOutput_Defined)  &
-        CALL HydOutput_PrintResults(Stratigraphy,iHyd_GWHead,GWState%Head,FACTLTOU,TimeStep,lEndOfSimulation,GWHydData%GWHydOutput)
+        CALL GWHydData%GWHydOutput%PrintResults(Stratigraphy,f_iHyd_GWHead,GWState%Head,FACTLTOU,TimeStep,lEndOfSimulation)
     
     !Print heads at all nodes
     IF (GWHydData%lAllHeadOutFile_Defined)  &
@@ -1006,9 +1065,9 @@ CONTAINS
     IF (GWHydData%lVelocityTecplotFile_Defined) THEN
         indx = 1
         DO indxLayer=1,3*Stratigraphy%NLayers,3
-            Vels(:,indxLayer)   = GWState(:,indx)%Vx
-            Vels(:,indxLayer+1) = GWState(:,indx)%Vy
-            Vels(:,indxLayer+2) = GWState(:,indx)%Vz
+            Vels(:,indxLayer)   = GWState%Vx(:,indx)
+            Vels(:,indxLayer+1) = GWState%Vy(:,indx)
+            Vels(:,indxLayer+2) = GWState%Vz(:,indx)
             indx                = indx + 1
         END DO
         CALL GWHydData%VelocityTecplotFile%PrintResults(Vels,FACTVROU,TimeStep)
@@ -1016,7 +1075,7 @@ CONTAINS
     
     !Print velocities at cell centroids
     IF (GWHydData%lCellVelocityOutFile_Defined)  &
-        CALL CellVelocitiesOutput_PrintResults(AppGrid,Stratigraphy%NLayers,TimeStep,GWState,GWHydData%ElemCentroid_X,GWHydData%ElemCentroid_Y,GWHydData%CellVelocityOutFile)
+        CALL CellVelocitiesOutput_PrintResults(AppGrid,Stratigraphy%NLayers,TimeStep,GWState,FACTVROU,GWHydData%ElemCentroid_X,GWHydData%ElemCentroid_Y,GWHydData%CellVelocityOutFile)
     
     !Print face flow output
     IF (GWHydData%lFaceFlowOutput_Defined)  &
@@ -1028,12 +1087,12 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- PRINT CELL VELOCITIES
   ! -------------------------------------------------------------
-  SUBROUTINE CellVelocitiesOutput_PrintResults(AppGrid,NLayers,TimeStep,GWState,ElemCentroid_X,ElemCentroid_Y,CellVelocityFile)
+  SUBROUTINE CellVelocitiesOutput_PrintResults(AppGrid,NLayers,TimeStep,GWState,FACTVROU,ElemCentroid_X,ElemCentroid_Y,CellVelocityFile)
     TYPE(AppGridType),INTENT(IN)  :: AppGrid
     INTEGER,INTENT(IN)            :: NLayers
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
-    TYPE(GWStateType),INTENT(IN)  :: GWState(AppGrid%NNodes,NLayers)
-    REAL(8),INTENT(IN)            :: ElemCentroid_X(AppGrid%NElements),ElemCentroid_Y(AppGrid%NElements)
+    TYPE(GWStateType),INTENT(IN)  :: GWState
+    REAL(8),INTENT(IN)            :: FACTVROU,ElemCentroid_X(AppGrid%NElements),ElemCentroid_Y(AppGrid%NElements)
     TYPE(GenericFileType)         :: CellVelocityFile
     
     !Local variables
@@ -1048,13 +1107,13 @@ CONTAINS
     !Compute velocities at cell centroids using FE interpolation when there are more than 1 aquifer layers
     IF (NLayers .GT. 1) THEN
         DO indxElem=1,NElements
-            NVertex = AppGrid%Element(indxElem)%NVertex
-            Vertex  = AppGrid%Element(indxElem)%Vertex
+            NVertex = AppGrid%NVertex(indxElem)
+            Vertex  = AppGrid%Vertex(:,indxElem)
             CALL AppGrid%FEInterpolate_AtCell(indxElem,ElemCentroid_X(indxElem),ElemCentroid_Y(indxElem),Coeff(1:NVertex))
             DO indxLayer=1,NLayers
-                Vx(indxLayer,indxElem) = SUM(Coeff(1:NVertex) * GWState(Vertex(1:NVertex),indxLayer)%Vx)
-                Vy(indxLayer,indxElem) = SUM(Coeff(1:NVertex) * GWState(Vertex(1:NVertex),indxLayer)%Vy)
-                Vz(indxLayer,indxElem) = SUM(Coeff(1:NVertex) * GWState(Vertex(1:NVertex),indxLayer)%Vz)
+                Vx(indxLayer,indxElem) = SUM(Coeff(1:NVertex) * GWState%Vx(Vertex(1:NVertex),indxLayer)) * FACTVROU
+                Vy(indxLayer,indxElem) = SUM(Coeff(1:NVertex) * GWState%Vy(Vertex(1:NVertex),indxLayer)) * FACTVROU
+                Vz(indxLayer,indxElem) = SUM(Coeff(1:NVertex) * GWState%Vz(Vertex(1:NVertex),indxLayer)) * FACTVROU
            END DO
         END DO
     
@@ -1062,21 +1121,21 @@ CONTAINS
     ELSE
         Vz = 0.0
         DO indxElem=1,NElements
-            NVertex = AppGrid%Element(indxElem)%NVertex
-            Vertex  = AppGrid%Element(indxElem)%Vertex
+            NVertex = AppGrid%NVertex(indxElem)
+            Vertex  = AppGrid%Vertex(:,indxElem)
             CALL AppGrid%FEInterpolate_AtCell(indxElem,ElemCentroid_X(indxElem),ElemCentroid_Y(indxElem),Coeff(1:NVertex))
-            Vx(1,indxElem) = SUM(Coeff(1:NVertex) * GWState(Vertex(1:NVertex),1)%Vx)
-            Vy(1,indxElem) = SUM(Coeff(1:NVertex) * GWState(Vertex(1:NVertex),1)%Vy)
+            Vx(1,indxElem) = SUM(Coeff(1:NVertex) * GWState%Vx(Vertex(1:NVertex),1)) * FACTVROU
+            Vy(1,indxElem) = SUM(Coeff(1:NVertex) * GWState%Vy(Vertex(1:NVertex),1)) * FACTVROU
         END DO
     END IF
     
     !First line
-    WRITE (Text,'(A16,I9,2X,100(F16.4,2x))') TimeStep%CurrentDateAndTime,1,(Vx(indxLayer,1),Vy(indxLayer,1),Vz(indxLayer,1),indxLayer=1,NLayers)
+    WRITE (Text,'(A16,I9,2X,100(F16.4,2x))') TimeStep%CurrentDateAndTime,AppGrid%AppElement(1)%ID,(Vx(indxLayer,1),Vy(indxLayer,1),Vz(indxLayer,1),indxLayer=1,NLayers)
     CALL CellVelocityFile%WriteData(TRIM(Text))
     
     !Rest of the lines
     DO indxElem=2,NElements
-        WRITE (Text,'(16X,I9,2X,100(F16.4,2x))') indxElem,(Vx(indxLayer,indxElem),Vy(indxLayer,indxElem),Vz(indxLayer,indxElem),indxLayer=1,NLayers)
+        WRITE (Text,'(16X,I9,2X,100(F16.4,2x))') AppGrid%AppElement(indxElem)%ID,(Vx(indxLayer,indxElem),Vy(indxLayer,indxElem),Vz(indxLayer,indxElem),indxLayer=1,NLayers)
         CALL CellVelocityFile%WriteData(TRIM(Text))        
     END DO
     
@@ -1107,7 +1166,7 @@ CONTAINS
       
       !Add flows due to boundary conditions
       IF (AppBC%IsDefined()) THEN
-          IF (AppGrid%AppFace(iFace)%BoundaryFace) THEN
+          IF (AppGrid%AppFace%BoundaryFace(iFace)) THEN
               CALL AppBC%GetBoundaryFlowAtFaceLayer(AppGrid,iFace,iLayer,rBndFaceFlow)
               DummyArray(indx) = DummyArray(indx) + rBndFaceFlow
               !Add base flows from small watersheds
@@ -1187,12 +1246,12 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- PREPARE FACE FLOW HYDROGRAPH OUTPUT FILE FOR PRINT-OUT
   ! -------------------------------------------------------------
-  SUBROUTINE PrepFaceFlowOutFile(IsForInquiry,cFileName,UNITVLOU,NHyd,HydList,AppFace,TimeStep,OutFile,iStat)
+  SUBROUTINE PrepFaceFlowOutFile(IsForInquiry,cFileName,ElementIDs,UNITVLOU,NHyd,HydList,AppFace,TimeStep,OutFile,iStat)
     LOGICAL,INTENT(IN)               :: IsForInquiry
     CHARACTER(LEN=*),INTENT(IN)      :: cFileName,UNITVLOU
-    INTEGER,INTENT(IN)               :: NHyd
+    INTEGER,INTENT(IN)               :: ElementIDs(:),NHyd
     TYPE(FaceFlowHydType),INTENT(IN) :: HydList(NHyd)
-    TYPE(AppFaceType),INTENT(IN)     :: AppFace(:)
+    TYPE(AppFaceType),INTENT(IN)     :: AppFace
     TYPE(TimeStepType),INTENT(IN)    :: TimeStep
     TYPE(GenericFileType)            :: OutFile
     INTEGER,INTENT(OUT)              :: iStat
@@ -1219,9 +1278,9 @@ CONTAINS
     END IF
     
     !Make sure that DSS file is used only if it is a time tracking simulation
-    IF (OutFile%iGetFileType() .EQ. DSS) THEN
+    IF (OutFile%iGetFileType() .EQ. f_iDSS) THEN
         IF (.NOT. TimeStep%TrackTime) THEN
-            CALL SetLastMessage('DSS files for face flow hydrograph printing can only be used for time-tracking simulations.',iFatal,ThisProcedure)
+            CALL SetLastMessage('DSS files for face flow hydrograph printing can only be used for time-tracking simulations.',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -1232,8 +1291,8 @@ CONTAINS
     cFormatSpec = '(A21,'//TRIM(Text)//'(2X,F14.2))'
     DO indx=1,NHyd
       iFace                = HydList(indx)%iFace
-      iElem1               = AppFace(iFace)%Element(1)
-      iElem2               = AppFace(iFace)%Element(2)
+      iElem1               = ElementIDs(AppFace%Element(1,iFace))
+      iElem2               = ElementIDs(AppFace%Element(2,iFace))
       DummyCharArray(indx) = 'E'//TRIM(IntToText(iElem1))//'-E'//TRIM(IntToText(iElem2))
     END DO
     WorkArray(1) = ArrangeText('ELEMENT FACE FLOW',37)
@@ -1298,6 +1357,7 @@ CONTAINS
     
   END SUBROUTINE TransferOutputToHDF
     
+  
   ! -------------------------------------------------------------
   ! --- TRANSFER HEADS AT ALL NODES FROM TEXT/DSS FILE TO HDF FILE
   ! -------------------------------------------------------------
@@ -1326,24 +1386,24 @@ CONTAINS
     CALL OutFile%New(FileName=TRIM(cHDFFileName),InputFile=.FALSE.,IsTSFile=.TRUE.,iStat=iStat)
     IF (iStat .EQ. -1) RETURN
     
-    !Create dataset
+    !Create dataset; since GWHeadAll output includes the initial conditions, NTIME+1 is used
     NColumns(1)     = NNodes*NLayers
     cDataSetName(1) = '/GWHeadAtAllNodes'
-    CALL OutFile%CreateHDFDataSet(cPathNames=cDataSetName,NColumns=NColumns,NTime=NTIME,TimeStep=TimeStep,DataType=0d0,iStat=iStat)
+    CALL OutFile%CreateHDFDataSet(cPathNames=cDataSetName,NColumns=NColumns,NTime=NTIME+1,TimeStep=TimeStep,DataType=0d0,iStat=iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Conversion factor used when printing out results
     rConvFactor = 1.0 / rFactHead
 
-    !Transfer heads to HDF file
+    !Transfer heads to HDF file; NTIME+1 because GWHeadsAll output includes the initial conditions as well
     TimeStep_Local = TimeStep
-    DO indxTime=1,NTIME
+    DO indxTime=1,NTIME+1
         !Read data
         CALL ReadTSData(TimeStep_Local,'gw-heads-at-all-nodes file',AllHeadsInFile,FileReadCode,iStat)
         IF (iStat .EQ. -1) RETURN
         
         !Transfer  values to matrix to be written to HDF file
-        rGWHeads(:,1) = PACK(AllHeadsInFile%rValues , MASK=.TRUE.)
+        rGWHeads(:,1) = PACK(TRANSPOSE(AllHeadsInFile%rValues) , MASK=.TRUE.)
         
         !Convert units back to simulation units
         IF (rConvFactor .NE. 1.0) rGWHeads = rGWHeads * rConvFactor

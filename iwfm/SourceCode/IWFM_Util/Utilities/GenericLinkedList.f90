@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2019  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -22,7 +22,7 @@
 !***********************************************************************
 MODULE GenericLinkedList
   USE MessageLogger  , ONLY: SetLastMessage  , &
-                             iFatal
+                             f_iFatal
   USE Class_LLNode
   IMPLICIT NONE
   
@@ -146,7 +146,11 @@ CONTAINS
     CLASS(GenericLinkedListType),INTENT(IN) :: List
     CLASS(*),POINTER                        :: pValue
     
-    pValue => List%pCurrent%GetValue()
+    IF (ASSOCIATED(List%pCurrent)) THEN
+        pValue => List%pCurrent%GetValue()
+    ELSE
+        NULLIFY(pValue)
+    ENDIF
 
   END FUNCTION GenericLinkedList_GetCurrentValue 
   
@@ -186,7 +190,7 @@ CONTAINS
     !Allocate return array
     ALLOCATE (iArray(List%NNodes) , STAT=ErrorCode , ERRMSG=cErrorMsg)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory to convert a linked list to an integer array.'//NEW_LINE('x')//TRIM(cErrorMsg),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory to convert a linked list to an integer array.'//NEW_LINE('x')//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF

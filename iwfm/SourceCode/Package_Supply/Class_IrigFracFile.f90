@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,8 +21,9 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_IrigFracFile
-  USE TimeSeriesUtilities
-  USE Package_Misc
+  USE TimeSeriesUtilities  , ONLY: TimeStepType
+  USE Package_Misc         , ONLY: RealTSDataInFileType , &
+                                   ReadTSData
   USE Package_AppGW        , ONLY: AppGWType
   USE Package_AppStream    , ONLY: AppStreamType
   IMPLICIT NONE
@@ -66,9 +67,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW IRRIGATION FRACTIONS FILE
   ! -------------------------------------------------------------
-  SUBROUTINE New(IrigFracFile,cFileName,TimeStep,iStat) 
+  SUBROUTINE New(IrigFracFile,cFileName,cWorkingDirectory,TimeStep,iStat) 
     CLASS(IrigFracFileType),INTENT(OUT) :: IrigFracFile
-    CHARACTER(LEN=*),INTENT(IN)         :: cFileName
+    CHARACTER(LEN=*),INTENT(IN)         :: cFileName,cWorkingDirectory
     TYPE(TimeStepType),INTENT(IN)       :: TimeStep
     INTEGER,INTENT(OUT)                 :: iStat
     
@@ -82,7 +83,7 @@ CONTAINS
     IF (cFileName .EQ. '') RETURN
     
     !Instantiate the data type
-    CALL IrigFracFile%Init(cFileName,'irrigation fractions data file',TimeStep%TrackTime,BlocksToSkip=1,lFactorDefined=.FALSE.,Factor=DummyFactor,iStat=iStat)
+    CALL IrigFracFile%Init(cFileName,cWorkingDirectory,'irrigation fractions data file',TimeStep%TrackTime,BlocksToSkip=1,lFactorDefined=.FALSE.,Factor=DummyFactor,iStat=iStat)
     
   END SUBROUTINE New
   

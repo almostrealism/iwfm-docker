@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,47 +21,86 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_Model_ForInquiry
+  USE MessageLogger             , ONLY: SetLastMessage                   , &
+                                        f_iFatal  
   USE GeneralUtilities          , ONLY: EstablishAbsolutePathFileName    , &
-                                        LocateInList
-  USE TimeSeriesUtilities       , ONLY: TimeStepType
+                                        LocateInList                     , &
+                                        IntToText                        , &
+                                        UpperCase                        , &
+                                        StripTextUntilCharacter          
+  USE TimeSeriesUtilities       , ONLY: TimeStepType                     , &
+                                        ExtractMonth                     , &
+                                        ExtractYear                      , &
+                                        DayMonthYearToJulianDate         , &
+                                        JulianDateAndMinutesToTimeStamp  , &
+                                        CTimeStep_To_RTimeStep           , &
+                                        NPeriods                         , &
+                                        IncrementTimeStamp               , &
+                                        OPERATOR(.TSLT.)                 , &
+                                        OPERATOR(.TSGT.)                 , &
+                                        f_iTimeStampLength              
   USE IOInterface               , ONLY: GenericFileType                  , &
                                         DoesFileExist                    , &
                                         iGetFileType_FromName            , &
-                                        TXT                              , &
-                                        HDF
+                                        f_iTXT                           , &
+                                        f_iHDF
   USE Package_Discretization    , ONLY: AppGridType                      , &
                                         StratigraphyType
   USE Package_Misc              , ONLY: RealTSDataInFileType             , &
-                                        iAllLocationIDsListed            , &
-                                        iLocationType_Node               , &
-                                        iLocationType_Zone               , &
-                                        iLocationType_Subregion          , & 
-                                        iLocationType_Lake               , & 
-                                        iLocationType_StrmNode           , & 
-                                        iLocationType_StrmReach          , & 
-                                        iLocationType_SmallWatershed     , & 
-                                        iLocationType_GWHeadObs          , &
-                                        iLocationType_StrmHydObs         , &
-                                        iLocationType_SubsidenceObs      , &
-                                        iLocationType_TileDrain          , &
-                                        iStrmComp                        , &
-                                        iLakeComp                        , &
-                                        iGWComp                          , &
-                                        iRootZoneComp                    , &
-                                        iUnsatZoneComp                   , &
-                                        iSWShedComp                      
-  USE Package_AppGW             , ONLY: AppGWType    
-  USE Package_GWZBudget         , ONLY: GWZBudgetType
-  USE Package_AppStream         , ONLY: AppStreamType
-  USE Package_AppLake           , ONLY: AppLakeType
-  USE Package_AppUnsatZone      , ONLY: AppUnsatZoneType
-  USE Package_AppSmallWatershed , ONLY: AppSmallWatershedType
-  USE Package_RootZone          , ONLY: RootZoneType
+                                        f_iAllLocationIDsListed          , &
+                                        f_iLocationType_Node             , &
+                                        f_iLocationType_Element          , &
+                                        f_iLocationType_Zone             , &
+                                        f_iLocationType_Subregion        , & 
+                                        f_iLocationType_Lake             , & 
+                                        f_iLocationType_StrmNode         , & 
+                                        f_iLocationType_StrmReach        , & 
+                                        f_iLocationType_SmallWatershed   , & 
+                                        f_iLocationType_GWHeadObs        , &
+                                        f_iLocationType_StrmHydObs       , &
+                                        f_iLocationType_SubsidenceObs    , &
+                                        f_iLocationType_TileDrainObs     , &
+                                        f_iLocationType_Diversion        , &
+                                        f_iLocationType_StrmNodeBud      , &
+                                        f_iStrmComp                      , &
+                                        f_iLakeComp                      , &
+                                        f_iGWComp                        , &
+                                        f_iRootZoneComp                  , &
+                                        f_iUnsatZoneComp                 , &
+                                        f_iSWShedComp                      
+  USE Package_AppGW             , ONLY: AppGWType                        , &
+                                        f_iBudgetType_GW                 , &
+                                        f_cDescription_GWHyd_AtNodeLayer
+  USE Package_GWZBudget         , ONLY: GWZBudgetType                    , & 
+                                        f_iZBudgetType_GW                
+  USE Package_AppStream         , ONLY: AppStreamType                    , &
+                                        StrmNodeBudgetType               , &  
+                                        f_iBudgetType_StrmNode           , &
+                                        f_iBudgetType_StrmReach          , &
+                                        f_iBudgetType_DiverDetail        
+  USE Package_AppLake           , ONLY: AppLakeType                      , &
+                                        f_iBudgetType_Lake    
+  USE Package_AppUnsatZone      , ONLY: AppUnsatZoneType                 , &
+                                        f_iBudgetType_UnsatZone          , &
+                                        f_iZBudgetType_UnsatZone                 
+  USE Package_AppSmallWatershed , ONLY: AppSmallWatershedType            , &
+                                        f_iBudgetType_SWShed             
+  USE Package_RootZone          , ONLY: RootZoneType                     , &
+                                        f_iBudgetType_RootZone           , &
+                                        f_iBudgetType_LWU                , &
+                                        f_iBudgetType_NonPondedCrop_RZ   , &
+                                        f_iBudgetType_NonPondedCrop_LWU  , &
+                                        f_iBudgetType_PondedCrop_RZ      , &
+                                        f_iBudgetType_PondedCrop_LWU     , &
+                                        f_iZBudgetType_LWU               , &
+                                        f_iZBudgetType_RootZone          
   USE Package_PrecipitationET   , ONLY: PrecipitationType
-  USE Package_Budget            , ONLY: BudgetType
+  USE Package_Budget            , ONLY: BudgetType                       , &
+                                        f_iColumnHeaderLen
   USE Package_ZBudget           , ONLY: ZBudgetType                      , &
                                         ZoneListType                     , &
-                                        IsZBudgetFile
+                                        IsZBudgetFile                    , &
+                                        f_iColumnHeaderLen
   IMPLICIT NONE
   
   
@@ -82,78 +121,83 @@ MODULE Class_Model_ForInquiry
   ! -------------------------------------------------------------
   PRIVATE
   PUBLIC :: Model_ForInquiry_Type    , &
-            LocationsWithDataType    
+            f_iFilePathLen           , &
+            f_iDataDescriptionLen
 
   
   ! -------------------------------------------------------------
-  ! --- DATA TYPE FOR LIST OF LOCATIONS WHERE DATA/SUB-DATA EXISTS
+  ! --- PARAMETERS
   ! -------------------------------------------------------------
-  TYPE LocationsWithDataType
-      INTEGER             :: NLocations = 0
-      INTEGER,ALLOCATABLE :: iLocations(:)
-  END TYPE LocationsWithDataType
-  
-  
-  ! -------------------------------------------------------------
-  ! --- FEATURE SUB-DATA AND FILE INFORMATION TYPE
-  ! -------------------------------------------------------------
-  TYPE SubDataType
-      INTEGER                        :: NSubData
-      CHARACTER(LEN=100),ALLOCATABLE :: cSubDataNames(:)
-  END TYPE SubDataType
-  
-  
-  ! -------------------------------------------------------------
-  ! --- FEATURE, RELATED DATA, SUB-DATA AND FILE INFORMATION TYPE
-  ! -------------------------------------------------------------
-  TYPE DataForFeatureType
-      INTEGER                                 :: NData                 = 0
-      CHARACTER(LEN=100),ALLOCATABLE          :: cDataNames(:)
-      INTEGER,ALLOCATABLE                     :: iDataComponentIDs(:)
-      LOGICAL,ALLOCATABLE                     :: lDataIsBudgetType(:)
-      CHARACTER(LEN=500),ALLOCATABLE          :: cFilesForData(:)
-      TYPE(SubDataType),ALLOCATABLE           :: SubData(:)
-      TYPE(LocationsWithDataType),ALLOCATABLE :: LocationsWithData(:)     
-  CONTAINS
-      PROCEDURE,PASS :: Kill         => DataForFeature_Kill 
-      PROCEDURE,PASS :: ReadFromFile => DataForFeature_ReadFromFile
-      PROCEDURE,PASS :: PrintToFile  => DataForFeature_PrintToFile
-  END TYPE DataForFeatureType
+  INTEGER,PARAMETER :: f_iFilePathLen        = 500  , &
+                       f_iDataDescriptionLen = 100
   
   
   ! -------------------------------------------------------------
   ! --- SIMPLIFIED MODEL DATA TYPE FOR INQUIRY
   ! -------------------------------------------------------------
   TYPE Model_ForInquiry_Type
-      INTEGER                  :: NUnsatLayers           = 0
-      INTEGER                  :: NSmallWatersheds       = 0
-      INTEGER                  :: NTileDrains            = 0
-      INTEGER                  :: NGWHeadObs             = 0
-      INTEGER                  :: NStrmHydObs            = 0
-      INTEGER                  :: NSubsidenceObs         = 0
-      INTEGER                  :: NTileDrainObs          = 0
-      TYPE(DataForFeatureType) :: DataForNodes
-      TYPE(DataForFeatureType) :: DataForZones
-      TYPE(DataForFeatureType) :: DataForSubregions
-      TYPE(DataForFeatureType) :: DataForLakes
-      TYPE(DataForFeatureType) :: DataForStrmNodes
-      TYPE(DataForFeatureType) :: DataForStrmReaches
-      TYPE(DataForFeatureType) :: DataForSmallWatersheds
-      TYPE(DataForFeatureType) :: DataForGWHeadObs
-      TYPE(DataForFeatureType) :: DataForStrmHydObs
-      TYPE(DataForFeatureType) :: DataForSubsidenceObs
-      TYPE(DataForFeatureType) :: DataForTileDrainObs
+      !AppGrid, Stratigraphy and TimeStep properties are stored in the Model object
+      !AppStream and AppLake properties are stored in Model object
+      !AppStream Reach IDs redefined here because they may be reordered differently than listed in Model object (Model object reads it from PP bin file, but that list can be reordered in Simulation)
+      INTEGER                                          :: iNUnsatLayers          = 0
+      INTEGER                                          :: iNSmallWatersheds      = 0
+      INTEGER                                          :: iNTileDrains           = 0
+      INTEGER                                          :: iNDiversions           = 0 
+      INTEGER                                          :: iNGWHeadObs            = 0
+      INTEGER                                          :: iNStrmHydObs           = 0
+      INTEGER                                          :: iNSubsidenceObs        = 0
+      INTEGER                                          :: iNTileDrainObs         = 0
+      INTEGER                                          :: iNStrmNodes_WithBudget = 0 
+      INTEGER,ALLOCATABLE                              :: iStrmReachIDs(:)
+      INTEGER,ALLOCATABLE                              :: iDiversionIDs(:) 
+      INTEGER,ALLOCATABLE                              :: iSmallWatershedIDs(:) 
+      INTEGER,ALLOCATABLE                              :: iGWHeadObsIDs(:) 
+      INTEGER,ALLOCATABLE                              :: iStrmHydObsIDs(:) 
+      INTEGER,ALLOCATABLE                              :: iSubsidenceObsIDs(:) 
+      INTEGER,ALLOCATABLE                              :: iTileDrainObsIDs(:) 
+      INTEGER,ALLOCATABLE                              :: iStrmNodeIDs_WithBudget(:) 
+      INTEGER                                          :: iNZBudgetFiles         = 0
+      INTEGER,ALLOCATABLE                              :: iZBudgetTypeList(:)
+      CHARACTER(LEN=f_iDataDescriptionLen),ALLOCATABLE :: cZBudgetDescriptions(:)
+      CHARACTER(LEN=f_iFilePathLen),ALLOCATABLE        :: cZBudgetFiles(:)
+      INTEGER                                          :: iNBudgetFiles          = 0
+      INTEGER,ALLOCATABLE                              :: iBudgetTypeList(:)
+      INTEGER,ALLOCATABLE                              :: iBudgetCompList(:)
+      INTEGER,ALLOCATABLE                              :: iBudgetLocationTypeList(:)
+      CHARACTER(LEN=f_iDataDescriptionLen),ALLOCATABLE :: cBudgetDescriptions(:)
+      CHARACTER(LEN=f_iFilePathLen),ALLOCATABLE        :: cBudgetFiles(:)
+      INTEGER                                          :: iNHydrographTypes      = 0
+      INTEGER,ALLOCATABLE                              :: iHydrographLocationTypeList(:)
+      INTEGER,ALLOCATABLE                              :: iHydrographCompList(:)
+      CHARACTER(LEN=f_iDataDescriptionLen),ALLOCATABLE :: cHydrographDescriptions(:)
+      CHARACTER(LEN=f_iFilePathLen),ALLOCATABLE        :: cHydrographFiles(:)
   CONTAINS
       PROCEDURE,PASS   :: New
       PROCEDURE,PASS   :: Kill
-      PROCEDURE,NOPASS :: GetNDataList_AtLocationType_FromFullModel    
-      PROCEDURE,PASS   :: GetNDataList_AtLocationType_FromInquiryModel 
-      PROCEDURE,NOPASS :: GetDataList_AtLocationType_FromFullModel     
-      PROCEDURE,PASS   :: GetDataList_AtLocationType_FromInquiryModel  
-      PROCEDURE,NOPASS :: GetSubDataList_AtLocation_FromFullModel      
-      PROCEDURE,PASS   :: GetSubDataList_AtLocation_FromInquiryModel  
-      PROCEDURE,NOPASS :: GetModelData_AtLocation_FromFullModel        
-      PROCEDURE,PASS   :: GetModelData_AtLocation_FromInquiryModel 
+      PROCEDURE,PASS   :: GetNHydrographTypes
+      PROCEDURE,PASS   :: GetHydrographTypeList
+      PROCEDURE,PASS   :: GetHydrograph
+      PROCEDURE,PASS   :: GetBudget_N
+      PROCEDURE,PASS   :: GetBudget_List
+      PROCEDURE,PASS   :: GetBudget_NColumns
+      PROCEDURE,PASS   :: GetBudget_ColumnTitles
+      PROCEDURE,PASS   :: GetBudget_MonthlyAverageFlows
+      PROCEDURE,PASS   :: GetBudget_AnnualFlows
+      PROCEDURE,PASS   :: GetBudget_TSData
+      PROCEDURE,PASS   :: GetBudget_CumGWStorChange
+      PROCEDURE,PASS   :: GetBudget_AnnualCumGWStorChange
+      PROCEDURE,PASS   :: GetZBudget_N
+      PROCEDURE,PASS   :: GetZBudget_List
+      PROCEDURE,PASS   :: GetZBudget_NColumns
+      PROCEDURE,PASS   :: GetZBudget_ColumnTitles
+      PROCEDURE,PASS   :: GetZBudget_MonthlyAverageFlows
+      PROCEDURE,PASS   :: GetZBudget_AnnualFlows
+      PROCEDURE,PASS   :: GetZBudget_TSData
+      PROCEDURE,PASS   :: GetZBudget_CumGWStorChange
+      PROCEDURE,PASS   :: GetZBudget_AnnualCumGWStorChange
+      PROCEDURE,PASS   :: GetGWHeads_ForALayer
+      PROCEDURE,PASS   :: GetNLocations
+      PROCEDURE,PASS   :: GetLocationIDs
       PROCEDURE,NOPASS :: DeleteDataFile                  
       PROCEDURE,NOPASS :: PrintModelData
       PROCEDURE,NOPASS :: IsInstantiableFromFile
@@ -195,6 +239,7 @@ CONTAINS
     INTEGER,INTENT(OUT)            :: NTIME,iStat
     
     !Local variables
+    INTEGER                  :: iNStrmNodes,iNZBudgets,iNBudgets,iNHydTypes 
     CHARACTER(:),ALLOCATABLE :: cFileName
     TYPE(GenericFileType)    :: ModelDataFile
     
@@ -207,55 +252,96 @@ CONTAINS
     IF (iStat .EQ. -1) GOTO 10
     
     !Read time-related data
-    CALL ModelDataFile%ReadData(TimeStep%TrackTime,iStat)            ; IF (iStat .EQ. -1) GOTO 10
-    CALL ModelDataFile%ReadData(TimeStep%CurrentDateAndTime,iStat)   ; IF (iStat .EQ. -1) GOTO 10
-    CALL ModelDataFile%ReadData(TimeStep%EndDateAndTime,iStat)       ; IF (iStat .EQ. -1) GOTO 10
-    CALL ModelDataFile%ReadData(TimeStep%DeltaT,iStat)               ; IF (iStat .EQ. -1) GOTO 10
-    CALL ModelDataFile%ReadData(TimeStep%DeltaT_InMinutes,iStat)     ; IF (iStat .EQ. -1) GOTO 10
-    CALL ModelDataFile%ReadData(TimeStep%Unit,iStat)                 ; IF (iStat .EQ. -1) GOTO 10
-    CALL ModelDataFile%ReadData(NTIME,iStat)                         ; IF (iStat .EQ. -1) GOTO 10
+    CALL ModelDataFile%ReadData(TimeStep%TrackTime,iStat)                  ; IF (iStat .EQ. -1) GOTO 10
+    CALL ModelDataFile%ReadData(TimeStep%CurrentDateAndTime,iStat)         ; IF (iStat .EQ. -1) GOTO 10
+    CALL ModelDataFile%ReadData(TimeStep%EndDateAndTime,iStat)             ; IF (iStat .EQ. -1) GOTO 10
+    CALL ModelDataFile%ReadData(TimeStep%DeltaT,iStat)                     ; IF (iStat .EQ. -1) GOTO 10
+    CALL ModelDataFile%ReadData(TimeStep%DeltaT_InMinutes,iStat)           ; IF (iStat .EQ. -1) GOTO 10
+    CALL ModelDataFile%ReadData(TimeStep%Unit,iStat)                       ; IF (iStat .EQ. -1) GOTO 10
+    CALL ModelDataFile%ReadData(NTIME,iStat)                               ; IF (iStat .EQ. -1) GOTO 10
+                                                                           
+    !Read number of unsaturated zone layers and tile drains                
+    CALL ModelDataFile%ReadData(Model%iNUnsatLayers,iStat)                 ; IF (iStat .EQ. -1) GOTO 10
+    CALL ModelDataFile%ReadData(Model%iNTileDrains,iStat)                  ; IF (iStat .EQ. -1) GOTO 10
+
+    !Read Stream node IDs with budget output
+    CALL ModelDataFile%ReadData(Model%iNStrmNodes_WithBudget,iStat)        ; IF (iStat .EQ. -1) GOTO 10
+    ALLOCATE (Model%iStrmNodeIDs_WithBudget(Model%iNStrmNodes_WithBudget))                      
+    CALL ModelDataFile%ReadData(Model%iStrmNodeIDs_WithBudget,iStat)       ; IF (iStat .EQ. -1) GOTO 10
     
-    !Read structural data
-    CALL ModelDataFile%ReadData(Model%NUnsatLayers,iStat)            ; IF (iStat .EQ. -1) GOTO 10
-    CALL ModelDataFile%ReadData(Model%NTileDrains,iStat)             ; IF (iStat .EQ. -1) GOTO 10
-    CALL ModelDataFile%ReadData(Model%NSmallWatersheds,iStat)        ; IF (iStat .EQ. -1) GOTO 10
-    CALL ModelDataFile%ReadData(Model%NGWHeadObs,iStat)              ; IF (iStat .EQ. -1) GOTO 10
-    CALL ModelDataFile%ReadData(Model%NStrmHydObs,iStat)             ; IF (iStat .EQ. -1) GOTO 10
-    CALL ModelDataFile%ReadData(Model%NSubsidenceObs,iStat)          ; IF (iStat .EQ. -1) GOTO 10
-    CALL ModelDataFile%ReadData(Model%NTileDrainObs,iStat)           ; IF (iStat .EQ. -1) GOTO 10
+    !Read stream reach IDs
+    CALL ModelDataFile%ReadData(iNStrmNodes,iStat)                         ; IF (iStat .EQ. -1) GOTO 10
+    ALLOCATE (Model%iStrmReachIDs(iNStrmNodes))                           
+    CALL ModelDataFile%ReadData(Model%iStrmReachIDs,iStat)                 ; IF (iStat .EQ. -1) GOTO 10
+                                                                          
+    !Read diversion IDs                                                   
+    CALL ModelDataFile%ReadData(Model%iNDiversions,iStat)                  ; IF (iStat .EQ. -1) GOTO 10
+    ALLOCATE (Model%iDiversionIDs(Model%iNDiversions))                           
+    CALL ModelDataFile%ReadData(Model%iDiversionIDs,iStat)                 ; IF (iStat .EQ. -1) GOTO 10
+                                                                          
+    !Read stream hydrograph IDs                                           
+    CALL ModelDataFile%ReadData(Model%iNStrmHydObs,iStat)                  ; IF (iStat .EQ. -1) GOTO 10
+    ALLOCATE (Model%iStrmHydObsIDs(Model%iNStrmHydObs))                           
+    CALL ModelDataFile%ReadData(Model%iStrmHydObsIDs,iStat)                ; IF (iStat .EQ. -1) GOTO 10
+                                                                          
+    !Read small watershed IDs                                             
+    CALL ModelDataFile%ReadData(Model%iNSmallWatersheds,iStat)             ; IF (iStat .EQ. -1) GOTO 10
+    ALLOCATE (Model%iSmallWatershedIDs(Model%iNSmallWatersheds))                            
+    CALL ModelDataFile%ReadData(Model%iSmallWatershedIDs,iStat)            ; IF (iStat .EQ. -1) GOTO 10
+
+    !Read gw hydrograph IDs
+    CALL ModelDataFile%ReadData(Model%iNGWHeadObs,iStat)                   ; IF (iStat .EQ. -1) GOTO 10
+    ALLOCATE (Model%iGWHeadObsIDs(Model%iNGWHeadObs))                            
+    CALL ModelDataFile%ReadData(Model%iGWHeadObsIDs,iStat)                 ; IF (iStat .EQ. -1) GOTO 10
+                                                                          
+    !Read subsidence hydrograph IDs                                       
+    CALL ModelDataFile%ReadData(Model%iNSubsidenceObs,iStat)               ; IF (iStat .EQ. -1) GOTO 10
+    ALLOCATE (Model%iSubsidenceObsIDs(Model%iNSubsidenceObs))                            
+    CALL ModelDataFile%ReadData(Model%iSubsidenceObsIDs,iStat)             ; IF (iStat .EQ. -1) GOTO 10
+                                                                          
+    !Read tiledrain hydrograph IDs                                        
+    CALL ModelDataFile%ReadData(Model%iNTileDrainObs,iStat)                ; IF (iStat .EQ. -1) GOTO 10
+    ALLOCATE (Model%iTileDrainObsIDs(Model%iNTileDrainObs))                            
+    CALL ModelDataFile%ReadData(Model%iTileDrainObsIDs,iStat)              ; IF (iStat .EQ. -1) GOTO 10
+                                
+    !Read Z-Budget related data
+    CALL ModelDataFile%ReadData(iNZBudgets,iStat)                     ; IF (iStat .EQ. -1) GOTO 10
+    Model%iNZBudgetFiles = iNZBudgets
+    IF (iNZBudgets .GT. 0) THEN
+        ALLOCATE (Model%iZBudgetTypeList(iNZBudgets) , Model%cZBudgetDescriptions(iNZBudgets) , Model%cZBudgetFiles(iNZBudgets))
+        Model%cZBudgetDescriptions = ''
+        Model%cZBudgetFiles        = ''
+        CALL ModelDataFile%ReadData(Model%iZBudgetTypeList,iStat)     ; IF (iStat .EQ. -1) GOTO 10
+        CALL ModelDataFile%ReadData(Model%cZBudgetDescriptions,iStat) ; IF (iStat .EQ. -1) GOTO 10
+        CALL ModelDataFile%ReadData(Model%cZBudgetFiles,iStat)        ; IF (iStat .EQ. -1) GOTO 10
+    END IF
+        
+    !Read Budget related data
+    CALL ModelDataFile%ReadData(iNBudgets,iStat)                     ; IF (iStat .EQ. -1) GOTO 10
+    Model%iNBudgetFiles = iNBudgets
+    IF (iNBudgets .GT. 0) THEN
+        ALLOCATE (Model%iBudgetTypeList(iNBudgets) , Model%iBudgetCompList(iNBudgets) , Model%iBudgetLocationTypeList(iNBudgets) , Model%cBudgetDescriptions(iNBudgets) , Model%cBudgetFiles(iNBudgets))
+        Model%cBudgetDescriptions = ''
+        Model%cBudgetFiles        = ''
+        CALL ModelDataFile%ReadData(Model%iBudgetTypeList,iStat)         ; IF (iStat .EQ. -1) GOTO 10
+        CALL ModelDataFile%ReadData(Model%iBudgetCompList,iStat)         ; IF (iStat .EQ. -1) GOTO 10
+        CALL ModelDataFile%ReadData(Model%iBudgetLocationTypeList,iStat) ; IF (iStat .EQ. -1) GOTO 10
+        CALL ModelDataFile%ReadData(Model%cBudgetDescriptions,iStat)     ; IF (iStat .EQ. -1) GOTO 10
+        CALL ModelDataFile%ReadData(Model%cBudgetFiles,iStat)            ; IF (iStat .EQ. -1) GOTO 10
+    END IF
     
-    !Data for nodes
-    CALL Model%DataForNodes%ReadFromFile(ModelDataFile,iStat)  ;  IF (iStat .EQ. -1) GOTO 10
-
-    !Data for zones
-    CALL Model%DataForZones%ReadFromFile(ModelDataFile,iStat)  ;  IF (iStat .EQ. -1) GOTO 10
-    
-    !Data for subregions
-    CALL Model%DataForSubregions%ReadFromFile(ModelDataFile,iStat)  ;  IF (iStat .EQ. -1) GOTO 10
-    
-    !Data for lakes
-    CALL Model%DataForLakes%ReadFromFile(ModelDataFile,iStat)  ;  IF (iStat .EQ. -1) GOTO 10
-
-    !Data for stream nodes
-    CALL Model%DataForStrmNodes%ReadFromFile(ModelDataFile,iStat)  ;  IF (iStat .EQ. -1) GOTO 10
-
-    !Data for stream reaches
-    CALL Model%DataForStrmReaches%ReadFromFile(ModelDataFile,iStat)  ;  IF (iStat .EQ. -1) GOTO 10
-
-    !Data for small watersheds
-    CALL Model%DataForSmallWatersheds%ReadFromFile(ModelDataFile,iStat)  ;  IF (iStat .EQ. -1) GOTO 10
-
-    !Data for gw hydrographs
-    CALL Model%DataForGWHeadObs%ReadFromFile(ModelDataFile,iStat)  ;  IF (iStat .EQ. -1) GOTO 10
-
-    !Data for stream hydrographs
-    CALL Model%DataForStrmHydObs%ReadFromFile(ModelDataFile,iStat)  ;  IF (iStat .EQ. -1) GOTO 10
-
-    !Data for subsidence hydrographs
-    CALL Model%DataForSubsidenceObs%ReadFromFile(ModelDataFile,iStat)  ;  IF (iStat .EQ. -1) GOTO 10
-
-    !Data for tile drain hydrographs
-    CALL Model%DataForTileDrainObs%ReadFromFile(ModelDataFile,iStat)  ;  IF (iStat .EQ. -1) GOTO 10
+    !Read Hydrograph related data                                         
+    CALL ModelDataFile%ReadData(iNHydTypes,iStat)                          ; IF (iStat .EQ. -1) GOTO 10
+    Model%iNHydrographTypes = iNHydTypes
+    IF (iNHydTypes .GT. 0) THEN
+        ALLOCATE (Model%iHydrographLocationTypeList(iNHydTypes) , Model%iHydrographCompList(iNHydTypes) , Model%cHydrographDescriptions(iNHydTypes) , Model%cHydrographFiles(iNHydTypes))
+        Model%cHydrographDescriptions = ''
+        Model%cHydrographFiles        = ''
+        CALL ModelDataFile%ReadData(Model%iHydrographLocationTypeList,iStat)  ; IF (iStat .EQ. -1) GOTO 10
+        CALL ModelDataFile%ReadData(Model%iHydrographCompList,iStat)          ; IF (iStat .EQ. -1) GOTO 10
+        CALL ModelDataFile%ReadData(Model%cHydrographDescriptions,iStat)      ; IF (iStat .EQ. -1) GOTO 10
+        CALL ModelDataFile%ReadData(Model%cHydrographFiles,iStat)             ; IF (iStat .EQ. -1) GOTO 10 
+    END IF
     
     !Close file
 10  CALL ModelDataFile%Kill()
@@ -263,6 +349,8 @@ CONTAINS
   END SUBROUTINE New
   
 
+  
+  
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
@@ -274,81 +362,23 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
-  ! --- KILL SUB-DATA
-  ! -------------------------------------------------------------
-  SUBROUTINE SubData_Kill(SubData)
-    TYPE(SubDataType) :: SubData(:)
-    
-    !Local variables
-    INTEGER :: indx,ErrorCode
-    
-    DO indx=1,SIZE(SubData)
-        DEALLOCATE (SubData(indx)%cSubDataNames ,STAT=ErrorCode)
-        SubData(indx)%NSubData = 0
-    END DO
-    
-  END SUBROUTINE SubData_Kill
-  
-  
-  ! -------------------------------------------------------------
-  ! --- KILL LOCATIONS WITH DATA
-  ! -------------------------------------------------------------
-  SUBROUTINE LocationsWithData_Kill(LocationsWithData)
-    TYPE(LocationsWithDataType) :: LocationsWithData(:)
-    
-    !Local variables
-    INTEGER :: indx,ErrorCode
-    
-    DO indx=1,SIZE(LocationsWithData)
-        DEALLOCATE (LocationsWithData(indx)%iLocations ,STAT=ErrorCode)
-        LocationsWithData(indx)%NLocations = 0
-    END DO
-    
-  END SUBROUTINE LocationsWithData_Kill
-  
-  
-  ! -------------------------------------------------------------
-  ! --- KILL DATA FOR FEATURE
-  ! -------------------------------------------------------------
-  SUBROUTINE DataForFeature_Kill(FeatureData)
-    CLASS(DataForFeatureType) :: FeatureData
-    
-    !Local variables
-    INTEGER                  :: ErrorCode
-    TYPE(DataForFeatureType) :: Dummy
-    
-    IF (ALLOCATED(FeatureData%SubData)) CALL SubData_Kill(FeatureData%SubData)
-    
-    IF (ALLOCATED(FeatureData%LocationsWithData)) CALL LocationsWithData_Kill(FeatureData%LocationsWithData)
-    
-    DEALLOCATE (FeatureData%cDataNames , FeatureData%iDataComponentIDs , FeatureData%lDataIsBudgetType , FeatureData%cFilesForData , FeatureData%SubData , FeatureData%LocationsWithData , STAT=ErrorCode)
-    SELECT TYPE (FeatureData)
-        TYPE IS (DataForFeatureType)
-            FeatureData = Dummy
-    END SELECT
-    
-  END SUBROUTINE DataForFeature_Kill
-  
-  
-  ! -------------------------------------------------------------
   ! --- KILL MODEL
   ! -------------------------------------------------------------
   SUBROUTINE Kill(Model)
     CLASS(Model_ForInquiry_Type) :: Model
     
     !Local variables
+    INTEGER                     :: iErrorCode 
     TYPE(Model_ForInquiry_Type) :: Dummy
     
-    CALL Model%DataForNodes%Kill()
-    CALL Model%DataForZones%Kill()
-    CALL Model%DataForSubregions%Kill()
-    CALL Model%DataForLakes%Kill()
-    CALL Model%DataForStrmNodes%Kill()
-    CALL Model%DataForStrmReaches%Kill()
-    CALL Model%DataForSmallWatersheds%Kill()
-    CALL Model%DataForGWHeadObs%Kill()
-    CALL Model%DataForStrmHydObs%Kill()
-    CALL Model%DataForTileDrainObs%Kill()
+    DEALLOCATE (Model%iStrmReachIDs      , &
+                Model%iDiversionIDs      , &
+                Model%iSmallWatershedIDs , &
+                Model%iGWHeadObsIDs      , &
+                Model%iStrmHydObsIDs     , &
+                Model%iSubsidenceObsIds  , &
+                Model%iTileDrainObsIDs   , &
+                STAT=iErrorCode          )
     
     SELECT TYPE (Model)
         TYPE IS (Model_ForInquiry_Type)
@@ -371,728 +401,1130 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
-  ! --- GET MODEL DATA AT A LOCATION FOR POST-PROCESSING FROM FULL MODEL
+  ! --- GET NUMBER OF AVAILABLE HYDROGRAPH OUTPUT TYPES FROM INQUIRY MODEL
   ! -------------------------------------------------------------
-  SUBROUTINE GetModelData_AtLocation_FromFullModel(AppGW,GWZBudget,RootZone,AppUnsatZone,AppLake,AppStream,AppSWShed,iLocationType,iLocationID,iCompID,cDataType,iSubDataIndex,iZExtent,iElems,iLayers,iZones,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-    TYPE(AppGWType),INTENT(IN)             :: AppGW
-    TYPE(GWZBudgetType),INTENT(IN)         :: GWZBudget
-    TYPE(RootZoneType),INTENT(IN)          :: RootZone
-    TYPE(AppUnsatZoneType),INTENT(IN)      :: AppUnsatZone
-    TYPE(AppLakeType),INTENT(IN)           :: AppLake
-    TYPE(AppStreamType),INTENT(IN)         :: AppStream
-    TYPE(AppSmallWatershedType),INTENT(IN) :: AppSWShed
-    INTEGER,INTENT(IN)                     :: iLocationType,iLocationID,iCompID,iSubDataIndex,iZExtent,iElems(:),iLayers(:),iZones(:)
-    CHARACTER(LEN=*),INTENT(IN)            :: cDataType,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval
-    REAL(8),INTENT(IN)                     :: rFact_LT,rFact_AR,rFact_VL
-    INTEGER,INTENT(OUT)                    :: iDataUnitType                           !What is the data unit type (length, area, or volume)?
-    INTEGER,INTENT(OUT)                    :: nActualOutput                           !This is the actual number of elements of rOutputValues and rOutputDates arrays that are populated (can be less than or equal to the size of these arrays)
-    REAL(8),INTENT(OUT)                    :: rOutputDates(:),rOutputValues(:)
-    INTEGER,INTENT(OUT)                    :: iStat
+  FUNCTION GetNHydrographTypes(Model) RESULT(iNHydTypes)
+    CLASS(Model_ForInquiry_Type),INTENT(IN) :: Model
+    INTEGER                                 :: iNHydTypes
     
-    !Local variables
-    INTEGER            :: iZonesWithNames(0)
-    CHARACTER(LEN=0)   :: cZoneNames(0)
-    
-    !Initialize
-    iStat         = 0
-    nActualOutput = 0
-    
-    SELECT CASE (iCompID)
-        CASE (iStrmComp)
-            IF (AppStream%IsDefined()) CALL AppStream%GetModelData_AtLocation(iLocationType,iLocationID,cDataType,iSubDataIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-            
-        CASE (iLakeComp) 
-            IF (AppLake%IsDefined()) CALL AppLake%GetModelData_AtLocation(iLocationType,iLocationID,cDataType,iSubDataIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-                    
-        CASE (iGWComp)
-            IF (iLocationType .EQ. iLocationType_Zone) THEN
-                CALL GWZBudget%GetModelData_AtLocation(iZExtent,iElems,iLayers,iZones,iZonesWithNames,cZoneNames,iLocationType,iLocationID,cDataType,iSubDataIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-            ELSE
-                CALL AppGW%GetModelData_AtLocation(iLocationType,iLocationID,cDataType,iSubDataIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)  
-            END IF
-            
-        CASE (iRootZoneComp)
-            IF (RootZone%IsDefined()) THEN
-                CALL RootZone%GetModelData_AtLocation(iZExtent,iElems,iLayers,iZones,iZonesWithNames,cZoneNames,iLocationType,iLocationID,cDataType,iSubDataIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-            END IF
-            
-        CASE (iUnsatZoneComp)
-            IF (AppUnsatZone%IsDefined()) CALL AppUnsatZone%GetModelData_AtLocation(iZExtent,iElems,iLayers,iZones,iZonesWithNames,cZoneNames,iLocationType,iLocationID,cDataType,iSubDataIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-        
-        CASE (iSWShedComp)
-            IF (AppSWShed%IsDefined()) CALL AppSWShed%GetModelData_AtLocation(iLocationType,iLocationID,cDataType,iSubDataIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-            
-    END SELECT
-        
-  END SUBROUTINE GetModelData_AtLocation_FromFullModel
+    iNHydTypes = Model%iNHydrographTypes
 
+  END FUNCTION GetNHydrographTypes
+  
   
   ! -------------------------------------------------------------
-  ! --- GET MODEL DATA AT A LOCATION FOR POST-PROCESSING FROM INQUIRY MODEL
+  ! --- GET A LIST OF HYDROGRAPH OUTPUT TYPES FROM INQUIRY MODEL
   ! -------------------------------------------------------------
-  SUBROUTINE GetModelData_AtLocation_FromInquiryModel(Model,TimeStep,NLayers,iLocationType,iLocationID,iCompID,cDataName,iSubDataIndex,iZExtent,iElems,iLayers,iZones,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
+  SUBROUTINE GetHydrographTypeList(Model,cHydTypeList,iHydLocationTypeList)
+    CLASS(Model_ForInquiry_Type),INTENT(IN)  :: Model
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cHydTypeList(:)
+    INTEGER,ALLOCATABLE,INTENT(OUT)          :: iHydLocationTypeList(:)
+    
+    !Local variables
+    INTEGER :: iNHydTypes
+    
+    !If not allocated, allocate list array
+    IF (.NOT. ALLOCATED(cHydTypeList)) THEN
+        iNHydTypes = Model%iNHydrographTypes
+        ALLOCATE (cHydTypeList(iNHydTypes) , iHydLocationTypeList(iNHydTypes))
+    END IF
+    
+    cHydTypeList         = Model%cHydrographDescriptions
+    iHydLocationTypeList = Model%iHydrographLocationTypeList
+
+  END SUBROUTINE GetHydrographTypeList
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET HYDROGRAPH FOR A GIVEN HYDROGRAPH INDEX FROM INQUIRY MODEL
+  ! -------------------------------------------------------------
+  SUBROUTINE GetHydrograph(Model,TimeStep,iNNodes,iLocationType,iLocationIndex,iLayer,rFact_LT,rFact_VL,cBeginDate,cEndDate,cInterval,iDataUnitType,rDates,rValues,iStat)
+    CLASS(Model_ForInquiry_Type),INTENT(IN) :: Model
+    TYPE(TimeStepType),INTENT(IN)           :: TimeStep
+    CHARACTER(LEN=*),INTENT(IN)             :: cBeginDate,cEndDate,cInterval
+    INTEGER,INTENT(IN)                      :: iLocationType,iLocationIndex,iLayer,iNNodes
+    REAL(8),INTENT(IN)                      :: rFact_LT,rFact_VL
+    REAL(8),ALLOCATABLE,INTENT(OUT)         :: rDates(:),rValues(:)
+    INTEGER,INTENT(OUT)                     :: iDataUnitType,iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+13) :: ThisProcedure = ModName // 'GetHydrograph'
+    INTEGER                      :: iLoc
+    TYPE(AppGWType)              :: AppGW
+    TYPE(AppStreamType)          :: AppStream
+    
+    !Find the hydrograph information
+    iLoc = LocateInList(iLocationType,Model%iHydrographLocationTypeList)
+    IF (iLoc .LT. 1) THEN
+        CALL SetLastMessage('Requested hydrograph data is not part of the model output!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
+    
+    SELECT CASE (Model%iHydrographCompList(iLoc))
+        CASE (f_iGWComp) 
+            CALL AppGW%GetHydrograph(TRIM(Model%cHydrographFiles(iLoc)),TimeStep,iNNodes,iLocationType,iLocationIndex,iLayer,rFact_LT,rFact_VL,cBeginDate,cEndDate,cInterval,iDataUnitType,rDates,rValues,iStat)
+                    
+        CASE (f_iStrmComp)
+            CALL AppStream%GetHydrograph(TRIM(Model%cHydrographFiles(iLoc)),TimeStep,iLocationIndex,rFact_LT,rFact_VL,cBeginDate,cEndDate,cInterval,iDataUnitType,rDates,rValues,iStat)
+            
+    END SELECT
+            
+  END SUBROUTINE GetHydrograph
+  
+    
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF AVAILABLE BUDGETS FROM INQUIRY MODEL
+  ! -------------------------------------------------------------
+  FUNCTION GetBudget_N(Model) RESULT(iNBudgets)
+    CLASS(Model_ForInquiry_Type),INTENT(IN) :: Model
+    INTEGER                                 :: iNBudgets
+    
+    iNBudgets = Model%iNBudgetFiles
+    
+  END FUNCTION GetBudget_N
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET LIST OF BUDGET OUTPUTS FROM THE INQUIRY MODEL
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_List(Model,cBudgetList,iBudgetTypeList,iBudgetCompList,iBudgetLocationTypeList)
     CLASS(Model_ForInquiry_Type),TARGET,INTENT(IN) :: Model
-    TYPE(TimeStepType),INTENT(IN)                  :: TimeStep
-    INTEGER,INTENT(IN)                             :: NLayers,iLocationType,iLocationID,iCompID,iSubDataIndex,iZExtent,iElems(:),iLayers(:),iZones(:)
-    CHARACTER(LEN=*),INTENT(IN)                    :: cDataName,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval
-    REAL(8),INTENT(IN)                             :: rFact_LT,rFact_AR,rFact_VL
-    INTEGER,INTENT(OUT)                            :: iDataUnitType                           !What is the data unit type (length, area, or volume)?
-    INTEGER,INTENT(OUT)                            :: nActualOutput                           !This is the actual number of elements of rOutputValues and rOutputDates arrays that are populated (can be less than or equal to the size of these arrays)
-    REAL(8),INTENT(OUT)                            :: rOutputDates(:),rOutputValues(:)
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT)       :: cBudgetList(:)
+    INTEGER,ALLOCATABLE,INTENT(OUT)                :: iBudgetTypeList(:),iBudgetCompList(:),iBudgetLocationTypeList(:)
+    
+    !Local variables
+    INTEGER :: iNBudgets
+
+    !Number of budgets
+    iNBudgets = Model%iNBudgetFiles
+    
+    !Allocate arrays
+    ALLOCATE (cBudgetList(iNBudgets) , iBudgetTypeList(iNBudgets) , iBudgetCompList(iNBudgets) , iBudgetLocationTypeList(iNBudgets))
+    
+    !Retrieve data
+    cBudgetList             = Model%cBudgetDescriptions
+    iBudgetTypeList         = Model%iBudgetTypeList
+    iBudgetCompList         = Model%iBudgetCompList
+    iBudgetLocationTypeList = Model%iBudgetLocationTypeList
+    
+  END SUBROUTINE GetBudget_List
+    
+
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF COLUMNS (EXCLUDING TIME COLUMN) FOR A BUDGET FROM THE INQUIRY MODEL
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_NColumns(Model,iBudgetType,iLocationIndex,iNCols,iStat)
+    CLASS(Model_ForInquiry_Type),INTENT(IN) :: Model
+    INTEGER,INTENT(IN)                      :: iBudgetType,iLocationIndex
+    INTEGER,INTENT(OUT)                     :: iNCols,iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+18) :: ThisProcedure = ModName // 'GetBudget_NColumns'
+    INTEGER                      :: iLoc
+    TYPE(BudgetType)             :: Budget
+    
+    !Locate budget in list
+    iLoc = LocateInList(iBudgetType,Model%iBudgetTypeList)
+    IF (iLoc .LT. 1) THEN
+        CALL SetLastMessage('Specified budget is not part of the model output!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
+    
+    !Open file
+    CALL Budget%New(Model%cBudgetFiles(iLoc),iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Number of columns (includes Time column)
+    CALL Budget%GetNDataColumns(iLocationIndex,iNCols,iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Substract 1 to exclude Time column
+    iNCols = iNCols - 1
+
+    !Close file
+    CALL Budget%Kill()
+    
+  END SUBROUTINE GetBudget_NColumns
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET COLUMN TITLES FOR A BUDGET FILE
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_ColumnTitles(Model,iBudgetType,iLocationIndex,cUnitLT,cUnitAR,cUnitVL,cColTitles,iStat)
+    CLASS(Model_ForInquiry_Type),INTENT(IN)  :: Model
+    INTEGER,INTENT(IN)                       :: iBudgetType,iLocationIndex
+    CHARACTER(LEN=*),INTENT(IN)              :: cUnitLT,cUnitAR,cUnitVL 
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cColTitles(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+22)                  :: ThisProcedure = ModName // 'GetBudget_ColumnTitles'
+    INTEGER                                       :: iLoc,iNCols,iErrorCode
+    TYPE(BudgetType)                              :: Budget
+    CHARACTER(LEN=f_iColumnHeaderLen),ALLOCATABLE :: cColTitles_Local(:)
+    
+    !Locate budget in list
+    iLoc = LocateInList(iBudgetType,Model%iBudgetTypeList)
+    IF (iLoc .LT. 1) THEN
+        CALL SetLastMessage('Specified budget is not part of the model output!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
+    
+    !Open file
+    CALL Budget%New(Model%cBudgetFiles(iLoc),iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Number of columns (includes Time column)
+    CALL Budget%GetNDataColumns(iLocationIndex,iNCols,iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Get the columns headers (includes Time column)
+    ALLOCATE (cColTitles_Local(iNCols))
+    cColTitles_Local = Budget%GetFullColumnHeaders(iLocationIndex,iNCols)
+    
+    !Insert units into titles
+    CALL Budget%ModifyFullColumnHeaders(cUnitLT,cUnitAR,cUnitVL,cColTitles_Local)
+    
+    !Remove time column
+    iNCols = iNCols - 1
+    ALLOCATE (cColTitles(iNCols))
+    cColTitles = ADJUSTL(cColTitles_Local(2:))
+    
+    !Close Budget file
+    CALL Budget%Kill()
+    
+    !Clear memory
+    DEALLOCATE (cColTitles_Local , STAT=iErrorCode)
+                
+  END SUBROUTINE GetBudget_ColumnTitles
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET AVERAGE MONTHLY BUDGET OUTPUTS, AND ERROR BOUNDS OF THE FLOWS FROM THE INQUIRY MODEL
+  ! --- Note: Budget class requires feature ID, instead of index. So, index is converted to ID
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_MonthlyAverageFlows(Model,iSubregionIDs,iLakeIDs,iBudgetType,iLocationIndex,iLUType,iSWShedBudType,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlows,rSDFlows,cFlowNames,iStat)
+    CLASS(Model_ForInquiry_Type),TARGET,INTENT(IN) :: Model
+    INTEGER,INTENT(IN)                             :: iSubregionIDs(:),iLakeIDs(:),iBudgetType,iLocationIndex,iLUType,iSWShedBudType
+    CHARACTER(LEN=*),INTENT(IN)                    :: cAdjustedBeginDate,cAdjustedEndDate
+    REAL(8),INTENT(IN)                             :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)                :: rFlows(:,:),rSDFlows(:,:)   !Flows are return in (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT)       :: cFlowNames(:)
     INTEGER,INTENT(OUT)                            :: iStat
     
     !Local variables
-    INTEGER                          :: indx,iZonesWithNames(0),iDataUnitTypeArray(1)
-    INTEGER                          :: iReadCols(1)  
-    REAL(8)                          :: rValues(2,SIZE(rOutputDates))
-    CHARACTER(LEN=0)                 :: cZoneNames(0)
-    TYPE(DataForFeatureType),POINTER :: pFeatureData
-    TYPE(BudgetType)                 :: InFile_Budget
-    TYPE(ZBudgetType)                :: InFile_ZBudget
-    TYPE(ZoneListType)               :: ZoneList
-    TYPE(AppGWType)                  :: AppGW_ForInquiry
-    TYPE(AppStreamType)              :: AppStream_ForInquiry
+    CHARACTER(LEN=ModNameLen+29) :: ThisProcedure = ModName // 'GetBudget_MonthlyAverageFlows'
+    INTEGER                      :: iMonth,iNCols,indxCol,indxTime,iNYears,iLoc,ID
+    REAL(8)                      :: rDiff   
+    REAL(8),ALLOCATABLE          :: rFlowsWork(:,:)
+    TYPE(RootZoneType)           :: RootZone
+    TYPE(AppStreamType)          :: AppStream
+    TYPE(AppGWType)              :: AppGW
+    TYPE(AppUnsatZoneType)       :: AppUnsatZone
+    TYPE(AppLakeType)            :: AppLake
+    TYPE(AppSmallWatershedType)  :: AppSWShed
+    TYPE(BudgetType)             :: Budget
     
-    !Initialize
-    iStat         = 0
-    nActualOutput = 0
+    !Locate budget in list
+    iLoc = LocateInList(iBudgetType,Model%iBudgetTypeList)
+    IF (iLoc .LT. 1) THEN
+        CALL SetLastMessage('Specified budget is not part of the model output!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
     
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_Node)
-            pFeatureData => Model%DataForNodes
+    !Open file
+    CALL Budget%New(Model%cBudgetFiles(iLoc),iStat)
+    IF (iStat .NE. 0) RETURN
             
-        CASE (iLocationType_Zone)
-            pFeatureData => Model%DataForZones
+    !Get monthly budget flows
+    SELECT CASE(Model%iBudgetCompList(iLoc))
+        CASE (f_iGWComp)
+            ID = iSubregionIDs(iLocationIndex)
+            CALL AppGW%GetBudget_MonthlyFlows(Budget,ID,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlowsWork,cFlowNames,iStat)
             
-        CASE (iLocationType_Subregion)
-            pFeatureData => Model%DataForSubregions
-        
-        CASE (iLocationType_Lake)
-            pFeatureData => Model%DataForLakes
+        CASE (f_iStrmComp)
+            !Convert index to ID
+            SELECT CASE (iBudgetType)
+                CASE (f_iBudgetType_StrmReach) 
+                    ID = Model%iStrmReachIDs(iLocationIndex)
+                CASE (f_iBudgetType_StrmNode)
+                    ID = Model%iStrmNodeIDs_WithBudget(iLocationIndex)
+                CASE (f_iBudgetType_DiverDetail)
+                    ID = Model%iDiversionIDs(iLocationIndex)
+            END SELECT
+            CALL AppStream%GetBudget_MonthlyFlows(Budget,iBudgetType,ID,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlowsWork,cFlowNames,iStat)
             
-        CASE (iLocationType_StrmNode)
-            pFeatureData => Model%DataForStrmNodes
-
-        CASE (iLocationType_StrmReach)
-            pFeatureData => Model%DataForStrmReaches
-
-        CASE (iLocationType_SmallWatershed)
-            pFeatureData => Model%DataForSmallWatersheds
+        CASE (f_iRootZoneComp)
+            ID = iSubregionIDs(iLocationIndex)
+            CALL RootZone%GetBudget_MonthlyFlows(Budget,iBudgetType,iLUType,ID,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlowsWork,cFlowNames,iStat)
             
-        CASE (iLocationType_GWHeadObs)
-            pFeatureData => Model%DataForGWHeadObs
+        CASE (f_iUnsatZoneComp)
+            ID = iSubregionIDs(iLocationIndex)
+            CALL AppUnsatZone%GetBudget_MonthlyFlows(Budget,ID,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlowsWork,cFlowNames,iStat)
             
-        CASE (iLocationType_StrmHydObs)
-            pFeatureData => Model%DataForStrmHydObs
+        CASE (f_iLakeComp)
+            ID = iLakeIDs(iLocationIndex)
+            CALL AppLake%GetBudget_MonthlyFlows(Budget,ID,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlowsWork,cFlowNames,iStat)
             
-        CASE (iLocationType_SubsidenceObs)
-            pFeatureData => Model%DataForSubsidenceObs
-            
-        CASE (iLocationType_TileDrain)
-            pFeatureData => Model%DataForTileDrainObs
+        CASE (f_iSWShedComp)
+            ID = Model%iSmallWatershedIDs(iLocationIndex)
+            CALL AppSWShed%GetBudget_MonthlyFlows(Budget,iSWShedBudType,ID,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlowsWork,cFlowNames,iStat)
             
     END SELECT
+    IF (iStat .NE. 0) RETURN
         
-    !Find the file that the data is in and read data
-    DO indx=1,pFeatureData%NData
-        IF (iCompID .EQ. pFeatureData%iDataComponentIDs(indx)) THEN
-            IF (TRIM(cDataName) .EQ. TRIM(pFeatureData%cDataNames(indx))) THEN
-                !Make sure location has data
-                IF (.NOT. DoesLocationHaveData(iLocationID,pFeatureData%LocationsWithData(indx))) EXIT
-                
-                !Data file is budget or z-budget file
-                IF (pFeatureData%lDataIsBudgetType(indx)) THEN
-                    !It is a Z-Budget file?
-                    IF (IsZBudgetFile(pFeatureData%cFilesForData(indx))) THEN
-                        !Open file
-                        CALL InFile_ZBudget%New(pFeatureData%cFilesForData(indx),iStat)
-                        IF (iStat .EQ. -1) RETURN
-                        
-                        !Generate zone list
-                        CALL ZoneList%New(InFile_ZBudget%Header%iNData,InFile_ZBudget%Header%lFaceFlows_Defined,InFile_ZBudget%SystemData,iZExtent,iElems,iLayers,iZones,iZonesWithNames,cZoneNames,iStat)  ;  IF (iStat .EQ. -1) RETURN
-                        
-                        !Read data
-                        iReadCols = iSubDataIndex
-                        CALL InFile_ZBudget%ReadData(ZoneList,iLocationID,iReadCols,cOutputInterval,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_AR,rFact_VL,iDataUnitTypeArray,nActualOutput,rValues,iStat)  ;  IF (iStat .EQ. -1) RETURN
-                        rOutputDates(1:nActualOutput)  = rValues(1,1:nActualOutput)
-                        rOutputValues(1:nActualOutput) = rValues(2,1:nActualOutput)
-                        iDataUnitType                  = iDataUnitTypeArray(1)
-                       
-                        !Delete zone list
-                        CALL ZoneList%Kill()
-                        
-                        !Close file
-                        CALL InFile_ZBudget%Kill()
-                        
-                    !It is a Budget file
-                    ELSE
-                        !Open file    
-                        CALL InFile_Budget%New(pFeatureData%cFilesForData(indx),iStat)
-                        IF (iStat .EQ. -1) RETURN
-                        
-                        !Read data
-                        CALL InFile_Budget%ReadData(iLocationID,iSubDataIndex,cOutputInterval,cOutputBeginDateAndTime,cOutputEndDateAndTime,1d0,0d0,0d0,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-                        
-                        !Close file
-                        CALL InFile_Budget%Kill()
-                    END IF
-                    
-                !Otherwise
-                ELSE
-                    !Get data based on component ID
-                    SELECT CASE (iCompID)
-                        CASE (iGWComp)
-                            CALL AppGW_ForInquiry%GetModelData_AtLocation(pFeatureData%cFilesForData(indx),NLayers,TimeStep,iLocationType,iLocationID,cDataName,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_LT,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-
-                        CASE (iStrmComp)
-                            CALL AppStream_ForInquiry%GetModelData_AtLocation(pFeatureData%cFilesForData(indx),TimeStep,iLocationType,iLocationID,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_LT,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-                   
-                    END SELECT
-                END IF
-
-                !Exit loop
-                EXIT
-            END IF
+    !Compute average flows
+    iNCols = SIZE(cFlowNames)
+    ALLOCATE (rFlows(iNCols,12))
+    rFlows  = 0.0
+    iMonth  = 1
+    iNYears = 0
+    DO indxTime=1,SIZE(rFlowsWork,DIM=2)
+        DO indxCol=1,iNCols
+            rFlows(indxCol,iMonth) = rFlows(indxCol,iMonth) + rFlowsWork(indxCol,indxTime)
+        END DO
+        iMonth = iMonth + 1
+        IF (iMonth .EQ. 13) THEN
+            iMonth = 1
+            iNYears = iNYears + 1
         END IF
     END DO
+    rFlows = rFlows / REAL(iNYears , 8)
     
-    !Clear pointer
-    NULLIFY (pFeatureData)
+    !Compute error bounds
+    ALLOCATE (rSDFlows(iNCols,12))
+    rSDFlows = 0.0
+    iMonth   = 1
+    DO indxTime=1,SIZE(rFlowsWork,DIM=2)
+        DO indxCol=1,iNCols
+            rDiff                    = rFlowsWork(indxCol,indxTime) - rFlows(indxCol,iMonth) 
+            rSDFlows(indxCol,iMonth) = rSDFlows(indxCol,iMonth) + rDiff * rDiff
+        END DO
+        iMonth = iMonth + 1
+        IF (iMonth .EQ. 13) iMonth = 1
+    END DO
+    rSDFlows = SQRT(rSDFlows / REAL(iNYears , 8))
+           
+    !Close Budget file
+    CALL Budget%Kill()
     
-  END SUBROUTINE GetModelData_AtLocation_FromInquiryModel
-
-  
-  ! -------------------------------------------------------------
-  ! --- GET NUMBER OF AVAILABLE POST-PROCESSING DATA FOR A LOCATION TYPE USING THE FULL MODEL COMPONENTS
-  ! -------------------------------------------------------------
-  FUNCTION GetNDataList_AtLocationType_FromFullModel(AppGW,GWZBudget,RootZone,AppUnsatZone,AppLake,AppStream,AppSWShed,iLocationType) RESULT(NData)
-    TYPE(AppGWType),INTENT(IN)             :: AppGW
-    TYPE(GWZBudgetType),INTENT(IN)         :: GWZBudget
-    TYPE(RootZoneType),INTENT(IN)          :: RootZone
-    TYPE(AppUnsatZoneType),INTENT(IN)      :: AppUnsatZone
-    TYPE(AppLAkeType),INTENT(IN)           :: AppLake
-    TYPE(AppStreamType),INTENT(IN)         :: AppStream
-    TYPE(AppSmallWatershedType),INTENT(IN) :: AppSWShed
-    INTEGER,INTENT(IN)                     :: iLocationType
-    INTEGER                                :: NData
-    
-    !Initialize
-    NData = 0
-    
-    !Groundwater
-    NData = NData + AppGW%GetNDataList_AtLocationType(iLocationType)
-    
-    !Groundwater zone budget
-    NData = NData + GWZBudget%GetNDataList_AtLocationType(iLocationType)
-    
-    !Streams
-    NData = NData + AppStream%GetNDataList_AtLocationType(iLocationType)
-    
-    !Root zone
-    NData = NData + RootZone%GetNDataList_AtLocationType(iLocationType)
-    
-    !Lakes
-    NData = NData + AppLake%GetNDataList_AtLocationType()
-    
-    !Unsaturated zone
-    NData = NData + AppUnsatZone%GetNDataList_AtLocationType(iLocationType)
-    
-    !Small watersheds
-    NData = NData + AppSWShed%GetNDataList_AtLocationType()
-            
-  END FUNCTION GetNDataList_AtLocationType_FromFullModel
+  END SUBROUTINE GetBudget_MonthlyAverageFlows
   
   
   ! -------------------------------------------------------------
-  ! --- GET NUMBER OF AVAILABLE POST-PROCESSING DATA FOR A LOCATION TYPE USING THE INQUIRY MODEL 
+  ! --- GET ANNUAL BUDGET OUTPUTS FROM THE INQUIRY MODEL
+  ! --- Note: Budget class requires feature ID, instead of index. So, index is converted to ID
   ! -------------------------------------------------------------
-  FUNCTION GetNDataList_AtLocationType_FromInquiryModel(Model,iLocationType) RESULT (NData)
-    CLASS(Model_ForInquiry_Type),INTENT(IN)  :: Model
-    INTEGER,INTENT(IN)                       :: iLocationType
-    INTEGER                                  :: NData
-    
-    NData = 0
-        
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_Node)
-           NData = Model%DataForNodes%NData
-            
-        CASE (iLocationType_Zone)
-            NData = Model%DataForZones%NData
-            
-        CASE (iLocationType_Subregion)
-            NData = Model%DataForSubregions%NData
-        
-        CASE (iLocationType_Lake)
-            NData = Model%DataForLakes%NData
-            
-        CASE (iLocationType_StrmNode)
-            NData = Model%DataForStrmNodes%NData
-
-        CASE (iLocationType_StrmReach)
-            NData = Model%DataForStrmReaches%NData
-
-        CASE (iLocationType_SmallWatershed)
-            NData = Model%DataForSmallWatersheds%NData
-            
-        CASE (iLocationType_GWHeadObs)
-            NData = Model%DataForGWHeadObs%NData
-            
-        CASE (iLocationType_StrmHydObs)
-            NData = Model%DataForStrmHydObs%NData
-            
-        CASE (iLocationType_SubsidenceObs)
-            NData = Model%DataForSubsidenceObs%NData
-            
-        CASE (iLocationType_TileDrain)
-            NData = Model%DataForTileDrainObs%NData
-            
-    END SELECT
-        
-  END FUNCTION GetNDataList_AtLocationType_FromInquiryModel
-    
-
-  ! -------------------------------------------------------------
-  ! --- GET AVAILABLE POST-PROCESSING DATA FOR A LOCATION TYPE USING THE FULL MODEL COMPONENTS
-  ! -------------------------------------------------------------
-  SUBROUTINE GetDataList_AtLocationType_FromFullModel(AppGW,GWZBudget,RootZone,AppUnsatZone,AppLake,AppStream,AppSWShed,iLocationType,cDataList,cFileList,iDataCompID,lBudgetType,LocationsWithData)
-    TYPE(AppGWType),INTENT(IN)                          :: AppGW
-    TYPE(GWZBudgetType),INTENT(IN)                      :: GWZBudget
-    TYPE(RootZoneType),INTENT(IN)                       :: RootZone
-    TYPE(AppUnsatZoneType),INTENT(IN)                   :: AppUnsatZone
-    TYPE(AppLAkeType),INTENT(IN)                        :: AppLake
-    TYPE(AppStreamType),INTENT(IN)                      :: AppStream
-    TYPE(AppSmallWatershedType),INTENT(IN)              :: AppSWShed
-    INTEGER,INTENT(IN)                                  :: iLocationType
-    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT)            :: cDataList(:),cFileList(:)
-    INTEGER,ALLOCATABLE,INTENT(OUT)                     :: iDataCompID(:)
-    LOGICAL,ALLOCATABLE,INTENT(OUT)                     :: lBudgetType(:)
-    TYPE(LocationsWithDataType),ALLOCATABLE,INTENT(OUT) :: LocationsWithData(:)
-    
-    !Local variables
-    INTEGER,PARAMETER           :: iMaxDim = 10
-    INTEGER                     :: nData,ErrorCode,iDim,indx
-    CHARACTER(LEN=100)          :: cDataList_Local(iMaxDim)
-    CHARACTER(LEN=500)          :: cFileList_Local(iMaxDim)
-    LOGICAL                     :: lBudgetType_Local(iMaxDim)
-    INTEGER                     :: iDataCompID_Local(iMaxDim)
-    TYPE(LocationsWithDataType) :: LocationsWithData_Local(iMaxDim)
-    
-    !Initialize
-    nData = 0
-    
-    !Groundwater
-    CALL AppGW%GetDataList_AtLocationType(iLocationType,cDataList,cFileList,lBudgetType)
-    IF (ALLOCATED(cDataList)) THEN
-        iDim = SIZE(cDataList)
-    ELSE
-        iDim = 0
-    END IF
-    DO indx=1,iDim
-        CALL AppGW%GetLocationsWithData(iLocationType,cDataList(indx),LocationsWithData_Local(nData+indx)%iLocations)
-        LocationsWithData_Local(nData+indx)%NLocations = SIZE(LocationsWithData_Local(nData+indx)%iLocations)
-    END DO
-    cDataList_Local(nData+1:nData+iDim)     = cDataList
-    cFileList_Local(nData+1:nData+iDim)     = cFileList
-    lBudgetType_Local(nData+1:nData+iDim)   = lBudgetType
-    iDataCompID_Local(nData+1:nData+iDim)   = iGWComp
-    nData                                   = nData + iDim
-    
-    !Groundwater zone
-    CALL GWZBudget%GetDataList_AtLocationType(iLocationType,cDataList,cFileList,lBudgetType)
-    IF (ALLOCATED(cDataList)) THEN
-        iDim = SIZE(cDataList)
-    ELSE
-        iDim = 0
-    END IF
-    DO indx=1,iDim
-        CALL GWZBudget%GetLocationsWithData(iLocationType,cDataList(indx),LocationsWithData_Local(nData+indx)%iLocations)
-        LocationsWithData_Local(nData+indx)%NLocations = SIZE(LocationsWithData_Local(nData+indx)%iLocations)
-    END DO
-    cDataList_Local(nData+1:nData+iDim)     = cDataList
-    cFileList_Local(nData+1:nData+iDim)     = cFileList
-    lBudgetType_Local(nData+1:nData+iDim)   = lBudgetType
-    iDataCompID_Local(nData+1:nData+iDim)   = iGWComp
-    nData                                   = nData + iDim
-    
-    !Streams
-    CALL AppStream%GetDataList_AtLocationType(iLocationType,cDataList,cFileList,lBudgetType)
-    IF (ALLOCATED(cDataList)) THEN
-        iDim = SIZE(cDataList)
-    ELSE
-        iDim = 0
-    END IF
-    DO indx=1,iDim
-        CALL AppStream%GetLocationsWithData(iLocationType,cDataList(indx),LocationsWithData_Local(nData+indx)%iLocations)
-        LocationsWithData_Local(nData+indx)%NLocations = SIZE(LocationsWithData_Local(nData+indx)%iLocations)
-    END DO
-    cDataList_Local(nData+1:nData+iDim)     = cDataList
-    cFileList_Local(nData+1:nData+iDim)     = cFileList
-    lBudgetType_Local(nData+1:nData+iDim)   = lBudgetType
-    iDataCompID_Local(nData+1:nData+iDim)   = iStrmComp
-    nData                                   = nData + iDim
-    
-    !Root zone
-    CALL RootZone%GetDataList_AtLocationType(iLocationType,cDataList,cFileList,lBudgetType)
-    IF (ALLOCATED(cDataList)) THEN
-        iDim = SIZE(cDataList)
-    ELSE
-        iDim = 0
-    END IF
-    DO indx=1,iDim
-        CALL RootZone%GetLocationsWithData(iLocationType,cDataList(indx),LocationsWithData_Local(nData+indx)%iLocations)
-        LocationsWithData_Local(nData+indx)%NLocations = SIZE(LocationsWithData_Local(nData+indx)%iLocations)
-    END DO
-    cDataList_Local(nData+1:nData+iDim)     = cDataList
-    cFileList_Local(nData+1:nData+iDim)     = cFileList
-    lBudgetType_Local(nData+1:nData+iDim)   = lBudgetType
-    iDataCompID_Local(nData+1:nData+iDim)   = iRootZoneComp
-    nData                                   = nData + iDim
-    
-    !Lakes
-    CALL AppLake%GetDataList_AtLocationType(iLocationType,cDataList,cFileList,lBudgetType)
-    IF (ALLOCATED(cDataList)) THEN
-        iDim = SIZE(cDataList)
-    ELSE
-        iDim = 0
-    END IF
-    DO indx=1,iDim
-        CALL AppLake%GetLocationsWithData(iLocationType,cDataList(indx),LocationsWithData_Local(nData+indx)%iLocations)
-        LocationsWithData_Local(nData+indx)%NLocations = SIZE(LocationsWithData_Local(nData+indx)%iLocations)
-    END DO
-    cDataList_Local(nData+1:nData+iDim)     = cDataList
-    cFileList_Local(nData+1:nData+iDim)     = cFileList
-    lBudgetType_Local(nData+1:nData+iDim)   = lBudgetType
-    iDataCompID_Local(nData+1:nData+iDim)   = iLakeComp
-    nData                                   = nData + iDim
-    
-    !Unsaturated zone
-    CALL AppUnsatZone%GetDataList_AtLocationType(iLocationType,cDataList,cFileList,lBudgetType)
-    IF (ALLOCATED(cDataList)) THEN
-        iDim = SIZE(cDataList)
-    ELSE
-        iDim = 0
-    END IF
-    DO indx=1,iDim
-        CALL AppUnsatZone%GetLocationsWithData(iLocationType,cDataList(indx),LocationsWithData_Local(nData+indx)%iLocations)
-        LocationsWithData_Local(nData+indx)%NLocations = SIZE(LocationsWithData_Local(nData+indx)%iLocations)
-    END DO
-    cDataList_Local(nData+1:nData+iDim)     = cDataList
-    cFileList_Local(nData+1:nData+iDim)     = cFileList
-    lBudgetType_Local(nData+1:nData+iDim)   = lBudgetType
-    iDataCompID_Local(nData+1:nData+iDim)   = iUnsatZoneComp
-    nData                                   = nData + iDim
-    
-    !Small watersheds
-    CALL AppSWShed%GetDataList_AtLocationType(iLocationType,cDataList,cFileList,lBudgetType)
-    IF (ALLOCATED(cDataList)) THEN
-        iDim = SIZE(cDataList)
-    ELSE
-        iDim = 0
-    END IF
-    DO indx=1,iDim
-        CALL AppSWShed%GetLocationsWithData(iLocationType,cDataList(indx),LocationsWithData_Local(nData+indx)%iLocations)
-        LocationsWithData_Local(nData+indx)%NLocations = SIZE(LocationsWithData_Local(nData+indx)%iLocations)
-    END DO
-    cDataList_Local(nData+1:nData+iDim)     = cDataList
-    cFileList_Local(nData+1:nData+iDim)     = cFileList
-    lBudgetType_Local(nData+1:nData+iDim)   = lBudgetType
-    iDataCompID_Local(nData+1:nData+iDim)   = iSWShedComp
-    nData                                   = nData + iDim
-    
-    !Store data in the return variables
-    DEALLOCATE (iDataCompID       , STAT=ErrorCode)
-    DEALLOCATE (cDataList         , STAT=ErrorCode)
-    DEALLOCATE (cFileList         , STAT=ErrorCode)
-    DEALLOCATE (lBudgetType       , STAT=ErrorCode)
-    DEALLOCATE (LocationsWithData , STAT=ErrorCode)
-    ALLOCATE (iDataCompID(nData) , cDataList(nData) , cFileList(nData) , lBudgetType(nData) ,  LocationsWithData(nData))
-    iDataCompID       = iDataCompID_Local(1:nData)
-    cDataList         = cDataList_Local(1:nData)
-    cFileList         = cFileList_Local(1:nData)
-    lBudgetType       = lBudgetType_Local(1:nData)
-    LocationsWithData = LocationsWithData_Local(1:nData)
-
-  END SUBROUTINE GetDataList_AtLocationType_FromFullModel
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET AVAILABLE POST-PROCESSING DATA FOR A LOCATION TYPE USING THE INQUIRY MODEL 
-  ! -------------------------------------------------------------
-  SUBROUTINE GetDataList_AtLocationType_FromInquiryModel(Model,iLocationType,cDataList,iDataCompID,lBudgetType)
-    CLASS(Model_ForInquiry_Type),TARGET,INTENT(IN)  :: Model
-    INTEGER,INTENT(IN)                              :: iLocationType
-    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT)        :: cDataList(:)
-    INTEGER,ALLOCATABLE,INTENT(OUT)                 :: iDataCompID(:)
-    LOGICAL,ALLOCATABLE,INTENT(OUT)                 :: lBudgetType(:)
-    
-    !Local variables
-    INTEGER                          :: nData,ErrorCode
-    TYPE(DataForFeatureType),POINTER :: pDataForFeature
-    
-    !Initialize
-    nData = 0
-    DEALLOCATE (iDataCompID , cDataList , lBudgetType , STAT=ErrorCode)
-    
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_Node)
-            pDataForFeature => Model%DataForNodes
-            
-        CASE (iLocationType_Zone)
-            pDataForFeature => Model%DataForZones
-            
-        CASE (iLocationType_Subregion)
-            pDataForFeature => Model%DataForSubregions
-        
-        CASE (iLocationType_Lake)
-            pDataForFeature => Model%DataForLakes
-            
-        CASE (iLocationType_StrmNode)
-            pDataForFeature => Model%DataForStrmNodes
-
-        CASE (iLocationType_StrmReach)
-            pDataForFeature => Model%DataForStrmReaches
-
-        CASE (iLocationType_SmallWatershed)
-            pDataForFeature => Model%DataForSmallWatersheds
-            
-        CASE (iLocationType_GWHeadObs)
-            pDataForFeature => Model%DataForGWHeadObs
-            
-        CASE (iLocationType_StrmHydObs)
-            pDataForFeature => Model%DataForStrmHydObs
-            
-        CASE (iLocationType_SubsidenceObs)
-            pDataForFeature => Model%DataForSubsidenceObs
-            
-        CASE (iLocationType_TileDrain)
-            pDataForFeature => Model%DataForTileDrainObs
-            
-    END SELECT
-        
-    !Save info in return variables
-    nData = pDataForFeature%NData
-    ALLOCATE (cDataList(nData) , iDataCompID(nData) , lBudgetType(nData))
-    cDataList   = pDataForFeature%cDataNames
-    iDataCompID = pDataForFeature%iDataComponentIDs
-    lBudgetType = pDataForFeature%lDataIsBudgetType
-        
-    !Clear memory
-    NULLIFY (pDataForFeature)
-
-  END SUBROUTINE GetDataList_AtLocationType_FromInquiryModel
-    
-
-  ! -------------------------------------------------------------
-  ! --- GET AVAILABLE SUB-DATA TYPES FOR A LOCATION TYPE FOR POST_PROCESSING
-  ! -------------------------------------------------------------
-  SUBROUTINE GetSubDataList_AtLocation_FromFullModel(AppGW,GWZBudget,RootZone,AppUnsatZone,AppLake,AppStream,AppSWShed,iLocationType,iLocationID,iCompID,cDataType,cSubDataList)
-    TYPE(AppGWType),INTENT(IN)               :: AppGW
-    TYPE(GWZBudgetType),INTENT(IN)           :: GWZBudget
-    TYPE(RootZoneType),INTENT(IN)            :: RootZone
-    TYPE(AppUnsatZoneType),INTENT(IN)        :: AppUnsatZone
-    TYPE(AppLakeType),INTENT(IN)             :: AppLake
-    TYPE(AppStreamType),INTENT(IN)           :: AppStream
-    TYPE(AppSmallWatershedType),INTENT(IN)   :: AppSWShed
-    INTEGER,INTENT(IN)                       :: iLocationType,iLocationID,iCompID
-    CHARACTER(LEN=*),INTENT(IN)              :: cDataType
-    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cSubDataList(:)
-    
-    SELECT CASE (iCompID)
-        CASE (iStrmComp)
-            IF (AppStream%IsDefined()) CALL AppStream%GetSubDataList_AtLocation(iLocationType,iLocationID,cDataType,cSubDataList)
-            
-        CASE (iLakeComp) 
-            IF (AppLake%IsDefined()) CALL AppLake%GetSubDataList_AtLocation(iLocationType,cDataType,cSubDataList)
-                    
-        CASE (iGWComp)
-            IF (iLocationType .EQ. iLocationType_Zone) THEN
-                CALL GWZBudget%GetSubDataList_AtLocation(iLocationType,iLocationID,cDataType,cSubDataList)  
-            ELSE
-                CALL AppGW%GetSubDataList_AtLocation(iLocationType,cDataType,cSubDataList)  
-            END IF
-        
-        CASE (iRootZoneComp)
-            IF (RootZone%IsDefined()) CALL RootZone%GetSubDataList_AtLocation(iLocationType,cDataType,cSubDataList)
-        
-        CASE (iUnsatZoneComp)
-            IF (AppUnsatZone%IsDefined()) CALL AppUnsatZone%GetSubDataList_AtLocation(iLocationType,cDataType,cSubDataList)
-        
-        CASE (iSWShedComp)
-            IF (AppSWShed%IsDefined()) CALL AppSWShed%GetSubDataList_AtLocation(iLocationType,cDataType,cSubDataList)
-            
-        CASE DEFAULT
-            !The rest of the features don't have sub-data
-            
-    END SELECT
-            
-  END SUBROUTINE GetSubDataList_AtLocation_FromFullModel
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET AVAILABLE SUB-DATA TYPES FOR A LOCATION TYPE FOR POST_PROCESSING FROM THE INQUIRY MODEL
-  ! -------------------------------------------------------------
-  SUBROUTINE GetSubDataList_AtLocation_FromInquiryModel(Model,iLocationType,iLocationID,iCompID,cDataType,cSubDataList)
+  SUBROUTINE GetBudget_AnnualFlows(Model,iSubregionIDs,iLakeIDs,iBudgetType,iLocationIndex,iLUType,iSWShedBudType,iNYears,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlows,cFlowNames,iStat)
     CLASS(Model_ForInquiry_Type),TARGET,INTENT(IN) :: Model
-    INTEGER,INTENT(IN)                             :: iLocationType,iLocationID,iCompID
-    CHARACTER(LEN=*),INTENT(IN)                    :: cDataType
-    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT)       :: cSubDataList(:)
+    INTEGER,INTENT(IN)                             :: iSubregionIDs(:),iLakeIDs(:),iBudgetType,iLocationIndex,iLUType,iSWShedBudType,iNYears
+    CHARACTER(LEN=*),INTENT(IN)                    :: cAdjustedBeginDate,cAdjustedEndDate
+    REAL(8),INTENT(IN)                             :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)                :: rFlows(:,:)    !rFlows is in (column,WY) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT)       :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                            :: iStat
     
     !Local variables
-    INTEGER                          :: indx,ErrorCode
-    TYPE(DataForFeatureType),POINTER :: pFeatureData
+    CHARACTER(LEN=ModNameLen+21) :: ThisProcedure = ModName // 'GetBudget_AnnualFlows'
+    INTEGER                      :: iMonth,iYear,iNCols,indxTime,iLoc,ID
+    REAL(8),ALLOCATABLE          :: rFlowsWork(:,:)
+    TYPE(RootZoneType)           :: RootZone
+    TYPE(AppStreamType)          :: AppStream
+    TYPE(AppGWType)              :: AppGW
+    TYPE(AppUnsatZoneType)       :: AppUnsatZone
+    TYPE(AppSmallWatershedType)  :: AppSWShed
+    TYPE(AppLakeType)            :: AppLake
+    TYPE(BudgetType)             :: Budget
     
-    !Initialize
-    DEALLOCATE (cSubDataList , STAT=ErrorCode)
+    !Locate budget in list
+    iLoc = LocateInList(iBudgetType,Model%iBudgetTypeList)
+    IF (iLoc .LT. 1) THEN
+        CALL SetLastMessage('Specified budget is not part of the model output!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
     
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_Node)
-            pFeatureData => Model%DataForNodes
-
-        CASE (iLocationType_Zone)
-            pFeatureData => Model%DataForZones
+    !Open file
+    CALL Budget%New(Model%cBudgetFiles(iLoc),iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Get monthly budget flows
+    SELECT CASE(Model%iBudgetCompList(iLoc))
+        CASE (f_iGWComp)
+            ID = iSubregionIDs(iLocationIndex)
+            CALL AppGW%GetBudget_MonthlyFlows(Budget,ID,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlowsWork,cFlowNames,iStat)
             
-        CASE (iLocationType_Subregion)
-            pFeatureData => Model%DataForSubregions
+        CASE (f_iStrmComp)
+            SELECT CASE (iBudgetType)
+                CASE (f_iBudgetType_StrmReach) 
+                    ID = Model%iStrmReachIDs(iLocationIndex)
+                CASE (f_iBudgetType_StrmNode)
+                    ID = Model%iStrmNodeIDs_WithBudget(iLocationIndex)
+                CASE (f_iBudgetType_DiverDetail)
+                    ID = Model%iDiversionIDs(iLocationIndex)
+            END SELECT
+            CALL AppStream%GetBudget_MonthlyFlows(Budget,iBudgetType,ID,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlowsWork,cFlowNames,iStat)
             
-        CASE (iLocationType_Lake)
-            pFeatureData => Model%DataForLakes
+        CASE (f_iLakeComp)
+            ID = iLakeIDs(iLocationIndex)
+            CALL AppLake%GetBudget_MonthlyFlows(Budget,ID,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlowsWork,cFlowNames,iStat)
+                        
+        CASE (f_iRootZoneComp)
+            ID =iSubregionIDs(iLocationIndex)
+            CALL RootZone%GetBudget_MonthlyFlows(Budget,iBudgetType,iLUType,ID,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlowsWork,cFlowNames,iStat)
             
-        CASE (iLocationType_StrmNode)
-            pFeatureData => Model%DataForStrmNodes
+        CASE (f_iUnsatZoneComp)
+            ID =iSubregionIDs(iLocationIndex)
+            CALL AppUnsatZone%GetBudget_MonthlyFlows(Budget,ID,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlowsWork,cFlowNames,iStat)
             
-        CASE (iLocationType_StrmReach)
-            pFeatureData => Model%DataForStrmReaches
-            
-        CASE (iLocationType_SmallWatershed)
-            pFeatureData => Model%DataForSmallWatersheds
-            
-        CASE (iLocationType_GWHeadObs)
-            pFeatureData => Model%DataForGWHeadObs
-            
-        CASE (iLocationType_StrmHydObs)
-            pFeatureData => Model%DataForStrmHydObs
-            
-        CASE (iLocationType_SubsidenceObs)
-            pFeatureData => Model%DataForSubsidenceObs
-            
-        CASE (iLocationType_TileDrain)
-            pFeatureData => Model%DataForTileDrainObs
+        CASE (f_iSWShedComp)
+            ID = Model%iSmallWatershedIDs(iLocationIndex)
+            CALL AppSWShed%GetBudget_MonthlyFlows(Budget,iSWShedBudType,ID,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlowsWork,cFlowNames,iStat)
             
     END SELECT
-    
-    !Store sub-data in the return variable
-    DO indx=1,pFeatureData%NData
-        IF (pFeatureData%iDataComponentIDs(indx) .EQ. iCompID) THEN
-            IF (TRIM(cDataType) .EQ. TRIM(pFeatureData%cDataNames(indx))) THEN
-                IF (DoesLocationHaveData(iLocationID,pFeatureData%LocationsWithData(indx))) THEN
-                    ALLOCATE (cSubDataList(pFeatureData%SubData(indx)%NSubData))
-                    cSubDataList = ''
-                    cSubDataList = pFeatureData%SubData(indx)%cSubDataNames
-                    EXIT
-                END IF
-            END IF
+    IF (iStat .NE. 0) RETURN
+        
+    !Compute annual flows
+    iNCols = SIZE(cFlowNames)
+    ALLOCATE (rFlows(iNCols,iNYears))
+    rFlows = 0.0
+    iMonth = 1
+    iYear  = 1
+    DO indxTime=1,SIZE(rFlowsWork,DIM=2)
+        rFlows(:,iYear) = rFlows(:,iYear) + rFlowsWork(:,indxTime)
+        iMonth          = iMonth + 1
+        IF (iMonth .GT. 12) THEN
+            iMonth = 1
+            iYear  = iYear + 1
         END IF
     END DO
-               
-    !Clear pointer
-    NULLIFY (pFeatureData)
-            
-  END SUBROUTINE GetSubDataList_AtLocation_FromInquiryModel
-
+           
+    !Close Budget file
+    CALL Budget%Kill()
+    
+  END SUBROUTINE GetBudget_AnnualFlows
   
   
-  
-! ******************************************************************
-! ******************************************************************
-! ******************************************************************
-! ***
-! *** DATA READERS
-! ***
-! ******************************************************************
-! ******************************************************************
-! ******************************************************************
-
   ! -------------------------------------------------------------
-  ! --- READ SUB-DATA FROM FILE
+  ! --- GET BUDGET TIME SERIES DATA FROM A BUDGET FILE FOR A SET OF COLUMNS FROM THE INQUIRY MODEL 
   ! -------------------------------------------------------------
-  SUBROUTINE SubData_ReadFromFile(SubData,InFile,iStat)
-    TYPE(SubDataType),INTENT(OUT) :: SubData(:)
-    TYPE(GenericFileType)         :: InFile
-    INTEGER,INTENT(OUT)           :: iStat
+  SUBROUTINE GetBudget_TSData(Model,iSubregionIDs,iLakeIDs,iBudgetType,iLocationIndex,iCols,cBeginDate,cEndDate,cInterval,rFactLT,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+    CLASS(Model_ForInquiry_Type),INTENT(IN) :: Model
+    INTEGER,INTENT(IN)                      :: iSubregionIDs(:),iLakeIDs(:),iBudgetType,iLocationIndex,iCols(:)
+    CHARACTER(LEN=*),INTENT(IN)             :: cBeginDate,cEndDate,cInterval
+    REAL(8),INTENT(IN)                      :: rFactLT,rFactAR,rFactVL
+    REAL(8),INTENT(OUT)                     :: rOutputDates(:),rOutputValues(:,:)    !rOutputValues is in (timestep,column) format
+    INTEGER,INTENT(OUT)                     :: iDataTypes(:),inActualOutput,iStat
     
     !Local variables
-    INTEGER :: indx,NSubData
+    CHARACTER(LEN=ModNameLen+16) :: ThisProcedure = ModName // 'GetBudget_TSData'
+    INTEGER                      :: indx,iLoc,ID
+    TYPE(BudgetType)             :: Budget
     
-    DO indx=1,SIZE(SubData)
-        CALL InFile%ReadData(NSubData,iStat)  ;  IF (iStat .EQ. -1) RETURN
-        IF (NSubData .EQ. 0) CYCLE
-        SubData(indx)%NSubData = NSubData
-        ALLOCATE (SubData(indx)%cSubDataNames(NSubData))
-        CALL InFile%ReadData(SubData(indx)%cSubDataNames,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    !Locate budget in list
+    iLoc = LocateInList(iBudgetType,Model%iBudgetTypeList)
+    IF (iLoc .LT. 1) THEN
+        CALL SetLastMessage('Specified budget is not part of the model output to retrieve data from!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
+    
+    !Open file
+    CALL Budget%New(Model%cBudgetFiles(iLoc),iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Convert location index to ID since Budget expects ID
+    SELECT CASE (iBudgetType)
+        CASE (f_iBudgetType_GW , f_iBudgetType_UnsatZone , f_iBudgetType_RootZone , f_iBudgetType_LWU)
+            ID = iSubregionIDs(iLocationIndex)
+        CASE (f_iBudgetType_StrmReach) 
+            ID = Model%iStrmReachIDs(iLocationIndex)
+        CASE (f_iBudgetType_StrmNode)
+            ID = Model%iStrmNodeIDs_WithBudget(iLocationIndex)
+        CASE (f_iBudgetType_DiverDetail)
+            ID = Model%iDiversionIDs(iLocationIndex)
+        CASE (f_iBudgetType_Lake)
+            ID = iLakeIDs(iLocationIndex)
+        CASE (f_iBudgetType_SWShed)
+            ID = Model%iSmallWatershedIDs(iLocationIndex)
+        CASE DEFAULT 
+            ID = iLocationIndex 
+    END SELECT
+    
+    !Read data
+    DO indx=1,SIZE(iCols)
+        CALL Budget%ReadData(ID,iCols(indx),cInterval,cBeginDate,cEndDate,1d0,0d0,0d0,rFactLT,rFactAR,rFactVL,iDataTypes(indx),inActualOutput,rOutputDates,rOutputValues(:,indx),iStat)
     END DO
     
-  END SUBROUTINE SubData_ReadFromFile
+    !Close Budget file
+    CALL Budget%Kill()
+    
+  END SUBROUTINE GetBudget_TSData
   
   
   ! -------------------------------------------------------------
-  ! --- READ LOCATIONS WITH DATA FROM FILE
+  ! --- GET CUMULATIVE GW STORAGE CHANGE FROM BUDGET FILE FROM THE INQUIRY MODEL
   ! -------------------------------------------------------------
-  SUBROUTINE LocationsWithData_ReadFromFile(LocationsWithData,InFile,iStat)
-    TYPE(LocationsWithDataType),INTENT(OUT) :: LocationsWithData(:)
-    TYPE(GenericFileType)                   :: InFile
+  SUBROUTINE GetBudget_CumGWStorChange(Model,iSubregionID,cBeginDate,cEndDate,cInterval,rFactVL,rOutputDates,rCumGWStorChange,iStat)
+    CLASS(Model_ForInquiry_Type),INTENT(IN) :: Model
+    INTEGER,INTENT(IN)                      :: iSubregionID
+    CHARACTER(LEN=*),INTENT(IN)             :: cBeginDate,cEndDate,cInterval
+    REAL(8),INTENT(IN)                      :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)         :: rOutputDates(:),rCumGWStorChange(:)    
     INTEGER,INTENT(OUT)                     :: iStat
     
     !Local variables
-    INTEGER :: indx,NLocations
+    CHARACTER(LEN=ModNameLen+25) :: ThisProcedure = ModName // 'GetBudget_CumGWStorChange'
+    INTEGER                      :: iLoc
+    TYPE(BudgetType)             :: Budget
+    TYPE(AppGWType)              :: AppGW
     
-    DO indx=1,SIZE(LocationsWithData)
-        CALL InFile%ReadData(NLocations,iStat)  ;  IF (iStat .EQ. -1) RETURN
-        IF (NLocations .EQ. 0) CYCLE
-        LocationsWithData(indx)%NLocations = NLocations
-        ALLOCATE (LocationsWithData(indx)%iLocations(NLocations))
-        CALL InFile%ReadData(LocationsWithData(indx)%iLocations,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    END DO
+    !Locate budget in list
+    iLoc = LocateInList(f_iBudgetType_GW,Model%iBudgetTypeList)
+    IF (iLoc .LT. 1) THEN
+        CALL SetLastMessage('Groundwater budget is not part of the model output to retrieve cumulative chnage in storage!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
     
-  END SUBROUTINE LocationsWithData_ReadFromFile
+    !Open file
+    CALL Budget%New(Model%cBudgetFiles(iLoc),iStat)
+    IF (iStat .NE. 0) RETURN
+        
+    !Get the data
+    CALL AppGW%GetBudget_CumGWSTorChange(Budget,iSubregionID,cBeginDate,cEndDate,cInterval,rFactVL,rOutputDates,rCumGWStorChange,iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Close Budget file
+    CALL Budget%Kill()
+    
+  END SUBROUTINE GetBudget_CumGWStorChange
   
   
   ! -------------------------------------------------------------
-  ! --- READ DATA FROM FILE FOR A FEATURE
+  ! --- GET CUMULATIVE GW STORAGE CHANGE FROM BUDGET FILE FROM THE INQUIRY MODEL
   ! -------------------------------------------------------------
-  SUBROUTINE DataForFeature_ReadFromFile(FeatureData,InFile,iStat)
-    CLASS(DataForFeatureType) :: FeatureData
-    TYPE(GenericFileType)     :: InFile
-    INTEGER,INTENT(OUT)       :: iStat
+  SUBROUTINE GetBudget_AnnualCumGWStorChange(Model,iSubregionIndex,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rCumGWStorChange,iStat)
+    CLASS(Model_ForInquiry_Type),TARGET,INTENT(IN) :: Model
+    INTEGER,INTENT(IN)                             :: iSubregionIndex
+    CHARACTER(LEN=*),INTENT(IN)                    :: cAdjustedBeginDate,cAdjustedEndDate
+    REAL(8),INTENT(IN)                             :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)                :: rCumGWStorChange(:)  
+    INTEGER,INTENT(OUT)                            :: iStat
     
     !Local variables
-    INTEGER :: NData
+    CHARACTER(LEN=ModNameLen+31)      :: ThisProcedure = ModName // 'GetBudget_AnnualCumGWStorChange'
+    INTEGER                           :: iLoc,iErrorCode   
+    TYPE(BudgetType)                  :: Budget
+    TYPE(AppGWType)                   :: AppGW
+    REAL(8),ALLOCATABLE               :: rDates(:)
     
-    CALL InFile%ReadData(NData,iStat)        
-    IF (iStat .EQ. -1) RETURN
-    FeatureData%NData = NData
+    !Locate budget in list
+    iLoc = LocateInList(f_iBudgetType_GW,Model%iBudgetTypeList)
+    IF (iLoc .LT. 1) THEN
+        CALL SetLastMessage('Groundwater budget is not part of the model output to retrieve cumulative chnage in storage!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
     
-    ALLOCATE (FeatureData%cDataNames(NData)        , &
-              FeatureData%iDataComponentIDs(NData) , &
-              FeatureData%lDataIsBudgetType(NData) , &
-              FeatureData%cFilesForData(NData)     , &
-              FeatureData%SubData(NData)           , &
-              FeatureData%LocationsWithData(NData) )
+    !Open file
+    CALL Budget%New(Model%cBudgetFiles(iLoc),iStat)
+    IF (iStat .NE. 0) RETURN
     
-    !Return if no data is available
-    IF (NData .EQ. 0) RETURN
+    !Get the data
+    CALL AppGW%GetBudget_CumGWStorChange(Budget,iSubregionIndex,cAdjustedBeginDate,cAdjustedEndDate,'1YEAR',rFactVL,rDates,rCumGWStorChange,iStat)
+    IF (iStat .NE. 0) RETURN
     
-    CALL InFile%ReadData(FeatureData%cDataNames,iStat)         ;  IF (iStat .EQ. -1) RETURN
-    CALL InFile%ReadData(FeatureData%iDataComponentIDs,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL InFile%ReadData(FeatureData%lDataIsBudgetType,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL InFile%ReadData(FeatureData%cFilesForData,iStat)      ;  IF (iStat .EQ. -1) RETURN    
+    !Close Budget file
+    CALL Budget%Kill()
     
-    CALL SubData_ReadFromFile(FeatureData%SubData , InFile ,iStat)
-    IF (iStat .EQ. -1) RETURN
-
-    CALL LocationsWithData_ReadFromFile(FeatureData%LocationsWithData , InFile ,iStat)
+    !Clear memory
+    DEALLOCATE (rDates , STAT=iErrorCode)
+    
+  END SUBROUTINE GetBudget_AnnualCumGWStorChange
   
-  END SUBROUTINE DataForFeature_ReadFromFile
+  
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF AVAILABLE ZBUDGETS FROM INQUIRY MODEL
+  ! -------------------------------------------------------------
+  FUNCTION GetZBudget_N(Model) RESULT(iNZBudgets)
+    CLASS(Model_ForInquiry_Type),INTENT(IN) :: Model
+    INTEGER                                 :: iNZBudgets
+    
+    iNZBudgets = Model%iNZBudgetFiles
+    
+  END FUNCTION GetZBudget_N
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET NAMES OF ZBUDGET OUTPUTS FROM THE INQUIRY MODEL
+  ! -------------------------------------------------------------
+  SUBROUTINE GetZBudget_List(Model,cZBudgetList,iZBudgetTypeList)
+    CLASS(Model_ForInquiry_Type),TARGET,INTENT(IN) :: Model
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT)       :: cZBudgetList(:)
+    INTEGER,ALLOCATABLE,INTENT(OUT)                :: iZBudgetTypeList(:)
+    
+    ALLOCATE (cZBudgetList(Model%iNZBudgetFiles) , iZBudgetTypeList(Model%iNZBudgetFiles))
+    cZBudgetList     = Model%cZBudgetDescriptions
+    iZBudgetTypeList = Model%iZBudgetTypeList
+
+  END SUBROUTINE GetZBudget_List
+    
+
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF COLUMNS (EXCLUDING TIME COLUMN) FOR A ZONE BUDGET GIVEN ZONE ID FROM THE INQUIRY MODEL
+  ! -------------------------------------------------------------
+  SUBROUTINE GetZBudget_NColumns(Model,iZBudgetType,iZoneID,iZExtent,iElems,iLayers,iZoneIDs,iNCols,iStat)
+    CLASS(Model_ForInquiry_Type),INTENT(IN) :: Model
+    INTEGER,INTENT(IN)                      :: iZBudgetType,iZoneID,iZExtent,iElems(:),iLayers(:),iZoneIDs(:)
+    INTEGER,INTENT(OUT)                     :: iNCols,iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+19) :: ThisProcedure = ModName // 'GetZBudget_NColumns' 
+    TYPE(ZBudgetType)            :: ZBudget
+    TYPE(ZoneListType)           :: ZoneList
+    INTEGER                      :: iZonesWithNames(0),indx,iLoc
+    INTEGER,ALLOCATABLE          :: iColumnList(:) 
+    CHARACTER(LEN=1)             :: cZoneNames(0)
+    CHARACTER(LEN=1),ALLOCATABLE :: cColumnHeaders(:)
+    
+    !Find the index of the ZBudget in the list
+    iLoc = LocateInList(iZBudgetType,Model%iZBudgetTypeList)    
+    IF (iLoc .EQ. 0) THEN
+        CALL SetLastMessage('Specified zone budget type is not found as part of the model output!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
+    
+    !Open file
+    CALL ZBudget%New(Model%cZBudgetFiles(iLoc),iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Generate zone list
+    CALL ZoneList%New(ZBudget%Header%iNData,ZBudget%Header%lFaceFlows_Defined,ZBudget%SystemData,iZExtent,iElems,iLayers,iZoneIDs,iZonesWithNames,cZoneNames,iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Get the number of non-diversified columns; first column will be Time so that will be eliminated later
+    CALL ZBudget%GetFullColumnHeaders('area units','volume units',cColumnHeaders,iStat)  ;  IF (iStat .NE. 0) RETURN
+    iNCols = SIZE(cColumnHeaders)
+    ALLOCATE (iColumnList(iNCols))
+    iColumnList = [(indx,indx=1,iNCols)]
+    
+    !Now get the number of diversified columns
+    CALL ZBudget%GetNDiversifiedColumns(ZoneList,iZoneID,iColumnList,iNCols,iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Remove time column from the count
+    iNCols = iNCols - 1
+     
+    !Delete zone list
+    CALL ZoneList%Kill()
+    
+    !Close file
+    CALL ZBudget%Kill()
+
+  END SUBROUTINE GetZBudget_NColumns
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET ZBUDGET COLUMN TITLES FOR A ZBUDGET AND A ZONE FROM THE INQUIRY MODEL
+  ! -------------------------------------------------------------
+  SUBROUTINE GetZBudget_ColumnTitles(Model,iZBudgetType,iZoneID,iZExtent,iElems,iLayers,iZoneIDs,cUnitAR,cUnitVL,cColTitles,iStat)
+    CLASS(Model_ForInquiry_Type),INTENT(IN)  :: Model
+    INTEGER,INTENT(IN)                       :: iZBudgetType,iZoneID,iZExtent,iElems(:),iLayers(:),iZoneIDs(:)
+    CHARACTER(LEN=*),INTENT(IN)              :: cUnitAR,cUnitVL 
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cColTitles(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+23)                  :: ThisProcedure = ModName // 'GetZBudget_ColumnTitles' 
+    INTEGER                                       :: iNCols,ErrorCode,indx,iZonesWithNames(0),iLoc
+    INTEGER,ALLOCATABLE                           :: iColumnList(:),iDummyArray(:)
+    CHARACTER(LEN=1)                              :: cZoneNames(0)
+    CHARACTER(LEN=f_iColumnHeaderLen),ALLOCATABLE :: cColTitles_Local(:)
+    TYPE(ZoneListType)                            :: ZoneList
+    TYPE(ZBudgetType)                             :: ZBudget
+    
+    !Get the index for the Z-Budget
+    iLoc = LocateInList(iZBudgetType,Model%iZBudgetTypeList)
+    IF (iLoc .EQ. 0) THEN
+        CALL SetLastMessage('Specified zone budget is not part of the model output!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
+    
+    !Open file
+    CALL ZBudget%New(Model%cZBudgetFiles(iLoc),iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Generate zone list
+    CALL ZoneList%New(ZBudget%Header%iNData,ZBudget%Header%lFaceFlows_Defined,ZBudget%SystemData,iZExtent,iElems,iLayers,iZoneIDs,iZonesWithNames,cZoneNames,iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Get the non-diversified column titles; first column will be Time so that will be eliminated later
+    CALL ZBudget%GetFullColumnHeaders(cUnitAR,cUnitVL,cColTitles_Local,iStat)  ;  IF (iStat .NE. 0) RETURN
+    iNCols = SIZE(cColTitles_Local)
+    ALLOCATE (iColumnList(iNCols))
+    iColumnList = [(indx,indx=1,iNCols)]
+    
+    !Now get the diversified column titles
+    DEALLOCATE (cColTitles_Local , STAT = ErrorCode)
+    CALL ZBudget%GetFullColumnHeaders(cUnitAR,cUnitVL,cColTitles_Local,iStat,ZoneList,iZoneID,iColumnList,iDummyArray) 
+    iNCols = SIZE(cColTitles_Local) - 1
+    ALLOCATE (cColTitles(iNCols))
+    cColTitles = ''
+    cColTitles = cColTitles_Local(2:)
+
+    !Delete zone list
+    CALL ZoneList%Kill()
+    
+    !Close file
+    CALL ZBudget%Kill()
+
+  END SUBROUTINE GetZBudget_ColumnTitles
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET FULL MONTHLY AVERAGE ZONE BUDGET FROM A ZBUDGET FILE FOR A SELECTED ZONE FROM THE INQUIRY MODEL 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetZBudget_MonthlyAverageFlows(Model,iZBudgetType,iZoneID,iLUType,iZExtent,iElems,iLayers,iZoneIDs,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlows,rSDFlows,cFlowNames,iStat)
+    CLASS(Model_ForInquiry_Type),INTENT(IN)  :: Model
+    INTEGER,INTENT(IN)                       :: iZBudgetType,iZoneID,iLUType,iZExtent,iElems(:),iLayers(:),iZoneIDs(:)
+    CHARACTER(LEN=*),INTENT(IN)              :: cAdjustedBeginDate,cAdjustedEndDate
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:),rSDFlows(:,:)    !Flows are return in (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat  
+  
+    !Local variables
+    CHARACTER(LEN=ModNameLen+29) :: ThisProcedure = ModName // 'GetBudget_MonthlyAverageFlows'
+    INTEGER                      :: iZonesWithNames(0),iLoc,iMonth,iNCols,iNTime,indxTime,indxCol
+    REAL(8)                      :: rNYears,rDiff
+    CHARACTER                    :: cZoneNames(0)*1
+    REAL(8),ALLOCATABLE          :: rFlows_Work(:,:)
+    TYPE(ZoneListType)           :: ZoneList
+    TYPE(ZBudgetType)            :: ZBudget
+    TYPE(AppUnsatZoneType)       :: AppUnsatZone
+    TYPE(GWZBudgetType)          :: GWZBudget
+    TYPE(RootZoneType)           :: RootZone
+    
+    !Get the index for the Z-Budget
+    iLoc = LocateInList(iZBudgetType,Model%iZBudgetTypeList)
+    IF (iLoc .EQ. 0) THEN
+        CALL SetLastMessage('Specified zone budget is not part of the model output!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
+    
+    !Open file
+    CALL ZBudget%New(Model%cZBudgetFiles(iLoc),iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Generate zone list
+    CALL ZoneList%New(ZBudget%Header%iNData,ZBudget%Header%lFaceFlows_Defined,ZBudget%SystemData,iZExtent,iElems,iLayers,iZoneIDs,iZonesWithNames,cZoneNames,iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Get the inflow/outflow columns depending on the ZBudget 
+    SELECT CASE (iZBudgetType)
+        !Process groundwater ZBudget
+        CASE (f_iZBudgetType_GW)
+            CALL GWZBudget%GetMonthlyFlows(ZBudget,ZoneList,iZoneID,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlows_Work,cFlowNames,iStat)
+            
+        !Process root zone ZBudgets
+        CASE (f_iZBudgetType_LWU , f_iZBudgetType_RootZone)  
+            CALL RootZone%GetZBudget_MonthlyFlows(ZBudget,iZBudgetType,ZoneList,iZoneID,iLUType,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlows_Work,cFlowNames,iStat)
+            
+        !Process unsat zone ZBudget
+        CASE (f_iZBudgetType_UnsatZone)
+            CALL AppUnsatZone%GetZBudget_MonthlyFlows(ZBudget,ZoneList,iZoneID,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlows_Work,cFlowNames,iStat)
+    END SELECT
+        
+    !Accumulate monthly values
+    iNCols = SIZE(rFlows_Work,DIM=1)
+    iNTime = SIZE(rFlows_Work,DIM=2)
+    ALLOCATE (rFlows(iNCols,12))
+    rFlows = 0.0
+    iMonth = 1
+    DO indxTime=1,iNTime
+        DO indxCol=1,iNCols
+            rFlows(indxCol,iMonth) = rFlows(indxCol,iMonth) + rFlows_Work(indxCol,indxTime)
+        END DO
+        iMonth = iMonth + 1
+        IF (iMonth .EQ. 13) iMonth = 1
+    END DO 
+    
+    !Calculate monthly average
+    rNYears = REAL(iNTime/12 , 8) 
+    rFlows  = rFlows / rNYears
+
+    !Calculate plus/minus standard deviation flows
+    ALLOCATE (rSDFlows(iNCols,12))
+    rSDFlows = 0.0
+    iMonth   = 1
+    DO indxTime=1,iNTime
+        DO indxCol=1,iNCols
+            rDiff                    = rFlows_Work(indxCol,indxTime) - rFlows(indxCol,iMonth)
+            rSDFlows(indxCol,iMonth) = rSDFlows(indxCol,iMonth) + rDiff * rDiff
+        END DO
+        iMonth = iMonth + 1
+        IF (iMonth .EQ. 13) iMonth = 1
+    END DO 
+    rSDFlows = SQRT(rSDFlows / rNYears)
+    
+    !Delete zone list
+    CALL ZoneList%Kill()
+    
+    !Close file
+    CALL ZBudget%Kill()
+
+  END SUBROUTINE GetZBudget_MonthlyAverageFlows
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET ZONE BUDGET ANUAL FLOWS FROM A ZBUDGET FILE FOR A SELECTED ZONE FROM THE INQUIRY MODEL 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetZBudget_AnnualFlows(Model,iZBudgetType,iZoneID,iLUType,iNYears,iZExtent,iElems,iLayers,iZoneIDs,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    CLASS(Model_ForInquiry_Type),INTENT(IN)  :: Model
+    INTEGER,INTENT(IN)                       :: iZBudgetType,iZoneID,iLUType,iNYears,iZExtent,iElems(:),iLayers(:),iZoneIDs(:)
+    CHARACTER(LEN=*),INTENT(IN)              :: cAdjustedBeginDate,cAdjustedEndDate
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)    !rFlows is in (column,year) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat  
+  
+    !Local variables
+    CHARACTER(LEN=ModNameLen+21) :: ThisProcedure = ModName // 'GetBudget_AnnualFlows'
+    INTEGER                      :: iZonesWithNames(0),iMonth,iYear,iLoc,iNCols,indxTime,iErrorCode
+    CHARACTER                    :: cZoneNames(0)*1
+    REAL(8),ALLOCATABLE          :: rFlows_Work(:,:)
+    TYPE(ZoneListType)           :: ZoneList
+    TYPE(ZBudgetType)            :: ZBudget
+    TYPE(AppUnsatZoneType)       :: AppUnsatZone
+    TYPE(GWZBudgetType)          :: GWZBudget
+    TYPE(RootZoneType)           :: RootZone
+    
+    !Get the index for the Z-Budget
+    iLoc = LocateInList(iZBudgetType,Model%iZBudgetTypeList)
+    IF (iLoc .EQ. 0) THEN
+        CALL SetLastMessage('Specified zone budget is not part of the model output!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
+    
+    !Open file
+    CALL ZBudget%New(Model%cZBudgetFiles(iLoc),iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Generate zone list
+    CALL ZoneList%New(ZBudget%Header%iNData,ZBudget%Header%lFaceFlows_Defined,ZBudget%SystemData,iZExtent,iElems,iLayers,iZoneIDs,iZonesWithNames,cZoneNames,iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Get the inflow/outflow columns depending on the ZBudget 
+    SELECT CASE (iZBudgetType)
+        !Process groundwater ZBudget
+        CASE (f_iZBudgetType_GW)
+            CALL GWZBudget%GetMonthlyFlows(ZBudget,ZoneList,iZoneID,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlows_Work,cFlowNames,iStat)
+            
+        !Process root zone ZBudgets
+        CASE (f_iZBudgetType_LWU , f_iZBudgetType_RootZone)  
+            CALL RootZone%GetZBudget_MonthlyFlows(ZBudget,iZBudgetType,ZoneList,iZoneID,iLUType,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlows_Work,cFlowNames,iStat)
+            
+        !Process unsat zone ZBudget
+        CASE (f_iZBudgetType_UnsatZone)
+            CALL AppUnsatZone%GetZBudget_MonthlyFlows(ZBudget,ZoneList,iZoneID,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rFlows_Work,cFlowNames,iStat)
+    END SELECT
+    IF (iStat .NE. 0) RETURN
+        
+    !Compute annual flows
+    iNCols = SIZE(cFlowNames)
+    ALLOCATE (rFlows(iNCols,iNYears))
+    rFlows = 0.0
+    iMonth = 1
+    iYear  = 1
+    DO indxTime=1,SIZE(rFlows_Work,DIM=2)
+        rFlows(:,iYear) = rFlows(:,iYear) + rFlows_Work(:,indxTime)
+        iMonth          = iMonth + 1
+        IF (iMonth .GT. 12) THEN
+            iMonth = 1
+            iYear  = iYear + 1
+        END IF
+    END DO
+    
+    !Clear memory
+    DEALLOCATE (rFlows_Work , STAT=iErrorCode)
+
+    !Delete zone list
+    CALL ZoneList%Kill()
+    
+    !Close file
+    CALL ZBudget%Kill()
+
+  END SUBROUTINE GetZBudget_AnnualFlows
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET ZONE BUDGET TIME SERIES DATA FROM A ZBUDGET FILE FOR A SELECTED ZONE AND SELECTED COLUMNS FROM THE INQUIRY MODEL 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetZBudget_TSData(Model,iZBudgetType,iZoneID,iCols,iZExtent,iElems,iLayers,iZoneIDs,cBeginDate,cEndDate,cInterval,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+    CLASS(Model_ForInquiry_Type),INTENT(IN) :: Model
+    INTEGER,INTENT(IN)                      :: iZBudgetType,iZoneID,iCols(:),iZExtent,iElems(:),iLayers(:),iZoneIDs(:)
+    CHARACTER(LEN=*),INTENT(IN)             :: cBeginDate,cEndDate,cInterval
+    REAL(8),INTENT(IN)                      :: rFactAR,rFactVL
+    REAL(8),INTENT(OUT)                     :: rOutputDates(:),rOutputValues(:,:)    !rOutputValues is in (timestep,column) format
+    INTEGER,INTENT(OUT)                     :: iDataTypes(:),inActualOutput,iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+17) :: ThisProcedure = ModName // 'GetZBudget_TSData'
+    INTEGER                      :: indx,iLoc,iZonesWithNames(0)
+    REAL(8)                      :: rValues(SIZE(iCols)+1,SIZE(rOutputDates))
+    CHARACTER(LEN=0)             :: cZoneNames(0)
+    TYPE(ZBudgetType)            :: ZBudget
+    TYPE(ZoneListType)           :: ZoneList
+    
+    !Get the index for the Z-Budget
+    iLoc = LocateInList(iZBudgetType,Model%iZBudgetTypeList)
+    IF (iLoc .EQ. 0) THEN
+        CALL SetLastMessage('Specified zone budget is not part of the model output!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
+    
+    !Open file
+    CALL ZBudget%New(Model%cZBudgetFiles(iLoc),iStat)
+    IF (iStat .EQ. -1) RETURN
+    
+    !Generate zone list
+    CALL ZoneList%New(ZBudget%Header%iNData,ZBudget%Header%lFaceFlows_Defined,ZBudget%SystemData,iZExtent,iElems,iLayers,iZoneIDs,iZonesWithNames,cZoneNames,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    
+    !Read data
+    CALL ZBudget%ReadData(ZoneList,iZoneID,iCols,cInterval,cBeginDate,cEndDate,rFactAR,rFactVL,iDataTypes,inActualOutput,rValues,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    DO indx=1,inActualOutput
+        rOutputDates(indx)    = rValues(1,indx)
+        rOutputValues(indx,:) = rValues(2:,indx)
+    END DO
+    
+    !Delete zone list
+    CALL ZoneList%Kill()
+    
+    !Close file
+    CALL ZBudget%Kill()
+
+  END SUBROUTINE GetZBudget_TSData
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET CUMULATIVE GW STORAGE CHANGE FROM Z-BUDGET FILE FROM THE INQUIRY MODEL
+  ! -------------------------------------------------------------
+  SUBROUTINE GetZBudget_CumGWStorChange(Model,iZoneID,iZExtent,iElems,iLayers,iZoneIDs,cBeginDate,cEndDate,cOutputInterval,rFactVL,rOutputDates,rCumStorChange,iStat)
+    CLASS(Model_ForInquiry_Type),INTENT(IN) :: Model
+    INTEGER,INTENT(IN)                      :: iZoneID,iZExtent,iElems(:),iLayers(:),iZoneIDs(:)
+    CHARACTER(LEN=*),INTENT(IN)             :: cBeginDate,cEndDate,cOutputInterval
+    REAL(8),INTENT(IN)                      :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)         :: rOutputDates(:),rCumStorChange(:)    
+    INTEGER,INTENT(OUT)                     :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+26) :: ThisProcedure = ModName // 'GetZBudget_CumGWStorChange'
+    INTEGER                      :: iZonesWithNames(0),iLoc
+    CHARACTER                    :: cZoneNames(0)*1
+    TYPE(ZBudgetType)            :: ZBudget
+    TYPE(ZoneListType)           :: ZoneList
+    TYPE(GWZBudgetType)          :: GWZBudget
+    
+    !Get the index for the GW Z-Budget
+    iLoc = LocateInList(f_iZBudgetType_GW,Model%iZBudgetTypeList)
+    IF (iLoc .EQ. 0) THEN
+        CALL SetLastMessage('Groundwater zone budget is not part of the model output!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
+    
+    !Open file
+    CALL ZBudget%New(Model%cZBudgetFiles(iLoc),iStat)
+    IF (iStat .EQ. -1) RETURN
+    
+    !Generate zone list
+    CALL ZoneList%New(ZBudget%Header%iNData,ZBudget%Header%lFaceFlows_Defined,ZBudget%SystemData,iZExtent,iElems,iLayers,iZoneIDs,iZonesWithNames,cZoneNames,iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Retrieve data
+    CALL GWZBudget%GetCumGWStorChange(ZBudget,ZoneList,iZoneID,cBeginDate,cEndDate,cOutputInterval,rFactVL,rOutputDates,rCumStorChange,iStat)
+     
+    !Delete zone list
+    CALL ZoneList%Kill()
+    
+    !Close file
+    CALL ZBudget%Kill()
+
+  END SUBROUTINE GetZBudget_CumGWStorChange
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET Annual CUMULATIVE GW STORAGE CHANGE FROM Z-BUDGET FILE FROM THE INQUIRY MODEL
+  ! -------------------------------------------------------------
+  SUBROUTINE GetZBudget_AnnualCumGWStorChange(Model,iZoneID,iZExtent,iElems,iLayers,iZoneIDs,cAdjustedBeginDate,cAdjustedEndDate,rFactVL,rCumStorChange,iStat)
+    CLASS(Model_ForInquiry_Type),INTENT(IN) :: Model
+    INTEGER,INTENT(IN)                      :: iZoneID,iZExtent,iElems(:),iLayers(:),iZoneIDs(:)
+    CHARACTER(LEN=*),INTENT(IN)             :: cAdjustedBeginDate,cAdjustedEndDate
+    REAL(8),INTENT(IN)                      :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)         :: rCumStorChange(:) 
+    INTEGER,INTENT(OUT)                     :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+32)      :: ThisProcedure = ModName // 'GetZBudget_AnnualCumGWStorChange'
+    INTEGER                           :: iZonesWithNames(0),iLoc
+    CHARACTER                         :: cZoneNames(0)*1
+    REAL(8),ALLOCATABLE               :: rDates(:)
+    TYPE(ZBudgetType)                 :: ZBudget
+    TYPE(ZoneListType)                :: ZoneList
+    TYPE(GWZBudgetType)               :: GWZBudget
+    
+    !Get the index for the GW Z-Budget
+    iLoc = LocateInList(f_iZBudgetType_GW,Model%iZBudgetTypeList)
+    IF (iLoc .EQ. 0) THEN
+        CALL SetLastMessage('Groundwater zone budget is not part of the model output!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
+    
+    !Open file
+    CALL ZBudget%New(Model%cZBudgetFiles(iLoc),iStat)
+    IF (iStat .EQ. -1) RETURN
+    
+    !Generate zone list
+    CALL ZoneList%New(ZBudget%Header%iNData,ZBudget%Header%lFaceFlows_Defined,ZBudget%SystemData,iZExtent,iElems,iLayers,iZoneIDs,iZonesWithNames,cZoneNames,iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Retrieve data
+    CALL GWZBudget%GetCumGWStorChange(ZBudget,ZoneList,iZoneID,cAdjustedBeginDate,cAdjustedEndDate,'1YEAR',rFactVL,rDates,rCumStorChange,iStat)
+     
+    !Delete zone list
+    CALL ZoneList%Kill()
+    
+    !Close file
+    CALL ZBudget%Kill()
+    
+  END SUBROUTINE GetZBudget_AnnualCumGWStorChange
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET ALL GW HEADS AT A LAYER FOR A PERIOD FOR POST-PROCESSING FROM INQUIRY MODEL
+  ! -------------------------------------------------------------
+  SUBROUTINE GetGWHeads_ForALayer(Model,NNodes,NLayers,iLayer,TimeStep,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_LT,rOutputDates,rGWHeads,iStat)
+    CLASS(Model_ForInquiry_Type),INTENT(IN) :: Model
+    INTEGER,INTENT(IN)                      :: NNodes,NLayers,iLayer
+    TYPE(TimeStepType),INTENT(IN)           :: TimeStep
+    CHARACTER(LEN=*),INTENT(IN)             :: cOutputBeginDateAndTime,cOutputEndDateAndTime
+    REAL(8),INTENT(IN)                      :: rFact_LT
+    REAL(8),INTENT(OUT)                     :: rOutputDates(:),rGWHeads(:,:)
+    INTEGER,INTENT(OUT)                     :: iStat
+    
+    !Local variables 
+    CHARACTER(LEN=ModNameLen+20) :: ThisProcedure = ModName // 'GetGWHeads_ForALayer'
+    INTEGER                      :: indx
+    TYPE(AppGWType)              :: AppGW_Dummy
+    
+    !Initialize
+    iStat = 0
+    
+    !Does GWHeadsAll output even exist
+    DO indx=1,Model%iNHydrographTypes
+        IF (TRIM(f_cDescription_GWHyd_AtNodeLayer) .EQ. TRIM(Model%cHydrographDescriptions(indx))) THEN
+            CALL AppGW_Dummy%GetGWHeads_ForALayer(Model%cHydrographFiles(indx),NNodes,NLayers,iLayer,TimeStep,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_LT,rOutputDates,rGWHeads,iStat)
+            RETURN
+        END IF
+    END DO
+    
+    !If here, the data was not found
+    CALL SetLastMessage('An output file for GWHeadsAll cannot be found to retrieve gw heads at all nodes and layers!',f_iFatal,ThisProcedure)
+    iStat = -1
+    
+  END SUBROUTINE GetGWHeads_ForALayer
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF LOCATIONS, GIVEN LOCATION TYPE, FROM INQUIRY MODEL
+  ! -------------------------------------------------------------
+  FUNCTION GetNLocations(Model,iLocationType) RESULT(iNLocations)
+    CLASS(Model_ForInquiry_Type),TARGET,INTENT(IN) :: Model
+    INTEGER,INTENT(IN)                             :: iLocationType
+    INTEGER                                        :: iNLocations
+    
+    SELECT CASE (iLocationType)
+        CASE (f_iLocationType_Diversion)
+            iNLocations = Model%iNDiversions
+            
+        CASE (f_iLocationType_SmallWatershed)
+            iNLocations = Model%iNSmallWatersheds
+            
+        CASE (f_iLocationType_GWHeadObs)
+            iNLocations = Model%iNGWHeadObs
+            
+        CASE (f_iLocationType_StrmHydObs)
+            iNLocations = Model%iNStrmHydObs
+            
+        CASE (f_iLocationType_SubsidenceObs)
+            iNLocations = Model%iNSubsidenceObs
+            
+        CASE (f_iLocationType_TileDrainObs)
+            iNLocations = Model%iNTileDrainObs
+            
+        CASE (f_iLocationType_StrmNodeBud)
+            iNLocations = Model%iNStrmNodes_WithBudget
+            
+    END SELECT
+        
+  END FUNCTION GetNLocations
+
+  
+  ! -------------------------------------------------------------
+  ! --- GET LOCATION IDs, GIVEN LOCATION TYPE, FROM INQUIRY MODEL
+  ! -------------------------------------------------------------
+  SUBROUTINE GetLocationIDs(Model,iNReaches,iLocationType,iLocationIDs)
+    CLASS(Model_ForInquiry_Type),INTENT(IN) :: Model
+    INTEGER,INTENT(IN)                      :: iNReaches,iLocationType
+    INTEGER,ALLOCATABLE                     :: iLocationIDs(:)
+    
+    SELECT CASE (iLocationType)
+        CASE (f_iLocationType_StrmReach)
+            ALLOCATE(iLocationIDs(iNReaches))
+            iLocationIDs = Model%iStrmReachIDs
+                
+        CASE (f_iLocationType_Diversion)
+            ALLOCATE(iLocationIDs(Model%iNDiversions))
+            iLocationIDs = Model%iDiversionIDs
+            
+        CASE (f_iLocationType_SmallWatershed)
+            ALLOCATE(iLocationIDs(Model%iNSmallWatersheds))
+            iLocationIDs = Model%iSmallWatershedIDs
+            
+        CASE (f_iLocationType_GWHeadObs)
+            ALLOCATE(iLocationIDs(Model%iNGWHeadObs))
+            iLocationIDs = Model%iGWHeadObsIDs
+            
+        CASE (f_iLocationType_StrmHydObs)
+            ALLOCATE(iLocationIDs(Model%iNStrmHydObs))
+            iLocationIDs = Model%iStrmHydObsIDs
+            
+        CASE (f_iLocationType_SubsidenceObs)
+            ALLOCATE(iLocationIDs(Model%iNSubsidenceObs))
+            iLocationIDs = Model%iSubsidenceObsIDs
+            
+        CASE (f_iLocationType_TileDrainObs)
+            ALLOCATE(iLocationIDs(Model%iNTileDrainObs))
+            iLocationIDs = Model%iTileDrainObsIDs
+            
+        CASE (f_iLocationType_StrmNodeBud)
+            ALLOCATE(iLocationIDs(Model%iNStrmNodes_WithBudget))
+            iLocationIDs = Model%iStrmNodeIDs_WithBudget
+            
+    END SELECT
+    
+  END SUBROUTINE GetLocationIDs
   
   
   
@@ -1108,78 +1540,22 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
-  ! --- PRINT SUB-DATA
-  ! -------------------------------------------------------------
-  SUBROUTINE SubData_PrintToFile(SubData,OutFile)
-    TYPE(SubDataType),INTENT(IN) :: SubData(:)
-    TYPE(GenericFileType)        :: OutFile
-    
-    !Local variables
-    INTEGER :: indx
-    
-    DO indx=1,SIZE(SubData)
-        CALL OutFile%WriteData(SubData(indx)%NSubData)
-        CALL OutFile%WriteData(SubData(indx)%cSubDataNames)
-    END DO
-    
-  END SUBROUTINE SubData_PrintToFile
-  
-  
-  ! -------------------------------------------------------------
-  ! --- PRINT LOCATIONS WITH DATA
-  ! -------------------------------------------------------------
-  SUBROUTINE LocationsWithData_PrintToFile(LocationsWithData,OutFile)
-    TYPE(LocationsWithDataType),INTENT(IN) :: LocationsWithData(:)
-    TYPE(GenericFileType)                  :: OutFile
-    
-    !Local variables
-    INTEGER :: indx
-    
-    DO indx=1,SIZE(LocationsWithData)
-        CALL OutFile%WriteData(LocationsWithData(indx)%NLocations)
-        CALL OutFile%WriteData(LocationsWithData(indx)%iLocations)
-    END DO
-    
-  END SUBROUTINE LocationsWithData_PrintToFile
-  
-  
-  ! -------------------------------------------------------------
-  ! --- PRINT DATA FOR A FEATURE TO FILE
-  ! -------------------------------------------------------------
-  SUBROUTINE DataForFeature_PrintToFile(FeatureData,OutFile)
-    CLASS(DataForFeatureType),INTENT(IN) :: FeatureData
-    TYPE(GenericFileType)                :: OutFile
-    
-    CALL OutFile%WriteData(FeatureData%NData)
-    CALL OutFile%WriteData(FeatureData%cDataNames)
-    CALL OutFile%WriteData(FeatureData%iDataComponentIDs)
-    CALL OutFile%WriteData(FeatureData%lDataIsBudgetType)
-    CALL OutFile%WriteData(FeatureData%cFilesForData)
-    
-    CALL SubData_PrintToFile(FeatureData%SubData , OutFile)
-    
-    CALL LocationsWIthData_PrintToFile(FeatureData%LocationsWithData , OutFile)
-    
-  END SUBROUTINE DataForFeature_PrintToFile
-  
-  
-  ! -------------------------------------------------------------
   ! --- PRINT MODEL DATA
   ! -------------------------------------------------------------
-  SUBROUTINE PrintModelData(cSIMWorkingDirectory,AppGW,GWZBudget,RootZone,AppUnsatZone,AppLake,AppStream,AppSWShed,TimeStep,NTIME,iStat)
+  SUBROUTINE PrintModelData(cSIMWorkingDirectory,AppGW,AppUnsatZone,AppStream,AppSWShed,TimeStep,NTIME,cHydTypeList,cHydFileList,iHydLocationTypeList,iHydCompList,cBudgetList,cBudgetFiles,iBudgetTypeList,iBudgetCompList,iBudgetLocationTypeList,cZBudgetList,cZBudgetFiles,iZBudgetTypeList,iStat)
     CHARACTER(LEN=*),INTENT(IN)            :: cSIMWorkingDirectory
     TYPE(AppGWType),INTENT(IN)             :: AppGW
-    TYPE(GWZBudgetType),INTENT(IN)         :: GWZBudget
-    TYPE(RootZoneType),INTENT(IN)          :: RootZone
     TYPE(AppUnsatZoneType),INTENT(IN)      :: AppUnsatZone
-    TYPE(AppLakeType),INTENT(IN)           :: AppLake
     TYPE(AppStreamType),INTENT(IN)         :: AppStream
     TYPE(AppSmallWatershedType),INTENT(IN) :: AppSWShed
     TYPE(TimeStepType),INTENT(IN)          :: TimeStep
-    INTEGER,INTENT(IN)                     :: NTIME
+    INTEGER,INTENT(IN)                     :: NTIME,iHydLocationTypeList(:),iHydCompList(:),iBudgetTypeList(:),iBudgetCompList(:),iBudgetLocationTypeList(:),iZBudgetTypeList(:)
+    CHARACTER(LEN=*),INTENT(IN)            :: cHydTypeList(:),cHydFileList(:),cBudgetList(:),cBudgetFiles(:),cZBudgetList(:),cZBudgetFiles(:)
     INTEGER,INTENT(OUT)                    :: iStat
     
     !Local variables
+    INTEGER                  :: iErrorCode,iNData
+    INTEGER,ALLOCATABLE      :: iIDs(:)
     CHARACTER(:),ALLOCATABLE :: cFileName
     TYPE(GenericFileType)    :: ModelDataFile
     
@@ -1204,81 +1580,102 @@ CONTAINS
     CALL ModelDataFile%WriteData(TimeStep%Unit)
     CALL ModelDataFile%WriteData(NTIME)
     
-    !Write structural data
+    !Number of unsaturated zone layers and tile drains
     CALL ModelDataFile%WriteData(AppUnsatZone%GetNLayers())  
-    CALL ModelDataFile%WriteData(AppGW%GetNDrain())  
-    CALL ModelDataFile%WriteData(AppSWShed%GetNSmallWatersheds())
-    CALL ModelDataFile%WriteData(AppGW%GetNHydrographs(iLocationType_GWHeadObs))  
-    CALL ModelDataFile%WriteData(AppStream%GetNHydrographs())  
-    CALL ModelDataFile%WriteData(AppGW%GetNHydrographs(iLocationType_SubsidenceObs))  
-    CALL ModelDataFile%WriteData(AppGW%GetNHydrographs(iLocationType_TileDrain))      
+    CALL ModelDataFile%WriteData(AppGW%GetNDrain()) 
     
-    !Data for nodes
-    CALL CompileAndPrintFeatureData(iLocationType_Node)
-
-    !Data for zones
-    CALL CompileAndPrintFeatureData(iLocationType_Zone)
+    !Write stream node IDs with budget
+    DEALLOCATE (iIDs , STAT=iErrorCode)
+    CALL AppStream%GetStrmNodeIDs_WithBudget(iIDs)
+    CALL ModelDataFile%WriteData(SIZE(iIDs))
+    CALL ModelDataFile%WriteData(iIDs)
     
-    !Data for subregions
-    CALL CompileAndPrintFeatureData(iLocationType_Subregion)
+    !Write stream reach IDs
+    iNData = AppStream%GetNReaches()
+    DEALLOCATE (iIDs , STAT=iErrorCode)
+    ALLOCATE (iIDs(iNData))
+    CALL AppStream%GetReachIDs(iIDs)
+    CALL ModelDataFile%WriteData(iNData)
+    CALL ModelDataFile%WriteData(iIDs)
     
-    !Data for lakes
-    CALL CompileAndPrintFeatureData(iLocationType_Lake)
-
-    !Data for stream nodes
-    CALL CompileAndPrintFeatureData(iLocationType_StrmNode)
-
-    !Data for stream reaches
-    CALL CompileAndPrintFeatureData(iLocationType_StrmReach)
-
-    !Data for small watersheds
-    CALL CompileAndPrintFeatureData(iLocationType_SmallWatershed)
-
-    !Data for gw hydrographs
-    CALL CompileAndPrintFeatureData(iLocationType_GWHeadObs)
-
-    !Data for stream hydrographs
-    CALL CompileAndPrintFeatureData(iLocationType_StrmHydObs)
-
-    !Data for subsidence hydrographs
-    CALL CompileAndPrintFeatureData(iLocationType_SubsidenceObs)
-
-    !Data for tile drain hydrographs
-    CALL CompileAndPrintFeatureData(iLocationType_TileDrain)
+    !Write diversion IDs
+    DEALLOCATE (iIDs , STAT=iErrorCode)
+    iNData = AppStream%GetNDiver()
+    ALLOCATE(iIDs(iNData))
+    CALL AppStream%GetDiversionIDs(iIDs)
+    CALL ModelDataFile%WriteData(iNData)
+    CALL ModelDataFile%WriteData(iIDs)
+    
+    !Write stream hydrograph IDs
+    DEALLOCATE (iIDs , STAT=iErrorCode)
+    iNData = AppStream%GetNHydrographs()
+    ALLOCATE(iIDs(iNData))
+    CALL AppStream%GetHydrographIDs(iIDs)
+    CALL ModelDataFile%WriteData(iNData)
+    CALL ModelDataFile%WriteData(iIDs)
+    
+    !Write small watershed IDs
+    DEALLOCATE (iIDs , STAT=iErrorCode)
+    iNData = AppSWShed%GetNSmallWatersheds()
+    ALLOCATE(iIDs(iNData))
+    CALL AppSWShed%GetSmallWatershedIDs(iIDs)
+    CALL ModelDataFile%WriteData(iNData)
+    CALL ModelDataFile%WriteData(iIDs)
+    
+    !Write gw hydrograph IDs
+    DEALLOCATE (iIDs , STAT=iErrorCode)
+    iNData = AppGW%GetNHydrographs(f_iLocationType_GWHeadObs)
+    ALLOCATE(iIDs(iNData))
+    CALL AppGW%GetHydrographIDs(f_iLocationType_GWHeadObs,iIDs)
+    CALL ModelDataFile%WriteData(iNData)
+    CALL ModelDataFile%WriteData(iIDs)
+    
+    !Write subsidence hydrograph IDs
+    DEALLOCATE (iIDs , STAT=iErrorCode)
+    iNData = AppGW%GetNHydrographs(f_iLocationType_SubsidenceObs)
+    ALLOCATE(iIDs(iNData))
+    CALL AppGW%GetHydrographIDs(f_iLocationType_SubsidenceObs,iIDs)
+    CALL ModelDataFile%WriteData(iNData)
+    CALL ModelDataFile%WriteData(iIDs)
+    
+    !Write tile drain hydrograph IDs
+    DEALLOCATE (iIDs , STAT=iErrorCode)
+    iNData = AppGW%GetNHydrographs(f_iLocationType_TileDrainObs)
+    ALLOCATE(iIDs(iNData))
+    CALL AppGW%GetHydrographIDs(f_iLocationType_TileDrainObs,iIDs)
+    CALL ModelDataFile%WriteData(iNData)
+    CALL ModelDataFile%WriteData(iIDs)
+    
+    !Write ZBudget data
+    CALL ModelDataFile%WriteData(SIZE(iZBudgetTypeList))
+    IF (SIZE(iZBudgetTypeList) .GT. 0) THEN
+        CALL ModelDataFile%WriteData(iZBudgetTypeList)
+        CALL ModelDataFile%WriteData(cZBudgetList)
+        CALL ModelDataFile%WriteData(cZBudgetFiles)
+    END IF
+        
+    !Write Budget data
+    CALL ModelDataFile%WriteData(SIZE(iBudgetTypeList))
+    IF (SIZE(iBudgetTypeList) .GT. 0) THEN
+        CALL ModelDataFile%WriteData(iBudgetTypeList)
+        CALL ModelDataFile%WriteData(iBudgetCompList)
+        CALL ModelDataFile%WriteData(iBudgetLocationTypeList)
+        CALL ModelDataFile%WriteData(cBudgetList)
+        CALL ModelDataFile%WriteData(cBudgetFiles)
+    END IF
+    
+    !Write Hydrograph data
+    CALL ModelDataFile%WriteData(SIZE(iHydLocationTypeList))
+    IF (SIZE(iHydLocationTypeList) .GT. 0) THEN
+        CALL ModelDataFile%WriteData(iHydLocationTypeList)
+        CALL ModelDataFile%WriteData(iHydCompList)
+        CALL ModelDataFile%WriteData(cHydTypeList)
+        CALL ModelDataFile%WriteData(cHydFileList)
+    END IF
     
     !Close file
     CALL ModelDataFile%Kill()
-  
-    
-  CONTAINS
-  
-  
-    !########################################################
-    !### COMPILE FEATURE DATA AND PRINT IT TO MODEL DATA FILE
-    !########################################################
-    SUBROUTINE CompileAndPrintFeatureData(iLocationType)
-      INTEGER,INTENT(IN) :: iLocationType
-
-      !Local variables
-      INTEGER                  :: indx,iLocationID
-      TYPE(DataForFeatureType) :: FeatureData
       
-      CALL FeatureData%Kill()
-      CALL GetDataList_AtLocationType_FromFullModel(AppGW,GWZBudget,RootZone,AppUnsatZone,AppLake,AppStream,AppSWShed,iLocationType,FeatureData%cDataNames,FeatureData%cFilesForData,FeatureData%iDataComponentIDs,FeatureData%lDataIsBudgetType,FeatureData%LocationsWithData)
-      IF (ALLOCATED(FeatureData%cDataNames)) FeatureData%NData = SIZE(FeatureData%cDataNames)
-      ALLOCATE (FeatureData%SubData(FeatureData%NData))
-      DO indx=1,FeatureData%NData
-          iLocationID = FeatureData%LocationsWithData(indx)%iLocations(1)
-          IF (iLocationID .EQ. iAllLocationIDsListed) iLocationID = 1
-          CALL GetSubDataList_AtLocation_FromFullModel(AppGW,GWZBudget,RootZone,AppUnsatZone,AppLake,AppStream,AppSWShed,iLocationType,iLocationID,FeatureData%iDataComponentIDs(indx),FeatureData%cDataNames(indx),FeatureData%SubData(indx)%cSubDataNames)
-          IF (ALLOCATED(FeatureData%SubData(indx)%cSubDataNames)) THEN
-              FeatureData%SubData(indx)%NSubData = SIZE(FeatureData%SubData(indx)%cSubDataNames)
-          END IF
-      END DO
-      CALL FeatureData%PrintToFile(ModelDataFile)
-      
-    END SUBROUTINE CompileAndPrintFeatureData
-    
   END SUBROUTINE PrintModelData
   
   
@@ -1294,32 +1691,6 @@ CONTAINS
 ! ******************************************************************
 ! ******************************************************************
 
-  ! -------------------------------------------------------------
-  ! --- DOES A LOCATION HAVE SPECIFIED DATA?
-  ! -------------------------------------------------------------
-  FUNCTION DoesLocationHaveData(iLocationID,LocationsWithData) RESULT(DoesHave)
-    INTEGER,INTENT(IN)                     :: iLocationID
-    TYPE(LocationsWithDataType),INTENT(IN) :: LocationsWithData
-    LOGICAL                                :: DoesHave
-    
-    !Initialize
-    DoesHave = .FALSE.
-    
-    IF (LocationsWithData%NLocations .EQ. 1) THEN
-        IF (LocationsWithData%iLocations(1) .EQ. iAllLocationIDsListed) THEN
-            DoesHave = .TRUE.
-        ELSEIF (LocationsWithData%iLocations(1) .EQ. iLocationID) THEN
-            DoesHave = .TRUE.
-        END IF
-    ELSE
-        IF (LocateInList(iLocationID,LocationsWithData%iLocations)) THEN
-            DoesHave = .TRUE.
-        END IF
-    END IF
-    
-  END FUNCTION DoesLocationHaveData
-  
-  
   ! -------------------------------------------------------------
   ! --- IS DATA FILE AVAILABLE
   ! -------------------------------------------------------------
@@ -1358,6 +1729,6 @@ CONTAINS
     IF (iStat .EQ. -1) RETURN
     CALL ModelDataFile%Kill(Status='DELETE')
     
-  END SUBROUTINE DeleteDataFile   
-          
+  END SUBROUTINE DeleteDataFile  
+    
 END MODULE

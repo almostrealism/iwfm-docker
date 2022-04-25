@@ -1,8 +1,25 @@
 MODULE Package_UnsatZone
   USE Class_Version  , ONLY: VersionType
-  USE UnsatZoneOps
-  USE Class_Soil
+  USE UnsatZoneOps   , ONLY: NonPondedLUMoistureRouter , &                             
+                             PondedLUMoistureRouter    , &
+                             VadoseZoneMoistureRouter  , &
+                             NonPondedCropDemand       , &
+                             PondedCropDemand           
+  USE Class_Soil     , ONLY: SoilType                  , &
+                             RootZoneSoilType          , &
+                             f_iKunsatMethodList
   IMPLICIT NONE
+  
+  PRIVATE
+  PUBLIC  :: SoilType                     , &
+             RootZoneSoilType             , &
+             NonPondedCropDemand          , &
+             NonPondedLUMoistureRouter    , &
+             VadoseZoneMoistureRouter     , &
+             PondedCropDemand             , &
+             PondedLUMoistureRouter       , &
+             Package_UnsatZone_GetVersion , &
+             f_iKunsatMethodList
   
   
   ! -------------------------------------------------------------

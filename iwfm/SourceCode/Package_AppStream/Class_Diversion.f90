@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018 
+!  Copyright (C) 2005-2021 
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,18 +21,34 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_Diversion
-  USE MessageLogger               , ONLY: SetLastMessage  , &
-                                          EchoProgress    , &
-                                          MessageArray    , &
-                                          iFatal
-  USE GeneralUtilities
-  USE IOInterface
-  USE Package_Discretization
-  USE Package_Misc
-  USE Class_StrmReach
-  USE Class_RechargeZone
-  USE Package_ComponentConnectors  , ONLY: SupplyType     , &
-                                           Supply_New
+  USE MessageLogger                , ONLY: SetLastMessage           , &
+                                           EchoProgress             , &
+                                           MessageArray             , &
+                                           f_iFatal                   
+  USE GeneralUtilities             , ONLY: ConvertID_To_Index       , &
+                                           IntToText                , &
+                                           StripTextUntilCharacter  , &
+                                           CleanSpecialCharacters   , &
+                                           GetUniqueArrayComponents , &
+                                           ShellSort                , &
+                                           GetArrayData             , &
+                                           LocateInList
+  USE IOInterface                  , ONLY: GenericFileType
+  USE Package_Discretization       , ONLY: AppGridType
+  USE Package_Misc                 , ONLY: FlowDestinationType      , &
+                                           ElemGroupType            , &
+                                           f_iFlowDest_Element      , &
+                                           f_iFlowDest_Subregion    , &
+                                           f_iFlowDest_Outside      , &
+                                           f_iFlowDest_StrmNode     , &
+                                           f_iFlowDest_ElementSet
+  USE Class_StrmReach              , ONLY: StrmReachType            , &
+                                           StrmReach_GetReachNumber
+  USE Class_RechargeZone           , ONLY: RechargeZoneType         , &
+                                           RechargeZone_New
+  USE Package_ComponentConnectors  , ONLY: SupplyType               , &
+                                           Supply_New               , &
+                                           Supply_GetPurpose  
   IMPLICIT NONE
   
   
@@ -51,9 +67,10 @@ MODULE Class_Diversion
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC :: DiversionType    , &
-            DeliveryType     , &
-            Diversion_New
+  PUBLIC :: DiversionType        , &
+            DeliveryType         , &
+            Diversion_New        , &
+            Diversion_GetPurpose
   
   
   ! -------------------------------------------------------------
@@ -70,6 +87,7 @@ MODULE Class_Diversion
   ! --- DIVERSION DATA TYPE
   ! -------------------------------------------------------------
   TYPE DiversionType
+    !INTEGER               :: ID                  = 0           !Diversion ID number is not used; instead delivery IDs are used as part of the "Deli" attribute
     CHARACTER(LEN=20)      :: cName               = ''          !Name of the diversion
     INTEGER                :: iStrmNode           = 0           !Stream node that the diversion originates from (0 means from outisde model area)
     INTEGER                :: Rank                = 0           !Rank of diversion
@@ -119,9 +137,10 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INSTANTIATE A SET OF DIVERSIONS FROM A FILE
   ! -------------------------------------------------------------
-  SUBROUTINE Diversion_New(cFileName,AppGrid,Reaches,Diversions,iStat)
+  SUBROUTINE Diversion_New(cFileName,AppGrid,iElemIDs,iStrmNodeIDs,iSubregionIDs,Reaches,Diversions,iStat)
     CHARACTER(LEN=*),INTENT(IN)     :: cFileName
     TYPE(AppGridType),INTENT(IN)    :: AppGrid
+    INTEGER,INTENT(IN)              :: iElemIDs(:),iStrmNodeIDs(:),iSubregionIDs(:)
     TYPE(StrmReachType),INTENT(IN)  :: Reaches(:)
     TYPE(DiversionType),ALLOCATABLE :: Diversions(:)
     INTEGER,iNTENT(OUT)             :: iStat
@@ -129,10 +148,10 @@ CONTAINS
     !Local variables
     CHARACTER(LEN=ModNameLen+13)                 :: ThisProcedure = ModName // 'Diversion_New'
     CHARACTER(LEN=2000)                          :: ALine
-    INTEGER                                      :: NDiver,ErrorCode,ID,indxDiver,iElem,iRegion,indxGroup,iNGroup,NElem,  &
-                                                    indxElem,iDest
+    INTEGER                                      :: NDiver,ErrorCode,ID,indxDiver,iElem,iRegion,indxGroup,iNGroup,NElem,    &
+                                                    indxElem,iDest,indxDiver1,iStrmNode,indxGroup1,iDestID
     REAL(8)                                      :: DummyArray(14)
-    INTEGER,ALLOCATABLE                          :: TempArray(:),iColIrigFrac(:),iColAdjust(:)
+    INTEGER,ALLOCATABLE                          :: TempArray(:),iColIrigFrac(:),iColAdjust(:),iDiverIDs(:),Indices(:)
     TYPE(GenericFileType)                        :: InFile
     TYPE(FlowDestinationType),ALLOCATABLE        :: DeliDest(:)
     TYPE(ElemGroupType),ALLOCATABLE              :: ElemGroups(:)
@@ -157,9 +176,9 @@ CONTAINS
     CALL InFile%ReadData(NDiver,iStat)  ;  IF (iStat .EQ. -1) RETURN
     
     !Allocate memory
-    ALLOCATE (Diversions(NDiver) , DeliDest(NDiver) , iColIrigFrac(NDiver) , iColAdjust(NDiver) , STAT=ErrorCode)
+    ALLOCATE (Diversions(NDiver) , DeliDest(NDiver) , iColIrigFrac(NDiver) , iColAdjust(NDiver) , iDiverIDs(NDiver) , STAT=ErrorCode)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for diversions data!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for diversions data!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -180,39 +199,73 @@ CONTAINS
             ALine = StripTextUntilCharacter(ALine,'/')
             CALL GetArrayData(ALine,DummyArray,'diversion specifications number '//TRIM(IntToText(indxDiver)),iStat)  ;  IF (iStat .EQ. -1) RETURN
             pDiver%cName = ALine(1:20)
+                                      
+            ID                      = INT(DummyArray(1))
+            pDeli%ID                = ID
+            pDiver%iStrmNode        = INT(DummyArray(2))
+            pDiver%iMaxDiverCol     = INT(DummyArray(3))
+            pDiver%FracMaxDiver     =     DummyArray(4)
+            pDiver%iColRecvLoss     = INT(DummyArray(5))
+            pDiver%FracRecvLoss     =     DummyArray(6)
+            pDiver%iColNonRecvLoss  = INT(DummyArray(7))
+            pDiver%FracNonRecvLoss  =     DummyArray(8)
+            pDeliDest%iDestType     = INT(DummyArray(9))    
+            pDeliDest%iDest         = INT(DummyArray(10))   
+            pDeli%iColDeli          = INT(DummyArray(11))
+            pDeli%FracDeli          =     DummyArray(12)
+            iColIrigFrac(indxDiver) = INT(DummyArray(13))
+            iColAdjust(indxDiver)   = INT(DummyArray(14))
             
-            ID = INT(DummyArray(1))
-            !Make sure diversions are entered sequentailly
-            IF (ID .NE. indxDiver) THEN 
-                MessageArray(1) = 'Diversion specifications should be entered sequentialy.'
-                MessageArray(2) = 'Specification expected='//TRIM(IntToText(indxDiver))
-                MessageArray(3) = 'Specification entered ='//TRIM(IntToText(ID))
-                CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-                iStat = -1
-                RETURN
+            !Make sure same ID is not used more than once
+            DO indxDiver1=1,indxDiver-1
+                IF (ID .EQ. Diversions(indxDiver1)%Deli%ID) THEN 
+                    CALL SetLastMessage('Diversion ID '//TRIM(IntToText(ID))//' is used more than once!',f_iFatal,ThisProcedure)
+                    iStat = -1
+                    RETURN
+                END IF
+            END DO
+            
+            !Check if stream node is in the model
+            IF (pDiver%iStrmNode .GT. 0) THEN
+                CALL ConvertID_To_Index(pDiver%iStrmNode,iStrmNodeIDs,iStrmNode)
+                IF (iStrmNode .EQ. 0) THEN
+                    CALL SetLastMessage('Stream node '//TRIM(IntToText(pDiver%iStrmNode))//' where diversion '//TRIM(IntToText(ID))//' is originating from is not in the model!',f_iFatal,ThisProcedure)
+                    iStat = -1
+                    RETURN
+                END IF
+                pDiver%iStrmNode = iStrmNode
             END IF
-            pDiver%iStrmNode          =  INT(DummyArray(2))
-            pDiver%iMaxDiverCol       =  INT(DummyArray(3))
-            pDiver%FracMaxDiver       =      DummyArray(4)
-            pDiver%iColRecvLoss       =  INT(DummyArray(5))
-            pDiver%FracRecvLoss       =      DummyArray(6)
-            pDiver%iColNonRecvLoss    =  INT(DummyArray(7))
-            pDiver%FracNonRecvLoss    =      DummyArray(8)
-            pDeliDest%iDestType       =  INT(DummyArray(9))    
-            pDeliDest%iDest           =  INT(DummyArray(10))   
-            pDeli%iColDeli            =  INT(DummyArray(11))
-            pDeli%FracDeli            =      DummyArray(12)
-            iColIrigFrac(indxDiver)   =  INT(DummyArray(13))
-            iColAdjust(indxDiver)     =  INT(DummyArray(14))
             
             !Check if destination is recognized
             SELECT CASE (pDeliDest%iDestType)
-              CASE (FlowDest_Outside , FlowDest_Element , FlowDest_Subregion , FlowDest_ElementSet)
-                  !Do nothing 
-              CASE DEFAULT
-                  CALL SetLastMessage('Destination type for diversion '//TRIM(IntToText(indxDiver))//' is not recognized!',iFatal,ThisProcedure)
-                  iStat = -1
-                  RETURN
+                CASE (f_iFlowDest_Outside) 
+                    !Do nothing 
+                
+                CASE (f_iFlowDest_ElementSet) 
+                    !Do nothing for now 
+                
+                CASE (f_iFlowDest_Element)
+                    CALL ConvertID_To_Index(pDeliDest%iDest,iElemIDs,iElem)
+                    IF (iElem .EQ. 0) THEN
+                        CALL SetLastMessage('Element '//TRIM(IntToText(pDeliDest%iDest))//' that receives water from diversion '//TRIM(IntToText(ID))//' is not in the model!',f_iFatal,ThisProcedure)
+                        iStat = -1
+                        RETURN
+                    END IF
+                    pDeliDest%iDest = iElem
+                    
+                CASE (f_iFlowDest_Subregion)
+                    CALL ConvertID_To_Index(pDeliDest%iDest,iSubregionIDs,iRegion)
+                    IF (iRegion .EQ. 0) THEN
+                        CALL SetLastMessage('Subregion '//TRIM(IntToText(pDeliDest%iDest))//' that receives water from diversion '//TRIM(IntToText(ID))//' is not in the model!',f_iFatal,ThisProcedure)
+                        iStat = -1
+                        RETURN
+                    END IF
+                    pDeliDest%iDest = iRegion
+                    
+                CASE DEFAULT
+                    CALL SetLastMessage('Destination type for diversion '//TRIM(IntToText(ID))//' is not recognized!',f_iFatal,ThisProcedure)
+                    iStat = -1
+                    RETURN
             END SELECT
 
         END ASSOCIATE
@@ -224,25 +277,25 @@ CONTAINS
     DO indxGroup=1,iNGroup
         CALL InFile%ReadData(ALine,iStat)  ;  IF (iStat .EQ. -1) RETURN
         READ (ALine,*) ID,NElem,iElem
+        ElemGroups(indxGroup)%ID = ID
         
-        !Make sure groups are entered sequentially
-        IF (ID .NE. indxGroup) THEN
-            MessageArray(1) = 'Element group IDs for diversion delivery locations must be entered sequentially!'
-            MessageArray(2) = 'Group ID expected = '//TRIM(IntToText(indxGroup))
-            MessageArray(3) = 'Group ID entered  = '//TRIM(IntToText(ID))
-            CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-            iStat = -1
-            RETURN
-        END IF
+        !Make sure same element group ID is not used more than once
+        DO indxGroup1=1,indxGroup-1
+            IF (ID .EQ. ElemGroups(indxGroup1)%ID) THEN
+                CALL SetLastMessage('Element group ID '//TRIM(IntToText(ID))//' for diversion destinations is specified more than once!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+        END DO
         
         !Cycle if no elements are listed
         IF (NElem .LE. 0) CYCLE
         
         !Allocate memory and store the initial readings
         ALLOCATE (ElemGroups(indxGroup)%iElems(NElem))
+        DEALLOCATE (Indices, STAT=ErrorCode)  ;  ALLOCATE (Indices(NElem))
         ElemGroups(indxGroup)%NElems    = NElem
         ElemGroups(indxGroup)%iElems(1) = iElem
-        IF (iElem .GT. 0) iRegion = AppGrid%AppElement(iElem)%Subregion
         
         !Read the rest of the elements 
         DO indxElem=2,NElem
@@ -252,6 +305,15 @@ CONTAINS
         
         !Order the element numbers
         CALL ShellSort(ElemGroups(indxGroup)%iElems)
+        
+        !Make sure elements are in the model
+        CALL ConvertID_To_Index(ElemGroups(indxGroup)%iElems,iElemIDs,Indices)
+        IF (ANY(Indices.EQ.0)) THEN
+            CALL SetLastMessage('One or more elements listed in element group ID '//TRIM(IntToText(ID))//' listed for diversion destinations are not in the model!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        ElemGroups(indxGroup)%iElems = Indices
         
         !Get rid of the dublicates
         CALL GetUniqueArrayComponents(ElemGroups(indxGroup)%iElems,TempArray)
@@ -265,19 +327,22 @@ CONTAINS
     
     !Assign element groups to the corresponding deliveries
     DO indxDiver=1,NDiver
-        IF (DeliDest(indxDiver)%iDestType .EQ. FlowDest_ElementSet) THEN
-            iDest = DeliDest(indxDiver)%iDest
+        IF (DeliDest(indxDiver)%iDestType .EQ. f_iFlowDest_ElementSet) THEN
+            iDestID = DeliDest(indxDiver)%iDest
             
-            !Make sure element group is defined
-            IF (iDest.LT.1   .OR.   iDest.GT.iNGroup) THEN
-                CALL SetLastMessage('Element group number '//TRIM(IntToText(iDest))//' to which diversion number '//TRIM(IntToText(indxDiver))//' is delivered is not defined!',iFatal,ThisProcedure)
+            iDest = LocateInList(iDestID,ElemGroups%ID)
+            IF (iDest .EQ. 0) THEN
+                ID = Diversions(indxDiver)%Deli%ID
+                CALL SetLastMessage('Element group number '//TRIM(IntToText(iDestID))//' to which diversion '//TRIM(IntToText(ID))//' is delivered is not defined!',f_iFatal,ThisProcedure)  
                 iStat = -1
                 RETURN
             END IF
+            DeliDest(indxDiver)%iDest = iDest
             
             !Make sure there is at least one element in the group
             IF (ElemGroups(iDest)%NElems .EQ. 0) THEN
-                CALL SetLastMessage('Element group '//TRIM(IntToText(iDest))//' as destination for diversion '//TRIM(IntToText(indxDiver))//' has no elements listed!',iFatal,ThisProcedure)
+                ID = Diversions(indxDiver)%Deli%ID
+                CALL SetLastMessage('Element group '//TRIM(IntToText(iDestID))//' as destination for diversion '//TRIM(IntToText(ID))//' has no elements listed!',f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
@@ -292,14 +357,15 @@ CONTAINS
     CALL Supply_New(iColIrigFrac,iColAdjust,DeliDest,Diversions%Deli)
     
     !Read the recharge zone data
-    CALL RechargeZone_New(NDiver,InFile,Diversions%Recharge,iStat)
+    iDiverIDs = Diversions%Deli%ID
+    CALL RechargeZone_New(NDiver,iDiverIDs,iElemIDs,'Diversion',InFile,Diversions%Recharge,iStat)
     IF (iStat .EQ. -1) RETURN
     
-    !Compile the dilevrey ranks
+    !Compile the delivery ranks
     CALL CompileDiversionRanks(Reaches,Diversions)
     
     !Clear memory
-    DEALLOCATE (DeliDest , ElemGroups , iColIrigFrac , iColAdjust , STAT=ErrorCode)
+    DEALLOCATE (DeliDest , ElemGroups , iColIrigFrac , iColAdjust , Indices , iDiverIDs , STAT=ErrorCode)
     
     !Close file
     CALL InFile%Kill()
@@ -309,6 +375,30 @@ CONTAINS
 
 
 
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+! ***
+! *** GETTERS
+! ***
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+
+  ! -------------------------------------------------------------
+  ! --- GET PURPOSE OF DIVERSIONS (IF THEY SERVE AG, URBAN OR BOTH) BEFORE ANY ADJUSTMENT
+  ! -------------------------------------------------------------
+  SUBROUTINE Diversion_GetPurpose(Divers,iAgOrUrban,iStat)
+    TYPE(DiversionType),INTENT(IN) :: Divers(:)
+    INTEGER,INTENT(OUT)            :: iAgOrUrban(:),iStat
+    
+    CALL Supply_GetPurpose(Divers%Deli,iAgOrUrban,iStat)
+    
+  END SUBROUTINE Diversion_GetPurpose
+
+  
+
+  
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
@@ -336,41 +426,41 @@ CONTAINS
     
     !Iterate over diversions
     DO indxDiver=1,NDiver
-      iDiverNode = Diversions(indxDiver)%iStrmNode         !Diversion stream node 
-      IF (iDiverNode .EQ. 0) CYCLE                         !Skip rank computations if the diversion originates from outside the model area
-      
-      !Find the reach number where the diversion is located
-      iDiverReach = StrmReach_GetReachNumber(iDiverNode,Reaches)
-      
-      !Compare the other diversions to the diversion in hand for ranking
-      Node_Compared   = 0
-      iTotal_Compared = 0
-      DO indxDiverComp=1,NDiver
-        iDiverNodeComp = Diversions(indxDiverComp)%iStrmNode
-        IF (iDiverNodeComp .EQ. 0) CYCLE 
-        IF (ANY(Node_Compared .EQ. iDiverNodeComp)) CYCLE
-        IF (iDiverNode .EQ. iDiverNodeComp) CYCLE
-        IF (indxDiverComp .EQ. indxDiver) CYCLE
-        iTotal_Compared                = iTotal_Compared + 1
-        Node_Compared(iTotal_Compared) = iDiverNodeComp
-        !Find the reach number where the comparison diversion is located
-        iDiverCompReach = StrmReach_GetReachNumber(iDiverNodeComp,Reaches)
-        IF (iDiverCompReach.EQ.iDiverReach  .AND.  iDiverNode.GT.iDiverNodeComp) THEN
-          Diversions(indxDiver)%Rank = Diversions(indxDiver)%Rank + 1
-          CYCLE
-        END IF
-        !Check if flow from comparison reach ever flows into reach in question
-        IF (Reaches(iDiverCompReach)%OutflowDestType .NE. FlowDest_StrmNode) CYCLE
-        iNode_Into      = Reaches(iDiverCompReach)%OutflowDest
-        iNode_IntoReach = StrmReach_GetReachNumber(iNode_Into,Reaches)
-        DO 
-          IF (iNode_IntoReach .EQ. iDiverReach) EXIT
-          IF (Reaches(iNode_IntoReach)%OutflowDestType .NE. FlowDest_StrmNode) EXIT
-          iNode_Into      = Reaches(iNode_IntoReach)%OutflowDest
-          iNode_IntoReach = StrmReach_GetReachNumber(iNode_Into,Reaches)
+        iDiverNode = Diversions(indxDiver)%iStrmNode         !Diversion stream node 
+        IF (iDiverNode .EQ. 0) CYCLE                         !Skip rank computations if the diversion originates from outside the model area
+        
+        !Find the reach number where the diversion is located
+        iDiverReach = StrmReach_GetReachNumber(iDiverNode,Reaches)
+        
+        !Compare the other diversions to the diversion in hand for ranking
+        Node_Compared   = 0
+        iTotal_Compared = 0
+        DO indxDiverComp=1,NDiver
+            iDiverNodeComp = Diversions(indxDiverComp)%iStrmNode
+            IF (iDiverNodeComp .EQ. 0) CYCLE 
+            IF (ANY(Node_Compared .EQ. iDiverNodeComp)) CYCLE
+            IF (iDiverNode .EQ. iDiverNodeComp) CYCLE
+            IF (indxDiverComp .EQ. indxDiver) CYCLE
+            iTotal_Compared                = iTotal_Compared + 1
+            Node_Compared(iTotal_Compared) = iDiverNodeComp
+            !Find the reach number where the comparison diversion is located
+            iDiverCompReach = StrmReach_GetReachNumber(iDiverNodeComp,Reaches)
+            IF (iDiverCompReach.EQ.iDiverReach  .AND.  iDiverNode.GT.iDiverNodeComp) THEN
+                Diversions(indxDiver)%Rank = Diversions(indxDiver)%Rank + 1
+                CYCLE
+            END IF
+            !Check if flow from comparison reach ever flows into reach in question
+            IF (Reaches(iDiverCompReach)%OutflowDestType .NE. f_iFlowDest_StrmNode) CYCLE
+            iNode_Into      = Reaches(iDiverCompReach)%OutflowDest
+            iNode_IntoReach = StrmReach_GetReachNumber(iNode_Into,Reaches)
+            DO 
+                IF (iNode_IntoReach .EQ. iDiverReach) EXIT
+                IF (Reaches(iNode_IntoReach)%OutflowDestType .NE. f_iFlowDest_StrmNode) EXIT
+                iNode_Into      = Reaches(iNode_IntoReach)%OutflowDest
+                iNode_IntoReach = StrmReach_GetReachNumber(iNode_Into,Reaches)
+            END DO
+            IF (iNode_IntoReach .EQ. iDiverReach) Diversions(indxDiver)%Rank = Diversions(indxDiver)%Rank + 1
         END DO
-        IF (iNode_IntoReach .EQ. iDiverReach) Diversions(indxDiver)%Rank = Diversions(indxDiver)%Rank + 1
-      END DO
     END DO
     
   END SUBROUTINE CompileDiversionRanks

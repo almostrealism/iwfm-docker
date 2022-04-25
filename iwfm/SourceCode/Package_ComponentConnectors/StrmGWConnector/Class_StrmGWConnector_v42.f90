@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018 
+!  Copyright (C) 2005-2021 
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -22,18 +22,30 @@
 !***********************************************************************
 MODULE Class_StrmGWConnector_v42
   USE MessageLogger              , ONLY: SetLastMessage           , &
+                                         LogMessage               , &
                                          MessageArray             , &
-                                         iFatal
-  USE IOInterface
-  USE TimeSeriesUtilities
-  USE GeneralUtilities
-  USE Package_Discretization
+                                         f_iFatal                 , &
+                                         f_iWarn
+  USE IOInterface                , ONLY: GenericFileType
+  USE TimeSeriesUtilities        , ONLY: TimeIntervalConversion
+  USE GeneralUtilities           , ONLY: IntToText                , &
+                                         StripTextUntilCharacter  , &
+                                         CleanSpecialCharacters   , &
+                                         LocateInList             , &
+                                         NormalizeArray           , &
+                                         ConvertID_To_Index    
+  USE Package_Discretization     , ONLY: AppGridType              , &
+                                         StratigraphyType
   USE Package_Misc               , ONLY: AbstractFunctionType     , &
-                                         iStrmComp                , &
-                                         iGWComp
+                                         f_iStrmComp              , &
+                                         f_iGWComp                , &
+                                         f_rSmoothMaxP
   USE Class_BaseStrmGWConnector  , ONLY: BaseStrmGWConnectorType  , &
-                                         BaseStrmGWConnector_Kill
-  USE Package_Matrix             , ONLY: MatrixType               
+                                         BaseStrmGWConnector_Kill , &
+                                         iDisconnectAtTopOfBed    , &
+                                         iDisconnectAtBottomOfBed
+  USE Package_Matrix             , ONLY: MatrixType               , &
+                                         ConnectivityListType
   IMPLICIT NONE
   
   
@@ -52,7 +64,8 @@ MODULE Class_StrmGWConnector_v42
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC :: StrmGWConnector_v42_Type                    
+  PUBLIC :: StrmGWConnector_v42_Type  , &
+            MaxnGWNodes 
   
   
   ! -------------------------------------------------------------
@@ -61,8 +74,13 @@ MODULE Class_StrmGWConnector_v42
   TYPE GWNodeListType
       INTEGER             :: nGWNodes    = 0    !Number of groundwater nodes interacting with the stream at a stream node
       INTEGER,ALLOCATABLE :: iGWNodes(:)        !List of groundwater nodes; first gw node is used to compute the length along the stream which is used in calculating the conductance
+      INTEGER,ALLOCATABLE :: iGWNodeRanks(:)    !Ranking of gw nodes in terms of which order  they will be inundated as stream flow depth increases (not used in v42, but in v4.21) 
       INTEGER,ALLOCATABLE :: iLayers(:)         !Aquifer layer numbers that the stream node interacts with
       REAL(8),ALLOCATABLE :: Conductance(:)     !Stream bed conductance at each groundwater node
+      REAL(8),ALLOCATABLE :: rBedThickness(:)   !Stream bed thickness at each groundwater node
+      REAL(8),ALLOCATABLE :: rDisconnectElev(:) !Elevation at which stream and gw disconnect
+      REAL(8),ALLOCATABLE :: rDistFrac(:)       !Fractions to distribute available stream flow to individual gw nodes 
+      REAL(8),ALLOCATABLE :: rFractionForGW(:)  !Fraction of stream-gw interaction to be applied to gw nodes for fractional stream-gw interaction
       REAL(8),ALLOCATABLE :: StrmGWFlow(:)      !Stream-aquifer interaction at each gw node associated with the stream node
   END TYPE GWNodeListType
   
@@ -71,24 +89,25 @@ MODULE Class_StrmGWConnector_v42
   ! --- STREAM-GW CONNECTOR TYPE
   ! -------------------------------------------------------------
   TYPE,EXTENDS(BaseStrmGWConnectorType) :: StrmGWConnector_v42_Type
-      PRIVATE
-      INTEGER                          :: nTotalGWNodes = 0               !Total number of gw nodes (counting doubles at confluences) that interact with streams
-      TYPE(GWNodeListType),ALLOCATABLE :: GWNodeList(:)                   !GW node list interacting with the stream at each stream node
+      INTEGER                           :: nTotalGWNodes = 0               !Total number of gw nodes (counting doubles at confluences) that interact with streams
+      TYPE(GWNodeListType),ALLOCATABLE  :: GWNodeList(:)                   !GW node list interacting with the stream at each stream node
   CONTAINS
       PROCEDURE,PASS :: AddGWNodesToStrmNode
       PROCEDURE,PASS :: Kill                                     => StrmGWConnector_v42_Kill                          !Overrides the original method from base class
-      PROCEDURE,PASS :: StrmGWConnector_v42_Kill
       PROCEDURE,PASS :: GetnTotalGWNodes
       PROCEDURE,PASS :: GetGWNodesAtStrmNode
       PROCEDURE,PASS :: GetAllGWNodes                            => StrmGWConnector_v42_GetAllGWNodes                 !Overrides the original method from base class
       PROCEDURE,PASS :: GetAllLayers                             => StrmGWConnector_v42_GetAllLayers                  !Overrides the original method from base class
       PROCEDURE,PASS :: GetFlowAtGWNode                          => StrmGWConnector_v42_GetFlowAtGWNode               !Overrides the original method from base class
+      PROCEDURE,PASS :: GetFlowAtAllStrmNodes                    => StrmGWConnector_v42_GetFlowAtAllStrmNodes         !Overrides the original method from base class
+      PROCEDURE,PASS :: GetTotalFlowAtAllStrmNodes
+      PROCEDURE,PASS :: GetFlowAtSomeStrmNodes                   => StrmGWConnector_v42_GetFlowAtSomeStrmNodes        !Overrides the original method from base class
       PROCEDURE,PASS :: GetSubregionalFlows                      => StrmGWConnector_v42_GetSubregionalFlows           !Overrides the original method from base class
       PROCEDURE,PASS :: GetGWHeadsAtStrmNodes                    => StrmGWConnector_v42_GetGWHeadsAtStrmNodes         !Overrides the original method from base class
+      PROCEDURE,PASS :: SetFractionsForGW                        => StrmGWConnector_v42_SetFractionsForGW             !Overrides the original method from base class
       PROCEDURE,PASS :: RegisterWithMatrix                       => StrmGWConnector_v42_RegisterWithMatrix            !Overrides the original method from base class
       PROCEDURE,PASS :: BaseStrmGWConnector_ReadPreprocessedData => StrmGWConnector_v42_ReadPreprocessedData          !Overrides the original method from base class
       PROCEDURE,PASS :: WritePreprocessedData                    => StrmGWConnector_v42_WritePreprocessedData         !Overrides the original method from base class
-      PROCEDURE,PASS :: ComputeStrmGWFlow_AtMinHead              => StrmGWConnector_v42_ComputeStrmGWFlow_AtMinHead
       PROCEDURE,PASS :: Simulate                                 => StrmGWConnector_v42_Simulate
       PROCEDURE,PASS :: CompileConductance                       => StrmGWConnector_v42_CompileConductance
       PROCEDURE,PASS :: ConvertTimeUnit                          => StrmGWConnector_v42_ConvertTimeUnit               !Overrides the original method from base class
@@ -98,7 +117,7 @@ MODULE Class_StrmGWConnector_v42
   ! -------------------------------------------------------------
   ! --- MISC. ENTITIES
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER                   :: MaxnGWNodes = 100   !Maximum number of groundwater nodes that can be associated with a stream node
+  INTEGER,PARAMETER                   :: MaxnGWNodes = 1000   !Maximum number of groundwater nodes that can be associated with a stream node
   INTEGER,PARAMETER                   :: ModNameLen  = 27
   CHARACTER(LEN=ModNameLen),PARAMETER :: ModName     = 'Class_StrmGWConnector_v42::'
   
@@ -123,34 +142,40 @@ CONTAINS
   ! -------------------------------------------------------------
   ! ---ADD GW NODE TO A STREAM NODE
   ! -------------------------------------------------------------
-  SUBROUTINE AddGWNodesToStrmNode(Connector,NStrmNodes,iStrmNode,iGWNodes,iLayers)
+  SUBROUTINE AddGWNodesToStrmNode(Connector,NStrmNodes,iStrmNode,iGWNodes,iLayers,iRanks)
     CLASS(StrmGWConnector_v42_Type) :: Connector
     INTEGER,INTENT(IN)              :: NStrmNodes,iStrmNode,iGWNodes(:),iLayers(:)
+    INTEGER,INTENT(IN)              :: iRanks(:)                                   !Not used in this version
     
     !Local variables
     INTEGER             :: nGWNodes,iDim
     INTEGER,ALLOCATABLE :: iTempGWNodes(:),iTempLayers(:)
+    REAL(8),ALLOCATABLE :: rTempFractions(:)
     
     !Add data to stream
     IF (ALLOCATED(Connector%GWNodeList)) THEN
         ASSOCIATE (pData => Connector%GWNodeList(iStrmNode))
             nGWNodes = pData%nGWNodes
             iDim     = nGWNodes + SIZE(iGWNodes)
-            ALLOCATE (iTempGWNodes(iDim) , iTempLayers(iDim))
-            iTempGWNodes(1:nGWNodes)  = pData%iGWNodes     
-            iTempGWNodes(nGWNodes+1:) = iGWNodes  ;  CALL MOVE_ALLOC(iTempGWNodes , pData%iGWNodes)
-            iTempLayers(1:nGWNodes)   = pData%iLayers      ;  iTempLayers(nGWNodes+1:)  = iLayers   ;  CALL MOVE_ALLOC(iTempLayers  , pData%iLayers)
-            pData%nGWNodes            = iDim
+            ALLOCATE (iTempGWNodes(iDim) , iTempLayers(iDim) , rTempFractions(iDim))
+            iTempGWNodes(1:nGWNodes)    = pData%iGWNodes     
+            iTempGWNodes(nGWNodes+1:)   = iGWNodes  ;  CALL MOVE_ALLOC(iTempGWNodes   , pData%iGWNodes)
+            iTempLayers(1:nGWNodes)     = pData%iLayers                               
+            iTempLayers(nGWNodes+1:)    = iLayers   ;  CALL MOVE_ALLOC(iTempLayers    , pData%iLayers)
+            rTempFractions(1:nGWNodes)  = pData%rFractionForGW
+            rTempFractions(nGWNodes+1:) = 1.0       ;  CALL MOVE_ALLOC(rTempFractions , pData%rFractionForGW) 
+            pData%nGWNodes              = iDim
         END ASSOCIATE
         
     ELSE
         ALLOCATE (Connector%GWNodeList(NStrmNodes))
         ASSOCIATE (pData => Connector%GWNodeList(iStrmNode))
             nGWNodes = SIZE(iGWNodes)
-            ALLOCATE (pData%iGWNodes(nGWNodes) , pData%iLayers(nGWNodes)) 
-            pData%nGWNodes    = nGWNodes
-            pData%iGWNodes    = iGWNodes
-            pData%iLayers     = iLayers
+            ALLOCATE (pData%iGWNodes(nGWNodes) , pData%iLayers(nGWNodes) , pData%rFractionForGW(nGWNodes)) 
+            pData%nGWNodes       = nGWNodes
+            pData%iGWNodes       = iGWNodes
+            pData%iLayers        = iLayers
+            pData%rFractionForGW = 1.0     !This is the deafult
         END ASSOCIATE
     END IF
     
@@ -178,7 +203,7 @@ CONTAINS
               STAT = ErrorCode                  , &
               ERRMSG = cErrMsg                  )
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for stream-gw connection data!'//NEW_LINE('x')//TRIM(cErrMsg),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for stream-gw connection data!'//NEW_LINE('x')//TRIM(cErrMsg),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -186,9 +211,10 @@ CONTAINS
     DO indx=1,nStrmNodes
         CALL Infile%ReadData(nGWNodes,iStat)  ;  IF (iStat .EQ. -1) RETURN
         Connector%GWNodeList(indx)%nGWNodes = nGWNodes
-        ALLOCATE (Connector%GWNodeList(indx)%iGWNodes(nGWNodes) , Connector%GWNodeList(indx)%iLayers(nGWNodes))
-        CALL InFile%ReadData(Connector%GWNodeList(indx)%iGWNodes,iStat)  ;  IF (iStat .EQ. -1) RETURN
-        CALL InFile%ReadData(Connector%GWNodeList(indx)%iLayers,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        ALLOCATE (Connector%GWNodeList(indx)%iGWNodes(nGWNodes) , Connector%GWNodeList(indx)%iLayers(nGWNodes) , Connector%GWNodeList(indx)%rFractionForGW(nGWNodes))
+        CALL InFile%ReadData(Connector%GWNodeList(indx)%iGWNodes,iStat)          ;  IF (iStat .EQ. -1) RETURN
+        CALL InFile%ReadData(Connector%GWNodeList(indx)%iLayers,iStat)           ;  IF (iStat .EQ. -1) RETURN
+        CALL InFile%ReadData(Connector%GWNodeList(indx)%rFractionForGW,iStat)    ;  IF (iStat .EQ. -1) RETURN
     END DO
         
   END SUBROUTINE StrmGWConnector_v42_ReadPreprocessedData
@@ -217,7 +243,14 @@ CONTAINS
     TYPE(StrmGWConnector_v42_Type) :: Dummy
     
     DO indxStrm=1,SIZE(Connector%GWNodeList)
-        DEALLOCATE (Connector%GWNodeLIst(indxStrm)%iGWNodes , Connector%GWNodeLIst(indxStrm)%iLayers , Connector%GWNodeLIst(indxStrm)%Conductance , Connector%GWNodeLIst(indxStrm)%StrmGWFlow , STAT=ErrorCode)
+        DEALLOCATE (Connector%GWNodeList(indxStrm)%iGWNodes       , &
+                    Connector%GWNodeList(indxStrm)%iLayers        , &
+                    Connector%GWNodeList(indxStrm)%Conductance    , &
+                    Connector%GWNodeList(indxStrm)%rDisconnectElev, &
+                    Connector%GWNodeList(indxStrm)%rDistFrac      , &
+                    Connector%GWNodeList(indxStrm)%rFractionForGW , &
+                    Connector%GWNodeList(indxStrm)%StrmGWFlow     , &
+                    STAT=ErrorCode                                )
     END DO
     DEALLOCATE (Connector%GWNodeList , STAT=ErrorCode)
     Connector%nTotalGWNodes = Dummy%nTotalGWNodes
@@ -256,6 +289,7 @@ CONTAINS
        CALL Outfile%WriteData(Connector%GWNodeList(indx)%nGWNodes)
        CALL Outfile%WriteData(Connector%GWNodeList(indx)%iGWNodes)
        CALL Outfile%WriteData(Connector%GWNodeList(indx)%iLayers)
+       CALL Outfile%WriteData(Connector%GWNodeList(indx)%rFractionForGW)
     END DO
     
   END SUBROUTINE StrmGWConnector_v42_WritePreprocessedData
@@ -276,9 +310,10 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET TOTAL STREAM-GW FLOW AT SUBREGIONS 
   ! -------------------------------------------------------------
-  FUNCTION StrmGWConnector_v42_GetSubregionalFlows(Connector,AppGrid) RESULT(Flows)
+  FUNCTION StrmGWConnector_v42_GetSubregionalFlows(Connector,AppGrid,lInsideModel) RESULT(Flows)
     CLASS(StrmGWConnector_v42_Type),INTENT(IN) :: Connector
     TYPE(AppGridType),INTENT(IN)               :: AppGrid
+    LOGICAL,INTENT(IN)                         :: lInsideModel
     REAL(8)                                    :: Flows(AppGrid%NSubregions)
     
     !Local variables
@@ -291,8 +326,12 @@ CONTAINS
     indx = 0
     DO indxStrm=1,SIZE(Connector%GWNodeList)
         nGWNodes = Connector%GWNodeList(indxStrm)%nGWNodes
-        StrmGWFlows(indx+1:indx+nGWNodes) = Connector%GWNodeList(indxStrm)%StrmGWFlow
-        indx                              = indx + nGWNodes
+        IF (lInsideModel) THEN
+            StrmGWFlows(indx+1:indx+nGWNodes) = Connector%GWNodeList(indxStrm)%StrmGWFlow * Connector%GWNodeList(indxStrm)%rFractionForGW
+        ELSE
+            StrmGWFlows(indx+1:indx+nGWNodes) = Connector%GWNodeList(indxStrm)%StrmGWFlow * (1D0 - Connector%GWNodeList(indxStrm)%rFractionForGW)
+        END IF
+        indx = indx + nGWNodes
     END DO
     
     !Compute regional flows
@@ -319,7 +358,7 @@ CONTAINS
     DO indxStrm=1,SIZE(Connector%GWNodeList)
         DO indxGW=1,Connector%GWNodeList(indxStrm)%nGWNodes
             IF (Connector%GWNodeList(indxStrm)%iGWNodes(indxGW) .EQ. iNode) THEN
-                IF (Connector%GWNodeList(indxStrm)%iLayers(indxGW) .EQ. iLayer) Flow = Flow + Connector%GWNodeList(indxStrm)%StrmGWFlow(indxGW)
+                IF (Connector%GWNodeList(indxStrm)%iLayers(indxGW) .EQ. iLayer) Flow = Flow + Connector%GWNodeList(indxStrm)%StrmGWFlow(indxGW) * Connector%GWNodeList(indxStrm)%rFractionForGW(indxGW)
             END IF
         END DO
     END DO
@@ -327,6 +366,68 @@ CONTAINS
   END FUNCTION StrmGWConnector_v42_GetFlowAtGWNode
     
     
+  ! -------------------------------------------------------------
+  ! --- GET TOTAL STREAM-GW FLOW AT EVERY STREAM NODE 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetTotalFlowAtAllStrmNodes(Connector,Flow)
+    CLASS(StrmGWConnector_v42_Type),INTENT(IN) :: Connector
+    REAL(8),INTENT(OUT)                        :: Flow(:) 
+    
+    Flow = Connector%StrmGWFlow 
+      
+  END SUBROUTINE GetTotalFlowAtAllStrmNodes
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM-GW FLOW AT EVERY STREAM NODE 
+  ! -------------------------------------------------------------
+  SUBROUTINE StrmGWConnector_v42_GetFlowAtAllStrmNodes(Connector,lInsideModel,Flow)
+    CLASS(StrmGWConnector_v42_Type),INTENT(IN) :: Connector
+    LOGICAL,INTENT(IN)                         :: lInsideModel
+    REAL(8),INTENT(OUT)                        :: Flow(:) 
+    
+    !Local variables
+    INTEGER :: indxStrm
+    
+    DO indxStrm=1,SIZE(Connector%GWNodeList)
+        IF (lInsideModel) THEN
+            Flow(indxStrm) = SUM(Connector%GWNodeList(indxStrm)%StrmGWFlow * Connector%GWNodeList(indxStrm)%rFractionForGW)
+        ELSE
+            Flow(indxStrm) = SUM(Connector%GWNodeList(indxStrm)%StrmGWFlow * (1D0 - Connector%GWNodeList(indxStrm)%rFractionForGW))
+        END IF
+    END DO
+      
+  END SUBROUTINE StrmGWConnector_v42_GetFlowAtAllStrmNodes
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET TOTAL STREAM-GW FLOW AT A SET OF STREAM NODES 
+  ! -------------------------------------------------------------
+  FUNCTION StrmGWConnector_v42_GetFlowAtSomeStrmNodes(Connector,iNodeBegin,iNodeEnd,lInsideModel) RESULT(Flow)
+    CLASS(StrmGWConnector_v42_Type),INTENT(IN) :: Connector
+    INTEGER,INTENT(IN)                        :: iNodeBegin,iNodeEnd
+    LOGICAL,INTENT(IN)                        :: lInsideModel
+    REAL(8)                                   :: Flow 
+    
+    !Local variables
+    INTEGER :: indxStrm
+    
+    !Initialize
+    Flow = 0.0
+    
+    IF (lInsideModel) THEN
+        DO indxStrm=iNodeBegin,iNodeEnd
+            Flow = Flow + SUM(Connector%GWNodeList(indxStrm)%StrmGWFlow * Connector%GWNodeList(indxStrm)%rFractionForGW)
+        END DO
+    ELSE
+        DO indxStrm=iNodeBegin,iNodeEnd
+            Flow = Flow + SUM(Connector%GWNodeList(indxStrm)%StrmGWFlow * (1D0 - Connector%GWNodeList(indxStrm)%rFractionForGW))
+        END DO
+    END IF
+  
+  END FUNCTION StrmGWConnector_v42_GetFlowAtSomeStrmNodes
+  
+  
   ! -------------------------------------------------------------
   ! --- GET TOTAL NUMBER OF GW NODES  
   ! -------------------------------------------------------------
@@ -368,10 +469,10 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET GW NODE(S) AT A STREAM NODE
   ! -------------------------------------------------------------
-  SUBROUTINE GetGWNodesAtStrmNode(Connector,iStrmNode,iGWNodes)
+  PURE SUBROUTINE GetGWNodesAtStrmNode(Connector,iStrmNode,iGWNodes)
     CLASS(StrmGWConnector_v42_Type),INTENT(IN) :: Connector
     INTEGER,INTENT(IN)                         :: iStrmNode
-    INTEGER,ALLOCATABLE                        :: iGWNodes(:)
+    INTEGER,ALLOCATABLE,INTENT(INOUT)          :: iGWNodes(:)
     
     !Local variables
     INTEGER :: ErrorCode
@@ -439,6 +540,64 @@ CONTAINS
 ! ******************************************************************
 ! ******************************************************************
 ! ***
+! *** SETTERS
+! ***
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+  
+  ! -------------------------------------------------------------
+  ! --- SET STREAM NODES AND FRACTION OF STREAM-GW INTERACTION TO BE APPLIED TO GW NODES
+  ! -------------------------------------------------------------
+  SUBROUTINE StrmGWConnector_v42_SetFractionsForGW(Connector,iStrmNodes,rFractions,iStat)
+    CLASS(StrmGWConnector_v42_Type) :: Connector
+    INTEGER,INTENT(IN)              :: iStrmNodes(:)
+    REAL(8),INTENT(IN)              :: rFractions(:)
+    INTEGER,INTENT(OUT)             :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+37),PARAMETER :: ThisProcedure = ModName // 'StrmGWConnector_v42_SetFractionsForGW'
+    INTEGER                                :: indx,indx1
+    
+    !Initailize
+    iStat = 0
+    
+    !Check for errors
+    DO indx=1,SIZE(iStrmNodes)
+        !Make sure the same stream node is not listed more than once
+        DO indx1=indx+1,SIZE(iStrmNodes)
+            IF (iStrmNodes(indx) .EQ. iStrmNodes(indx1)) THEN
+                MessageArray(1) = 'Stream node '// TRIM(IntToText(iStrmNodes(indx))) // ' is listed more than once for defining '
+                MessageArray(2) = 'fraction of the stream-aquifer interaction to be applied to the corresponding groundwater node.'
+                CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+        END DO
+        
+        !Check that the fractions are less than or equal to 1.0
+        IF (rFractions(indx).GT.1.0  .OR.  rFractions(indx).LT.0.0) THEN
+            MessageArray(1) = 'Fraction of stream-aquifer interaction at stream node ' // TRIM(IntToText(iStrmNodes(indx))) 
+            MessageArray(2) = ' to be applied to the corresponding groundwater node must be between 0.0 and 1.0.' 
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        
+        !Store information
+        Connector%GWNodeList(iStrmNodes(indx))%rFractionForGW(1) = rFractions(indx)
+    END DO
+     
+    
+  END SUBROUTINE StrmGWConnector_v42_SetFractionsForGW
+
+  
+
+  
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+! ***
 ! *** MISC. METHODS
 ! ***
 ! ******************************************************************
@@ -448,23 +607,30 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- COMPILE CONDUCTANCE FOR STREAM-GW CONNECTOR
   ! -------------------------------------------------------------
-  SUBROUTINE StrmGWConnector_v42_CompileConductance(Connector,InFile,AppGrid,NStrmNodes,UpstrmNodes,DownstrmNodes,iStat)
-    CLASS(StrmGWConnector_v42_Type) :: Connector
-    TYPE(GenericFileType)           :: InFile
-    TYPE(AppGridType),INTENT(IN)    :: AppGrid
-    INTEGER,INTENT(IN)              :: NStrmNodes
-    INTEGER,INTENT(IN)              :: UpstrmNodes(:),DownstrmNodes(:) 
-    INTEGER,INTENT(OUT)             :: iStat
+  SUBROUTINE StrmGWConnector_v42_CompileConductance(Connector,InFile,AppGrid,Stratigraphy,NStrmNodes,iStrmNodeIDs,UpstrmNodes,DownstrmNodes,BottomElevs,iStat)
+    CLASS(StrmGWConnector_v42_Type)   :: Connector
+    TYPE(GenericFileType)             :: InFile
+    TYPE(AppGridType),INTENT(IN)      :: AppGrid
+    TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
+    INTEGER,INTENT(IN)                :: NStrmNodes,iStrmNodeIDs(NStrmNodes),UpstrmNodes(:),DownstrmNodes(:) 
+    REAL(8),INTENT(IN)                :: BottomElevs(:)
+    INTEGER,INTENT(OUT)               :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+38) :: ThisProcedure = ModName // 'StrmGWConnector_v42_CompileConductance'
-    INTEGER                      :: indxNode,iGWNode,iElem,iStrmNode,iLoc,nGWNodes,indx1,iGWNode1,indxReach, &
-                                    indx,iUpstrmNode,iDownstrmNode,iGWUpstrmNode
-    REAL(8)                      :: FACTK,FACTL,DummyArray3(3),WetPerimeter(MaxnGWNodes,NStrmNodes),CA,CB,   &
-                                    Conductivity(MaxnGWNodes,NStrmNodes),BedThick(MaxnGWNodes,NStrmNodes),   &
-                                    Distance,X(2),Y(2),DummyArray5(5),Length(MaxnGWNodes-1),B_DISTANCE,      &
-                                    F_DISTANCE
-    CHARACTER                    :: ALine*500
+    INTEGER                      :: indxNode,iGWNodeID,iElem,iStrmNodeID,iLoc,nGWNodes,indx1,iGWNode1,indxReach, &
+                                    indx,iUpstrmNode,iDownstrmNode,iGWUpstrmNode,iLayer,iNode,iGWNode,           &
+                                    iGWNodeIDs(AppGrid%NNodes),iInteractionType
+    REAL(8)                      :: FACTK,FACTL,DummyArray3(3),WetPerimeter(MaxnGWNodes,NStrmNodes),CA,CB,       &
+                                    Conductivity(MaxnGWNodes,NStrmNodes),BedThick(MaxnGWNodes,NStrmNodes),       &
+                                    Distance,X(2),Y(2),DummyArray5(5),Length(MaxnGWNodes-1),B_DISTANCE,          &
+                                    F_DISTANCE,rSumConductance
+    CHARACTER                    :: ALine*1000
+    LOGICAL                      :: lProcessed(NStrmNodes)
+
+    !Initialize
+    lProcessed = .FALSE.
+    iGWNodeIDs = AppGrid%AppNode%ID
     
     !Read data
     CALL InFile%ReadData(FACTK,iStat)  ;  IF (iStat .EQ. -1) RETURN
@@ -473,51 +639,70 @@ CONTAINS
     Connector%TimeUnitConductance = ADJUSTL(StripTextUntilCharacter(ALine,'/'))
     CALL InFile%ReadData(FACTL,iStat)  ;  IF (iStat .EQ. -1) RETURN
     
-    !Allocate memory for stream-gw interaction at each stream node (represents cumulative of the interaction if stream node intrecats with multiple gw nodes)
+    !Allocate memory for stream bed thickness and stream-gw interaction at each stream node (represents cumulative of the interaction if stream node intrecats with multiple gw nodes)
     ALLOCATE (Connector%StrmGWFlow(NStrmNodes))
     Connector%StrmGWFlow = 0.0
     
     !Read data
     DO indxNode=1,NStrmNodes
-        !Number of gw nodes associated with the stream node
-        nGWNodes = Connector%GWNodeList(indxNode)%nGWNodes
-        
         !Read data for the stream node
         CALL InFile%ReadData(DummyArray5,iStat)  ;  IF (iStat .EQ. -1) RETURN
-        iStrmNode = INT(DummyArray5(1))
-        IF (iStrmNode .NE. indxNode) THEN 
-            MessageArray(1) = 'Parameters for stream nodes should be entered sequentialy.'
-            MessageArray(2) = 'Expected stream node='//TRIM(IntToText(indxNode))
-            MessageArray(3) = 'Entered stream node ='//TRIM(IntToText(iStrmNode))
-            CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-            iStat = -1 
-            RETURN
-        END IF
-        WetPerimeter(1,indxNode) = DummyArray5(2) * FACTL
-        iGWNode                  = INT(DummyArray5(3))  
-        iLoc                     = LocateInList(iGWNode , Connector%GWNodeList(indxNode)%iGWNodes)
-        IF (iLoc .EQ. 0) THEN
-            MessageArray(1) = 'Stream bed parameters at stream node '//TRIM(IntToText(iStrmNode))//' are listed for groundwater node '
-            MessageArray(2) = TRIM(IntToText(iGWNode))//', but this groundwater node is not associated with the stream node!'
-            CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+        iStrmNodeID = INT(DummyArray5(1))
+        CALL ConvertID_To_Index(iStrmNodeID,iStrmNodeIDs,iNode)
+        IF (iNode .EQ. 0) THEN
+            CALL SetLastMessage('Stream node '//TRIM(IntToText(iStrmNodeID))//' listed for stream bed parameters is not in the model!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
-        Conductivity(iLoc,indxNode) = DummyArray5(4) * FACTK
-        BedThick(iLoc,indxNode)     = DummyArray5(5) * FACTL
-        DO indx=2,Connector%GWNodeList(indxNode)%nGWNodes
+        
+        !Check if this node was processed before
+        IF (lProcessed(iNode)) THEN
+            CALL SetLastMessage('Stream bed parameters for stream node '//TRIM(IntToText(iStrmNodeID))//' are defined more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iNode) = .TRUE.
+        
+        !Number of gw nodes associated with the stream node
+        nGWNodes = Connector%GWNodeList(iNode)%nGWNodes
+        
+        !Allocate memory for connector data at stream node
+        ALLOCATE (Connector%GWNodeList(iNode)%Conductance(nGWNodes) , Connector%GWNodeList(iNode)%StrmGWFlow(nGWNodes)  ,  Connector%GWNodeList(iNode)%rBedThickness(nGWNodes) ,  Connector%GWNodeList(iNode)%rDisconnectElev(nGWNodes) ,  Connector%GWNodeList(iNode)%rDistFrac(nGWNodes))
+        Connector%GWNodeList(iNode)%StrmGWFlow(nGWNodes) = 0.0
+        
+        !Parameters
+        WetPerimeter(1,iNode) = DummyArray5(2) * FACTL
+        iGWNodeID             = INT(DummyArray5(3))
+        CALL ConvertID_To_Index(iGWNodeID,iGWNodeIDs,iGWNode)
+        IF (iGWNode .EQ. 0) THEN
+            CALL SetLastMessage('Groundwater node '//TRIM(IntToText(iGWNodeID))//' listed for stream node '//TRIM(IntToText(iStrmNodeID))//' for stream bed parameters is not in the model!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        iLoc = LocateInList(iGWNode , Connector%GWNodeList(iNode)%iGWNodes)
+        IF (iLoc .EQ. 0) THEN
+            MessageArray(1) = 'Stream bed parameters at stream node '//TRIM(IntToText(iStrmNodeID))//' are listed for groundwater node '
+            MessageArray(2) = TRIM(IntToText(iGWNodeID))//', but this groundwater node is not associated with the stream node!'
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        Conductivity(iLoc,iNode) = DummyArray5(4) * FACTK
+        BedThick(iLoc,iNode)     = DummyArray5(5) * FACTL
+        DO indx=2,Connector%GWNodeList(iNode)%nGWNodes
             CALL InFile%ReadData(DummyArray3,iStat)  ;  IF (iStat .EQ. -1) RETURN
-            iGWNode = INT(DummyArray3(1))  
-            iLoc    = LocateInList(iGWNode , Connector%GWNodeList(indxNode)%iGWNodes)
+            iGWNodeID = INT(DummyArray3(1))  
+            CALL ConvertID_To_Index(iGWNodeID,iGWNodeIDs,iGWNode)
+            iLoc = LocateInList(iGWNode , Connector%GWNodeList(iNode)%iGWNodes)
             IF (iLoc .EQ. 0) THEN
-                MessageArray(1) = 'Stream bed parameters at stream node '//TRIM(IntToText(iStrmNode))//' are listed for groundwater node '//TRIM(IntToText(iGWNode))//','
+                MessageArray(1) = 'Stream bed parameters at stream node '//TRIM(IntToText(iStrmNodeID))//' are listed for groundwater node '//TRIM(IntToText(iGWNodeID))//','
                 MessageArray(2) = 'but this groundwater node is not associated with the stream node!'
-                CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+                CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
-            Conductivity(iLoc,indxNode) = DummyArray3(2) * FACTK
-            BedThick(iLoc,indxNode)     = DummyArray3(3) * FACTL
+            Conductivity(iLoc,iNode) = DummyArray3(2) * FACTK
+            BedThick(iLoc,iNode)     = DummyArray3(3) * FACTL
         END DO
         
         !Distribute wetted perimeter to multiple gw nodes 
@@ -525,15 +710,15 @@ CONTAINS
             !Find the effective length of each node 
             Length(1:nGWNodes) = 0.0
             DO indx=1,nGWNodes-1
-                iGWNode = Connector%GWNodeList(indxNode)%iGWNodes(indx)
-                X(1)    = AppGrid%Node(iGWNode)%X
-                Y(1)    = AppGrid%Node(iGWNode)%Y
+                iGWNode = Connector%GWNodeList(iNode)%iGWNodes(indx)
+                X(1)    = AppGrid%X(iGWNode)
+                Y(1)    = AppGrid%Y(iGWNode)
                 DO indx1=indx+1,nGWNodes
-                    iGWNode1 = Connector%GWNodeList(indxNode)%iGWNodes(indx1)
+                    iGWNode1 = Connector%GWNodeList(iNode)%iGWNodes(indx1)
                     iElem    = AppGrid%GetElementGivenVertices([iGWNode,iGWNode1])
                     IF (iElem .EQ. 0) CYCLE
-                    X(2)     = AppGrid%Node(iGWNode1)%X
-                    Y(2)     = AppGrid%Node(iGWNode1)%Y
+                    X(2)     = AppGrid%X(iGWNode1)
+                    Y(2)     = AppGrid%Y(iGWNode1)
                     Distance = 0.5 * SQRT((X(1)-X(2))*(X(1)-X(2)) + (Y(1)-Y(2))*(Y(1)-Y(2)))
                     Length(indx)  = Length(indx) + Distance
                     Length(indx1) = Length(indx1) + Distance
@@ -541,15 +726,46 @@ CONTAINS
             END DO
             !Distribute wetted perimeter to each gw node with respect to their associated length
             CALL NormalizeArray(Length(1:nGWNodes))
-            WetPerimeter(1:nGWNodes,indxNode) = WetPerimeter(1,indxNode) * Length(1:nGWNodes)
+            WetPerimeter(1:nGWNodes,iNode) = WetPerimeter(1,iNode) * Length(1:nGWNodes)
         END IF
-        
-        !Allocate memory for conductance
-        ALLOCATE (Connector%GWNodeList(indxNode)%Conductance(nGWNodes) , Connector%GWNodeList(indxNode)%StrmGWFlow(nGWNodes))
-        Connector%GWNodeList(indxNode)%StrmGWFlow(nGWNodes) = 0.0
-        
     END DO
     
+    !Assumption for stream-aquifer disconnection; BACKWARD COMPATIBILITY: Check if this part of the data file exists
+    CALL InFile%ReadData(iInteractionType,iStat)
+    IF (iStat .EQ. 0) THEN
+        CALL Connector%SetInteractionType(iInteractionType,iStat) 
+        IF (iStat .EQ. -1) RETURN
+    ELSE
+        iStat = 0
+    END IF
+    
+    !Update BedThick if necessary
+    IF (Connector%iInteractionType .EQ. iDisconnectAtBottomOfBed) THEN
+        DO indxNode=1,NStrmNodes
+            DO indx=1,Connector%GWNodeList(indxNode)%nGWNodes
+                iGWNode = Connector%GWNodeList(indxNode)%iGWNodes(indx)
+                iLayer  = Connector%GWNodeList(indxNode)%iLayers(indx)
+                IF (BottomElevs(indxNode)-BedThick(indx,indxNode) .LT. Stratigraphy%BottomElev(iGWNode,iLayer)) THEN
+                    BedThick(indx,indxNode) = BottomElevs(indxNode) - Stratigraphy%BottomElev(iGWNode,iLayer)
+                    iStrmNodeID             = iStrmNodeIDs(indxNode)
+                    iGWNodeID               = iGWNodeIDs(iGWNode)
+                    !Warn the user about the modification
+                    MessageArray(1)         = 'Stream bed thickness at stream node ' // TRIM(IntToText(iStrmNodeID)) // ' and GW node '// TRIM(IntToText(iGWNodeID)) // ' penetrates into second active aquifer layer!'
+                    MessageArray(2)         = 'It is adjusted to penetrate only into the top active layer.'
+                    CALL LogMessage(MessageArray(1:2),f_iWarn,ThisProcedure) 
+                    !Check that bed thickness is not zero or less
+                    IF (BedThick(indx,indxNode) .LE. 0.0) THEN
+                        MessageArray(1) = 'Stream bed thickness at stream node ' // TRIM(IntToText(iStrmNodeID)) // ' and GW node '// TRIM(IntToText(iGWNodeID)) // ' is less than or equal to zero!'
+                        MessageArray(2) = 'Check the startigraphy and bed thickness at this location.'
+                        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure) 
+                        iStat = -1
+                        RETURN
+                    END IF
+                END IF
+            END DO
+        END DO
+    END IF
+        
     !Compute conductance
     DO indxReach=1,SIZE(UpstrmNodes)
         iUpstrmNode   = UpstrmNodes(indxReach)
@@ -560,153 +776,165 @@ CONTAINS
             !Effective stream length
             iGWUpstrmNode = Connector%GWNodeList(indxNode-1)%iGWNodes(1)
             iGWNode       = Connector%GWNodeList(indxNode)%iGWNodes(1)
-            CA            = AppGrid%Node(iGWUpstrmNode)%X - AppGrid%Node(iGWNode)%X
-            CB            = AppGrid%Node(iGWUpstrmNode)%Y - AppGrid%Node(iGWNode)%Y
+            CA            = AppGrid%X(iGWUpstrmNode) - AppGrid%X(iGWNode)
+            CB            = AppGrid%Y(iGWUpstrmNode) - AppGrid%Y(iGWNode)
             F_DISTANCE    = SQRT(CA*CA + CB*CB)/2d0
             !Conductivity
             Connector%GWNodeList(indxNode-1)%Conductance = Conductivity(1:nGWNodes,indxNode-1) * WetPerimeter(1:nGWNodes,indxNode-1) * (B_DISTANCE+F_DISTANCE) / BedThick(1:nGWNodes,indxNode-1)
+            !Stream flow distribution factors 
+            rSumConductance = SUM(Connector%GWNodeList(indxNode-1)%Conductance)
+            IF (rSumConductance .EQ. 0.0) THEN
+                Connector%GWNodeList(indxNode-1)%rDistFrac = 1D0 / REAL(nGWNodes,8)
+            ELSE
+                Connector%GWNodeList(indxNode-1)%rDistFrac = Connector%GWNodeList(indxNode-1)%Conductance / rSumConductance
+            END IF
+            !Bed thickness
+            Connector%GWNodeList(indxNode-1)%rBedThickness = BedThick(1:nGWNodes,indxNode-1)
             !Advance distance
             B_DISTANCE = F_DISTANCE
         END DO
-        nGWNodes                                        = Connector%GWNodeList(iDownstrmNode)%nGWNodes
-        Connector%GWNodeList(iDownstrmNode)%Conductance = Conductivity(1:nGWNodes,iDownstrmNode) * WetPerimeter(1:nGWNodes,iDownstrmNode) * B_DISTANCE / BedThick(1:nGWNodes,iDownstrmNode)
+        nGWNodes                                          = Connector%GWNodeList(iDownstrmNode)%nGWNodes
+        Connector%GWNodeList(iDownstrmNode)%Conductance   = Conductivity(1:nGWNodes,iDownstrmNode) * WetPerimeter(1:nGWNodes,iDownstrmNode) * B_DISTANCE / BedThick(1:nGWNodes,iDownstrmNode)
+        Connector%GWNodeList(iDownstrmNode)%rBedThickness = BedThick(1:nGWNodes,iDownstrmNode)
+        rSumConductance                                   = SUM(Connector%GWNodeList(iDownstrmNode)%Conductance)
+        IF (rSumConductance .EQ. 0.0) THEN
+            Connector%GWNodeList(iDownstrmNode)%rDistFrac = 1D0 / REAL(nGWNodes,8)
+        ELSE
+            Connector%GWNodeList(iDownstrmNode)%rDistFrac = Connector%GWNodeList(iDownstrmNode)%Conductance / rSumConductance
+        END IF
+    END DO
+    
+    !Compute elevation where stream and gw disconnect
+    DO indxNode=1,NStrmNodes
+        IF (Connector%iInteractionType .EQ. iDisconnectAtBottomOfBed) THEN
+            Connector%GWNodeList(indxNode)%rDisconnectElev = BottomElevs(indxNode) - Connector%GWNodeList(indxNode)%rBedThickness
+        ELSE
+            Connector%GWNodeList(indxNode)%rDisconnectElev = BottomElevs(indxNode)
+        END IF
     END DO
     
   END SUBROUTINE StrmGWConnector_v42_CompileConductance
   
   
   ! -------------------------------------------------------------
-  ! --- COMPUTE STREAM-GW INTERACTION
-  ! --- *** Note: + flow means loosing stream
+  ! --- SIMULATE STREAM-GW INTERACTION
+  ! --- *** Note: + flow means losing stream
   ! -------------------------------------------------------------
-  SUBROUTINE StrmGWConnector_v42_Simulate(Connector,NNodes,GWHead,StrmHead,StrmBottomElev,WetPerimeterFunction,Matrix,DeltaX,MaxElev)
-    CLASS(StrmGWConnector_v42_Type)        :: Connector
-    INTEGER,INTENT(IN)                     :: NNodes
-    REAL(8),INTENT(IN)                     :: GWHead(:),StrmHead(:),StrmBottomElev(:)
-    CLASS(AbstractFunctionType),INTENT(IN) :: WetPerimeterFunction(:)              !This is not used in this version
-    TYPE(MatrixType)                       :: Matrix
-    REAL(8),OPTIONAL,INTENT(IN)            :: DeltaX(:),MaxElev(:)                 !These are not used in this version
+  SUBROUTINE StrmGWConnector_v42_Simulate(Connector,iNNodes,rGWHeads,rStrmHeads,rAvailableFlows,Matrix,WetPerimeterFunction,rMaxElevs)
+    CLASS(StrmGWConnector_v42_Type)                 :: Connector
+    INTEGER,INTENT(IN)                              :: iNNodes
+    REAL(8),INTENT(IN)                              :: rGWHeads(:),rStrmHeads(:),rAvailableFlows(:)
+    TYPE(MatrixType)                                :: Matrix
+    CLASS(AbstractFunctionType),OPTIONAL,INTENT(IN) :: WetPerimeterFunction(:)  !Not used in this version                  
+    REAL(8),OPTIONAL,INTENT(IN)                     :: rMaxElevs(:)             !Not used in this version
     
     !Local variables
-    INTEGER :: indxStrm,iGWNode,NStrmNodes,iNodeIDs_Connect(2),iCompIDs_Connect(2), &
-               iCompIDs(2),iNodeIDs(2),indxGW,indx
-    REAL(8) :: HeadDiff,Conductance,rInteraction,rUpdateValues(2) 
-               
-    
-    !Initialize
-    NStrmNodes = SIZE(Connector%GWNodeList)
-    indx       = 0
-    
-    !Compute stream-gw interaction at each stream node; also update the matrix equation
-    DO indxStrm=1,NStrmNodes
-        Connector%StrmGWFlow(indxStrm) = 0.0
+    INTEGER           :: iGWNode,iNodes_Connect(2),iNodes_RHS(500),indxGW,indx,nGWNodes,iOffset,indxStrm
+    REAL(8)           :: Conductance,rUpdateCOEFF(2),rUpdateCOEFF_Keep(2),rUpdateRHS(500),rDiff_GW,rGWHead,     &
+                         rDiffGWSQRT,rStrmGWFlow,rStrmGWFlowAdj,rStrmGWFlowAdjSQRT,rDStrmGWFlowAdj,rStrmHead,   &
+                         rNodeAvailableFlow
+    INTEGER,PARAMETER :: iCompIDs_RHS(500)   = [f_iStrmComp , (f_iGWComp,indx=2,500)]  , &
+                         iCompIDs_Connect(2) = [f_iStrmComp , f_iGWComp]
+                             
+    !Update matrix equations
+    iOffSet = 0
+    DO indxStrm=1,SIZE(Connector%GWNodeList)
+        rStrmHead = rStrmHeads(indxStrm)
         
         ASSOCIATE (pData => Connector%GWNodeList(indxStrm))
-            DO indxGW=1,pData%nGWNodes
-                indx = indx + 1
-                
+            iNodes_RHS(1) = indxStrm
+            nGWNodes      = pData%nGWNodes
+
+            !Loop over each connected gw node
+            DO indxGW=1,nGWNodes
                 !Corresponding GW node and conductance
-                iGWNode     = (pData%iLayers(indxGW)-1) * NNodes + pData%iGWNodes(indxGW)
                 Conductance = pData%Conductance(indxGW)
-                
-                IF (StrmHead(indxStrm) .GE. StrmBottomElev(indxStrm)) THEN
-                    IF (GWHead(indx) .GE. StrmBottomElev(indxStrm)) THEN
-                        HeadDiff            = StrmHead(indxStrm) - GWHead(indx)
-                        iCompIDs_Connect(1) = iStrmComp
-                        iCompIDs_Connect(2) = iGWComp
-                        iNodeIDs_Connect(1) = indxStrm                    
-                        iNodeIDs_Connect(2) = iGWNode  
-                        rUpdateValues(1)    = Conductance
-                        rUpdateValues(2)    = -Conductance  
-                        CALL Matrix%UpdateCOEFF(iStrmComp,indxStrm,iCompIDs_Connect,iNodeIDs_Connect,rUpdateValues)
-                        rUpdateValues(1)    = -Conductance  
-                        rUpdateValues(2)    = Conductance  
-                        CALL Matrix%UpdateCOEFF(iGWComp,iGWNode,iCompIDs_Connect,iNodeIDs_Connect,rUpdateValues)
-                    ELSE
-                        HeadDiff            = StrmHead(indxStrm) - StrmBottomElev(indxStrm)
-                        iCompIDs_Connect(1) = iStrmComp
-                        iNodeIDs_Connect(1) = indxStrm                    
-                        rUpdateValues(1)    = Conductance
-                        CALL Matrix%UpdateCOEFF(iStrmComp,indxStrm,iCompIDs_Connect(1:1),iNodeIDs_Connect(1:1),rUpdateValues(1:1))
-                        rUpdateValues(1)    = -Conductance
-                        CALL Matrix%UpdateCOEFF(iGWComp,iGWNode,iCompIDs_Connect(1:1),iNodeIDs_Connect(1:1),rUpdateValues(1:1))
-                    END IF
-                ELSE
-                    IF (GWHead(indx) .GE. StrmBottomElev(indxStrm)) THEN
-                        HeadDiff            = StrmBottomElev(indxStrm) - GWHead(indx)
-                        iCompIDs_Connect(1) = iGWComp
-                        iNodeIDs_Connect(1) = iGWNode                    
-                        rUpdateValues(1)    = -Conductance
-                        CALL Matrix%UpdateCOEFF(iStrmComp,indxStrm,iCompIDs_Connect(1:1),iNodeIDs_Connect(1:1),rUpdateValues(1:1))
-                        rUpdateValues(1)    = Conductance
-                        CALL Matrix%UpdateCOEFF(iGWComp,iGWNode,iCompIDs_Connect(1:1),iNodeIDs_Connect(1:1),rUpdateValues(1:1))
-                    ELSE
-                        HeadDiff = 0.0
-                    END IF
+                IF (Conductance .EQ. 0.0) THEN
+                    pData%StrmGWFlow(indxGW) = 0.0
+                    CYCLE
                 END IF
+                iGWNode              = (pData%iLayers(indxGW)-1) * iNNodes + pData%iGWNodes(indxGW)
+                iNodes_RHS(1+indxGW) = iGWNode
+
+                !Head differences
+                rGWHead     = rGWHeads(iOffset+indxGW)
+                rDiff_GW    = rGWHead - pData%rDisconnectElev(indxGW)
+                rDiffGWSQRT = SQRT(rDiff_GW*rDiff_GW + f_rSmoothMaxP)
                 
-                rInteraction                   = Conductance * HeadDiff
-                pData%StrmGWFlow(indxGW)       = rInteraction
-                Connector%StrmGWFlow(indxStrm) = Connector%StrmGWFlow(indxStrm) + rInteraction
-                iCompIDs(1)                    = iStrmComp
-                iCompIDs(2)                    = iGWComp
-                iNodeIDs(1)                    = indxStrm
-                iNodeIDs(2)                    = iGWNode
-                rUpdateValues(1)               = rInteraction
-                rUpdateValues(2)               = -rInteraction
-                CALL Matrix%UpdateRHS(iCompIDs,iNodeIDs,rUpdateValues)
-            END DO  
+                !Available flow for node
+                rNodeAvailableFlow = rAvailableFlows(indxStrm) * pData%rDistFrac(indxGW)
+                
+                !Calculate stream-gw interaction and update of Jacobian
+                !--------------------------------------------
+                rStrmGWFlow = Conductance * (rStrmHead - MAX(rGWHead,pData%rDisconnectElev(indxGW)))
+                !Stream is gaining; no need to worry about drying stream (i.e. stream-gw flow is not a function of upstream flows)
+                IF (rStrmGWFlow .LT. 0.0) THEN
+                    pData%StrmGWFlow(indxGW) = rStrmGWFlow
+                    iNodes_Connect(1)        = indxStrm
+                    iNodes_Connect(2)        = iGWNode
+                    
+                    !Update Jacobian - entries for stream node 
+                    rUpdateCOEFF_Keep(1) = Conductance
+                    rUpdateCOEFF_Keep(2) = -0.5d0 * Conductance * (1d0+rDiff_GW/rDiffGWSQRT) 
+                    rUpdateCOEFF         = rUpdateCOEFF_Keep
+                    CALL Matrix%UpdateCOEFF(f_iStrmComp,indxStrm,2,iCompIDs_Connect,iNodes_Connect,rUpdateCOEFF)
+                    
+                    !Update Jacobian - entries for groundwater node
+                    rUpdateCOEFF = -pData%rFractionForGW(indxGW) * rUpdateCOEFF_Keep
+                    CALL Matrix%UpdateCOEFF(f_iGWComp,iGWNode,2,iCompIDs_Connect,iNodes_Connect,rUpdateCOEFF)
+                                        
+                !Stream is losing; we need to limit stream loss to available flow
+                ELSE
+                    rStrmGWFlowAdj     = rNodeAvailableFlow - rStrmGWFlow 
+                    rStrmGWFlowAdjSQRT = SQRT(rStrmGWFlowAdj*rStrmGWFlowAdj + f_rSmoothMaxP)
+                    rDStrmGWFlowAdj    = 0.5d0 * (1d0 + rStrmGWFlowAdj / rStrmGWFlowAdjSQRT)
+                    iNodes_Connect(1)  = indxStrm
+                    iNodes_Connect(2)  = iGWNode
+                    
+                    !Update Jacobian - entries for stream node 
+                    rUpdateCOEFF_Keep(1) = Conductance * rDStrmGWFlowAdj
+                    rUpdateCOEFF_Keep(2) = -0.5d0 * Conductance * (1d0+rDiff_GW/rDiffGWSQRT) * rDStrmGWFlowAdj
+                    rUpdateCOEFF         = rUpdateCOEFF_Keep
+                    CALL Matrix%UpdateCOEFF(f_iStrmComp,indxStrm,2,iCompIDs_Connect,iNodes_Connect,rUpdateCOEFF)
+                    
+                    !Update Jacobian - entries for groundwater node
+                    rUpdateCOEFF = -pData%rFractionForGW(indxGW) * rUpdateCOEFF_Keep
+                    CALL Matrix%UpdateCOEFF(f_iGWComp,iGWNode,2,iCompIDs_Connect,iNodes_Connect,rUpdateCOEFF)
+                    
+                    !Store flow exchange
+                    pData%StrmGWFlow(indxGW) = MIN(rNodeAvailableFlow , rStrmGWFlow)
+                END IF
+
+            END DO
+
+            !Total stream-gw interaction
+            Connector%StrmGWFlow(indxStrm) = SUM(pData%StrmGWFlow)
             
+            !Update RHS 
+            rUpdateRHS(1)            = Connector%StrmGWFlow(indxStrm)
+            rUpdateRHS(2:1+nGWNodes) = -pData%StrmGWFlow * pData%rFractionForGW
+            CALL Matrix%UpdateRHS(iCompIDs_RHS(1:1+nGWNodes),iNodes_RHS(1:1+nGWNodes),rUpdateRHS(1:1+nGWNodes))
         END ASSOCIATE
+        
+        !Update iOffset
+        iOffset = iOffset + nGWNodes
     END DO
     
   END SUBROUTINE StrmGWConnector_v42_Simulate
   
-
-  ! -------------------------------------------------------------
-  ! --- COMPUTE STREAM-GW INTERACTION WITHOUT UPDATING MATRIX
-  ! --- *** Note: + flow means loosing stream
-  ! -------------------------------------------------------------
-  SUBROUTINE StrmGWConnector_v42_ComputeStrmGWFlow_AtMinHead(Connector,Flows,GWHead,StrmHead,StrmBottomElev,WetPerimeterFunction,DeltaX)
-    CLASS(StrmGWConnector_v42_Type)        :: Connector
-    REAL(8),INTENT(OUT)                    :: Flows(:)
-    REAL(8),INTENT(IN)                     :: GWHead(:),StrmHead(:),StrmBottomElev(:)  !StrmHead is not used in this version
-    CLASS(AbstractFunctionType),INTENT(IN) :: WetPerimeterFunction(:)                  !Not used in this version 
-    REAL(8),OPTIONAL,INTENT(IN)            :: DeltaX(:)                                !Not used in this version
-    
-    !Local variables
-    INTEGER :: indxStrm,indxGW,indx
-    REAL(8) :: HeadDiff
-    
-    !Initialize
-    Flows = 0.0
-    indx  = 0
-                   
-    !Compute stream-gw interaction at each stream node when stream is dry
-    DO indxStrm=1,SIZE(Connector%GWNodeList)
-        indx = indx + 1
-        DO indxGW=1,Connector%GWNodeList(indxStrm)%nGWNodes
-            IF (GWHead(indx) .GE. StrmBottomElev(indxStrm)) THEN
-                HeadDiff        = StrmBottomElev(indxStrm) - GWHead(indx)
-                Flows(indxStrm) = Flows(indxStrm) + Connector%GWNodeList(indxStrm)%Conductance(indxGW) * HeadDiff      
-            END IF  
-        END DO
-    END DO
-
-  END SUBROUTINE StrmGWConnector_v42_ComputeStrmGWFlow_AtMinHead
-
-
+  
   ! -------------------------------------------------------------
   ! --- ADD CONNECTIVITY TO MATRIX
   ! -------------------------------------------------------------
-  SUBROUTINE StrmGWConnector_v42_RegisterWithMatrix(Connector,AppGrid,Matrix,iStat)
+  SUBROUTINE StrmGWConnector_v42_RegisterWithMatrix(Connector,StrmConnectivity,AppGrid,Matrix,iStat)
     CLASS(StrmGWConnector_v42_Type),INTENT(IN) :: Connector
+    TYPE(ConnectivityListType),INTENT(IN)      :: StrmConnectivity(:)
     TYPE(AppGridTYpe),INTENT(IN)               :: AppGrid
     TYPE(MatrixType)                           :: Matrix
     INTEGER,INTENT(OUT)                        :: iStat
     
     !Local varaibles
-    INTEGER :: indxNode,GWNodes(MaxnGWNodes),StrmNode(1),NNodes,nGWNodes,indx
+    INTEGER :: indxNode,GWNodes(MaxnGWNodes),StrmNode(20),NNodes,nGWNodes,indx,iNUpstrmNodes
     
     !Initialize
     iStat  = 0
@@ -715,12 +943,14 @@ CONTAINS
     !Add connectivity
     DO indxNode=1,SIZE(Connector%GWNodeList)
         nGWNodes            = Connector%GWNodeList(indxNode)%nGWNodes
-        StrmNode(1)         = indxNode
         GWNodes(1:nGWNodes) = (Connector%GWNodeList(indxNode)%iLayers-1)*NNodes + Connector%GWNodeList(indxNode)%iGWNodes
-        CALL Matrix%AddConnectivity(iStrmComp,indxNode,iGWComp,GWNodes(1:nGWNodes),iStat)
+        CALL Matrix%AddConnectivity(f_iStrmComp,indxNode,f_iGWComp,GWNodes(1:nGWNodes),iStat)
         IF (iStat .EQ. -1) RETURN
+        iNUpstrmNodes = StrmConnectivity(indxNode)%nConnectedNodes
+        StrmNode(1)   = indxNode
         DO indx=1,nGWNodes
-            CALL Matrix%AddConnectivity(iGWComp,GWNodes(indx),iStrmComp,StrmNode,iStat)
+            StrmNode(2:iNUpstrmNodes+1) = StrmConnectivity(indxNode)%ConnectedNodes
+            CALL Matrix%AddConnectivity(f_iGWComp,GWNodes(indx),f_iStrmComp,StrmNode(1:iNUpstrmNodes+1),iStat)
             IF (iStat .EQ. -1) RETURN
         END DO
     END DO
@@ -749,9 +979,6 @@ CONTAINS
         Connector%GWNodeList(indx)%Conductance = Connector%GWNodeList(indx)%Conductance * Factor
     END DO
 
-  END SUBROUTINE StrmGWConnector_v42_ConvertTimeUnit 
-  
-  
-
+  END SUBROUTINE StrmGWConnector_v42_ConvertTimeUnit   
   
 END MODULE

@@ -1,7 +1,7 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2019  
-!  State of California, Department of Water Resources 
+!  Copyright (C) 2005-2021
+!  State of California, Department of Water Resources
 !
 !  This program is free software; you can redistribute it and/or
 !  modify it under the terms of the GNU General Public License
@@ -18,16 +18,16 @@
 !  along with this program; if not, write to the Free Software
 !  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 !
-!  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
+!  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov
 !***********************************************************************
 MODULE Class_AsciiFileType
   USE MessageLogger        , ONLY: SetLastMessage                  , &
                                    LogMessage                      , &
-                                   iWarn                           , &
-                                   iFatal
+                                   f_iWarn                         , &
+                                   f_iFatal
   USE GeneralUtilities     , ONLY: GenericString                   , &
                                    GenericString_To_String         , &
-                                   LineFeed                        , &
+                                   f_cLineFeed                     , &
                                    IntToText                       , &
                                    LocateInList                    , &
                                    CleanSpecialCharacters          , &
@@ -42,16 +42,16 @@ MODULE Class_AsciiFileType
                                    AdjustRateTypeData              , &
                                    AdjustTimeStampWithYear4000     , &
                                    SetTSDCacheSize                 , &
-                                   RecognizedIntervals_InMinutes   , &
-                                   TimeStampLength                 , &
+                                   f_iRecognizedIntervals_InMinutes, &
+                                   f_iTimeStampLength              , &
                                    OPERATOR(.TSGT.)
   USE Class_BaseFileType   , ONLY: BaseFileType                    , &
                                    IsFileOpen
   IMPLICIT NONE
-  
-  
 
-  
+
+
+
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
@@ -69,9 +69,9 @@ MODULE Class_AsciiFileType
   PUBLIC :: AsciiInFileType         , &
             AsciiOutFileType        , &
             AsciiTSDInFileType      , &
-            AsciiTSDOutFileType     
-  
-  
+            AsciiTSDOutFileType
+
+
   ! -------------------------------------------------------------
   ! --- ASCII INPUT FILE TYPE
   ! -------------------------------------------------------------
@@ -89,8 +89,8 @@ MODULE Class_AsciiFileType
       PROCEDURE,PASS :: Rewind                                 => Rewind_AsciiInFile
       GENERIC        :: ReadData                               => ReadSingleData_AsciiInFile             , &
                                                                   ReadArrayData_AsciiInFile              , &
-                                                                  ReadMatrixData_AsciiInFile             
-  END TYPE AsciiInFileType  
+                                                                  ReadMatrixData_AsciiInFile
+  END TYPE AsciiInFileType
 
 
   ! -------------------------------------------------------------
@@ -105,25 +105,25 @@ MODULE Class_AsciiFileType
       PROCEDURE,PASS :: WriteArrayData_AsciiOutFile
       PROCEDURE,PASS :: Rewind         => Rewind_AsciiOutFile
       GENERIC        :: WriteData      => WriteSingleData_AsciiOutFile                    , &
-                                          WriteArrayData_AsciiOutFile                     
+                                          WriteArrayData_AsciiOutFile
   END TYPE AsciiOutFileType
 
-  
+
   ! -------------------------------------------------------------
   ! --- ASCII TIME SERIES DATA INPUT FILE TYPE
   ! -------------------------------------------------------------
   TYPE,EXTENDS(AsciiInFileType) :: AsciiTSDInFileType
       PRIVATE
       INTEGER             :: NSP                       = 1            !Number of time steps to update the time series data
-      INTEGER             :: NFQ                       = 0            !Repitition frequency of the time series data; after NFQ times of read actions the file is rewound 
+      INTEGER             :: NFQ                       = 0            !Repitition frequency of the time series data; after NFQ times of read actions the file is rewound
       INTEGER             :: TimeStampedData           = 0            !Flag to distinguish if the time series data is time stamped or not (0 = not known; 1 = time stamped ; -1 = non-time stamped)
-      INTEGER             :: NumberOfBlocksToSkip      = 1            !Number of data blocks (groups of data lines between comment lines) to skip after rewinding the file to reach the time series data 
+      INTEGER             :: NumberOfBlocksToSkip      = 1            !Number of data blocks (groups of data lines between comment lines) to skip after rewinding the file to reach the time series data
       INTEGER             :: NumberOfDataLines         = -1           !Number of data lines over which a single time series entry is distributed
       INTEGER             :: NumberOfReads             = 0            !Total number of read actions performed on the file since it was opened or last rewound
       INTEGER             :: NumberOfTimeStepsPassed   = 0            !Number of time steps that passed since the last read action
       INTEGER             :: Interval_InMinutes        = -99          !Data time interval in minutes
-      REAL(8)             :: JulianDate1               = -HUGE(0d0)   !Julian time of the time series data that is smaller than the simulation time (used only for time-tracing simulations) 
-      REAL(8)             :: JulianDate2               = -HUGE(0d0)   !Julian time of the time series data that is greater than the simulation time (used only for time-tracing simulations) 
+      REAL(8)             :: JulianDate1               = -HUGE(0d0)   !Julian time of the time series data that is smaller than the simulation time (used only for time-tracing simulations)
+      REAL(8)             :: JulianDate2               = -HUGE(0d0)   !Julian time of the time series data that is greater than the simulation time (used only for time-tracing simulations)
       LOGICAL             :: FileRewound               = .FALSE.      !Flag used when time series data file includes recycling data (e.g. monthly ET used for all years) to avoid stepping into infinite loop
       LOGICAL,ALLOCATABLE :: RateTypeData(:)                          !Flag to specify if the data being read is a rate type data; this information is used to convert the time-series data based on the time step of the simulation)
   CONTAINS
@@ -138,14 +138,14 @@ MODULE Class_AsciiFileType
       PROCEDURE,PASS :: ReadSingleData_AsciiTSDInFile
       PROCEDURE,PASS :: ReadArrayData_AsciiTSDInFile
       PROCEDURE,PASS :: ReadMatrixData_AsciiTSDInFile
-      PROCEDURE,PASS :: ReadTimeSeries_ForTimeRange_AsciiTSDInFile     
+      PROCEDURE,PASS :: ReadTimeSeries_ForTimeRange_AsciiTSDInFile
       GENERIC        :: ReadData                                    => ReadSingleData_AsciiTSDInFile               , &
                                                                        ReadArrayData_AsciiTSDInFile                , &
                                                                        ReadMatrixData_AsciiTSDInFile               , &
                                                                        ReadTimeSeries_ForTimeRange_AsciiTSDInFile
   END TYPE AsciiTSDInFileType
 
-  
+
   ! -------------------------------------------------------------
   ! --- ASCII TIME SERIES DATA OUTPUT FILE TYPE
   ! -------------------------------------------------------------
@@ -155,7 +155,7 @@ MODULE Class_AsciiFileType
       INTEGER                       :: NumberOfDataRows       = 0   !Number of data rows to be stored
       INTEGER                       :: NumberOfDataColumns    = 0   !Number of data columns to be stored
       INTEGER                       :: DataPointer            = 0   !Pointer to keep track of the row number to store values before flushing to the hard drive
-      CHARACTER(LEN=500)            :: FormatStatement        = ''  !The format statement that will be used for printing the results 
+      CHARACTER(LEN=500)            :: FormatStatement        = ''  !The format statement that will be used for printing the results
       REAL(8),ALLOCATABLE           :: ValuesForOutput(:,:,:)       !Array that stores the values to be flushed to the hard drive (will have dimensions NumberOfDataBatch x NumberOfDataRows x NumberOfDataColumns)
       CHARACTER(LEN=21),ALLOCATABLE :: TimeArray(:)                 !Array that stores the simulation time of values to be flushed to the hard drive
   CONTAINS
@@ -172,19 +172,18 @@ MODULE Class_AsciiFileType
   ! -------------------------------------------------------------
   ! --- MISC. ENTITIES
   ! -------------------------------------------------------------
-  CHARACTER(LEN=3),PARAMETER          :: DefaultFileNameExtension = 'TXT'
-  CHARACTER(LEN=3),PARAMETER          :: CommentIndicators = 'Cc*'
+  CHARACTER(LEN=3),PARAMETER          :: f_cCommentIndicators = 'Cc*'
   INTEGER,PARAMETER                   :: ModNameLen               = 21
   CHARACTER(LEN=ModNameLen),PARAMETER :: ModName                  = 'Class_AsciiFileType::'
 
 
 
-  
+
 CONTAINS
-    
-    
-    
-    
+
+
+
+
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
@@ -198,7 +197,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- COMMON ASCII FILE CONSTRUCTOR
   ! -------------------------------------------------------------
-  SUBROUTINE New_AsciiFile(ThisFile,FileName,lInputFile,AccessType,FileOpenCode,iStat) 
+  SUBROUTINE New_AsciiFile(ThisFile,FileName,lInputFile,AccessType,FileOpenCode,iStat)
     CLASS(BaseFileType)          :: ThisFile
     CHARACTER(LEN=*),INTENT(IN)  :: FileName
     LOGICAL,INTENT(IN)           :: lInputFile
@@ -214,17 +213,17 @@ CONTAINS
     !Initialize
     iStat = 0
     IF (PRESENT(FileOpenCode)) FileOpenCode = 0
-    
+
     !Instantiate the base file
     CALL ThisFile%NewBaseFile(FileName)
-    
+
     !Check if the file is already open
     IF (IsFileOpen(ThisFile%Name)) THEN
         IF (PRESENT(FileOpenCode)) THEN
             FileOpenCode = -1
             RETURN
         ELSE
-            CALL SetLastMessage('Error in opening file! File '//TRIM(ThisFile%Name)//' is already open!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Error in opening file! File '//TRIM(ThisFile%Name)//' is already open!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -249,43 +248,43 @@ CONTAINS
             FileOpenCode = ErrorCode
             RETURN
         ELSE
-            CALL SetLastMessage('Error in opening file '//TRIM(ThisFile%Name)//'!'//LineFeed//TRIM(cErrMessage),iFatal,ThisProcedure)
+            CALL SetLastMessage('Error in opening file '//TRIM(ThisFile%Name)//'!'//f_cLineFeed//TRIM(cErrMessage),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
     END IF
-       
+
   END SUBROUTINE New_AsciiFile
 
-  
+
   ! -------------------------------------------------------------
   ! --- CONSTRUCTOR FOR ASCII INPUT FILE
   ! -------------------------------------------------------------
-  SUBROUTINE New_AsciiInFile(ThisFile,FileName,lInputFile,AccessType,FileOpenCode,iStat) 
+  SUBROUTINE New_AsciiInFile(ThisFile,FileName,lInputFile,AccessType,FileOpenCode,iStat)
     CLASS(AsciiInFileType)               :: ThisFile
     CHARACTER(LEN=*),INTENT(IN)          :: FileName
     LOGICAL,INTENT(IN)                   :: lInputFile
     CHARACTER(LEN=*),OPTIONAL,INTENT(IN) :: AccessType  !Not used
     INTEGER,OPTIONAL,INTENT(OUT)         :: FileOpenCode
     INTEGER,INTENT(OUT)                  :: iStat
-    
+
     !Instantiate the file
     IF (PRESENT(FileOpenCode)) THEN
         CALL New_AsciiFile(ThisFile,FileName,lInputFile,'SEQUENTIAL',FileOpenCode=FileOpenCode,iStat=iStat)
     ELSE
         CALL New_AsciiFile(ThisFile,FileName,lInputFile,'SEQUENTIAL',iStat=iStat)
     END IF
-       
+
   END SUBROUTINE New_AsciiInFile
- 
-  
+
+
   ! -------------------------------------------------------------
   ! --- CONSTRUCTOR FOR ASCII OUTPUT FILE
   ! -------------------------------------------------------------
-  SUBROUTINE New_AsciiOutFile(ThisFile,FileName,lInputFile,AccessType,FileOpenCode,iStat) 
+  SUBROUTINE New_AsciiOutFile(ThisFile,FileName,lInputFile,AccessType,FileOpenCode,iStat)
     CLASS(AsciiOutFileType)              :: ThisFile
     CHARACTER(LEN=*),INTENT(IN)          :: FileName
-    LOGICAL,INTENT(IN)                   :: lInputFile   
+    LOGICAL,INTENT(IN)                   :: lInputFile
     CHARACTER(LEN=*),OPTIONAL,INTENT(IN) :: AccessType  !Must be either 'SEQUENTIAL' or 'APPEND'
     INTEGER,OPTIONAL,INTENT(OUT)         :: FileOpenCode
     INTEGER,INTENT(OUT)                  :: iStat
@@ -293,26 +292,26 @@ CONTAINS
     !Local variables
     CHARACTER(LEN=ModNameLen+16),PARAMETER :: ThisProcedure = ModName // 'New_AsciiOutFile'
     CHARACTER                              :: LocalAccessType*10
-    
+
     !Initialize
     IF (PRESENT(AccessType)) THEN
         LocalAccessType = AccessType
     ELSE
         LocalAccessType = 'SEQUENTIAL'
     END IF
-    
+
     !Instantiate the file
     IF (PRESENT(FileOpenCode)) THEN
         CALL New_AsciiFile(ThisFile,FileName,lInputFile,LocalAccessType,FileOpenCode=FileOpenCode,iStat=iStat)
     ELSE
         CALL New_AsciiFile(ThisFile,FileName,lInputFile,LocalAccessType,iStat=iStat)
     END IF
-       
+
   END SUBROUTINE New_AsciiOutFile
-  
-  
-  
-  
+
+
+
+
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
@@ -334,133 +333,133 @@ CONTAINS
     CHARACTER(LEN=ModNameLen+14),PARAMETER :: ThisProcedure = ModName // 'Kill_AsciiFile'
     INTEGER   :: iIteration,ErrorCode
     CHARACTER :: LocalStatus*6,cErrMessage*500
-    
+
     IF (PRESENT(Status)) THEN
         LocalStatus = Status
     ELSE
         LocalStatus = 'KEEP'
-    END IF 
+    END IF
 
     !Try to close file 3 times (in certain cases the file is not closed with one try)
     DO iIteration=1,3
         !Close file
         CLOSE(ThisFile%UnitN,IOSTAT=ErrorCode,STATUS=LocalStatus,IOMSG=cErrMessage)
-        
+
         !Exit if succesful
         IF (ErrorCode .EQ. 0) EXIT
 
     END DO
 
   END SUBROUTINE Kill_AsciiFile
-  
-  
+
+
   ! -------------------------------------------------------------
-  ! --- KILL ASCII INPUT FILE 
+  ! --- KILL ASCII INPUT FILE
   ! -------------------------------------------------------------
   SUBROUTINE Kill_AsciiInFile(ThisFile,Status)
     CLASS(AsciiInFileType)               :: ThisFile
     CHARACTER(LEN=*),INTENT(IN),OPTIONAL :: Status
-    
+
     !Local variables
     TYPE(AsciiInFileType) :: Dummy
-    
+
     IF (PRESENT(Status)) THEN
         CALL Kill_AsciiFile(ThisFile,Status)
     ELSE
         CALL Kill_AsciiFile(ThisFile)
     END IF
-    
+
     ThisFile%AtLine = Dummy%AtLine
 
   END SUBROUTINE Kill_AsciiInFile
-  
-  
+
+
   ! -------------------------------------------------------------
-  ! --- KILL ASCII OUTPUT FILE 
+  ! --- KILL ASCII OUTPUT FILE
   ! -------------------------------------------------------------
   SUBROUTINE Kill_AsciiOutFile(ThisFile,Status)
     CLASS(AsciiOutFileType)              :: ThisFile
     CHARACTER(LEN=*),INTENT(IN),OPTIONAL :: Status
-    
+
     IF (PRESENT(Status)) THEN
         CALL Kill_AsciiFile(ThisFile,Status)
     ELSE
         CALL Kill_AsciiFile(ThisFile)
     END IF
-    
+
   END SUBROUTINE Kill_AsciiOutFile
-  
-  
+
+
   ! -------------------------------------------------------------
-  ! --- KILL ASCII TIME-SERIES INPUT FILE 
+  ! --- KILL ASCII TIME-SERIES INPUT FILE
   ! -------------------------------------------------------------
   SUBROUTINE Kill_AsciiTSDInFile(ThisFile,Status)
     CLASS(AsciiTSDInFileType)            :: ThisFile
     CHARACTER(LEN=*),INTENT(IN),OPTIONAL :: Status
-    
+
     !Local variables
     INTEGER                  :: ErrorCode
     TYPE(AsciiTSDInFileType) :: Dummy
-    
+
     !Kill the parent class
     IF (PRESENT(Status)) THEN
         CALL Kill_AsciiInFile(ThisFile,Status)
     ELSE
         CALL Kill_AsciiInFile(ThisFile)
     END IF
-    
+
     !Set the attributes to their default values
     ThisFile%NSP                     = Dummy%NSP
     ThisFile%NFQ                     = Dummy%NFQ
     ThisFile%TimeStampedData         = Dummy%TimeStampedData
     ThisFile%NumberOfBlocksToSkip    = Dummy%NumberOfBlocksToSkip
-    ThisFile%NumberOfDataLines       = Dummy%NumberOfDataLines      
-    ThisFile%NumberOfReads           = Dummy%NumberOfReads          
+    ThisFile%NumberOfDataLines       = Dummy%NumberOfDataLines
+    ThisFile%NumberOfReads           = Dummy%NumberOfReads
     ThisFile%NumberOfTimeStepsPassed = Dummy%NumberOfTimeStepsPassed
-    ThisFile%Interval_InMinutes      = Dummy%Interval_InMinutes     
-    ThisFile%JulianDate1             = Dummy%JulianDate1            
-    ThisFile%JulianDate2             = Dummy%JulianDate2            
-    ThisFile%FileRewound             = Dummy%FileRewound 
-    
+    ThisFile%Interval_InMinutes      = Dummy%Interval_InMinutes
+    ThisFile%JulianDate1             = Dummy%JulianDate1
+    ThisFile%JulianDate2             = Dummy%JulianDate2
+    ThisFile%FileRewound             = Dummy%FileRewound
+
     !Deallocate array
-    DEALLOCATE (ThisFile%RateTypeData ,STAT=ErrorCode)                       
-    
+    DEALLOCATE (ThisFile%RateTypeData ,STAT=ErrorCode)
+
   END SUBROUTINE Kill_AsciiTSDInFile
-  
-  
+
+
   ! -------------------------------------------------------------
-  ! --- KILL ASCII TIME-SERIES OUTPUT FILE 
+  ! --- KILL ASCII TIME-SERIES OUTPUT FILE
   ! -------------------------------------------------------------
   SUBROUTINE Kill_AsciiTSDOutFile(ThisFile,Status)
     CLASS(AsciiTSDOutFileType)           :: ThisFile
     CHARACTER(LEN=*),INTENT(IN),OPTIONAL :: Status
-    
+
     !Local variables
     INTEGER                   :: ErrorCode
     TYPE(AsciiTSDOutFileType) :: Dummy
-    
+
     !Kill the parent class
     IF (PRESENT(Status)) THEN
         CALL Kill_AsciiOutFile(ThisFile,Status)
     ELSE
         CALL Kill_AsciiOutFile(ThisFile)
     END IF
-    
+
     !Set the attributes to their default values
-    ThisFile%NumberOfDataBatch   = Dummy%NumberOfDataBatch  
-    ThisFile%NumberOfDataRows    = Dummy%NumberOfDataRows   
+    ThisFile%NumberOfDataBatch   = Dummy%NumberOfDataBatch
+    ThisFile%NumberOfDataRows    = Dummy%NumberOfDataRows
     ThisFile%NumberOfDataColumns = Dummy%NumberOfDataColumns
-    ThisFile%DataPointer         = Dummy%DataPointer        
+    ThisFile%DataPointer         = Dummy%DataPointer
     ThisFile%FormatStatement     = Dummy%FormatStatement
-    
+
     !Deallocate arrays
     DEALLOCATE (ThisFile%ValuesForOutput , ThisFile%TimeArray , STAT=ErrorCode)
-    
+
   END SUBROUTINE Kill_AsciiTSDOutFile
-  
-  
-  
- 
+
+
+
+
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
@@ -470,7 +469,7 @@ CONTAINS
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
- 
+
   ! -------------------------------------------------------------
   ! --- SET THE NSP VARIABLE FOR ASCII TSD INPUT FILE
   ! -------------------------------------------------------------
@@ -483,8 +482,8 @@ CONTAINS
 
     !Also set the NumberOfTimeStepsPassed equal to NSP so that a read action will be taken at the first time step
     ThisFile%NumberOfTimeStepsPassed = ValueOfNSP
-    
-  END SUBROUTINE SetNSP 
+
+  END SUBROUTINE SetNSP
 
 
   ! -------------------------------------------------------------
@@ -496,8 +495,8 @@ CONTAINS
 
     !Set the value of NFQ variable
     ThisFile%NFQ = ValueOfNFQ
-    
-  END SUBROUTINE SetNFQ 
+
+  END SUBROUTINE SetNFQ
 
 
   ! -------------------------------------------------------------
@@ -509,8 +508,8 @@ CONTAINS
 
     !Set the number of blocks to skip
     ThisFile%NumberOfBlocksToSkip = BlocksToSkip
-    
-  END SUBROUTINE SetNumberOfBlocksToSkip 
+
+  END SUBROUTINE SetNumberOfBlocksToSkip
 
 
   ! -------------------------------------------------------------
@@ -519,20 +518,20 @@ CONTAINS
   SUBROUTINE SetRateTypeData(ThisFile,RateTypeData)
     CLASS(AsciiTSDInFileType) :: ThisFile
     LOGICAL,INTENT(IN)        :: RateTypeData(:)
-    
+
     !Local variables
     CHARACTER(LEN=ModNameLen+15),PARAMETER :: ThisProcedure = ModName // 'SetRateTypeData'
     INTEGER                                :: ErrorCode
-    
+
     !Set the flag
     ALLOCATE(ThisFile%RateTypeData(SIZE(RateTypeData)),STAT=ErrorCode)
     IF (ErrorCode .NE. 0) THEN
-        CALL LogMessage('Error in allocating memory for the rate-type-data array for file '//TRIM(ThisFile%Name)//'!',iWarn,ThisProcedure)
+        CALL LogMessage('Error in allocating memory for the rate-type-data array for file '//TRIM(ThisFile%Name)//'!',f_iWarn,ThisProcedure)
         RETURN
     END IF
     ThisFile%RateTypeData = RateTypeData
-    
-  END SUBROUTINE SetRateTypeData 
+
+  END SUBROUTINE SetRateTypeData
 
 
   ! -------------------------------------------------------------
@@ -544,7 +543,7 @@ CONTAINS
 
     !Set the data interval
     ThisFile%Interval_InMinutes = Interval
-    
+
   END SUBROUTINE SetDataInterval
 
 
@@ -556,7 +555,7 @@ CONTAINS
     INTEGER,INTENT(IN)          :: BlocksToSkip
     LOGICAL,INTENT(IN)          :: RateTypeData(:)
     INTEGER,OPTIONAL,INTENT(IN) :: ValueOfNSP,ValueOfNFQ
-    
+
     !Set the NumberOfBlocksToSkip
     CALL SetNumberOfBlocksToSkip(ThisFile,BlocksToSkip)
 
@@ -573,7 +572,7 @@ CONTAINS
 
 
   ! -------------------------------------------------------------
-  ! --- SET THE NumberOfDataBatch, NumberOfDataRows AND NumberOfDataColumns FOR ASCII TSD OUTPUT FILES 
+  ! --- SET THE NumberOfDataBatch, NumberOfDataRows AND NumberOfDataColumns FOR ASCII TSD OUTPUT FILES
   ! -------------------------------------------------------------
   SUBROUTINE SetTSDCacheSize_AsciiOutFile(ThisFile,NColumnsOfData,NRowsOfData)
     CLASS(AsciiTSDOutFileType)  :: ThisFile
@@ -587,7 +586,7 @@ CONTAINS
     IF (PRESENT(NRowsOfData)) THEN
         nrows = NRowsOfData
     ELSE
-        nrows = 1 
+        nrows = 1
     END IF
 
     !Allocate memory for the storage of time series results
@@ -601,37 +600,37 @@ CONTAINS
                          ThisFile%TimeArray           )
 
   END SUBROUTINE SetTSDCacheSize_AsciiOutFile
-  
-   
+
+
   ! -------------------------------------------------------------
-  ! --- SET THE FormatStatement FOR ASCII TSD OUTPUT FILES 
+  ! --- SET THE FormatStatement FOR ASCII TSD OUTPUT FILES
   ! -------------------------------------------------------------
   SUBROUTINE SetFormatStatement(ThisFile,FormatSpec,iStat)
     CLASS(AsciiTSDOutFileType)  :: ThisFile
     CHARACTER(LEN=*),INTENT(IN) :: FormatSpec
     INTEGER,INTENT(OUT)         :: iStat
-    
+
     !Local variables
     CHARACTER(LEN=ModNameLen+18),PARAMETER :: ThisProcedure = ModName // 'SetFormatStatement'
-    
+
     !Initialize
     iStat = 0
 
     !Make sure that FormatSpec is not longer than the size of FormatStatement field
     IF (LEN(FormatSpec) .GT. LEN(ThisFile%FormatStatement)) THEN
-        CALL SetLastMessage('The format statement specified for file '//TRIM(ThisFile%Name)//' is too long!',iFatal,ThisProcedure)
+        CALL SetLastMessage('The format statement specified for file '//TRIM(ThisFile%Name)//' is too long!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
-    
+
     !Set the data field
     ThisFile%FormatStatement = FormatSpec
 
   END SUBROUTINE SetFormatStatement
 
-  
-  
- 
+
+
+
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
@@ -641,7 +640,7 @@ CONTAINS
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
- 
+
   ! -------------------------------------------------------------
   ! --- READ SINGLE DATA FROM ASCII FILE
   ! -------------------------------------------------------------
@@ -651,14 +650,14 @@ CONTAINS
     INTEGER,INTENT(OUT),OPTIONAL :: Status
     LOGICAL,INTENT(IN),OPTIONAL  :: Skip
     INTEGER,INTENT(OUT)          :: iStat
-    
+
     !Local variables
     CHARACTER(LEN=ModNameLen+26),PARAMETER :: ThisProcedure = ModName // 'ReadSingleData_AsciiInFile'
     INTEGER                                :: ErrorCode
-    
+
     !Initialize
     iStat = 0
-    
+
     !Skip comment lines, if asked for
     IF (PRESENT(Skip)) THEN
         IF (Skip) CALL SkipComment(ThisFile,iStat)
@@ -666,43 +665,43 @@ CONTAINS
         CALL SkipComment(ThisFile,iStat)
     END IF
     IF (iStat .EQ. -1) RETURN
-    
+
     SELECT TYPE(Data)
         TYPE IS (CHARACTER(LEN=*))
             READ (ThisFile%UnitN,'(A)',IOSTAT=ErrorCode) Data
             IF (ErrorCode .NE. 0) THEN
                 IF (.NOT. PRESENT(Status)) CALL ThisFile%IOStatHandler(ErrorCode,iStat=iStat)
             END IF
-        
-            
+
+
         TYPE IS (REAL(8))
             READ (ThisFile%UnitN,*,IOSTAT=ErrorCode) Data
             IF (ErrorCode .NE. 0) THEN
                 IF (.NOT. PRESENT(Status)) CALL ThisFile%IOStatHandler(ErrorCode,iStat=iStat)
             END IF
-            
-            
+
+
         TYPE IS (INTEGER)
             READ (ThisFile%UnitN,*,IOSTAT=ErrorCode) Data
             IF (ErrorCode .NE. 0) THEN
                 IF (.NOT. PRESENT(Status)) CALL ThisFile%IOStatHandler(ErrorCode,iStat=iStat)
             END IF
-            
-            
+
+
         CLASS DEFAULT
-            CALL SetLastMessage('Trying to read unrecognized data type from file '//ThisFile%Name//'!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Trying to read unrecognized data type from file '//ThisFile%Name//'!',f_iFatal,ThisProcedure)
             iStat = -1
-            
-    END SELECT 
-        
+
+    END SELECT
+
     IF (PRESENT(Status)) Status = ErrorCode
     IF (iStat .EQ. -1) RETURN
-    
+
     ThisFile%AtLine = ThisFile%AtLine + 1
-    
+
   END SUBROUTINE ReadSingleData_AsciiInFile
-  
-  
+
+
   ! -------------------------------------------------------------
   ! --- READ ARRAY DATA FROM ASCII FILE
   ! -------------------------------------------------------------
@@ -712,26 +711,26 @@ CONTAINS
     INTEGER,INTENT(OUT),OPTIONAL :: Status
     LOGICAL,INTENT(IN),OPTIONAL  :: Skip
     INTEGER,INTENT(OUT)          :: iStat
-    
+
     !Local variables
     CHARACTER(LEN=ModNameLen+25),PARAMETER :: ThisProcedure = ModName // 'ReadArrayData_AsciiInFile'
     CHARACTER                              :: InitialDataLine*30000
     INTEGER                                :: ErrorCode
-    
+
     !Initialize
     iStat = 0
-    
+
     !Return if the size of the array is zero
     IF (SIZE(Data) .EQ. 0) RETURN
-    
+
     !Initialize
     IF (PRESENT(Skip)) THEN
         IF (Skip) CALL SkipComment(ThisFile,iStat)
     ELSE
         CALL SkipComment(ThisFile,iStat)
     END IF
-    IF (iStat .EQ. -1) RETURN    
-    
+    IF (iStat .EQ. -1) RETURN
+
     !Mark the initial data line for reference to count the number of data lines used
     CALL MarkInitialDataLine(ThisFile,InitialDataLine,iStat)
     IF (iStat .EQ. -1) RETURN
@@ -739,18 +738,18 @@ CONTAINS
     SELECT TYPE(Data)
         TYPE IS (REAL(8))
             READ (ThisFile%UnitN,*,IOSTAT=ErrorCode) Data
-            
-            
+
+
         TYPE IS (INTEGER)
             READ (ThisFile%UnitN,*,IOSTAT=ErrorCode) Data
-            
-            
+
+
         CLASS DEFAULT
-            CALL SetLastMessage('Trying to read unrecognized data type from file '//ThisFile%Name//'!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Trying to read unrecognized data type from file '//ThisFile%Name//'!',f_iFatal,ThisProcedure)
             iStat = -1
-            
-    END SELECT 
-        
+
+    END SELECT
+
     !Process error code
     IF (PRESENT(Status)) Status = ErrorCode
     IF (ErrorCode .NE. 0) THEN
@@ -760,10 +759,10 @@ CONTAINS
 
     !Adjust the line counter
     CALL FindNumberOfDataLines(ThisFile,InitialDataLine,1,iStat=iStat)
-        
+
   END SUBROUTINE ReadArrayData_AsciiInFile
-  
-  
+
+
   ! -------------------------------------------------------------
   ! --- READ MATRIX DATA FROM ASCII FILE
   ! -------------------------------------------------------------
@@ -773,7 +772,7 @@ CONTAINS
     INTEGER,INTENT(OUT),OPTIONAL :: Status
     LOGICAL,INTENT(IN),OPTIONAL  :: Skip
     INTEGER,INTENT(OUT)          :: iStat
-    
+
     !Local variables
     CHARACTER(LEN=ModNameLen+26),PARAMETER :: ThisProcedure = 'ReadMatrixData_AsciiInFile'
     INTEGER                                :: nRow,rowIndx,ErrorCode,nCol
@@ -781,15 +780,15 @@ CONTAINS
     REAL(8),ALLOCATABLE                    :: rData(:)
     INTEGER,ALLOCATABLE                    :: iData(:)
 
-    !Initialize 
+    !Initialize
     iStat = 0
     nRow  = SIZE(Data,DIM=1)
     nCol  = SIZE(Data,DIM=2)
-    
+
     !Return if any of the dimensions is zero
     IF (nRow .EQ. 0) RETURN
     IF (SIZE(Data,DIM=2) .EQ. 0) RETURN
-    
+
     !Skip comments
     IF (PRESENT(Skip)) THEN
         IF (Skip) CALL SkipComment(ThisFile,iStat)
@@ -797,7 +796,7 @@ CONTAINS
         CALL SkipComment(ThisFile,iStat)
     END IF
     IF (iStat .EQ. -1) RETURN
-    
+
     !Mark the initial data line for reference to count the number of data lines used
     CALL MarkInitialDataLine(ThisFile,InitialDataLine,iStat)
     IF (iStat .EQ. -1) RETURN
@@ -816,10 +815,10 @@ CONTAINS
                         CALL ThisFile%IOStatHandler(ErrorCode,iStat=iStat)
                     END IF
                 END IF
-            END DO 
+            END DO
             DEALLOCATE (rData)
 
-            
+
         TYPE IS (INTEGER)
             ALLOCATE (iData(nCol))
             DO rowIndx=1,nRow
@@ -833,25 +832,25 @@ CONTAINS
                         CALL ThisFile%IOStatHandler(ErrorCode,iStat=iStat)
                     END IF
                 END IF
-            END DO    
+            END DO
             DEALLOCATE (iData)
-            
-            
+
+
         CLASS DEFAULT
-            CALL SetLastMessage('Trying to read unrecognized data type from file '//ThisFile%Name//'!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Trying to read unrecognized data type from file '//ThisFile%Name//'!',f_iFatal,ThisProcedure)
             iStat = -1
-    
-    END SELECT 
-            
+
+    END SELECT
+
     IF (PRESENT(Status)) Status = ErrorCode
     IF (iStat .EQ. -1) RETURN
-    
+
     !Adjust the line counter
     CALL FindNumberOfDataLines(ThisFile,InitialDataLine,nRow,iStat=iStat)
-    
+
   END SUBROUTINE ReadMatrixData_AsciiInFile
 
-  
+
   ! -------------------------------------------------------------
   ! --- READ CHARACTER DATA FROM A FILE UNTIL COMMENT LINE IS REACHED
   ! -------------------------------------------------------------
@@ -877,16 +876,16 @@ CONTAINS
     !Determine how many lines of data lines there is between comment lines
     DO
       READ (ThisFile%UnitN,'(A)',IOSTAT=ErrorCode) ACharacter
-      IF (SCAN(CommentIndicators,ACharacter).NE.0 .OR. ErrorCode.EQ.-1) THEN  !Exit DO loop if a comment line or en-of-file is reached
+      IF (SCAN(f_cCommentIndicators,ACharacter).NE.0 .OR. ErrorCode.EQ.-1) THEN  !Exit DO loop if a comment line or en-of-file is reached
         SELECT CASE (NumberOfLinesToRead)
             CASE (0)      !Case when no data lines are found inbetween comment lines
-                BACKSPACE(THisFile%UnitN)
+                BACKSPACE(ThisFile%UnitN)
 
             CASE DEFAULT  !Case when multiple data lines are found inbetween comment lines
                 DO indx=1,NumberOfLinesToRead+1
                     BACKSPACE(ThisFile%UnitN)
-                END DO                       
-        END SELECT  
+                END DO
+        END SELECT
         EXIT
       END IF
       NumberOfLinesToRead = NumberOfLinesToRead + 1
@@ -896,7 +895,7 @@ CONTAINS
     IF (NumberOfLinesToRead .EQ. 0) RETURN
     ALLOCATE (CharacterData(NumberOfLinesToRead),STAT=ErrorCode)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for a set of character data',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for a set of character data',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -915,11 +914,11 @@ CONTAINS
     CLASS(AsciiInFileType)       :: ThisFile
     CHARACTER(LEN=1),INTENT(OUT) :: ACharacter
     INTEGER,INTENT(OUT)          :: iStat
-    
+
     !Local variables
     INTEGER   :: ErrorCode
     CHARACTER :: FiveChars*5
-    
+
     !Initialize
     iStat = 0
 
@@ -943,7 +942,7 @@ CONTAINS
     !Local variables
     INTEGER   :: ErrorCode
     CHARACTER :: ACharacter*1
-    
+
     !INitialize
     iStat = 0
 
@@ -954,30 +953,30 @@ CONTAINS
         IF (ErrorCode .NE. 0) CALL ThisFile%IOStatHandler(ErrorCode,iStat=iStat)
         IF (iStat .EQ. -1) RETURN
         ThisFile%AtLine = ThisFile%AtLine + 1
-        IF (SCAN(CommentIndicators,ACharacter) .NE. 0) THEN
+        IF (SCAN(f_cCommentIndicators,ACharacter) .NE. 0) THEN
             CALL ThisFile%Backspace()
             EXIT
         END IF
     END DO
 
   END SUBROUTINE ReadToComment
-  
-  
+
+
   ! -------------------------------------------------------------
-  ! --- READ SINGLE TIME SERIES DATA  
+  ! --- READ SINGLE TIME SERIES DATA
   ! -------------------------------------------------------------
   SUBROUTINE ReadSingleData_AsciiTSDInFile(ThisFile,Time,Data,FileReadCode,iStat,TraceTime)
-    CLASS(AsciiTSDInFileType)                 :: ThisFile
-    CHARACTER(LEN=TimeStampLength),INTENT(IN) :: Time
-    CLASS(*),INTENT(OUT)                      :: Data
-    INTEGER,INTENT(OUT)                       :: FileReadCode,iStat
-    LOGICAL,OPTIONAL,INTENT(IN)               :: TraceTime
+    CLASS(AsciiTSDInFileType)                    :: ThisFile
+    CHARACTER(LEN=f_iTimeStampLength),INTENT(IN) :: Time
+    CLASS(*),INTENT(OUT)                         :: Data
+    INTEGER,INTENT(OUT)                          :: FileReadCode,iStat
+    LOGICAL,OPTIONAL,INTENT(IN)                  :: TraceTime
 
     !Local variables
-    CHARACTER(LEN=ModNameLen+29),PARAMETER :: ThisProcedure = ModName // 'ReadSingleData_AsciiTSDInFile'
-    INTEGER                                :: iData(1,1)
-    REAL(8)                                :: rData(1,1)
-    
+    CHARACTER(LEN=ModNameLen+29) :: ThisProcedure = ModName // 'ReadSingleData_AsciiTSDInFile'
+    INTEGER                      :: iData(1,1)
+    REAL(8)                      :: rData(1,1)
+
     !Initialize
     iStat = 0
 
@@ -990,7 +989,7 @@ CONTAINS
                 CALL ThisFile%ReadMatrixData_AsciiTSDInFile(Time,iData,FileReadCode,iStat)
             END IF
             IF (FileReadCode .EQ. 0) Data = iData(1,1) !If any value is read, transfer that value to tyhe return variable
-            
+
         TYPE IS (REAL(8))
             IF (PRESENT(TraceTime)) THEN
                 CALL ThisFile%ReadMatrixData_AsciiTSDInFile(Time,rData,FileReadCode,iStat,TraceTime)
@@ -998,31 +997,31 @@ CONTAINS
                 CALL ThisFile%ReadMatrixData_AsciiTSDInFile(Time,rData,FileReadCode,iStat)
             END IF
             IF (FileReadCode .EQ. 0) Data = rData(1,1) !If any value is read, transfer that value to tyhe return variable
-            
+
         CLASS DEFAULT
-            CALL SetLastMessage('Trying to read unrecognized data type from file '//ThisFile%Name//'!',iFatal,ThisProcedure)  
+            CALL SetLastMessage('Trying to read unrecognized data type from file '//ThisFile%Name//'!',f_iFatal,ThisProcedure)
             iStat = -1
 
     END SELECT
-        
+
   END SUBROUTINE ReadSingleData_AsciiTSDInFile
 
-  
+
   ! -------------------------------------------------------------
-  ! --- READ ARRAY TIME SERIES DATA  
+  ! --- READ ARRAY TIME SERIES DATA
   ! -------------------------------------------------------------
   SUBROUTINE ReadArrayData_AsciiTSDInFile(ThisFile,Time,Data,FileReadCode,iStat,TraceTime)
-    CLASS(AsciiTSDInFileType)                 :: ThisFile
-    CHARACTER(LEN=TimeStampLength),INTENT(IN) :: Time
-    CLASS(*),INTENT(OUT)                      :: Data(:)
-    INTEGER,INTENT(OUT)                       :: FileReadCode,iStat
-    LOGICAL,OPTIONAL,INTENT(IN)               :: TraceTime
+    CLASS(AsciiTSDInFileType)                    :: ThisFile
+    CHARACTER(LEN=f_iTimeStampLength),INTENT(IN) :: Time
+    CLASS(*),INTENT(OUT)                         :: Data(:)
+    INTEGER,INTENT(OUT)                          :: FileReadCode,iStat
+    LOGICAL,OPTIONAL,INTENT(IN)                  :: TraceTime
 
     !Local variables
-    CHARACTER(LEN=ModNameLen+28),PARAMETER :: ThisProcedure = ModName // 'ReadArrayData_AsciiTSDInFile'
-    INTEGER                                :: iData(1,SIZE(Data))
-    REAL(8)                                :: rData(1,SIZE(Data))
-    
+    CHARACTER(LEN=ModNameLen+28) :: ThisProcedure = ModName // 'ReadArrayData_AsciiTSDInFile'
+    INTEGER                      :: iData(1,SIZE(Data))
+    REAL(8)                      :: rData(1,SIZE(Data))
+
     !Initialize
     iStat = -1
 
@@ -1035,7 +1034,7 @@ CONTAINS
                 CALL ThisFile%ReadMatrixData_AsciiTSDInFile(Time,iData,FileReadCode,iStat)
             END IF
             IF (FileReadCode .EQ. 0) Data = iData(1,:) !If any value is read, transfer that value to tyhe return variable
-            
+
         TYPE IS (REAL(8))
             IF (PRESENT(TraceTime)) THEN
                 CALL ThisFile%ReadMatrixData_AsciiTSDInFile(Time,rData,FileReadCode,iStat,TraceTime)
@@ -1043,9 +1042,9 @@ CONTAINS
                 CALL ThisFile%ReadMatrixData_AsciiTSDInFile(Time,rData,FileReadCode,iStat)
             END IF
             IF (FileReadCode .EQ. 0) Data = rData(1,:) !If any value is read, transfer that value to tyhe return variable
-                        
+
         CLASS DEFAULT
-            CALL SetLastMessage('Trying to read unrecognized data type from file '//ThisFile%Name//'!',iFatal,ThisProcedure) 
+            CALL SetLastMessage('Trying to read unrecognized data type from file '//ThisFile%Name//'!',f_iFatal,ThisProcedure)
             iStat = -1
 
     END SELECT
@@ -1054,14 +1053,14 @@ CONTAINS
 
 
   ! -------------------------------------------------------------
-  ! --- READ MATRIX TIME SERIES DATA  
+  ! --- READ MATRIX TIME SERIES DATA
   ! -------------------------------------------------------------
   SUBROUTINE ReadMatrixData_AsciiTSDInFile(ThisFile,Time,Data,FileReadCode,iStat,TraceTime)
-    CLASS(AsciiTSDInFileType)                 :: ThisFile
-    CHARACTER(LEN=TimeStampLength),INTENT(IN) :: Time
-    CLASS(*),INTENT(OUT)                      :: Data(:,:)
-    INTEGER,INTENT(OUT)                       :: FileReadCode,iStat
-    LOGICAL,INTENT(IN),OPTIONAL               :: TraceTime
+    CLASS(AsciiTSDInFileType)                    :: ThisFile
+    CHARACTER(LEN=f_iTimeStampLength),INTENT(IN) :: Time
+    CLASS(*),INTENT(OUT)                         :: Data(:,:)
+    INTEGER,INTENT(OUT)                          :: FileReadCode,iStat
+    LOGICAL,INTENT(IN),OPTIONAL                  :: TraceTime
 
     !Local variables
     LOGICAL :: IsTimeTracingRequired,lDataTimeStamped
@@ -1095,20 +1094,20 @@ CONTAINS
     !####################################################
     SUBROUTINE ReadNonTimeStampedMatrixData(iStat)
       INTEGER,INTENT(OUT) :: iStat
-       
-      !If it is time for read action do so and reinitialize NumberOfTimeStepsPassed variable 
-      IF (IsItTimeToRead(ThisFile)) THEN       
+
+      !If it is time for read action do so and reinitialize NumberOfTimeStepsPassed variable
+      IF (IsItTimeToRead(ThisFile)) THEN
           CALL PlacePointerBehindTimeColumn(ThisFile,iStat)  ;  IF (iStat .EQ. -1) RETURN !Place the file pointer behind the time column as an initialization for time series data reading
           CALL ThisFile%ReadMatrixData_AsciiInFile(Data,Skip=.FALSE.,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
           CALL ReinitializeNumberOfTimeStepsPassed(ThisFile)
           CALL IncrementNumberOfReads(ThisFile)
           CALL CheckRewindStatus(ThisFile,iStat)  ;  IF (iStat .EQ. -1) RETURN
-          
+
           SELECT TYPE (Data)
               TYPE IS (REAL(8))
                   !Convert the rate-type data so that the time unit matches the time step of simulation
-                  IF (ALLOCATED(ThisFile%RateTypeData)) & 
-                      CALL AdjustRateTypeData(Data,ThisFile%RateTypeData,ConversionFactor=REAL(ThisFile%NSP,8)) 
+                  IF (ALLOCATED(ThisFile%RateTypeData)) &
+                      CALL AdjustRateTypeData(Data,ThisFile%RateTypeData,ConversionFactor=REAL(ThisFile%NSP,8))
           END SELECT
           FileReadCode = 0
       ELSE
@@ -1124,9 +1123,9 @@ CONTAINS
       INTEGER,INTENT(OUT) :: iStat
 
       !Local variables
-      CHARACTER(LEN=30000)           :: InitialDataLine
-      INTEGER                        :: NDataLines,LineNumberToGo
-      CHARACTER(LEN=TimeStampLength) :: LastDataDate
+      CHARACTER(LEN=30000)              :: InitialDataLine
+      INTEGER                           :: NDataLines,LineNumberToGo
+      CHARACTER(LEN=f_iTimeStampLength) :: LastDataDate
 
       !Check if the NumberOfDataLines is identified; if not identify
       IF (ThisFile%NumberOfDataLines .LT. 0) THEN
@@ -1134,7 +1133,7 @@ CONTAINS
           CALL PlacePointerBehindTimeColumn(ThisFile,iStat)                        ;  IF (iStat .EQ. -1) RETURN
           CALL MarkInitialDataLine(ThisFile,InitialDataLine,iStat)                 ;  IF (iStat .EQ. -1) RETURN
           CALL ThisFile%ReadMatrixData_AsciiInFile(Data,Skip=.FALSE.,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-          NDataLines                 = ThisFile%AtLine - NDataLines    
+          NDataLines                 = ThisFile%AtLine - NDataLines
           ThisFile%NumberOfDataLines = NDataLines
           CALL ThisFile%Backspace(NDataLines)
       END IF
@@ -1152,27 +1151,27 @@ CONTAINS
 
           !Then, read the desired data
           CALL ThisFile%ReadMatrixData_AsciiInFile(Data,Skip=.FALSE.,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-          CALL GoToLine(ThisFile,LineNumberToGo,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN  !Rewind the file to the beginning of data set before the one that was just read; this allows for error-free data reading when there are multiple time steps in-between two measured data 
-        
+          CALL GoToLine(ThisFile,LineNumberToGo,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN  !Rewind the file to the beginning of data set before the one that was just read; this allows for error-free data reading when there are multiple time steps in-between two measured data
+
           !Convert the rate-type data so that the time unit matches the time step of simulation
           SELECT TYPE (Data)
               TYPE IS (REAL(8))
-                  IF (ALLOCATED(ThisFile%RateTypeData)) & 
-                      CALL AdjustRateTypeData(Data,ThisFile%RateTypeData,DataInterval=ThisFile%Interval_InMinutes,LastDataDate=LastDataDate) 
+                  IF (ALLOCATED(ThisFile%RateTypeData)) &
+                      CALL AdjustRateTypeData(Data,ThisFile%RateTypeData,DataInterval=ThisFile%Interval_InMinutes,LastDataDate=LastDataDate)
           END SELECT
-        
-          !If read method is completed, then no error occured  
-          FileReadCode = 0  
+
+          !If read method is completed, then no error occured
+          FileReadCode = 0
       ELSE
           FileReadCode = -1  !Data was not read because it wasn't time to read data
-      END IF 
+      END IF
     END SUBROUTINE ReadTimeStampedMatrixData
 
   END SUBROUTINE ReadMatrixData_AsciiTSDInFile
-  
-  
+
+
   ! -------------------------------------------------------------
-  ! --- READ TIME SERIES DATA FOR A TIME RANGE RANGE FOR A LOCATION  
+  ! --- READ TIME SERIES DATA FOR A TIME RANGE RANGE FOR A LOCATION
   ! -------------------------------------------------------------
   SUBROUTINE ReadTimeSeries_ForTimeRange_AsciiTSDInFile(ThisFile,iRow,iCol,iRowMax,iColMax,cBeginDateAndTime,cEndDateAndTime,nActualOutput,Data,rDataDates,FileReadCode,iStat)
     CLASS(AsciiTSDInFileType)   :: ThisFile
@@ -1182,19 +1181,19 @@ CONTAINS
     CLASS(*),INTENT(OUT)        :: Data(:)
     REAL(8),INTENT(OUT)         :: rDataDates(:)
     INTEGER,INTENT(OUT)         :: nActualOutput,FileReadCode,iStat
-    
+
     !Local variables
-    INTEGER   :: iDataIni(iRowMax,iColMax),iData(iRow,iCol)
-    REAL(8)   :: rDataIni(iRowMax,iColMax),rData(iRow,iCol),JulianDate_ReadDateAndTime
-    CHARACTER :: cReadDateAndTime*TimeStampLength    
-    
+    INTEGER                           :: iDataIni(iRowMax,iColMax),iData(iRow,iCol)
+    REAL(8)                           :: rDataIni(iRowMax,iColMax),rData(iRow,iCol),JulianDate_ReadDateAndTime
+    CHARACTER(LEN=f_iTimeStampLength) :: cReadDateAndTime
+
     !Initialize
     iStat                      = 0
     FileReadCode               = 0
     nActualOutput              = 0
     cReadDateAndTime           = cBeginDateAndTime
     JulianDate_ReadDateAndTime = TimeStampToJulian(cReadDateAndTime)
-    
+
     !First, read data for the output begin date and time to make sure that the file is properly instantiated
     SELECT TYPE (Data)
         TYPE IS (REAL(8))
@@ -1210,53 +1209,53 @@ CONTAINS
             Data(1)       = iDataIni(iRow,iCol)
             rDataDates(1) = ThisFile%JulianDate2
     END SELECT
-        
+
     !Find first input data timestamp at or after the output begin date and time, and increment it to read the next data
     cReadDateAndTime = JulianToTimeStamp(ThisFile%JulianDate2)
-    
+
     !Read the rest of the data
     SELECT TYPE (Data)
         TYPE IS (REAL(8))
             DO
                 !Increment date
                 cReadDateAndTime = IncrementTimeStamp(cReadDateAndTime,ThisFile%Interval_InMinutes,1)
-                
+
                 !Exit if past the end output date and time
                 IF (cReadDateAndTime .TSGT. cEndDateAndTime) EXIT
-                
+
                 !Read data
                 CALL ReadMatrixData_AsciiTSDInFile(ThisFile,cReadDateAndTime,rData,FileReadCode,iStat,TraceTime=.TRUE.)
                 IF (FileReadCode .NE. 0) EXIT
                 nActualOutput             = nActualOutput + 1
                 Data(nActualOutput)       = rData(iRow,iCol)
                 rDataDates(nActualOutput) = ThisFile%JulianDate2
-                
+
             END DO
-        
-            
+
+
         TYPE IS (INTEGER)
             DO
                 !Increment date
                 cReadDateAndTime = IncrementTimeStamp(cReadDateAndTime,ThisFile%Interval_InMinutes,1)
-                
+
                 !Exit if past the end output date and time
                 IF (cReadDateAndTime .TSGT. cEndDateAndTime) EXIT
-                
+
                 !Read data
                 CALL ReadMatrixData_AsciiTSDInFile(ThisFile,cReadDateAndTime,iData,FileReadCode,iStat,TraceTime=.TRUE.)
                 IF (FileReadCode .NE. 0) EXIT
                 nActualOutput             = nActualOutput + 1
                 Data(nActualOutput)       = iData(iRow,iCol)
                 rDataDates(nActualOutput) = ThisFile%JulianDate2
-                
+
             END DO
     END SELECT
-        
+
   END SUBROUTINE ReadTimeSeries_ForTimeRange_AsciiTSDInFile
 
- 
-  
-  
+
+
+
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
@@ -1273,25 +1272,34 @@ CONTAINS
   SUBROUTINE WriteSingleData_AsciiOutFile(ThisFile,Data)
       CLASS(AsciiOutFileType) :: ThisFile
       CLASS(*),INTENT(IN)     :: Data
-      
+
     !Local variables
     CHARACTER(LEN=ModNameLen+28),PARAMETER :: ThisProcedure = ModName // 'WriteSingleData_AsciiOutFile'
-    
+
     SELECT TYPE (Data)
         TYPE IS (CHARACTER(LEN=*))
             WRITE (ThisFile%UnitN,'(A)') TRIM(Data)
-                    
+            
+        TYPE IS (REAL)
+            WRITE (ThisFile%UnitN,*) Data
+
+        TYPE IS (REAL(8))
+            WRITE (ThisFile%UnitN,*) Data
+
+        TYPE IS (INTEGER)
+            WRITE (ThisFile%UnitN,*) Data
+
         TYPE IS (GenericString)
             WRITE (ThisFile%UnitN,'(A)') GenericString_To_String(Data)
 
         CLASS DEFAULT
-            CALL LogMessage('Trying to write unrecognized data type to file '//ThisFile%Name//'!',iWarn,ThisProcedure)  
+            CALL LogMessage('Trying to write unrecognized data type to file '//ThisFile%Name//'!',f_iWarn,ThisProcedure)
 
     END SELECT
 
   END SUBROUTINE WriteSingleData_AsciiOutFile
-  
-  
+
+
   ! -------------------------------------------------------------
   ! --- WRITE ARRAY DATA TO ASCII OUTPUT FILE
   ! -------------------------------------------------------------
@@ -1303,7 +1311,7 @@ CONTAINS
     !Local variables
     CHARACTER(LEN=ModNameLen+27),PARAMETER :: ThisProcedure = ModName // 'WriteArrayData_AsciiOutFile'
     INTEGER                                :: indx
-    
+
     SELECT TYPE (Data)
         TYPE IS (CHARACTER(LEN=*))
             IF (PRESENT(FormatSpec)) THEN
@@ -1311,51 +1319,51 @@ CONTAINS
             ELSE
                 DO indx=1,SIZE(Data)
                     WRITE (ThisFile%UnitN,'(A)') Data(indx)
-                END DO 
+                END DO
             END IF
-            
-            
+
+
         TYPE IS (GenericString)
             DO indx=1,SIZE(Data)
                 WRITE (ThisFile%UnitN,'(A)') GenericString_To_String(Data(indx))
             END DO
-            
+
         CLASS DEFAULT
-            CALL LogMessage('Trying to write unrecognized data type to file '//ThisFile%Name//'!',iWarn,ThisProcedure) 
+            CALL LogMessage('Trying to write unrecognized data type to file '//ThisFile%Name//'!',f_iWarn,ThisProcedure)
 
     END SELECT
-         
+
   END SUBROUTINE WriteArrayData_AsciiOutFile
 
-  
+
   ! -------------------------------------------------------------
-  ! --- WRITE ARRAY TIMES SERIES DATA TO ASCII TSD FILE  
+  ! --- WRITE ARRAY TIMES SERIES DATA TO ASCII TSD FILE
   ! -------------------------------------------------------------
   SUBROUTINE WriteArrayData_AsciiTSDOutFile(ThisFile,SimulationTime,Data,FinalPrint)
     CLASS(AsciiTSDOutFileType)  :: ThisFile
     CHARACTER(LEN=*),INTENT(IN) :: SimulationTime
     CLASS(*),INTENT(IN)         :: Data(:)
     LOGICAL,INTENT(IN),OPTIONAL :: FinalPrint
-    
+
     !Local variables
     CHARACTER(LEN=ModNameLen+30),PARAMETER :: ThisProcedure = ModName // 'WriteArrayData_AsciiTSDOutFile'
     REAL(8)                                :: rData(1,SIZE(Data))
-    
+
     SELECT TYPE (Data)
         TYPE IS (REAL(8))
             rData(1,:) = Data
             CALL ThisFile%WriteMatrixData_AsciiTSDOutFile(SimulationTime,rData,FinalPrint)
-            
+
         CLASS DEFAULT
-            CALL LogMessage ('Array of data type cannot be written to file '//ThisFile%Name//'!',iWarn,ThisProcedure)
-            
+            CALL LogMessage ('Array of data type cannot be written to file '//ThisFile%Name//'!',f_iWarn,ThisProcedure)
+
     END SELECT
-            
+
   END SUBROUTINE WriteArrayData_AsciiTSDOutFile
-  
-  
+
+
   ! -------------------------------------------------------------
-  ! --- WRITE MATRIX TIMES SERIES DATA TO ASCII TSD FILE  
+  ! --- WRITE MATRIX TIMES SERIES DATA TO ASCII TSD FILE
   ! -------------------------------------------------------------
   SUBROUTINE WriteMatrixData_AsciiTSDOutFile(ThisFile,SimulationTime,Data,FinalPrint)
     CLASS(AsciiTSDOutFileType)  :: ThisFile
@@ -1375,15 +1383,15 @@ CONTAINS
     !Advance DataPointer
     DataPointer = DataPointer+1
 
-    !Update the stored results 
+    !Update the stored results
     SELECT TYPE (Data)
         TYPE IS (REAL(8))
             ThisFile%ValuesForOutput(:,:,DataPointer) = Data
         CLASS DEFAULT
-            CALL LogMessage('Array of data type cannot be written to file '//ThisFile%Name//'!',iWarn,ThisProcedure)
+            CALL LogMessage('Array of data type cannot be written to file '//ThisFile%Name//'!',f_iWarn,ThisProcedure)
             RETURN
     END SELECT
-    
+
     !Store simulation time
     ThisFile%TimeArray(DataPointer) = SimulationTime
 
@@ -1407,8 +1415,8 @@ CONTAINS
   END SUBROUTINE WriteMatrixData_AsciiTSDOutFile
 
 
-  
-  
+
+
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
@@ -1428,15 +1436,15 @@ CONTAINS
 
     !Local variables
     CHARACTER :: junk*1
-    
+
     !Initialize
     iStat = 0
 
     !Skip lines that start with 'C','c' or '*'
-    DO 
+    DO
       CALL ReadFirstCharacter(ThisFile,junk,iStat)
       IF (iStat .EQ. -1) RETURN
-      IF (SCAN(CommentIndicators,junk) .EQ. 0) THEN
+      IF (SCAN(f_cCommentIndicators,junk) .EQ. 0) THEN
         CALL ThisFile%Backspace()
         EXIT
       END IF
@@ -1456,13 +1464,13 @@ CONTAINS
     !Local variables
     CHARACTER :: Skip*1
     INTEGER   :: indx,LocalNLinesToSkip
-    
+
     !Initialize
     iStat = 0
     IF (PRESENT(NLinesToSkip)) THEN
         LocalNLinesToSkip = NLinesToSkip
     ELSE
-        LocalNLinesToSkip = 1  
+        LocalNLinesToSkip = 1
     END IF
 
     DO indx=1,LocalNLinesToSkip
@@ -1483,7 +1491,7 @@ CONTAINS
 
     !Local variables
     INTEGER :: indx
-    
+
     !Initialize
     iStat = 0
 
@@ -1506,7 +1514,7 @@ CONTAINS
     !Local variables
     CHARACTER(LEN=ModNameLen+21),PARAMETER :: ThisProcedure = ModName // 'Backspace_AsciiInFile'
     INTEGER                                :: indx,LocalNBackspace
-    
+
     !Initialize
     IF (PRESENT(NBackspace)) THEN
         LocalNBackspace = NBackspace
@@ -1521,35 +1529,35 @@ CONTAINS
     END DO
 
   END SUBROUTINE Backspace_AsciiInFile
-  
-  
+
+
   ! -------------------------------------------------------------
   ! --- REWIND ASCII INPUT FILE
   ! -------------------------------------------------------------
   SUBROUTINE Rewind_AsciiInFile(ThisFile)
     CLASS(AsciiInFileType) :: ThisFile
-    
+
     !Rewind the file
     REWIND(ThisFile%UnitN)
     ThisFile%AtLine=1
 
   END SUBROUTINE Rewind_AsciiInFile
- 
-  
+
+
   ! -------------------------------------------------------------
   ! --- REWIND ASCII OUTPUT FILE
   ! -------------------------------------------------------------
   SUBROUTINE Rewind_AsciiOutFile(ThisFile)
     CLASS(AsciiOutFileType) :: ThisFile
-    
+
     !Rewind the file
     REWIND(ThisFile%UnitN)
-    
+
   END SUBROUTINE Rewind_AsciiOutFile
 
 
   ! -------------------------------------------------------------
-  ! --- MARK THE INITIAL DATA LINE AND RE-POSITION THE POINTER  
+  ! --- MARK THE INITIAL DATA LINE AND RE-POSITION THE POINTER
   ! -------------------------------------------------------------
   SUBROUTINE MarkInitialDataLine(ThisFile,InitialDataLine,iStat)
     CLASS(AsciiInFileType)       :: ThisFile
@@ -1557,7 +1565,7 @@ CONTAINS
     INTEGER,INTENT(OUT)          :: iStat
 
     !Local variables
-    CHARACTER(LEN=LEN(InitialDataLine)+100) :: DataLine  !DataLine is 100 characters longer than InitialDataLine to compensate for the possibilty that pointer was not at the beginning of data line 
+    CHARACTER(LEN=LEN(InitialDataLine)+100) :: DataLine  !DataLine is 100 characters longer than InitialDataLine to compensate for the possibilty that pointer was not at the beginning of data line
     CHARACTER(LEN=20)                       :: FmtStmt
     INTEGER                                 :: Length,PointerPosition
     LOGICAL                                 :: IsToSkip
@@ -1569,9 +1577,9 @@ CONTAINS
 
     !Read the initial data line for reference to compute total number of data lines later
     CALL ReadSingleData_AsciiInFile(ThisFile,InitialDataLine,Skip=IsToSkip,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL ThisFile%Backspace()    !This command positions the pointer at the beginning of the data line 
+    CALL ThisFile%Backspace()    !This command positions the pointer at the beginning of the data line
     CALL ReadSingleData_AsciiInFile(ThisFile,DataLine,Skip=IsToSkip,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL ThisFile%Backspace()     !This command positions the pointer at the beginning of the data line 
+    CALL ThisFile%Backspace()     !This command positions the pointer at the beginning of the data line
     IF (DataLine(1:Length) .EQ. InitialDataLine) THEN
         !The pointer was at the beginning of line
         PointerPosition = 1
@@ -1581,7 +1589,7 @@ CONTAINS
         DO
            IF (DataLine(PointerPosition:PointerPosition+Length-1) .EQ. InitialDataLine) EXIT
            PointerPosition = PointerPosition + 1
-      END DO      
+      END DO
     END IF
 
     !Reset the InitialDataline so that it includes the data line from the beginning
@@ -1593,12 +1601,12 @@ CONTAINS
     READ (ThisFile%UnitN,FmtStmt,ADVANCE='NO')
 
   END SUBROUTINE MarkInitialDataLine
- 
-  
+
+
   ! -------------------------------------------------------------
-  ! --- FIND NUMBER OF DATA LINES READ  
+  ! --- FIND NUMBER OF DATA LINES READ
   ! -------------------------------------------------------------
-  SUBROUTINE FindNumberOfDataLines(ThisFile,InitialDataLine,nrow,NDataLines,iStat) 
+  SUBROUTINE FindNumberOfDataLines(ThisFile,InitialDataLine,nrow,NDataLines,iStat)
     CLASS(AsciiInFileType)       :: ThisFile
     CHARACTER(LEN=*),INTENT(IN)  :: InitialDataLine
     INTEGER,INTENT(IN)           :: nrow
@@ -1617,8 +1625,8 @@ CONTAINS
     DO
         BACKSPACE(ThisFile%UnitN)
         READ (ThisFile%UnitN,'(A)') DataLine ; BACKSPACE(ThisFile%UnitN)
-        IF (DataLine.EQ.InitialDataLine .AND.   & !When the initial reference data line is reached 
-            NumberOfDataLines.GE.nrow         ) & ! -- this line makes sure that a repeating line doesn't fool the method --  
+        IF (DataLine.EQ.InitialDataLine .AND.   & !When the initial reference data line is reached
+            NumberOfDataLines.GE.nrow         ) & ! -- this line makes sure that a repeating line doesn't fool the method --
             EXIT                                  !exit line counting routine
         NumberOfDataLines = NumberOfDataLines + 1
     END DO
@@ -1631,7 +1639,7 @@ CONTAINS
     IF (PRESENT(NDataLines))  NDataLines = NumberOfDataLines
 
   END SUBROUTINE FindNumberOfDataLines
-  
+
 
   ! -------------------------------------------------------------
   ! --- SUBROUTINE TO RE-POSITION THE POINTER AT A SPECIFIC LINE IN AN ASCII TSD FILE
@@ -1644,7 +1652,7 @@ CONTAINS
     !Local variables
     INTEGER :: AtLine
 
-    !Initialize 
+    !Initialize
     AtLine = ThisFile%AtLine
 
     !Go to line
@@ -1653,7 +1661,7 @@ CONTAINS
     ELSE
       CALL ThisFile%Backspace(AtLine-LineNumber)
     END IF
-    
+
   END SUBROUTINE GoToLine
 
 
@@ -1661,19 +1669,19 @@ CONTAINS
   ! --- LOCATE A TIME IN A TIME-STAMPED FILE
   ! -------------------------------------------------------------
   RECURSIVE SUBROUTINE LocateDate(ThisFile,SimulationTime,NLinesInBatch,LineNumber1,LastDataDate,iStat)
-    TYPE(AsciiTSDInFileType)                   :: ThisFile
-    CHARACTER(LEN=TimeStampLength),INTENT(IN)  :: SimulationTime
-    INTEGER,INTENT(IN)                         :: NLinesInBatch
-    INTEGER,INTENT(OUT)                        :: LineNumber1
-    CHARACTER(LEN=TimeStampLength),INTENT(OUT) :: LastDataDate
-    INTEGER,INTENT(OUT)                        :: iStat
+    TYPE(AsciiTSDInFileType)                      :: ThisFile
+    CHARACTER(LEN=f_iTimeStampLength),INTENT(IN)  :: SimulationTime
+    INTEGER,INTENT(IN)                            :: NLinesInBatch
+    INTEGER,INTENT(OUT)                           :: LineNumber1
+    CHARACTER(LEN=f_iTimeStampLength),INTENT(OUT) :: LastDataDate
+    INTEGER,INTENT(OUT)                           :: iStat
 
     !Local variables
-    CHARACTER(LEN=TimeStampLength) :: TimeStamp1,TimeStamp2
-    REAL(8)                        :: JulianDate,JulianDate1,JulianDate2
-    LOGICAL                        :: Year4000Flag,LessThanJulianDate1
-    INTEGER                        :: LineNumber2
-    
+    CHARACTER(LEN=f_iTimeStampLength) :: TimeStamp1,TimeStamp2
+    REAL(8)                           :: JulianDate,JulianDate1,JulianDate2
+    LOGICAL                           :: Year4000Flag,LessThanJulianDate1
+    INTEGER                           :: LineNumber2
+
     !Initialize
     iStat        = 0
     LastDataDate = ''
@@ -1681,11 +1689,11 @@ CONTAINS
     !Convert simulation time stamp to Julian Date
     JulianDate = TimeStampToJulian(SimulationTime)
 
-    !Read in the first time stamp and go to the next time stamp 
+    !Read in the first time stamp and go to the next time stamp
     CALL GetTimeStamp(TimeStamp1,LineNumber1,FirstReading=.TRUE.,iStat=iStat)
     IF (iStat .EQ. -1) RETURN
 
-    !Read in the second time stamp and skip appropriately 
+    !Read in the second time stamp and skip appropriately
     CALL GetTimeStamp(TimeStamp2,LineNumber2,FirstReading=.FALSE.,iStat=iStat)
     IF (iStat .EQ. -1) RETURN
 
@@ -1702,7 +1710,7 @@ CONTAINS
 
     !Check if the JulianDate is between JulianDate1 and JulianDate2
     IF (JulianDateIsInBetween(JulianDate,JulianDate1,JulianDate2,LessThanJulianDate1)) THEN
-      !Bingo; JulianDate is located 
+      !Bingo; JulianDate is located
       !Store time stamps in the array to transfer back to calling program
       CALL AssignLastDataDate(iStat)  ;  IF (iStat .EQ. -1) RETURN
       IF (LessThanJulianDate1) THEN
@@ -1718,24 +1726,24 @@ CONTAINS
       CALL LocateDate(ThisFile,SimulationTime,NLinesInBatch,LineNumber1,LastDataDate,iStat=iStat)
     END IF
 
-  
+
   CONTAINS
 
 
     !#################################################################################
-    ! --- SUBROUTINE TO READ TIME STAMP 
+    ! --- SUBROUTINE TO READ TIME STAMP
     !#################################################################################
     SUBROUTINE GetTimeStamp(TimeStamp,LineNumber,FirstReading,iStat)
-      CHARACTER(LEN=TimeStampLength),INTENT(OUT) :: TimeStamp
-      INTEGER,INTENT(OUT)                        :: LineNumber,iStat
-      LOGICAL,INTENT(IN)                         :: FirstReading
+      CHARACTER(LEN=f_iTimeStampLength),INTENT(OUT) :: TimeStamp
+      INTEGER,INTENT(OUT)                           :: LineNumber,iStat
+      LOGICAL,INTENT(IN)                            :: FirstReading
 
       !Local variables
-      CHARACTER(LEN=ModNameLen+12),PARAMETER :: ThisProcedure = ModName // 'GetTimeStamp'
-      CHARACTER(LEN=150)                     :: ALine
-      INTEGER                                :: Location
-      LOGICAL                                :: lEndOfFile
-      
+      CHARACTER(LEN=ModNameLen+12) :: ThisProcedure = ModName // 'GetTimeStamp'
+      CHARACTER(LEN=150)           :: ALine
+      INTEGER                      :: Location
+      LOGICAL                      :: lEndOfFile
+
       !Initialize
       iStat = 0
 
@@ -1745,7 +1753,7 @@ CONTAINS
         SELECT CASE (FirstReading)
           !If this is a reading for the first time stamp, generate an error
           CASE (.TRUE.)
-            CALL SetLastMessage('End-of-file is reached in file ' //TRIM(ThisFile%Name)//'.',iFatal,ThisProcedure)
+            CALL SetLastMessage('End-of-file is reached in file ' //TRIM(ThisFile%Name)//'.',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
 
@@ -1754,7 +1762,7 @@ CONTAINS
             IF (Year4000Flag) THEN
               !If the data is recycled using Year 4000 flag, rewind file and continue reading data from top
               IF (ThisFile%FileRewound) THEN
-                  CALL SetLastMessage('Simulation date cannot be located in file '//TRIM(ThisFile%Name),iFatal,ThisProcedure)
+                  CALL SetLastMessage('Simulation date cannot be located in file '//TRIM(ThisFile%Name),f_iFatal,ThisProcedure)
                   iStat = -1
                   RETURN
               END IF
@@ -1766,18 +1774,18 @@ CONTAINS
                   !Reposition the pointer at the last time stamp entry
                   CALL ThisFile%Backspace(NLinesInBatch)
               ELSE
-                  CALL SetLastMessage('End-of-file is reached in file ' //TRIM(ThisFile%Name)//'.',iFatal,ThisProcedure)
+                  CALL SetLastMessage('End-of-file is reached in file ' //TRIM(ThisFile%Name)//'.',f_iFatal,ThisProcedure)
                   iStat = -1
                   RETURN
               END IF
             END IF
 
-        END SELECT           
+        END SELECT
       END IF
 
       !Get the line number that the time stamp is found
       LineNumber = ThisFile%AtLine
-      
+
       !Read the data line that stores the time stamp
       CALL ThisFile%ReadSingleData_AsciiInFile(ALine,SKIP=.FALSE.,iStat=iStat)
       IF (iStat .EQ. -1) RETURN
@@ -1788,11 +1796,11 @@ CONTAINS
           CALL SetLastMessage('Error in time stamp in file '                                     //  &
                               TRIM(ThisFile%Name) //  &
                               ' at or around line '                                              //  &
-                              IntToText(ThisFile%AtLine),iFatal,ThisProcedure) 
+                              IntToText(ThisFile%AtLine),f_iFatal,ThisProcedure)
           iStat = -1
           RETURN
       END IF
- 
+
       !Adjust the time stamp if Year4000 flag is used
       CALL AdjustTimeStampWithYear4000(TimeStamp,SimulationTime,Year4000Flag)
 
@@ -1810,7 +1818,7 @@ CONTAINS
     ! --- SUBROUTINE TO CHECK CONSISTENCY BETWEEN JULIAN DATES FOR FILES W/ YEAR 4000 FLAG
     !#################################################################################
     SUBROUTINE CheckJulianDateConsistency()
-      
+
       !Local variables
       INTEGER,PARAMETER :: YearInMinutes=525600
 
@@ -1821,13 +1829,13 @@ CONTAINS
         TimeStamp2  = IncrementTimeStamp(TimeStamp2,-YearInMinutes)
         JulianDate2 = TimeStampToJulian(TimeStamp2)
       END IF
-        
+
       !Make sure that JulianDate2 is greater than JulianDate1; if not increment JulianDate2 by 1 year
       IF (JulianDate2 .LT. JulianDate1) THEN
         TimeStamp2  = IncrementTimeStamp(TimeStamp2,YearInMinutes)
         JulianDate2 = TimeStampToJulian(TimeStamp2)
       END IF
-        
+
     END SUBROUTINE CheckJulianDateConsistency
 
 
@@ -1851,11 +1859,11 @@ CONTAINS
         CALL ThisFile%ReadSingleData_AsciiInFile(ALine,Status=ErrorCode,Skip=.FALSE.,iStat=iStat)
         IF (ErrorCode .EQ. -1) EXIT !End-of-file flag is reached
         CALL CleanSpecialCharacters(ALine)
-        IF (ALine.NE.'' .AND. SCAN(CommentIndicators,ALine(1:1)).EQ.0) THEN     !An empty line is in-between data lines
+        IF (ALine.NE.'' .AND. SCAN(f_cCommentIndicators,ALine(1:1)).EQ.0) THEN     !An empty line is in-between data lines
           IsItEndOfFile = .FALSE.
           EXIT
-        END IF 
-        NLines = NLines+1         
+        END IF
+        NLines = NLines+1
       END DO
       CALL ThisFile%Backspace(NLines)
 
@@ -1871,7 +1879,7 @@ CONTAINS
       !Local variables
       CHARACTER(LEN=ModNameLen+18),PARAMETER :: ThisProcedure = ModName // 'AssignLastDataDate'
       INTEGER                                :: JulianDateBegin,MinutesBegin,JulianDateEnd,MinutesEnd,Interval_InMinutes
-      
+
       !Initialize
       iStat = 0
 
@@ -1887,8 +1895,8 @@ CONTAINS
           IF (Interval_InMinutes.LE.44640 .AND. Interval_InMinutes.GE.40320) Interval_InMinutes = 43200
           !Special treatment for yearly interval
           IF (Interval_InMinutes .GE. 525600) Interval_InMinutes = 525600
-          IF (LocateInList(Interval_InMinutes,RecognizedIntervals_InMinutes) .LT. 1) THEN
-              CALL SetLastMessage('Error in computing data interval for file '//TRIM(ThisFile%Name)//'!',iFatal,ThisProcedure)
+          IF (LocateInList(Interval_InMinutes,f_iRecognizedIntervals_InMinutes) .LT. 1) THEN
+              CALL SetLastMessage('Error in computing data interval for file '//TRIM(ThisFile%Name)//'!',f_iFatal,ThisProcedure)
               iStat = -1
               RETURN
           END IF
@@ -1936,7 +1944,7 @@ CONTAINS
     LOGICAL                      :: IsInBetween
 
     IsInBetween = .FALSE.
-    IF (JulianDate.LE.JulianDate1                                  .OR.  & 
+    IF (JulianDate.LE.JulianDate1                                  .OR.  &
         (JulianDate.GT.JulianDate1 .AND. JulianDate.LE.JulianDate2)    ) &
       IsInBetween = .TRUE.
     IF (PRESENT(LessThanJulianDate1)) THEN
@@ -1950,7 +1958,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- SUBROUTINE TO RE-INITIALIZE THE NUMBER OF TIME STEPS PASSED SINCE THE LAST READ ACTION
   ! -------------------------------------------------------------
-  SUBROUTINE ReinitializeNumberOfTimeStepsPassed(ThisFile) 
+  SUBROUTINE ReinitializeNumberOfTimeStepsPassed(ThisFile)
     TYPE(AsciiTSDInFileType) :: ThisFile
 
     ThisFile%NumberOfTimeStepsPassed = 1
@@ -1961,12 +1969,12 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- SUBROUTINE TO CHECK THE REWIND STATUS OF A FILE
   ! -------------------------------------------------------------
-  SUBROUTINE CheckRewindStatus(ThisFile,iStat) 
+  SUBROUTINE CheckRewindStatus(ThisFile,iStat)
     TYPE(AsciiTSDInFileType) :: ThisFile
     INTEGER,INTENT(OUT)      :: iStat
 
     IF (ThisFile%NFQ .EQ. ThisFile%NumberOfReads) THEN
-        CALL ThisFile%Rewind()                                             
+        CALL ThisFile%Rewind()
         CALL SkipDataBlock(ThisFile,ThisFile%NumberOfBlocksToSkip,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
         CALL SkipComment(ThisFile,iStat=iStat)                                  ;  IF (iStat .EQ. -1) RETURN
         ThisFile%NumberOfReads = 0
@@ -1978,7 +1986,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- SUBROUTINE TO INCREMENT NUMBER OF READ ACTIONS
   ! -------------------------------------------------------------
-  SUBROUTINE IncrementNumberOfReads(ThisFile) 
+  SUBROUTINE IncrementNumberOfReads(ThisFile)
     TYPE(AsciiTSDInFileType) :: ThisFile
 
     ThisFile%NumberOfReads = ThisFile%NumberOfReads + 1
@@ -1989,7 +1997,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- SUBROUTINE TO INCREMENT NUMBER OF TIME STEPS PASSED
   ! -------------------------------------------------------------
-  SUBROUTINE IncrementNumberOfTimeStepsPassed(ThisFile) 
+  SUBROUTINE IncrementNumberOfTimeStepsPassed(ThisFile)
     TYPE(AsciiTSDInFileType) :: ThisFile
 
     ThisFile%NumberOfTimeStepsPassed = ThisFile%NumberOfTimeStepsPassed + 1
@@ -2007,7 +2015,7 @@ CONTAINS
 
     !Local variables
     CHARACTER(LEN=150) :: ALine
-    
+
     !Initialize
     iStat = 0
 
@@ -2020,18 +2028,18 @@ CONTAINS
         CALL ThisFile%Backspace()
         !Is the data non time-stamped?
         IF (.NOT.IsTimeStampValid(ALine)) THEN
-          ThisFile%TimeStampedData = -1 
+          ThisFile%TimeStampedData = -1
           TimeStampStatus          = .FALSE.
-        ELSE 
+        ELSE
           ThisFile%TimeStampedData = 1
           TimeStampStatus          = .TRUE.
-        END IF 
+        END IF
 
       CASE (1)
         TimeStampStatus = .TRUE.
 
       CASE (-1)
-        TimeStampStatus = .FALSE.  
+        TimeStampStatus = .FALSE.
     END SELECT
 
   END SUBROUTINE IsDataTimeStamped
@@ -2045,10 +2053,13 @@ CONTAINS
     INTEGER,INTENT(OUT)                 :: iStat
 
     !Local variables
-    CHARACTER :: ALine*150,ReadFormat*10,Dummy*1,TimeStamp*TimeStampLength
-    INTEGER   :: TimeStampLocation,EndOfTimeColumn
-    LOGICAL   :: IsPreviousBlank,IsCurrentBlank,DummyLogical
-    
+    CHARACTER(150)                :: ALine
+    CHARACTER(10)                 :: ReadFormat
+    CHARACTER(1)                  :: Dummy
+    CHARACTER(f_iTimeStampLength) :: TimeStamp
+    INTEGER                       :: TimeStampLocation,EndOfTimeColumn
+    LOGICAL                       :: IsPreviousBlank,IsCurrentBlank,DummyLogical
+
     !Initialize
     iStat = 0
 
@@ -2062,16 +2073,16 @@ CONTAINS
         CALL ThisFile%ReadData(ALine,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
         CALL ThisFile%Backspace()
         TimeStamp       = StripTimeStamp(ALine,Location=TimeStampLocation)
-        EndOfTimeColumn = TimeStampLocation +TimeStampLength - 1
+        EndOfTimeColumn = TimeStampLocation + f_iTimeStampLength - 1
         !Make a direct read from the file
         WRITE (ReadFormat,'(A)') ADJUSTL('('//TRIM(IntToText(EndOfTimeColumn))//'X)')
-        READ (UNIT=ThisFile%UnitN,FMT=ReadFormat,ADVANCE='NO') 
+        READ (UNIT=ThisFile%UnitN,FMT=ReadFormat,ADVANCE='NO')
 
       CASE (-1) !Non time stamped; i.e. first reading will be an integer
         !Make a direct read from the file
         IsPreviousBlank = .TRUE.
         DO
-          READ (UNIT=ThisFile%UnitN,FMT='(A)',ADVANCE='NO') Dummy 
+          READ (UNIT=ThisFile%UnitN,FMT='(A)',ADVANCE='NO') Dummy
           IF (Dummy.EQ.' ' .OR. Dummy.EQ.ACHAR(9)) THEN
             IsCurrentBlank = .TRUE.
           ELSE
@@ -2079,33 +2090,33 @@ CONTAINS
           END IF
           IF (.NOT.IsPreviousBlank .AND. IsCurrentBlank) EXIT
           IsPreviousBlank = IsCurrentBlank
-        END DO  
-              
+        END DO
+
     END SELECT
 
   END SUBROUTINE PlacePointerBehindTimeColumn
-  
-  
+
+
   ! -------------------------------------------------------------
   ! --- REWIND TIME SERIES INPUT FILE TO THE BEGINNING OF THE TIME SERIES DATA
   ! -------------------------------------------------------------
   SUBROUTINE Rewind_To_BeginningOfTSData(ThisFile,iStat)
     CLASS(AsciiTSDInFileType) :: ThisFile
     INTEGER,INTENT(OUT)       :: iStat
-    
+
     !Local variables
     TYPE(AsciiTSDInFileType) :: Dummy
-    
+
     !Initialize
     iStat = 0
-    
-    CALL ThisFile%Rewind()                                             
+
+    CALL ThisFile%Rewind()
     CALL SkipDataBlock(ThisFile,ThisFile%NumberOfBlocksToSkip,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
     CALL SkipComment(ThisFile,iStat=iStat)                                  ;  IF (iStat .EQ. -1) RETURN
-    
+
     ThisFile%JulianDate1 = Dummy%JulianDate1
     ThisFile%JulianDate2 = Dummy%JulianDate2
-    
+
   END SUBROUTINE Rewind_To_BeginningOfTSData
 
 

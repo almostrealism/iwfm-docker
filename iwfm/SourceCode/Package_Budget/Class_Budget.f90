@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,25 +21,57 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_Budget
-  USE MessageLogger           , ONLY: SetLastMessage         , &
-                                      MessageArray           , &
-                                      iFatal
-  USE GeneralUtilities
-  USE TimeSeriesUtilities     , ONLY: TimeStepType           , &
-                                      TimeStampLength        , &
-                                      NPeriods               , &
-                                      IncrementTimeStamp     , &
-                                      TimeStampToJulian      , &
-                                      CTimeStep_To_RTimeStep , &
-                                      SetCacheLimit          , &
-                                      OPERATOR(.TSGT.)       , &
+  USE MessageLogger           , ONLY: SetLastMessage           , &
+                                      MessageArray             , &
+                                      f_iFatal                   
+  USE GeneralUtilities        , ONLY: LocateInList             , &
+                                      UpperCase                , &
+                                      FirstLocation            , &
+                                      ArrangeText              , &
+                                      FindSubstringInString    , &
+                                      GetArrayData             , &
+                                      ShellSort
+  USE TimeSeriesUtilities     , ONLY: TimeStepType             , &
+                                      f_iTimeStampLength       , &
+                                      NPeriods                 , &
+                                      IncrementTimeStamp       , &
+                                      TimeStampToJulian        , &
+                                      CTimeStep_To_RTimeStep   , &
+                                      SetCacheLimit            , &
+                                      OPERATOR(.TSGT.)         , &
                                       OPERATOR(.TSLT.)
-  USE IOInterface
-  USE Package_Misc            , ONLY: iDataUnitType_Length   , &
-                                      iDataUnitType_Area     , &
-                                      iDataUnitType_Volume
-  USE Budget_Parameters
-  USE Class_BudgetInputFile
+  USE IOInterface             , ONLY: GenericFileType          , &
+                                      f_iTXT                   , &
+                                      f_iDSS                   , &
+                                      f_iHDF                   , &
+                                      f_iUNKNOWN
+  USE Package_Misc            , ONLY: f_iDataUnitType_Length   , &
+                                      f_iDataUnitType_Area     , &
+                                      f_iDataUnitType_Volume
+  USE Budget_Parameters       , ONLY: f_iBudgetDescriptorLen   , &
+                                      f_iMaxLocationNameLen    , &
+                                      f_iColumnHeaderLen       , &
+                                      f_iDSSDataUnitLen        , &
+                                      f_cLocationNameMarker    , &
+                                      f_cAreaMarker            , &
+                                      f_cLengthUnitMarker      , &
+                                      f_cAreaUnitMarker        , &
+                                      f_cVolumeUnitMarker      , &
+                                      f_cDataTypes             , & 
+                                      f_iVR_lwu_PotCUAW        , &
+                                      f_iVR_lwu_AgSupplyReq    , &
+                                      f_iVR_lwu_AgShort        , &
+                                      f_iVR_lwu_AgPump         , &
+                                      f_iVR_lwu_AgDiv          , &
+                                      f_iVR_lwu_AgOthIn        , &
+                                      f_iVR                    , &
+                                      f_iVLB                   , &
+                                      f_iVLE                   , &
+                                      f_iAR                    , &
+                                      f_iLT                  
+  USE Class_BudgetInputFile   , ONLY: BudgetInputFileType      , &
+                                      BudgetHeaderType         , &
+                                      LocationDataType
   IMPLICIT NONE
   
   
@@ -68,10 +100,10 @@ MODULE Class_Budget
   ! --- PRINT INTERVAL DATA TYPE
   ! -------------------------------------------------------------
   TYPE PrintIntervalType
-    CHARACTER(LEN=TimeStampLength) :: PrintBeginDateAndTime = ''
-    CHARACTER(LEN=TimeStampLength) :: PrintEndDateAndTime   = ''
-    REAL(8)                        :: PrintBeginTime        = 0.0
-    REAL(8)                        :: PrintEndTime          = 0.0
+    CHARACTER(LEN=f_iTimeStampLength) :: PrintBeginDateAndTime = ''
+    CHARACTER(LEN=f_iTimeStampLength) :: PrintEndDateAndTime   = ''
+    REAL(8)                           :: PrintBeginTime        = 0.0
+    REAL(8)                           :: PrintEndTime          = 0.0
   END TYPE PrintIntervalType
   
   
@@ -115,9 +147,9 @@ MODULE Class_Budget
   ! -------------------------------------------------------------
   ! --- MISC. ENTITIES
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER                   :: Left   = -1  , &
-                                         Center = 0   , &
-                                         Right  = 1
+  INTEGER,PARAMETER                   :: f_iLeft   = -1  , &
+                                         f_iCenter = 0   , &
+                                         f_iRight  = 1
   INTEGER,PARAMETER                   :: ModNameLen = 14
   CHARACTER(LEN=ModNameLen),PARAMETER :: ModName    = 'Class_Budget::'
   
@@ -318,8 +350,8 @@ CONTAINS
   ! --- GET DESCRIPTOR
   ! -------------------------------------------------------------
   FUNCTION GetDescriptor(Budget) RESULT(cDescriptor)
-    CLASS(BudgetType),INTENT(IN)       :: Budget
-    CHARACTER(LEN=BudgetDescriptorLen) :: cDescriptor
+    CLASS(BudgetType),INTENT(IN)          :: Budget
+    CHARACTER(LEN=f_iBudgetDescriptorLen) :: cDescriptor
     
     cDescriptor = Budget%Header%cBudgetDescriptor
     
@@ -330,9 +362,9 @@ CONTAINS
   ! --- GET LOCATION NAMES
   ! -------------------------------------------------------------
   FUNCTION GetLocationNames(Budget,NLoc) RESULT(cLocationNames)
-    CLASS(BudgetType),INTENT(IN)       :: Budget
-    INTEGER,INTENT(IN)                 :: NLoc
-    CHARACTER(LEN=MaxLocationNameLen)  :: cLocationNames(NLoc)
+    CLASS(BudgetType),INTENT(IN)         :: Budget
+    INTEGER,INTENT(IN)                   :: NLoc
+    CHARACTER(LEN=f_iMaxLocationNameLen) :: cLocationNames(NLoc)
     
     cLocationNames = Budget%Header%cLocationNames
     
@@ -361,9 +393,9 @@ CONTAINS
   ! --- GET BUDGET COLUMN FULL HEADERS
   ! -------------------------------------------------------------
   FUNCTION GetFullColumnHeaders(Budget,iLoc,NDataColumns) RESULT(cHeaders)
-    CLASS(BudgetType),INTENT(IN)   :: Budget
-    INTEGER,INTENT(IN)             :: iLoc,NDataColumns
-    CHARACTER(LEN=ColumnHeaderLen) :: cHeaders(NDataColumns)
+    CLASS(BudgetType),INTENT(IN)      :: Budget
+    INTEGER,INTENT(IN)                :: iLoc,NDataColumns
+    CHARACTER(LEN=f_iColumnHeaderLen) :: cHeaders(NDataColumns)
     
     IF (SIZE(Budget%Header%Locations) .EQ. 1) THEN
         cHeaders = Budget%Header%Locations(1)%cFullColumnHeaders
@@ -410,7 +442,7 @@ CONTAINS
     INTEGER,INTENT(IN)                 :: iLocations(:)
     INTEGER,INTENT(OUT)                :: iStat
     
-    IF (Budget%InputFile%iGetFileType() .EQ. HDF) THEN
+    IF (Budget%InputFile%iGetFileType() .EQ. f_iHDF) THEN
         CALL PrintResults_ReadFromHDFFile(Budget,cOutputFileName,Cache,FactLength,FactArea,FactVolume,LengthUnit,AreaUnit,VolumeUnit,PrintInterval,cPrintTimeStep,iLocations,iStat)
     ELSE
         CALL PrintResults_ReadFromBinFile(Budget,cOutputFileName,Cache,FactLength,FactArea,FactVolume,LengthUnit,AreaUnit,VolumeUnit,PrintInterval,cPrintTimeStep,iLocations,iStat)
@@ -432,26 +464,26 @@ CONTAINS
     INTEGER,INTENT(OUT)                :: iStat
     
     !Local variables
-    CHARACTER(LEN=ModNameLen+28),PARAMETER :: ThisProcedure = ModName // 'PrintResults_ReadFromHDFFile'
-    INTEGER                                :: iLocationsLocal(SIZE(iLocations)),iLoc,indxLocation,NTimeSteps,indxTime, &
-                                              iCol,iFileType,indxS,indxL,NIntervals,DeltaT_InMinutes,ErrorCode,        &
-                                              iDataTypes(SIZE(Budget%Header%DSSOutput%cPathNames)),iTimeCounter,       &
-                                              NDataColumns(Budget%Header%NLocations),iPrintDeltaT_InMinutes,           &
-                                              NPrintIntervals,indxCol,iAgShortCol,iAgSupReqCol,iAgPumpCol,iAgDivCol,   &
-                                              iAgOtherInflowCol,nReadTimes
-    REAL(8)                                :: CurrentTime,DeltaT,rPrintDeltaT,rAgShortPrevious,rAgSupReq_Modified
-    REAL(8),ALLOCATABLE                    :: rTempValues(:,:),rValues(:)
-    CHARACTER(LEN=TimeStampLength)         :: CurrentDateAndTime,PrintTimeStamp,cTime
-    CHARACTER(LEN=LEN(cPrintTimeStep))     :: cPrintTimeStepLocal
-    CHARACTER(LEN=80),TARGET               :: cPathNames(SIZE(Budget%Header%DSSOutput%cPathNames))
-    TYPE(LocationDataType),POINTER         :: pLocationData
-    TYPE(GenericFileType)                  :: OutputFile
-    LOGICAL                                :: TrackTime,lFinalPrint,lFirstAfterPrint,lTimeToPrint,lLWUBudget
-    TYPE(PrintIntervalType)                :: PrintIntervalLocal
-    CHARACTER(LEN=DSSDataUnitLen),TARGET   :: cDataUnits(MAXVAL(Budget%Header%Locations%NDataColumns))
-    CHARACTER(LEN=DSSDataUnitLen),POINTER  :: pcDataUnits(:)
-    CHARACTER(LEN=80),POINTER              :: pcPathNames(:)
-    CHARACTER(:),ALLOCATABLE               :: cFileName
+    CHARACTER(LEN=ModNameLen+28),PARAMETER   :: ThisProcedure = ModName // 'PrintResults_ReadFromHDFFile'
+    INTEGER                                  :: iLocationsLocal(SIZE(iLocations)),iLoc,indxLocation,NTimeSteps,indxTime, &
+                                                iCol,iFileType,indxS,indxL,NIntervals,DeltaT_InMinutes,ErrorCode,        &
+                                                iDataTypes(SIZE(Budget%Header%DSSOutput%cPathNames)),iTimeCounter,       &
+                                                NDataColumns(Budget%Header%NLocations),iPrintDeltaT_InMinutes,           &
+                                                NPrintIntervals,indxCol,iAgShortCol,iAgSupReqCol,iAgPumpCol,iAgDivCol,   &
+                                                iAgOtherInflowCol,nReadTimes
+    REAL(8)                                  :: CurrentTime,DeltaT,rPrintDeltaT,rAgShortPrevious,rAgSupReq_Modified
+    REAL(8),ALLOCATABLE                      :: rTempValues(:,:),rValues(:)
+    CHARACTER(LEN=f_iTimeStampLength)        :: CurrentDateAndTime,PrintTimeStamp,cTime
+    CHARACTER(LEN=LEN(cPrintTimeStep))       :: cPrintTimeStepLocal
+    CHARACTER(LEN=80),TARGET                 :: cPathNames(SIZE(Budget%Header%DSSOutput%cPathNames))
+    TYPE(LocationDataType),POINTER           :: pLocationData
+    TYPE(GenericFileType)                    :: OutputFile
+    LOGICAL                                  :: TrackTime,lFinalPrint,lFirstAfterPrint,lTimeToPrint,lLWUBudget
+    TYPE(PrintIntervalType)                  :: PrintIntervalLocal
+    CHARACTER(LEN=f_iDSSDataUnitLen),TARGET  :: cDataUnits(MAXVAL(Budget%Header%Locations%NDataColumns))
+    CHARACTER(LEN=f_iDSSDataUnitLen),POINTER :: pcDataUnits(:)
+    CHARACTER(LEN=80),POINTER                :: pcPathNames(:)
+    CHARACTER(:),ALLOCATABLE                 :: cFileName
     
     !Initialize
     iStat              = 0
@@ -470,14 +502,14 @@ CONTAINS
     IF (TrackTime) THEN
         CALL CTimeStep_To_RTimeStep(cPrintTimeStepLocal,rPrintDeltaT,iPrintDeltaT_InMinutes,ErrorCode)
         IF (ErrorCode .NE. 0) THEN
-            CALL SetLastMessage(TRIM(cPrintTimeStepLocal)//' is not a recognized time interval for printing of '//TRIM(Budget%Header%cBudgetDescriptor)//'!',iFatal,ThisProcedure) 
+            CALL SetLastMessage(TRIM(cPrintTimeStepLocal)//' is not a recognized time interval for printing of '//TRIM(Budget%Header%cBudgetDescriptor)//'!',f_iFatal,ThisProcedure) 
             iStat = -1
             RETURN
         END IF
         IF (iPrintDeltaT_InMinutes .LT. DeltaT_InMinutes) THEN
             MessageArray(1) = 'Print interval ('//TRIM(cPrintTimeStepLocal)//') for '//TRIM(Budget%Header%cBudgetDescriptor)//' cannot be less than the'
             MessageArray(2) = 'simulation time step ('//TRIM(Budget%Header%TimeStep%Unit)//')!'
-            CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -502,10 +534,10 @@ CONTAINS
     iFileType = OutputFile%iGetFileType()
     
     !Make sure that output file type is recognized
-    IF (iFileType.NE.TXT  .AND. iFileType.NE.DSS) THEN
+    IF (iFileType.NE.f_iTXT  .AND. iFileType.NE.f_iDSS) THEN
         MessageArray(1) = 'Currently budget tables can be printed only to text or DSS files!'
         MessageArray(2) = '('//TRIM(Budget%Header%cBudgetDescriptor)//')'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF  
@@ -514,11 +546,11 @@ CONTAINS
     CALL SetCacheLimit(Cache)
     
     !ASCII output
-    IF (iFileType .EQ. TXT) THEN
+    IF (iFileType .EQ. f_iTXT) THEN
         CALL OutputFile%SetCacheSize(MAXVAL(Budget%Header%Locations%NDataColumns),1,iStat)  ;  IF(iStat .EQ. -1) RETURN
         CALL OutputFile%SetPrintFormatSpec(Budget%Header%ASCIIOutput%cFormatSpec,iStat)     ;  IF(iStat .EQ. -1) RETURN
     !DSS output
-    ELSE IF (iFileType .EQ. DSS) THEN
+    ELSE IF (iFileType .EQ. f_iDSS) THEN
         CALL GetArrayData(Budget%Header%DSSOutput%iDataTypes,iDataTypes,ThisProcedure,iStat)  ;  IF (iStat .EQ. -1) RETURN
         CALL GetArrayData(Budget%Header%Locations%NDataColumns,NDataColumns,ThisProcedure,iStat)  ;  IF (iStat .EQ. -1) RETURN
     END IF
@@ -545,12 +577,12 @@ CONTAINS
       
       !If this is Land & Water Use Budget, there will be special accumulation of some columns
       !Check if this Land & Water Use Budget, and identify special data columns
-      IF (LocateInList(VR_lwu_PotCUAW,pLocationData%iDataColumnTypes) .GT. 0) THEN
-          iAgShortCol       = LocateInList(VR_lwu_AgShort,pLocationData%iDataColumnTypes)
-          iAgSupReqCol      = LocateInList(VR_lwu_AgSupplyReq,pLocationData%iDataColumnTypes)
-          iAgPumpCol        = LocateInList(VR_lwu_AgPump,pLocationData%iDataColumnTypes)
-          iAgDivCol         = LocateInList(VR_lwu_AgDiv,pLocationData%iDataColumnTypes)
-          iAgOtherInflowCol = LocateInList(VR_lwu_AgOthIn,pLocationData%iDataColumnTypes)
+      IF (LocateInList(f_iVR_lwu_PotCUAW,pLocationData%iDataColumnTypes) .GT. 0) THEN
+          iAgShortCol       = LocateInList(f_iVR_lwu_AgShort,pLocationData%iDataColumnTypes)
+          iAgSupReqCol      = LocateInList(f_iVR_lwu_AgSupplyReq,pLocationData%iDataColumnTypes)
+          iAgPumpCol        = LocateInList(f_iVR_lwu_AgPump,pLocationData%iDataColumnTypes)
+          iAgDivCol         = LocateInList(f_iVR_lwu_AgDiv,pLocationData%iDataColumnTypes)
+          iAgOtherInflowCol = LocateInList(f_iVR_lwu_AgOthIn,pLocationData%iDataColumnTypes)
           lLWUBudget        = .TRUE.
       END IF
       
@@ -567,7 +599,7 @@ CONTAINS
       END IF
       
       !If the output is a DSS file, close and open the file, and set the parameters
-      IF (iFileType .EQ. DSS) THEN
+      IF (iFileType .EQ. f_iDSS) THEN
           !Initialize file
           CALL OutputFile%Kill()
           CALL OutputFile%New(FileName=cOutputFileName,InputFile=.FALSE.,IsTSFile=.TRUE.,Descriptor=Budget%Header%cBudgetDescriptor,iStat=iStat)
@@ -581,13 +613,13 @@ CONTAINS
           pcDataUnits => cDataUnits(1:iCol)
 
           !Define data units
-          WHERE (pLocationData%iDataColumnTypes .EQ. LT)
+          WHERE (pLocationData%iDataColumnTypes .EQ. f_iLT)
               pcDataUnits = LengthUnit
-          ELSE WHERE (pLocationData%iDataColumnTypes .EQ. AR)
+          ELSE WHERE (pLocationData%iDataColumnTypes .EQ. f_iAR)
               pcDataUnits = AreaUnit
-          ELSE WHERE (pLocationData%iDataColumnTypes .EQ. VR  .OR.  &
-                      pLocationData%iDataColumnTypes .EQ. VLB .OR.  &
-                      pLocationData%iDataColumnTypes .EQ. VLE       )
+          ELSE WHERE (pLocationData%iDataColumnTypes .EQ. f_iVR  .OR.  &
+                      pLocationData%iDataColumnTypes .EQ. f_iVLB .OR.  &
+                      pLocationData%iDataColumnTypes .EQ. f_iVLE       )
               pcDataUnits = VolumeUnit
           END WHERE
         
@@ -602,7 +634,7 @@ CONTAINS
           !Set the parameters for DSS output
           CALL OutputFile%SetParametersForDSSFile(PathNames=pcPathNames                                         , &
                                                   DataUnit=pcDataUnits                                          , &
-                                                  DataType=cDataTypes(iDataTypes(indxS:indxL))                  , &
+                                                  DataType=f_cDataTypes(iDataTypes(indxS:indxL))                , &
                                                   SimulationStartTime=CurrentDateAndTime                        , &    
                                                   NTimeSteps=NPrintIntervals                                    , &    
                                                   NColumnsOfData=iCol                                           , &
@@ -612,7 +644,7 @@ CONTAINS
       END IF
       
       !Print titles if it is ASCII output
-      IF (iFileType .EQ. TXT) THEN
+      IF (iFileType .EQ. f_iTXT) THEN
           CALL PrintASCIITitles(Budget%Header,iLoc,FactArea,LengthUnit,AreaUnit,VolumeUnit,OutputFile)  
       END IF
       
@@ -659,7 +691,7 @@ CONTAINS
             CALL Budget%InputFile%ReadData(cTime,iLoc,rTempValues,ErrorCode,iStat) 
             IF (ErrorCode .NE. 0) THEN
                 CALL Budget%InputFile%GetName(cFileName)
-                CALL SetLastMessage('Error in reading data from file '//cFileName//'!',iFatal,ThisProcedure)
+                CALL SetLastMessage('Error in reading data from file '//cFileName//'!',f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
@@ -671,9 +703,9 @@ CONTAINS
         !Convert units
         DO indxCol=1,iCol
           SELECT CASE (pLocationData%iDataColumnTypes(indxCol))
-            CASE (VR, VR_lwu_AgPump, VR_lwu_AgDiv, VR_lwu_AgOthIn)
+            CASE (f_iVR, f_iVR_lwu_AgPump, f_iVR_lwu_AgDiv, f_iVR_lwu_AgOthIn)
               rValues(indxCol) = rValues(indxCol) + rTempValues(indxCol,iTimeCounter) * FactVolume
-            CASE (VR_lwu_PotCUAW)
+            CASE (f_iVR_lwu_PotCUAW)
                 IF (NIntervals .EQ. NPrintIntervals) THEN
                     rValues(indxCol) = rTempValues(indxCol,iTimeCounter) * FactVolume
                 ELSE
@@ -681,27 +713,27 @@ CONTAINS
                     IF (rTempValues(iAgSupReqCol,iTimeCounter) .NE. 0.0)  &
                         rValues(indxCol) = rValues(indxCol) + rAgSupReq_Modified * rTempValues(indxCol,iTimeCounter) / rTempValues(iAgSupReqCol,iTimeCounter) * FactVolume
                 END IF
-            CASE (VR_lwu_AgSupplyReq)
+            CASE (f_iVR_lwu_AgSupplyReq)
                 IF (NIntervals .EQ. NPrintIntervals) THEN
                     rValues(indxCol) = rTempValues(indxCol,iTimeCounter) * FactVolume
                 ELSE
                     !Special accumulation method 
                     rValues(indxCol) = rValues(indxCol) + rAgSupReq_Modified * FactVolume
                 END IF
-            CASE (VR_lwu_AgShort)
+            CASE (f_iVR_lwu_AgShort)
                 IF (NIntervals .EQ. NPrintIntervals) THEN
                     rValues(indxCol) = rTempValues(indxCol,iTimeCounter) * FactVolume
                 ELSE
                     !Special accumulation method 
                     rValues(indxCol) = rValues(indxCol) + (rAgSupReq_Modified - rTempValues(iAgPumpCol,iTimeCounter) - rTempValues(iAgDivCol,iTimeCounter) - rTempValues(iAgOtherInflowCol,iTimeCounter)) * FactVolume
                 END IF
-            CASE (VLB)
+            CASE (f_iVLB)
                 IF (lFirstAfterPrint) rValues(indxCol) = rTempValues(indxCol,iTimeCounter) * FactVolume
-            CASE (VLE)
+            CASE (f_iVLE)
                 IF (lTimeToPrint) rValues(indxCol) = rTempValues(indxCol,iTimeCounter) * FactVolume
-            CASE (AR)  
+            CASE (f_iAR)  
                 rValues(indxCol) = rTempValues(indxCol,iTimeCounter) * FactArea
-            CASE (LT)
+            CASE (f_iLT)
                 rValues(indxCol) = rTempValues(indxCol,iTimeCounter) * FactLength
           END SELECT
         END DO
@@ -741,7 +773,7 @@ CONTAINS
       END DO
       
       !For ASCII output print an empty line
-      IF (iFileType .EQ. TXT) THEN
+      IF (iFileType .EQ. f_iTXT) THEN
           CALL OutputFile%WriteData(' '//NEW_LINE('x'))
       END IF
         
@@ -766,26 +798,26 @@ CONTAINS
     INTEGER,INTENT(OUT)                :: iStat
     
     !Local variables
-    CHARACTER(LEN=ModNameLen+28),PARAMETER :: ThisProcedure = ModName // 'PrintResults_ReadFromBinFile'
-    INTEGER                                :: iLocationsLocal(SIZE(iLocations)),iLoc,indxLocation,NTimeSteps,indxTime, &
-                                              iCol,iFileType,indxS,indxL,NIntervals,DeltaT_InMinutes,ErrorCode,        &
-                                              iDataTypes(SIZE(Budget%Header%DSSOutput%cPathNames)),iTotalStorUnits,    &
-                                              NDataColumns(Budget%Header%NLocations),iPrintDeltaT_InMinutes,           &
-                                              NPrintIntervals,indxCol,iAgShortCol,iAgSupReqCol,iAgPumpCol,iAgDivCol,   &
-                                              iAgOtherInflowCol
-    INTEGER(KIND=8)                        :: indxPos,indxPosRelative
-    REAL(8)                                :: CurrentTime,DeltaT,rPrintDeltaT,rAgShortPrevious,rAgSupReq_Modified
-    REAL(8),ALLOCATABLE                    :: rTempValues(:),rValues(:)
-    CHARACTER(LEN=TimeStampLength)         :: CurrentDateAndTime,OutputTime,PrintTimeStamp
-    CHARACTER(LEN=LEN(cPrintTimeStep))     :: cPrintTimeStepLocal
-    CHARACTER(LEN=80),TARGET               :: cPathNames(SIZE(Budget%Header%DSSOutput%cPathNames))
-    TYPE(LocationDataType),POINTER         :: pLocationData
-    TYPE(GenericFileType)                  :: OutputFile
-    LOGICAL                                :: TrackTime,lFinalPrint,lFirstAfterPrint,lTimeToPrint,lLWUBudget
-    TYPE(PrintIntervalType)                :: PrintIntervalLocal
-    CHARACTER(LEN=DSSDataUnitLen),TARGET   :: cDataUnits(MAXVAL(Budget%Header%Locations%NDataColumns))
-    CHARACTER(LEN=DSSDataUnitLen),POINTER  :: pcDataUnits(:)
-    CHARACTER(LEN=80),POINTER              :: pcPathNames(:)
+    CHARACTER(LEN=ModNameLen+28),PARAMETER   :: ThisProcedure = ModName // 'PrintResults_ReadFromBinFile'
+    INTEGER                                  :: iLocationsLocal(SIZE(iLocations)),iLoc,indxLocation,NTimeSteps,indxTime, &
+                                                iCol,iFileType,indxS,indxL,NIntervals,DeltaT_InMinutes,ErrorCode,        &
+                                                iDataTypes(SIZE(Budget%Header%DSSOutput%cPathNames)),iTotalStorUnits,    &
+                                                NDataColumns(Budget%Header%NLocations),iPrintDeltaT_InMinutes,           &
+                                                NPrintIntervals,indxCol,iAgShortCol,iAgSupReqCol,iAgPumpCol,iAgDivCol,   &
+                                                iAgOtherInflowCol
+    INTEGER(KIND=8)                          :: indxPos,indxPosRelative
+    REAL(8)                                  :: CurrentTime,DeltaT,rPrintDeltaT,rAgShortPrevious,rAgSupReq_Modified
+    REAL(8),ALLOCATABLE                      :: rTempValues(:),rValues(:)
+    CHARACTER(LEN=f_iTimeStampLength)        :: CurrentDateAndTime,OutputTime,PrintTimeStamp
+    CHARACTER(LEN=LEN(cPrintTimeStep))       :: cPrintTimeStepLocal
+    CHARACTER(LEN=80),TARGET                 :: cPathNames(SIZE(Budget%Header%DSSOutput%cPathNames))
+    TYPE(LocationDataType),POINTER           :: pLocationData
+    TYPE(GenericFileType)                    :: OutputFile
+    LOGICAL                                  :: TrackTime,lFinalPrint,lFirstAfterPrint,lTimeToPrint,lLWUBudget
+    TYPE(PrintIntervalType)                  :: PrintIntervalLocal
+    CHARACTER(LEN=f_iDSSDataUnitLen),TARGET  :: cDataUnits(MAXVAL(Budget%Header%Locations%NDataColumns))
+    CHARACTER(LEN=f_iDSSDataUnitLen),POINTER :: pcDataUnits(:)
+    CHARACTER(LEN=80),POINTER                :: pcPathNames(:)
     
     !Initialize
     iStat              = 0
@@ -804,14 +836,14 @@ CONTAINS
     IF (TrackTime) THEN
       CALL CTimeStep_To_RTimeStep(cPrintTimeStepLocal,rPrintDeltaT,iPrintDeltaT_InMinutes,ErrorCode)
       IF (ErrorCode .NE. 0) THEN
-          CALL SetLastMessage(TRIM(cPrintTimeStepLocal)//' is not a recognized time interval for printing of '//TRIM(Budget%Header%cBudgetDescriptor)//'!',iFatal,ThisProcedure) 
+          CALL SetLastMessage(TRIM(cPrintTimeStepLocal)//' is not a recognized time interval for printing of '//TRIM(Budget%Header%cBudgetDescriptor)//'!',f_iFatal,ThisProcedure) 
           iStat = -1
           RETURN
       END IF
       IF (iPrintDeltaT_InMinutes .LT. DeltaT_InMinutes) THEN
         MessageArray(1) = 'Print interval ('//TRIM(cPrintTimeStepLocal)//') for '//TRIM(Budget%Header%cBudgetDescriptor)//' cannot be less than the'
         MessageArray(2) = 'simulation time step ('//TRIM(Budget%Header%TimeStep%Unit)//')!'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
       END IF
@@ -836,10 +868,10 @@ CONTAINS
     iFileType = OutputFile%iGetFileType()
     
     !Make sure that output file type is recognized
-    IF (iFileType.NE.TXT  .AND. iFileType.NE.DSS) THEN
+    IF (iFileType.NE.f_iTXT  .AND. iFileType.NE.f_iDSS) THEN
       MessageArray(1) = 'Currently budget tables can be printed only to text or DSS files!'
       MessageArray(2) = '('//TRIM(Budget%Header%cBudgetDescriptor)//')'
-      CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+      CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
       iStat = -1
       RETURN
     END IF  
@@ -848,11 +880,11 @@ CONTAINS
     CALL SetCacheLimit(Cache)
     
     !ASCII output
-    IF (iFileType .EQ. TXT) THEN
+    IF (iFileType .EQ. f_iTXT) THEN
       CALL OutputFile%SetCacheSize(MAXVAL(Budget%Header%Locations%NDataColumns),1,iStat)  ;  IF(iStat .EQ. -1) RETURN
       CALL OutputFile%SetPrintFormatSpec(Budget%Header%ASCIIOutput%cFormatSpec,iStat)     ;  IF(iStat .EQ. -1) RETURN
     !DSS output
-    ELSE IF (iFileType .EQ. DSS) THEN
+    ELSE IF (iFileType .EQ. f_iDSS) THEN
       CALL GetArrayData(Budget%Header%DSSOutput%iDataTypes,iDataTypes,ThisProcedure,iStat)      ;  IF (iStat .EQ. -1) RETURN
       CALL GetArrayData(Budget%Header%Locations%NDataColumns,NDataColumns,ThisProcedure,iStat)  ;  IF (iStat .EQ. -1) RETURN
     END IF
@@ -893,12 +925,12 @@ CONTAINS
       
       !If this is Land & Water Use Budget, there will be special accumulation of some columns
       !Check if this Land & Water Use Budget, and identify special data columns
-      IF (LocateInList(VR_lwu_PotCUAW,pLocationData%iDataColumnTypes) .GT. 0) THEN
-          iAgShortCol       = LocateInList(VR_lwu_AgShort,pLocationData%iDataColumnTypes)
-          iAgSupReqCol      = LocateInList(VR_lwu_AgSupplyReq,pLocationData%iDataColumnTypes)
-          iAgPumpCol        = LocateInList(VR_lwu_AgPump,pLocationData%iDataColumnTypes)
-          iAgDivCol         = LocateInList(VR_lwu_AgDiv,pLocationData%iDataColumnTypes)
-          iAgOtherInflowCol = LocateInList(VR_lwu_AgOthIn,pLocationData%iDataColumnTypes)
+      IF (LocateInList(f_iVR_lwu_PotCUAW,pLocationData%iDataColumnTypes) .GT. 0) THEN
+          iAgShortCol       = LocateInList(f_iVR_lwu_AgShort,pLocationData%iDataColumnTypes)
+          iAgSupReqCol      = LocateInList(f_iVR_lwu_AgSupplyReq,pLocationData%iDataColumnTypes)
+          iAgPumpCol        = LocateInList(f_iVR_lwu_AgPump,pLocationData%iDataColumnTypes)
+          iAgDivCol         = LocateInList(f_iVR_lwu_AgDiv,pLocationData%iDataColumnTypes)
+          iAgOtherInflowCol = LocateInList(f_iVR_lwu_AgOthIn,pLocationData%iDataColumnTypes)
           lLWUBudget        = .TRUE.
       END IF
       
@@ -914,7 +946,7 @@ CONTAINS
       END IF
       
       !If the output is a DSS file, close and open the file, and set the parameters
-      IF (iFileType .EQ. DSS) THEN
+      IF (iFileType .EQ. f_iDSS) THEN
         !Initialize file
         CALL OutputFile%Kill()
         CALL OutputFile%New(FileName=cOutputFileName,InputFile=.FALSE.,IsTSFile=.TRUE.,Descriptor=Budget%Header%cBudgetDescriptor,iStat=iStat)
@@ -928,13 +960,13 @@ CONTAINS
         pcDataUnits => cDataUnits(1:iCol)
 
         !Define data units
-        WHERE (pLocationData%iDataColumnTypes .EQ. LT)
+        WHERE (pLocationData%iDataColumnTypes .EQ. f_iLT)
           pcDataUnits = LengthUnit
-        ELSE WHERE (pLocationData%iDataColumnTypes .EQ. AR)
+        ELSE WHERE (pLocationData%iDataColumnTypes .EQ. f_iAR)
           pcDataUnits = AreaUnit
-        ELSE WHERE (pLocationData%iDataColumnTypes .EQ. VR  .OR.  &
-                    pLocationData%iDataColumnTypes .EQ. VLB .OR.  &
-                    pLocationData%iDataColumnTypes .EQ. VLE       )
+        ELSE WHERE (pLocationData%iDataColumnTypes .EQ. f_iVR  .OR.  &
+                    pLocationData%iDataColumnTypes .EQ. f_iVLB .OR.  &
+                    pLocationData%iDataColumnTypes .EQ. f_iVLE       )
           pcDataUnits = VolumeUnit
         END WHERE
         
@@ -949,7 +981,7 @@ CONTAINS
         !Set the parameters for DSS output
         CALL OutputFile%SetParametersForDSSFile(PathNames=pcPathNames                                         , &
                                                 DataUnit=pcDataUnits                                          , &
-                                                DataType=cDataTypes(iDataTypes(indxS:indxL))                  , &
+                                                DataType=f_cDataTypes(iDataTypes(indxS:indxL))                , &
                                                 SimulationStartTime=CurrentDateAndTime                        , &    
                                                 NTimeSteps=NPrintIntervals                                    , &    
                                                 NColumnsOfData=iCol                                           , &
@@ -959,7 +991,7 @@ CONTAINS
       END IF
       
       !Print titles if it is ASCII output
-      IF (iFileType .EQ. TXT) THEN
+      IF (iFileType .EQ. f_iTXT) THEN
           CALL PrintASCIITitles(Budget%Header,iLoc,FactArea,LengthUnit,AreaUnit,VolumeUnit,OutputFile)  
       END IF
       
@@ -1003,9 +1035,9 @@ CONTAINS
         !Convert units
         DO indxCol=1,iCol
           SELECT CASE (pLocationData%iDataColumnTypes(indxCol))
-            CASE (VR, VR_lwu_AgPump, VR_lwu_AgDiv, VR_lwu_AgOthIn)
+            CASE (f_iVR, f_iVR_lwu_AgPump, f_iVR_lwu_AgDiv, f_iVR_lwu_AgOthIn)
               rValues(indxCol) = rValues(indxCol) + rTempValues(indxCol) * FactVolume
-            CASE (VR_lwu_PotCUAW)
+            CASE (f_iVR_lwu_PotCUAW)
                 IF (NIntervals .EQ. NPrintIntervals) THEN
                     rValues(indxCol) = rTempValues(indxCol) * FactVolume
                 ELSE
@@ -1013,27 +1045,27 @@ CONTAINS
                     IF (rTempValues(iAgSupReqCol) .NE. 0.0)  &
                         rValues(indxCol) = rValues(indxCol) + rAgSupReq_Modified * rTempValues(indxCol) / rTempValues(iAgSupReqCol) * FactVolume
                 END IF
-            CASE (VR_lwu_AgSupplyReq)
+            CASE (f_iVR_lwu_AgSupplyReq)
                 IF (NIntervals .EQ. NPrintIntervals) THEN
                     rValues(indxCol) = rTempValues(indxCol) * FactVolume
                 ELSE
                     !Special accumulation method 
                     rValues(indxCol) = rValues(indxCol) + rAgSupReq_Modified * FactVolume
                 END IF
-            CASE (VR_lwu_AgShort)
+            CASE (f_iVR_lwu_AgShort)
                 IF (NIntervals .EQ. NPrintIntervals) THEN
                     rValues(indxCol) = rTempValues(indxCol) * FactVolume
                 ELSE
                     !Special accumulation method 
                     rValues(indxCol) = rValues(indxCol) + (rAgSupReq_Modified - rTempValues(iAgPumpCol) - rTempValues(iAgDivCol) - rTempValues(iAgOtherInflowCol)) * FactVolume
                 END IF
-            CASE (VLB)
+            CASE (f_iVLB)
               IF (lFirstAfterPrint) rValues(indxCol) = rTempValues(indxCol) * FactVolume
-            CASE (VLE)
+            CASE (f_iVLE)
               IF (lTimeToPrint) rValues(indxCol) = rTempValues(indxCol) * FactVolume
-            CASE (AR)  
+            CASE (f_iAR)  
               rValues(indxCol) = rTempValues(indxCol) * FactArea
-            CASE (LT)
+            CASE (f_iLT)
               rValues(indxCol) = rTempValues(indxCol) * FactLength
           END SELECT
         END DO
@@ -1076,7 +1108,7 @@ CONTAINS
       END DO
       
       !For ASCII output print an empty line
-      IF (iFileType .EQ. TXT) THEN
+      IF (iFileType .EQ. f_iTXT) THEN
           CALL OutputFile%WriteData(' '//NEW_LINE('x'))
       END IF
         
@@ -1111,7 +1143,7 @@ CONTAINS
     LOGICAL                                :: lLWUBudget
     REAL(8)                                :: rOutputDeltaT,rAgShortPrevious,rAgSupReq_Modified,rOutputBeginTime_Work,   &
                                               DeltaT,rNextTime 
-    CHARACTER(LEN=TimeStampLength)         :: cNextDateAndTime,cTime,cOutputBeginDateAndTime_Work
+    CHARACTER(LEN=f_iTimeStampLength)      :: cNextDateAndTime,cTime,cOutputBeginDateAndTime_Work
     CHARACTER(:),ALLOCATABLE               :: cFileName
     TYPE(LocationDataType),POINTER         :: pLocationData
     TYPE(TimeStepType)                     :: DataTimeStep
@@ -1155,12 +1187,12 @@ CONTAINS
     END IF
         
     !If Land & Water Use Budget, set additional parameters
-    IF (LocateInList(VR_lwu_PotCUAW,pLocationData%iDataColumnTypes) .GT. 0) THEN
-        iAgShortCol       = LocateInList(VR_lwu_AgShort,pLocationData%iDataColumnTypes)
-        iAgSupReqCol      = LocateInList(VR_lwu_AgSupplyReq,pLocationData%iDataColumnTypes)
-        iAgPumpCol        = LocateInList(VR_lwu_AgPump,pLocationData%iDataColumnTypes)
-        iAgDivCol         = LocateInList(VR_lwu_AgDiv,pLocationData%iDataColumnTypes)
-        iAgOtherInflowCol = LocateInList(VR_lwu_AgOthIn,pLocationData%iDataColumnTypes)
+    IF (LocateInList(f_iVR_lwu_PotCUAW,pLocationData%iDataColumnTypes) .GT. 0) THEN
+        iAgShortCol       = LocateInList(f_iVR_lwu_AgShort,pLocationData%iDataColumnTypes)
+        iAgSupReqCol      = LocateInList(f_iVR_lwu_AgSupplyReq,pLocationData%iDataColumnTypes)
+        iAgPumpCol        = LocateInList(f_iVR_lwu_AgPump,pLocationData%iDataColumnTypes)
+        iAgDivCol         = LocateInList(f_iVR_lwu_AgDiv,pLocationData%iDataColumnTypes)
+        iAgOtherInflowCol = LocateInList(f_iVR_lwu_AgOthIn,pLocationData%iDataColumnTypes)
         lLWUBudget        = .TRUE.
     END IF
     
@@ -1179,7 +1211,7 @@ CONTAINS
     CALL Budget%InputFile%ReadData(cTime,iLocation,iCol,rReadValues,ErrorCode,iStat)  
     IF (ErrorCode .NE. 0) THEN
         CALL Budget%InputFile%GetName(cFileName)
-        CALL SetLastMessage('Error in reading data from file '//cFileName//'!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in reading data from file '//cFileName//'!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -1195,12 +1227,12 @@ CONTAINS
     
     !Data unit type
     SELECT CASE (pLocationData%iDataColumnTypes(iCol))
-        CASE (VR, VLB , VLE ,VR_lwu_AgPump, VR_lwu_AgDiv, VR_lwu_AgOthIn , VR_lwu_PotCUAW , VR_lwu_AgSupplyReq , VR_lwu_AgShort)
-            iDataUnitType = iDataUnitType_Volume
-        CASE (AR)  
-            iDataUnitType = iDataUnitType_Area
-        CASE (LT)
-            iDataUnitType = iDataUnitType_Length
+        CASE (f_iVR, f_iVLB , f_iVLE , f_iVR_lwu_AgPump , f_iVR_lwu_AgDiv, f_iVR_lwu_AgOthIn , f_iVR_lwu_PotCUAW , f_iVR_lwu_AgSupplyReq , f_iVR_lwu_AgShort)
+            iDataUnitType = f_iDataUnitType_Volume
+        CASE (f_iAR)  
+            iDataUnitType = f_iDataUnitType_Area
+        CASE (f_iLT)
+            iDataUnitType = f_iDataUnitType_Length
     END SELECT   
     
     !If data interval and output interval are the same no need to accumulate, convert units and return
@@ -1210,11 +1242,11 @@ CONTAINS
         DO indxTime=1,NOutputIntervalsEstimate
             !Convert units
             SELECT CASE (pLocationData%iDataColumnTypes(iCol))
-                CASE (VR, VLB , VLE ,VR_lwu_AgPump, VR_lwu_AgDiv, VR_lwu_AgOthIn , VR_lwu_PotCUAW , VR_lwu_AgSupplyReq , VR_lwu_AgShort)
+                CASE (f_iVR, f_iVLB , f_iVLE , f_iVR_lwu_AgPump , f_iVR_lwu_AgDiv , f_iVR_lwu_AgOthIn , f_iVR_lwu_PotCUAW , f_iVR_lwu_AgSupplyReq , f_iVR_lwu_AgShort)
                     rValues(indxTime) = rReadValues(indxTime) * rFact_VL
-                CASE (AR)  
+                CASE (f_iAR)  
                     rValues(indxTime) = rReadValues(indxTime) * rFact_AR
-                CASE (LT)
+                CASE (f_iLT)
                     rValues(indxTime) = rReadValues(indxTime) * rFact_LT
             END SELECT   
             
@@ -1256,9 +1288,9 @@ CONTAINS
 
             !Convert units
             SELECT CASE (pLocationData%iDataColumnTypes(iCol))
-                CASE (VR, VR_lwu_AgPump, VR_lwu_AgDiv, VR_lwu_AgOthIn)
+                CASE (f_iVR , f_iVR_lwu_AgPump , f_iVR_lwu_AgDiv, f_iVR_lwu_AgOthIn)
                     rValues(iOutputTimeCounter) = rValues(iOutputTimeCounter) + rReadValues(iTimeCounter) * rFact_VL
-                CASE (VR_lwu_PotCUAW)
+                CASE (f_iVR_lwu_PotCUAW)
                     IF (NAccumIntervals .EQ. 1) THEN
                         rValues(iOutputTimeCounter) = rReadValues(iTimeCounter) * rFact_VL
                     ELSE
@@ -1266,27 +1298,27 @@ CONTAINS
                         IF (rRead_AgSupReq(iTimeCounter) .NE. 0.0) &
                             rValues(iOutputTimeCounter) = rValues(iOutputTimeCounter) + rAgSupReq_Modified * rReadValues(iTimeCounter) / rRead_AgSupReq(iTimeCounter) * rFact_VL
                     END IF
-                CASE (VR_lwu_AgSupplyReq)
+                CASE (f_iVR_lwu_AgSupplyReq)
                     IF (NAccumIntervals .EQ. 1) THEN
                         rValues(iOutputTimeCounter) = rReadValues(iTimeCounter) * rFact_VL
                     ELSE
                         !Special accumulation method 
                         rValues(iOutputTimeCounter) = rValues(iOutputTimeCounter) + rAgSupReq_Modified * rFact_VL
                     END IF
-                CASE (VR_lwu_AgShort)
+                CASE (f_iVR_lwu_AgShort)
                     IF (NAccumIntervals .EQ. 1) THEN
                         rValues(iOutputTimeCounter) = rReadValues(iTimeCounter) * rFact_VL
                     ELSE
                         !Special accumulation method 
                         rValues(iOutputTimeCounter) = rValues(iOutputTimeCounter) + (rAgSupReq_Modified - rRead_AgPump(iTimeCounter) - rRead_AgDiv(iTimeCounter) - rRead_AgOtherInflow(iTimeCounter)) * rFact_VL
                     END IF
-                CASE (VLB)
+                CASE (f_iVLB)
                     IF (indxTime .EQ. 1) rValues(iOutputTimeCounter) = rReadValues(iTimeCounter) * rFact_VL
-                CASE (VLE)
+                CASE (f_iVLE)
                     IF (indxTime .EQ. NAccumIntervals) rValues(iOutputTimeCounter) = rReadValues(iTimeCounter) * rFact_VL
-                CASE (AR)  
+                CASE (f_iAR)  
                     rValues(iOutputTimeCounter) = rReadValues(iTimeCounter) * rFact_AR
-                CASE (LT)
+                CASE (f_iLT)
                     rValues(iOutputTimeCounter) = rReadValues(iTimeCounter) * rFact_LT
             END SELECT                
             
@@ -1338,7 +1370,7 @@ CONTAINS
     REAL(8),INTENT(OUT)          :: rValues(:,:)
     INTEGER,INTENT(OUT)          :: iStat
     
-    IF (Budget%InputFile%iGetFileType() .EQ. HDF) THEN
+    IF (Budget%InputFile%iGetFileType() .EQ. f_iHDF) THEN
         CALL ReadData_SelectedColumns_FromHDFFile(Budget,iLocation,iReadCols,cOutputInterval,cOutputBeginDateAndTime,cOutputEndDateAndTime,rOutputInterval,rOutputBeginTime,rOutputEndTime,rFact_LT,rFact_AR,rFact_VL,nPopulatedValues,rValues,iStat)
     ELSE
         CALL ReadData_SelectedColumns_FromBinFile(Budget,iLocation,iReadCols,cOutputInterval,cOutputBeginDateAndTime,cOutputEndDateAndTime,rOutputInterval,rOutputBeginTime,rOutputEndTime,rFact_LT,rFact_AR,rFact_VL,nPopulatedValues,rValues,iStat)
@@ -1370,7 +1402,7 @@ CONTAINS
     LOGICAL                                :: lLWUBudget
     REAL(8)                                :: rOutputDeltaT,DeltaT,rOutputBeginTime_Work,rAgSupReq_Modified,rNextTime
     REAL(8)                                :: rAgShortPrevious  
-    CHARACTER(LEN=TimeStampLength)         :: cOutputBeginDateAndTime_Work,cTime,cNextDateAndTime
+    CHARACTER(LEN=f_iTimeStampLength)      :: cOutputBeginDateAndTime_Work,cTime,cNextDateAndTime
     CHARACTER(:),ALLOCATABLE               :: cFileName
     TYPE(LocationDataType),POINTER         :: pLocationData
     TYPE(TimeStepType)                     :: DataTimeStep
@@ -1414,12 +1446,12 @@ CONTAINS
     END IF
         
     !If Land & Water Use Budget, set additional parameters
-    IF (LocateInList(VR_lwu_PotCUAW,pLocationData%iDataColumnTypes) .GT. 0) THEN
-        iAgShortCol       = LocateInList(VR_lwu_AgShort,pLocationData%iDataColumnTypes)
-        iAgSupReqCol      = LocateInList(VR_lwu_AgSupplyReq,pLocationData%iDataColumnTypes)
-        iAgPumpCol        = LocateInList(VR_lwu_AgPump,pLocationData%iDataColumnTypes)
-        iAgDivCol         = LocateInList(VR_lwu_AgDiv,pLocationData%iDataColumnTypes)
-        iAgOtherInflowCol = LocateInList(VR_lwu_AgOthIn,pLocationData%iDataColumnTypes)
+    IF (LocateInList(f_iVR_lwu_PotCUAW,pLocationData%iDataColumnTypes) .GT. 0) THEN
+        iAgShortCol       = LocateInList(f_iVR_lwu_AgShort,pLocationData%iDataColumnTypes)
+        iAgSupReqCol      = LocateInList(f_iVR_lwu_AgSupplyReq,pLocationData%iDataColumnTypes)
+        iAgPumpCol        = LocateInList(f_iVR_lwu_AgPump,pLocationData%iDataColumnTypes)
+        iAgDivCol         = LocateInList(f_iVR_lwu_AgDiv,pLocationData%iDataColumnTypes)
+        iAgOtherInflowCol = LocateInList(f_iVR_lwu_AgOthIn,pLocationData%iDataColumnTypes)
         lLWUBudget        = .TRUE.
     END IF
     
@@ -1433,7 +1465,7 @@ CONTAINS
     CALL Budget%InputFile%ReadData(cTime,iLocation,rTempValues,ErrorCode,iStat)  
     IF (ErrorCode .NE. 0) THEN
         CALL Budget%InputFile%GetName(cFileName)
-        CALL SetLastMessage('Error in reading data from file '//cFileName//'!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in reading data from file '//cFileName//'!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -1449,11 +1481,11 @@ CONTAINS
             DO indxCol=2,nReadColumns+1  !First column is reserved for time  
                 iCol = iReadCols(indxCol-1)
                 SELECT CASE (pLocationData%iDataColumnTypes(iCol))
-                    CASE (VR, VLB , VLE , VR_lwu_AgPump, VR_lwu_AgDiv, VR_lwu_AgOthIn , VR_lwu_PotCUAW , VR_lwu_AgSupplyReq , VR_lwu_AgShort)
+                    CASE (f_iVR , f_iVLB , f_iVLE , f_iVR_lwu_AgPump , f_iVR_lwu_AgDiv , f_iVR_lwu_AgOthIn , f_iVR_lwu_PotCUAW , f_iVR_lwu_AgSupplyReq , f_iVR_lwu_AgShort)
                         rValues(indxCol,indxTime) = rTempValues(iCol,indxTime) * rFact_VL
-                    CASE (AR)  
+                    CASE (f_iAR)  
                         rValues(indxCol,indxTime) = rTempValues(iCol,indxTime) * rFact_AR
-                    CASE (LT)
+                    CASE (f_iLT)
                         rValues(indxCol,indxTime) = rTempValues(iCol,indxTime) * rFact_LT
                 END SELECT                
             END DO Processed_Columns_Loop1
@@ -1504,9 +1536,9 @@ CONTAINS
             DO indxCol=2,nReadColumns+1  !First column is reserved for time  
                 iCol = iReadCols(indxCol-1)
                 SELECT CASE (pLocationData%iDataColumnTypes(iCol))
-                    CASE (VR, VR_lwu_AgPump, VR_lwu_AgDiv, VR_lwu_AgOthIn)
+                    CASE (f_iVR , f_iVR_lwu_AgPump , f_iVR_lwu_AgDiv , f_iVR_lwu_AgOthIn)
                         rValues(indxCol,iOutputTimeCounter) = rValues(indxCol,iOutputTimeCounter) + rTempValues(iCol,iTimeCounter) * rFact_VL
-                    CASE (VR_lwu_PotCUAW)
+                    CASE (f_iVR_lwu_PotCUAW)
                         IF (NAccumIntervals .EQ. 1) THEN
                             rValues(indxCol,iOutputTimeCounter) = rTempValues(iCol,iTimeCounter) * rFact_VL
                         ELSE
@@ -1514,27 +1546,27 @@ CONTAINS
                             IF (rTempValues(iAgSupReqCol,iTimeCounter) .NE. 0.0) &
                                 rValues(indxCol,iOutputTimeCounter) = rValues(indxCol,iOutputTimeCounter) + rAgSupReq_Modified * rTempValues(iCol,iTimeCounter) / rTempValues(iAgSupReqCol,iTimeCounter) * rFact_VL
                         END IF
-                    CASE (VR_lwu_AgSupplyReq)
+                    CASE (f_iVR_lwu_AgSupplyReq)
                         IF (NAccumIntervals .EQ. 1) THEN
                             rValues(indxCol,iOutputTimeCounter) = rTempValues(indxCol,iOutputTimeCounter) * rFact_VL
                         ELSE
                             !Special accumulation method 
                             rValues(indxCol,iOutputTimeCounter) = rValues(indxCol,iOutputTimeCounter) + rAgSupReq_Modified * rFact_VL
                         END IF
-                    CASE (VR_lwu_AgShort)
+                    CASE (f_iVR_lwu_AgShort)
                         IF (NAccumIntervals .EQ. 1) THEN
                             rValues(indxCol,iOutputTimeCounter) = rTempValues(iCol,iTimeCounter) * rFact_VL
                         ELSE
                             !Special accumulation method 
                             rValues(indxCol,iOutputTimeCounter) = rValues(indxCol,iOutputTimeCounter) + (rAgSupReq_Modified - rTempValues(iAgPumpCol,iTimeCounter) - rTempValues(iAgDivCol,iTimeCounter) - rTempValues(iAgOtherInflowCol,iTimeCounter)) * rFact_VL
                         END IF
-                    CASE (VLB)
+                    CASE (f_iVLB)
                         IF (indxTime .EQ. 1) rValues(indxCol,iOutputTimeCounter) = rTempValues(iCol,iTimeCounter) * rFact_VL
-                    CASE (VLE)
+                    CASE (f_iVLE)
                         IF (indxTime .EQ. NAccumIntervals) rValues(indxCol,iOutputTimeCounter) = rTempValues(iCol,iTimeCounter) * rFact_VL
-                    CASE (AR)  
+                    CASE (f_iAR)  
                         rValues(indxCol,iOutputTimeCounter) = rTempValues(iCol,iTimeCounter) * rFact_AR
-                    CASE (LT)
+                    CASE (f_iLT)
                         rValues(indxCol,iOutputTimeCounter) = rTempValues(iCol,iTimeCounter) * rFact_LT
                 END SELECT                
             END DO Processed_Columns_Loop
@@ -1580,18 +1612,18 @@ CONTAINS
     INTEGER,INTENT(OUT)                :: iStat
     
     !Local variables
-    LOGICAL                        :: TrackTime
-    INTEGER                        :: iTotalStorUnits,OutputDeltaT_InMinutes,DeltaT_InMinutes,NAccumIntervals,    &
-                                      indxTime,indxCol,iAgSupReqCol,iAgShortCol,iAgPumpCol,iAgDivCol,iCol,        &
-                                      iAgOtherInflowCol,nReadColumns,iTimeCounter
-    LOGICAL                        :: lLWUBudget
-    INTEGER(KIND=8)                :: indxPos,indxPosRelative
-    REAL(8)                        :: rOutputDeltaT,DeltaT,rOutputBeginTime_Work,rAgSupReq_Modified,rNextTime,    &
-                                      rAgShortPrevious  
-    CHARACTER(LEN=TimeStampLength) :: cOutputBeginDateAndTime_Work,cNextDateAndTime
-    TYPE(LocationDataType),POINTER :: pLocationData
-    TYPE(TimeStepType)             :: DataTimeStep
-    REAL(8),ALLOCATABLE            :: rTempValues(:)
+    LOGICAL                           :: TrackTime
+    INTEGER                           :: iTotalStorUnits,OutputDeltaT_InMinutes,DeltaT_InMinutes,NAccumIntervals,    &
+                                         indxTime,indxCol,iAgSupReqCol,iAgShortCol,iAgPumpCol,iAgDivCol,iCol,        &
+                                         iAgOtherInflowCol,nReadColumns,iTimeCounter
+    LOGICAL                           :: lLWUBudget
+    INTEGER(KIND=8)                   :: indxPos,indxPosRelative
+    REAL(8)                           :: rOutputDeltaT,DeltaT,rOutputBeginTime_Work,rAgSupReq_Modified,rNextTime,    &
+                                         rAgShortPrevious  
+    CHARACTER(LEN=f_iTimeStampLength) :: cOutputBeginDateAndTime_Work,cNextDateAndTime
+    TYPE(LocationDataType),POINTER    :: pLocationData
+    TYPE(TimeStepType)                :: DataTimeStep
+    REAL(8),ALLOCATABLE               :: rTempValues(:)
     
     !Initialize
     iStat            = 0
@@ -1646,12 +1678,12 @@ CONTAINS
     ALLOCATE (rTempValues(pLocationData%NDataColumns))
     
     !If Land & Water Use Budget, set additional parameters
-    IF (LocateInList(VR_lwu_PotCUAW,pLocationData%iDataColumnTypes) .GT. 0) THEN
-        iAgShortCol       = LocateInList(VR_lwu_AgShort,pLocationData%iDataColumnTypes)
-        iAgSupReqCol      = LocateInList(VR_lwu_AgSupplyReq,pLocationData%iDataColumnTypes)
-        iAgPumpCol        = LocateInList(VR_lwu_AgPump,pLocationData%iDataColumnTypes)
-        iAgDivCol         = LocateInList(VR_lwu_AgDiv,pLocationData%iDataColumnTypes)
-        iAgOtherInflowCol = LocateInList(VR_lwu_AgOthIn,pLocationData%iDataColumnTypes)
+    IF (LocateInList(f_iVR_lwu_PotCUAW,pLocationData%iDataColumnTypes) .GT. 0) THEN
+        iAgShortCol       = LocateInList(f_iVR_lwu_AgShort,pLocationData%iDataColumnTypes)
+        iAgSupReqCol      = LocateInList(f_iVR_lwu_AgSupplyReq,pLocationData%iDataColumnTypes)
+        iAgPumpCol        = LocateInList(f_iVR_lwu_AgPump,pLocationData%iDataColumnTypes)
+        iAgDivCol         = LocateInList(f_iVR_lwu_AgDiv,pLocationData%iDataColumnTypes)
+        iAgOtherInflowCol = LocateInList(f_iVR_lwu_AgOthIn,pLocationData%iDataColumnTypes)
         lLWUBudget        = .TRUE.
     END IF
     
@@ -1688,9 +1720,9 @@ CONTAINS
             DO indxCol=2,nReadColumns+1  !First index is reserved for time
                 iCol = iReadCols(indxCol-1)
                 SELECT CASE (pLocationData%iDataColumnTypes(iCol))
-                    CASE (VR, VR_lwu_AgPump, VR_lwu_AgDiv, VR_lwu_AgOthIn)
+                    CASE (f_iVR , f_iVR_lwu_AgPump , f_iVR_lwu_AgDiv , f_iVR_lwu_AgOthIn)
                         rValues(indxCol,iTimeCounter) = rValues(indxCol,iTimeCounter) + rTempValues(iCol) * rFact_VL
-                    CASE (VR_lwu_PotCUAW)
+                    CASE (f_iVR_lwu_PotCUAW)
                         IF (NAccumIntervals .EQ. 1) THEN
                             rValues(indxCol,iTimeCounter) = rTempValues(iCol) * rFact_VL
                         ELSE
@@ -1698,27 +1730,27 @@ CONTAINS
                             IF (rTempValues(iAgSupReqCol) .NE. 0.0) &
                                 rValues(indxCol,iTimeCounter) = rValues(indxCol,iTimeCounter) + rAgSupReq_Modified * rTempValues(iCol) / rTempValues(iAgSupReqCol) * rFact_VL
                         END IF
-                    CASE (VR_lwu_AgSupplyReq)
+                    CASE (f_iVR_lwu_AgSupplyReq)
                         IF (NAccumIntervals .EQ. 1) THEN
                             rValues(indxCol,iTimeCounter) = rTempValues(iCol) * rFact_VL
                         ELSE
                             !Special accumulation method 
                             rValues(indxCol,iTimeCounter) = rValues(indxCol,iTimeCounter) + rAgSupReq_Modified * rFact_VL
                         END IF
-                    CASE (VR_lwu_AgShort)
+                    CASE (f_iVR_lwu_AgShort)
                         IF (NAccumIntervals .EQ. 1) THEN
                             rValues(indxCol,iTimeCounter) = rTempValues(iCol) * rFact_VL
                         ELSE
                             !Special accumulation method 
                             rValues(indxCol,iTimeCounter) = rValues(indxCol,iTimeCounter) + (rAgSupReq_Modified - rTempValues(iAgPumpCol) - rTempValues(iAgDivCol) - rTempValues(iAgOtherInflowCol)) * rFact_VL
                         END IF
-                    CASE (VLB)
+                    CASE (f_iVLB)
                         IF (indxTime .EQ. 1) rValues(indxCol,iTimeCounter) = rTempValues(iCol) * rFact_VL
-                    CASE (VLE)
+                    CASE (f_iVLE)
                         IF (indxTime .EQ. NAccumIntervals) rValues(indxCol,iTimeCounter) = rTempValues(iCol) * rFact_VL
-                    CASE (AR)  
+                    CASE (f_iAR)  
                         rValues(indxCol,iTimeCounter) = rTempValues(iCol) * rFact_AR
-                    CASE (LT)
+                    CASE (f_iLT)
                         rValues(indxCol,iTimeCounter) = rTempValues(iCol) * rFact_LT
                 END SELECT                
             END DO Process_Column_Loop
@@ -1765,7 +1797,7 @@ CONTAINS
     !Local variables
     INTEGER                                        :: TitleLenArray(OutputData%ASCIIOutput%NTitles),indxLine
     CHARACTER(LEN=OutputData%ASCIIOutput%TitleLen) :: cTitles(OutputData%ASCIIOutput%NTitles),cColumnHeaderLine
-    CHARACTER(LEN=ColumnHeaderLen),ALLOCATABLE     :: cColumnHeaders(:,:),cTempHeaders(:)
+    CHARACTER(LEN=f_iColumnHeaderLen),ALLOCATABLE  :: cColumnHeaders(:,:),cTempHeaders(:)
     CHARACTER(LEN=15)                              :: AreaChar
     TYPE(LocationDataType),POINTER                 :: pLocation
     
@@ -1782,20 +1814,20 @@ CONTAINS
     cColumnHeaders = pLocation%cColumnHeaders
     
     !Modify the titles for location name, area, area unit, volume unit and length unit
-    CALL InsertTextToTitles(OutputData%cLocationNames(iLocation),LocationNameMarker,TitleLenArray,cTitles,Center)
-    CALL InsertTextToTitles(LengthUnit,LengthUnitMarker,TitleLenArray,cTitles,Center)
-    CALL InsertTextToTitles(AreaUnit,AreaUnitMarker,TitleLenArray,cTitles,Center)
-    CALL InsertTextToTitles(VolumeUnit,VolumeUnitMarker,TitleLenArray,cTitles,Center)
+    CALL InsertTextToTitles(OutputData%cLocationNames(iLocation),f_cLocationNameMarker,TitleLenArray,cTitles,f_iCenter)
+    CALL InsertTextToTitles(LengthUnit,f_cLengthUnitMarker,TitleLenArray,cTitles,f_iCenter)
+    CALL InsertTextToTitles(AreaUnit,f_cAreaUnitMarker,TitleLenArray,cTitles,f_iCenter)
+    CALL InsertTextToTitles(VolumeUnit,f_cVolumeUnitMarker,TitleLenArray,cTitles,f_iCenter)
     IF (OutputData%NAreas .GT. 0) THEN
       WRITE (AreaChar,'(F15.2)') OutputData%Areas(iLocation)*FactArea
-      CALL InsertTextToTitles(TRIM(ADJUSTL(AreaChar)),AreaMarker,TitleLenArray,cTitles,Center)
+      CALL InsertTextToTitles(TRIM(ADJUSTL(AreaChar)),f_cAreaMarker,TitleLenArray,cTitles,f_iCenter)
     END IF
     
     !Modify column headers for area unit, volume unit and length unit
     DO indxLine=1,OutputData%ASCIIOutput%NColumnHeaderLines
-      CALL InsertTextToTitles(LengthUnit,LengthUnitMarker,pLocation%iColWidth,cColumnHeaders(:,indxLine),Right)
-      CALL InsertTextToTitles(AreaUnit,AreaUnitMarker,pLocation%iColWidth,cColumnHeaders(:,indxLine),Right)
-      CALL InsertTextToTitles(VolumeUnit,VolumeUnitMarker,pLocation%iColWidth,cColumnHeaders(:,indxLine),Right)
+      CALL InsertTextToTitles(LengthUnit,f_cLengthUnitMarker,pLocation%iColWidth,cColumnHeaders(:,indxLine),f_iRight)
+      CALL InsertTextToTitles(AreaUnit,f_cAreaUnitMarker,pLocation%iColWidth,cColumnHeaders(:,indxLine),f_iRight)
+      CALL InsertTextToTitles(VolumeUnit,f_cVolumeUnitMarker,pLocation%iColWidth,cColumnHeaders(:,indxLine),f_iRight)
     END DO
     
     !Print titles
@@ -1830,7 +1862,7 @@ CONTAINS
     CLASS(BudgetType),INTENT(IN) :: Budget
     LOGICAL                      :: lDefined
     
-    IF (Budget%InputFile%iGetFileType() .EQ. UNKNOWN) THEN
+    IF (Budget%InputFile%iGetFileType() .EQ. f_iUNKNOWN) THEN
         lDefined = .FALSE.
     ELSE
         lDefined = .TRUE.
@@ -1843,11 +1875,11 @@ CONTAINS
   ! --- CALCULATE NUMBER OF BYTES TO SKIP TO GET TO A SPECIFIED TIME STEP IN BINARY FILE
   ! -------------------------------------------------------------
   SUBROUTINE StorageUnitsToSkip(OutputData,cDateAndTime,rTime,iUnits,iStat)
-    TYPE(BudgetHeaderType),INTENT(IN)                  :: OutputData
-    CHARACTER(LEN=TimeStampLength),OPTIONAL,INTENT(IN) :: cDateAndTime
-    REAL(8),OPTIONAL,INTENT(IN)                        :: rTime
-    INTEGER(KIND=8),INTENT(OUT)                        :: iUnits
-    INTEGER,INTENT(OUT)                                :: iStat
+    TYPE(BudgetHeaderType),INTENT(IN)                     :: OutputData
+    CHARACTER(LEN=f_iTimeStampLength),OPTIONAL,INTENT(IN) :: cDateAndTime
+    REAL(8),OPTIONAL,INTENT(IN)                           :: rTime
+    INTEGER(KIND=8),INTENT(OUT)                           :: iUnits
+    INTEGER,INTENT(OUT)                                   :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+18) :: ThisProcedure = ModName // 'StorageUnitsToSkip'
@@ -1860,7 +1892,7 @@ CONTAINS
     IF (OutputData%TimeStep%TrackTime) THEN
       !Make sure the right data is supplied
       IF (.NOT. PRESENT(cDateAndTime)) THEN
-          CALL SetLastMessage('Print-out date and time for time-tracked budget output is missing!',iFatal,ThisProcedure) 
+          CALL SetLastMessage('Print-out date and time for time-tracked budget output is missing!',f_iFatal,ThisProcedure) 
           iStat = -1
           RETURN
       END IF
@@ -1869,7 +1901,7 @@ CONTAINS
     ELSE
       !Make sure the right data is supplied
       IF (.NOT. PRESENT(rTime)) THEN
-          CALL SetLastMessage('Print-out time for non-time-tracked budget output is missing!',iFatal,ThisProcedure) 
+          CALL SetLastMessage('Print-out time for non-time-tracked budget output is missing!',f_iFatal,ThisProcedure) 
           iStat = -1
           RETURN
       END IF
@@ -1925,16 +1957,16 @@ CONTAINS
     
     !Insert data location name and output units into titles
     IF (PRESENT(cAlternativeLocationName)) THEN
-        CALL InsertTextToTitles(TRIM(cAlternativeLocationName),LocationNameMarker,TitleLenArray,cTitles,Center)
+        CALL InsertTextToTitles(TRIM(cAlternativeLocationName),f_cLocationNameMarker,TitleLenArray,cTitles,f_iCenter)
     ELSE
-        CALL InsertTextToTitles(Budget%Header%cLocationNames(iLocation),LocationNameMarker,TitleLenArray,cTitles,Center)
+        CALL InsertTextToTitles(Budget%Header%cLocationNames(iLocation),f_cLocationNameMarker,TitleLenArray,cTitles,f_iCenter)
     END IF
-    CALL InsertTextToTitles(LengthUnit,LengthUnitMarker,TitleLenArray,cTitles,Center)
-    CALL InsertTextToTitles(AreaUnit,AreaUnitMarker,TitleLenArray,cTitles,Center)
-    CALL InsertTextToTitles(VolumeUnit,VolumeUnitMarker,TitleLenArray,cTitles,Center)
+    CALL InsertTextToTitles(LengthUnit,f_cLengthUnitMarker,TitleLenArray,cTitles,f_iCenter)
+    CALL InsertTextToTitles(AreaUnit,f_cAreaUnitMarker,TitleLenArray,cTitles,f_iCenter)
+    CALL InsertTextToTitles(VolumeUnit,f_cVolumeUnitMarker,TitleLenArray,cTitles,f_iCenter)
     IF (Budget%Header%NAreas .GT. 0) THEN
         WRITE (AreaChar,'(F15.2)') Budget%Header%Areas(iLocation)*FactArea
-        CALL InsertTextToTitles(TRIM(ADJUSTL(AreaChar)),AreaMarker,TitleLenArray,cTitles,Center)
+        CALL InsertTextToTitles(TRIM(ADJUSTL(AreaChar)),f_cAreaMarker,TitleLenArray,cTitles,f_iCenter)
     END IF
        
   END SUBROUTINE ModifyASCIITitles
@@ -1951,12 +1983,12 @@ CONTAINS
     INTEGER   :: iColWidthArray(SIZE(cFullColumnHeaders))
     
     !Initialize
-    iColWidthArray = ColumnHeaderLen
+    iColWidthArray = f_iColumnHeaderLen
     
     !Insert output units into column headers
-    CALL InsertTextToTitles(LengthUnit,LengthUnitMarker,iColWidthArray,cFullColumnHeaders,Right)
-    CALL InsertTextToTitles(AreaUnit,AreaUnitMarker,iColWidthArray,cFullColumnHeaders,Right)
-    CALL InsertTextToTitles(VolumeUnit,VolumeUnitMarker,iColWidthArray,cFullColumnHeaders,Right)
+    CALL InsertTextToTitles(LengthUnit,f_cLengthUnitMarker,iColWidthArray,cFullColumnHeaders,f_iRight)
+    CALL InsertTextToTitles(AreaUnit,f_cAreaUnitMarker,iColWidthArray,cFullColumnHeaders,f_iRight)
+    CALL InsertTextToTitles(VolumeUnit,f_cVolumeUnitMarker,iColWidthArray,cFullColumnHeaders,f_iRight)
 
   END SUBROUTINE ModifyFullColumnHeaders
   
@@ -2023,12 +2055,13 @@ CONTAINS
         cTitleBack = cTitles(indx)(BeginLocation+LEN(cMarker):LEN(cTitles(indx)))
         cTitles(indx) = cTitles(indx)(1:BeginLocation-1) // TRIM(cText) // TRIM(cTitleBack)
         SELECT CASE(iOrientation)
-          CASE (Left)
+          CASE (f_iLeft)
             cTitles(indx) = ADJUSTL(cTitles(indx))
-          CASE (Center)
+          
+          CASE (f_iCenter)
             cTitles(indx) = ArrangeText(TRIM(cTitles(indx)),iLenArray(indx))
             
-          CASE (Right)
+          CASE (f_iRight)
             cTitles(indx) = ADJUSTR(cTitles(indx)(1:iLenArray(indx)))
         END SELECT
         CALL FindSubStringInString(cMarker,cTitles(indx),BeginLocation)
@@ -2048,10 +2081,10 @@ CONTAINS
     INTEGER,INTENT(OUT)               :: iStat
 
     !Local variables
-    CHARACTER(LEN=ModNAmeLen+17)   :: ThisProcedure = ModName // 'AdjustOutputTimes'
-    REAL(8)                        :: DataEndTime,TempTime,rStartTime,DeltaT
-    CHARACTER(LEN=TimeStampLength) :: DataEndDateAndTime,TempTimeStamp,cStartDateAndTime
-    INTEGER                        :: NIntervals,DeltaT_InMinutes,NTimeSteps
+    CHARACTER(LEN=ModNameLen+17)      :: ThisProcedure = ModName // 'AdjustOutputTimes'
+    REAL(8)                           :: DataEndTime,TempTime,rStartTime,DeltaT
+    CHARACTER(LEN=f_iTimeStampLength) :: DataEndDateAndTime,TempTimeStamp,cStartDateAndTime
+    INTEGER                           :: NIntervals,DeltaT_InMinutes,NTimeSteps
     
     !Initialize
     iStat      = 0
@@ -2067,7 +2100,7 @@ CONTAINS
       IF (PrintInterval%PrintBeginDateAndTime .TSGT. PrintInterval%PrintEndDateAndTime) THEN
         MessageArray(1)='Starting date and time for budget table print-out for '//TRIM(OutputData%cBudgetDescriptor)
         MessageArray(2)='cannot be less than the ending date and time!'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
       END IF
@@ -2104,7 +2137,7 @@ CONTAINS
       IF (PrintInterval%PrintBeginTime .GT. PrintInterval%PrintEndTime) THEN
         MessageArray(1)='Starting time for budget table print-out '//TRIM(OutputData%cBudgetDescriptor)
         MessageArray(2)='cannot be less than the ending time!'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
       END IF

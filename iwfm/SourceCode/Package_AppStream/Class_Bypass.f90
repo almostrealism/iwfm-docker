@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,20 +21,31 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_Bypass
-  USE MessageLogger                , ONLY: SetLastMessage      , &
-                                           EchoProgress        , &
-                                           MessageArray        , &
-                                           iFatal
-  USE GeneralUtilities
-  USE IOInterface
-  USE Package_Misc                 , ONLY: PairedDataType      , &
-                                           FlowDestinationType , &
-                                           FlowDest_Outside    , &
-                                           FlowDest_StrmNode   , &
-                                           FlowDEst_Lake
-  USE Class_RechargeZone
-  USE Class_StrmReach
-  USE Package_ComponentConnectors
+  USE MessageLogger                , ONLY: SetLastMessage                          , &
+                                           EchoProgress                            , &
+                                           MessageArray                            , &
+                                           f_iFatal                                  
+  USE GeneralUtilities             , ONLY: StripTextUntilCharacter                 , &
+                                           CleanSpecialCharacters                  , & 
+                                           IntToText                               , &
+                                           GetArrayData                            , &
+                                           AllocArray                              , &
+                                           ConvertID_To_Index                      , &
+                                           LocateInList
+  USE IOInterface                  , ONLY: GenericFileType                                               
+  USE Package_Misc                 , ONLY: PairedDataType                          , &
+                                           FlowDestinationType                     , &
+                                           f_iFlowDest_Outside                     , &
+                                           f_iFlowDest_StrmNode                    , &
+                                           f_iFlowDest_Lake                           
+  USE Class_RechargeZone           , ONLY: RechargeZoneType                        , &
+                                           RechargeZone_New                        
+  USE Class_StrmReach              , ONLY: StrmReachType                           , &
+                                           StrmReach_GetReachNumber                , &
+                                           StrmReach_GetReaches_InUpstrmNetwork    , &
+                                           StrmReach_CompileReachNetwork
+  USE Package_ComponentConnectors  , ONLY: StrmLakeConnectorType                   , &
+                                           f_iBypassToLakeFlow
   IMPLICIT NONE
   
   
@@ -54,30 +65,33 @@ MODULE Class_Bypass
   ! -------------------------------------------------------------
   PRIVATE
   PUBLIC :: BypassType                 ,  &
-            Bypass_New                 
+            Bypass_New                 ,  &
+            f_iDestTypes
             
   
   ! -------------------------------------------------------------
   ! --- BYPASS DATA TYPE
   ! -------------------------------------------------------------
   TYPE,EXTENDS(FlowDestinationType) :: BypassType
-    CHARACTER(LEN=20)      :: cName           = ''
-    INTEGER                :: iNode_Exp       = 0
-    INTEGER                :: iColBypass      = 0
-    TYPE(PairedDataType)   :: RatingTable
-    REAL(8)                :: FracRecvLoss    = 0.0
-    REAL(8)                :: FracNonRecvLoss = 0.0
-    REAL(8)                :: Bypass_Out      = 0.0
-    REAL(8)                :: Bypass_Recieved = 0.0
-    REAL(8)                :: RecvLoss        = 0.0
-    REAL(8)                :: NonRecvLoss     = 0.0
-    TYPE(RechargeZoneType) :: Recharge
+      INTEGER                :: ID              = 0
+      CHARACTER(LEN=20)      :: cName           = ''
+      INTEGER                :: iNode_Exp       = 0
+      INTEGER                :: iColBypass      = 0
+      TYPE(PairedDataType)   :: RatingTable
+      REAL(8)                :: FracRecvLoss    = 0.0
+      REAL(8)                :: FracNonRecvLoss = 0.0
+      REAL(8)                :: Bypass_Out      = 0.0
+      REAL(8)                :: Bypass_Received = 0.0
+      REAL(8)                :: RecvLoss        = 0.0
+      REAL(8)                :: NonRecvLoss     = 0.0
+      TYPE(RechargeZoneType) :: Recharge
   END TYPE BypassType
   
   
   ! -------------------------------------------------------------
   ! --- MISC. ENTITIES
   ! -------------------------------------------------------------
+  INTEGER,PARAMETER                   :: f_iDestTypes(3) = [f_iFlowDest_Outside , f_iFlowDest_StrmNode , f_iFlowDest_Lake]
   INTEGER,PARAMETER                   :: ModNameLen = 14
   CHARACTER(LEN=ModNameLen),PARAMETER :: ModName    = 'Class_Bypass::'
   
@@ -102,10 +116,10 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INSTANTIATE A SET OF BYPASSES FROM A FILE
   ! -------------------------------------------------------------
-  SUBROUTINE Bypass_New(cFileName,NStrmNodes,Reaches,StrmLakeConnector,TUnitStrmFlow,TUnitBypass,Bypasses,iStat)
+  SUBROUTINE Bypass_New(cFileName,NStrmNodes,iStrmNodeIDs,iElemIDs,iLakeIDs,Reaches,StrmLakeConnector,TUnitStrmFlow,TUnitBypass,Bypasses,iStat)
     CHARACTER(LEN=*),INTENT(IN)         :: cFileName
-    INTEGER,INTENT(IN)                  :: NStrmNodes
-    TYPE(StrmReachType),INTENT(IN)      :: Reaches(:)
+    INTEGER,INTENT(IN)                  :: NStrmNodes,iStrmNodeIDs(NStrmNodes),iElemIDs(:),iLakeIDs(:)
+    TYPE(StrmReachType)                 :: Reaches(:)
     TYPE(StrmLakeConnectorType)         :: StrmLakeConnector
     CHARACTER(LEN=6),INTENT(OUT)        :: TUnitStrmFlow,TUnitBypass
     TYPE(BypassType),TARGET,ALLOCATABLE :: Bypasses(:)
@@ -114,12 +128,12 @@ CONTAINS
     !Local variables
     CHARACTER(LEN=ModNameLen+10) :: ThisProcedure = ModName // 'Bypass_New'
     INTEGER                      :: NBypass,ErrorCode,indxBypass,ID,iNum,NPoints,iReach_Exp,iReach_Imp, &
-                                    iDest,indxBypass1
+                                    indxBypass1,iNode_Exp_ID,iDest_ID
     TYPE(GenericFileType)        :: InFile
     REAL(8)                      :: FactFlow,FactBypass,DummyArray(7)
     CHARACTER                    :: ALine*2000
     TYPE(BypassType),POINTER     :: pBypass
-    INTEGER,PARAMETER            :: iDestTypes(3) = [FlowDest_Outside,FlowDest_StrmNode,FlowDest_Lake]
+    INTEGER,ALLOCATABLE          :: iBypassIDs(:),iBypassOutReachIDs(:),iBypassInReachIDs(:),iReachesUpNetwork(:)
     REAL(8),ALLOCATABLE          :: Dummy2DRealArray(:,:)
     
     !Initialize
@@ -140,9 +154,9 @@ CONTAINS
     
     !Number of bypasses
     CALL InFile%ReadData(NBypass,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    ALLOCATE (Bypasses(NBypass) , STAT=ErrorCode)
+    ALLOCATE (Bypasses(NBypass) , iBypassIDs(NBypass) , iBypassOutReachIDs(NBypass) , iBypassInReachIDs(NBypass) , STAT=ErrorCode)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for bypasses!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for bypasses!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -167,13 +181,14 @@ CONTAINS
         CALL GetArrayData(ALine,DummyArray,'by-pass number '//TRIM(IntToText(indxBypass)),iStat)
         IF (iStat .EQ. -1) RETURN
         
-        pBypass           => Bypasses(indxBypass)
-        pBypass%cName     =  ALine(1:20)
-        ID                =  INT(DummyArray(1))
-        pBypass%iNode_Exp =  INT(DummyArray(2))
-        pBypass%iDestType =  INT(DummyArray(3))
-        pBypass%iDest     =  INT(DummyArray(4))
-        iNum              =  INT(DummyArray(5))
+        pBypass             => Bypasses(indxBypass)
+        pBypass%cName       =  ALine(1:20)
+        ID                  =  INT(DummyArray(1))
+        pBypass%ID          =  ID
+        iNode_Exp_ID        =  INT(DummyArray(2))
+        pBypass%iDestType   =  INT(DummyArray(3))
+        iDest_ID            =  INT(DummyArray(4))
+        iNum                =  INT(DummyArray(5))
         IF (iNum .GT. 0) THEN
             Bypasses(indxBypass)%iColBypass = iNum
         ELSEIF (iNum .LT. 0) THEN
@@ -182,71 +197,88 @@ CONTAINS
         pBypass%FracRecvLoss    = DummyArray(6)
         pBypass%FracNonRecvLoss = DummyArray(7)
         
-        !Make sure bypasses are entered sequentially
-        IF (ID .NE. indxBypass) THEN 
-            MessageArray(1) = 'Bypass specifications should be entered sequentialy.'
-            MessageArray(2) = 'Bypass number expected='//TRIM(IntToText(indxBypass))
-            MessageArray(3) = 'Bypass number entered ='//TRIM(IntToText(ID))
-            CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-            iStat = -1
-            RETURN
-        END IF
+        !Make sure same ID is not used more than once
+        DO indxBypass1=1,indxBypass-1
+            IF (ID .EQ. Bypasses(indxBypass1)%ID) THEN
+                CALL SetLastMessage('Bypass ID '//TRIM(IntToText(ID))//' is used more than once!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+        END DO
         
-        !Make sure that iNode_Exp is greater than zero and less than the number of simulated stream nodes
-        IF (pBypass%iNode_Exp.LT.0  .OR. pBypass%iNode_Exp.GT.NStrmNodes) THEN
-            MessageArray(1) = 'For bypass ID '//TRIM(IntToText(ID))//', stream node number ('//TRIM(IntToText(pBypass%iNode_Exp))//') where the '
-            MessageArray(2) = 'bypass originates from must be a simulated stream node!' 
-            CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
-            iStat = -1
-            RETURN
+        !Make sure that iNode_Exp_ID is a legit stream node
+        IF (iNode_Exp_ID .GT. 0) THEN
+            CALL ConvertID_To_Index(iNode_Exp_ID,iStrmNodeIDs,pBypass%iNode_Exp)
+            IF (pBypass%iNode_Exp .EQ. 0) THEN
+                MessageArray(1) = 'For bypass ID '//TRIM(IntToText(ID))//', stream node number ('//TRIM(IntToText(iNode_Exp_ID))//') where the '
+                MessageArray(2) = 'bypass originates from is not in the model!' 
+                CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+        ELSE
+            pBypass%iNode_Exp = 0
         END IF
         
         !Make sure that a rating table is not specified if the bypass is coming from outside the model area
-        IF (pBypass%iNode_Exp .EQ. 0) THEN
+        IF (iNode_Exp_ID .EQ. 0) THEN
             IF (pBypass%iColBypass .EQ. 0) THEN
-                MessageArray(1) = 'A rating table for bypass number '//TRIM(IntToText(indxBypass))//' ,which originates '
+                MessageArray(1) = 'A rating table for bypass number '//TRIM(IntToText(ID))//' ,which originates '
                 MessageArray(2) = 'outside the model area, cannot be specifed!'
-                CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+                CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
         END IF
         
         !Make sure destination type is recognized
-        IF (.NOT. ANY(pBypass%iDestType.EQ.iDestTypes)) THEN
-            CALL SetLastMessage('Destination type for bypass number '//TRIM(IntToText(indxBypass))//' is not recognized!',iFatal,ThisProcedure)
+        IF (.NOT. ANY(pBypass%iDestType.EQ.f_iDestTypes)) THEN
+            CALL SetLastMessage('Destination type for bypass number '//TRIM(IntToText(ID))//' is not recognized!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
            
-        !Make sure that destination stream node is simulated
-        IF (pBypass%iDestType .EQ. FlowDest_StrmNode) THEN
-            IF (pBypass%iDest.LT.1   .OR.  pBypass%iDest.GT.NStrmNodes) THEN
-                MessageArray(1) = 'For bypass ID '//TRIM(IntToText(ID))//', stream node number ('//TRIM(IntToText(pBypass%iDest))//') where the '
-                MessageArray(2) = 'bypass is delivered to must be a simulated stream node!' 
-                CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
-                iStat = -1
-                RETURN
-            END IF
-        END IF
+        !Make sure that destination location is simulated
+        SELECT CASE (pBypass%iDestType)
+            CASE (f_iFlowDest_StrmNode)
+                CALL ConvertID_To_Index(iDest_ID,iStrmNodeIDs,pBypass%iDest)
+                IF (pBypass%iDest .EQ. 0) THEN
+                    CALL SetLastMessage('Stream node '//TRIM(IntToText(iDest_ID))//' that receives water from bypass '//TRIM(IntToText(ID))//' is not in the model!',f_iFatal,ThisProcedure)
+                    iStat = -1
+                    RETURN
+                END IF
+            CASE (f_iFlowDest_Lake)
+                CALL ConvertID_To_Index(iDest_ID,iLakeIDs,pBypass%iDest)
+                IF (pBypass%iDest .EQ. 0) THEN
+                    CALL SetLastMessage('Lake '//TRIM(IntToText(iDest_ID))//' that receives water from bypass '//TRIM(IntToText(ID))//' is not in the model!',f_iFatal,ThisProcedure)
+                    iStat = -1
+                    RETURN
+                END IF
+        END SELECT
         
         !Check if the exporting stream node is upstream from the importing stream node
         IF (pBypass%iNode_Exp .GT. 0) THEN
-            IF (pBypass%iDestType .EQ. FlowDest_StrmNode) THEN
-                !Find the stream reach that the exporting stream node belongs to
-                iReach_Exp = StrmReach_GetReachNumber(pBypass%iNode_Exp,Reaches)
-                !Find the stream reach that the importing stream node belongs to
-                iReach_Imp = StrmReach_GetReachNumber(pBypass%iDest,Reaches)
+            IF (pBypass%iDestType .EQ. f_iFlowDest_StrmNode) THEN
+                iReach_Exp = StrmReach_GetReachNumber(pBypass%iNode_Exp,Reaches)  !Stream reach that the exporting stream node belongs to
+                iReach_Imp = StrmReach_GetReachNumber(pBypass%iDest,Reaches)      !Stream reach that the importing stream node belongs to
+                
+                !If exporting and importing nodes are in the same reach
                 IF (iReach_Exp .EQ. iReach_Imp) THEN
                     IF (pBypass%iNode_Exp .GE. pBypass%iDest) THEN
-                        CALL SetLastMessage('Upstream and downstream nodes for by-pass '//TRIM(IntToText(indxBypass))//' is out of sequence.',iFatal,ThisProcedure)
+                        CALL SetLastMessage('Exporting stream node for by-pass '//TRIM(IntToText(ID))//' must be upstream from the receiving node!',f_iFatal,ThisProcedure)
                         iStat = -1
                         RETURN
                     END IF
-                ELSEIF (iReach_Exp .GT. iReach_Imp) THEN
-                    CALL SetLastMessage('Upstream and downstream reaches for by-pass '//TRIM(IntToText(indxBypass))//' is out of sequence.',iFatal,ThisProcedure)
-                    iStat = -1
-                    RETURN
+                
+                !If exporting and importing nodes are in different reaches (checks only if the nodes are in the same reach network)
+                ELSE IF (iReach_Exp .GT. iReach_Imp) THEN
+                    DEALLOCATE (iReachesUpNetwork,STAT=ErrorCode)
+                    CALL StrmReach_GetReaches_InUpstrmNetwork(Reaches,iReach_Exp,iReachesUpNetwork)
+                    IF (LocateInList(iReach_Imp,iReachesUpNetwork) .GT. 0) THEN
+                        CALL SetLastMessage('Exporting stream node for by-pass '//TRIM(IntToText(ID))//' must be upstream from the receiving node!',f_iFatal,ThisProcedure)
+                        iStat = -1
+                        RETURN
+                    END IF
                 END IF
             END IF
         END IF
@@ -254,9 +286,9 @@ CONTAINS
         !Make sure there is only one bypass from a node
         DO indxBypass1=1,indxBypass-1
             IF (pBypass%iNode_Exp .EQ. Bypasses(indxBypass1)%iNode_Exp) THEN
-                MessageArray(1) = 'There are multiple bypassses defined at stream node '//TRIM(IntToText(pBypass%iNode_Exp))//'.'
+                MessageArray(1) = 'There are multiple bypassses defined at stream node '//TRIM(IntToText(iNode_Exp_ID))//'.'
                 MessageArray(2) = 'Only one bypass is allowed from a stream node!'
-                CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+                CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
@@ -265,7 +297,7 @@ CONTAINS
         !Compute and save the points in rating table for bypass flows
         IF (iNum .LT. 0) THEN
             IF (NPoints .LT. 2) THEN
-                CALL SetLastMessage('There should be at least 2 rating table points for bypass '//TRIM(IntToText(indxBypass))//'!',iFatal,ThisProcedure)
+                CALL SetLastMessage('There should be at least 2 rating table points for bypass '//TRIM(IntToText(ID))//'!',f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
@@ -277,26 +309,39 @@ CONTAINS
         
         !Destination region
         SELECT CASE (pBypass%iDestType)
-            CASE (FlowDest_Outside)
+            CASE (f_iFlowDest_Outside)
                 !Do nothing
-            CASE (FlowDest_StrmNode)
-                iDest               = pBypass%iDest
+            CASE (f_iFlowDest_StrmNode)
                 pBypass%iDestRegion = 0
-            CASE (FlowDest_Lake)
-                !Do nothing as far as the regions go, but add the bypass-lake connection to stream-lake connector database
-                CALL StrmLakeConnector%AddData(iBypassToLakeType,indxBypass,pBypass%iDest)
+            CASE (f_iFlowDest_Lake)
+                CALL StrmLakeConnector%AddData(f_iBypassToLakeFlow,indxBypass,pBypass%iDest)
         END SELECT
+            
+        !Store export and import reach IDs for stream network processing
+        iBypassOutReachIDs(indxBypass) = StrmReach_GetReachNumber(pBypass%iNode_Exp,Reaches)
+        IF (iBypassOutReachIDs(indxBypass) .GT. 0) iBypassOutReachIDs(indxBypass) = Reaches(iBypassOutReachIDs(indxBypass))%ID
+        IF (pBypass%iDestType .EQ. f_iFlowDest_StrmNode) THEN
+            iBypassInReachIDs(indxBypass) = StrmReach_GetReachNumber(pBypass%iDest,Reaches)
+            IF (iBypassInReachIDs(indxBypass) .GT. 0) iBypassInReachIDs(indxBypass) = Reaches(iBypassInReachIDs(indxBypass))%ID
+        ELSE
+            iBypassInReachIDs(indxBypass) = 0
+        END IF
+        
     END DO
     
     !Read the recharge zones
-    CALL RechargeZone_New(NBypass,InFile,Bypasses%Recharge,iStat)
+    iBypassIDs = Bypasses%ID
+    CALL RechargeZone_New(NBypass,iBypassIDs,iElemIDs,'Bypass',InFile,Bypasses%Recharge,iStat)
     IF (iStat .EQ. -1) RETURN
 
     !Close file
     CALL InFile%Kill()
     
+    !Re-order reaches based on bypasses
+    CALL StrmReach_CompileReachNetwork(SIZE(Reaches),Reaches,iStat,iBypassOutReachIDs,iBypassInReachIDs)
+    
     !Free memory
-    DEALLOCATE (Dummy2DRealArray , STAT=ErrorCode)
+    DEALLOCATE (Dummy2DRealArray , iBypassIDs , iBypassOutReachIDs , iBypassInReachIDs , STAT=ErrorCode)
     
   END SUBROUTINE Bypass_New 
   

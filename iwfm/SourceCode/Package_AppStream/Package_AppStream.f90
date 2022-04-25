@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -26,20 +26,25 @@ MODULE Package_AppStream
   USE MessageLogger               , ONLY: SetLastMessage                                   , &
                                           EchoProgress                                     , &
                                           MessageArray                                     , &
-                                          iFatal                                           
-  USE GeneralUtilities                                                                     
+                                          f_iFatal                                         , &
+                                          f_iWarn
+  USE GeneralUtilities            , ONLY: IntToText                                        , &
+                                          FindSubStringInString                            , &
+                                          StripTextUntilCharacter 
   USE TimeSeriesUtilities         , ONLY: TimeStepType                                     , &
                                           NPeriods                                         , &
-                                          GetJulianDatesBetweenTimeStampsWithTimeIncrement 
-  USE IOInterface                 
-  USE Package_Discretization      , ONLY: NodeType                                         , &
-                                          StratigraphyType                                 , &
+                                          IncrementTimeStamp                               , & 
+                                          CTimeStep_To_RTimeStep                           , &
+                                          GetJulianDatesBetweenTimeStampsWithTimeIncrement , &
+                                          f_iTimeStampLength 
+  USE IOInterface                 , ONLY: GenericFileType                                  , &
+                                          DoesFileExist                                    , &
+                                          f_iUNKNOWN
+  USE Package_Discretization      , ONLY: StratigraphyType                                 , &
                                           AppGridType                                      
   USE Package_Misc                , ONLY: FlowDestinationType                              , &
-                                          iDataUnitType_Length                             , &
-                                          iDataUnitType_Volume                             , &
-                                          iLocationType_StrmReach                          , &
-                                          iLocationType_StrmHydObs                         
+                                          f_iDataUnitType_Length                           , &
+                                          f_iDataUnitType_Volume                           
   USE Package_ComponentConnectors , ONLY: StrmLakeConnectorType                            , &
                                           StrmGWConnectorType                              , &
                                           SupplyType                                       , &
@@ -47,17 +52,24 @@ MODULE Package_AppStream
                                           SupplyDestinationConnectorType                   , &
                                           Supply_GetDestination                            
   USE StrmHydrograph              , ONLY: iHydFlow                                         
-  USE Class_BaseAppStream         , ONLY: BaseAppStreamType                                
+  USE Class_BaseAppStream         , ONLY: BaseAppStreamType                                , &                       
+                                          f_iBudgetType_StrmNode                           , &
+                                          f_iBudgetType_StrmReach                          , &
+                                          f_iBudgetType_DiverDetail 
   USE Class_AppStream_v40         , ONLY: AppStream_v40_Type                               
   USE Class_AppStream_v41         , ONLY: AppStream_v41_Type                               
   USE Class_AppStream_v42         , ONLY: AppStream_v42_Type                               
+  USE Class_AppStream_v421        , ONLY: AppStream_v421_Type                               
   USE Class_AppStream_v50         , ONLY: AppStream_v50_Type                               
-  USE Class_AppDiverBypass        , ONLY: iDiverRecvLoss                                   , &
-                                          iBypassRecvLoss                                  , &
-                                          iAllRecvLoss                                     
+  USE Class_AppDiverBypass        , ONLY: f_iDiverRecvLoss                                 , &
+                                          f_iBypassRecvLoss                                , &
+                                          f_iAllRecvLoss                                     
   USE Class_Diversion             , ONLY: DiversionType                                    , & 
-                                          DeliveryType                                     
-  USE Package_Matrix              , ONLY: MatrixType
+                                          DeliveryType   
+  USE Class_StrmNodeBudget        , ONLY: StrmNodeBudgetType   
+  USE Package_Matrix              , ONLY: MatrixType                                       , &
+                                          ConnectivityListType
+  USE Package_Budget              , ONLY: BudgetType
   IMPLICIT NONE
   
   
@@ -76,10 +88,14 @@ MODULE Package_AppStream
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC :: AppStreamType   , &
-            iDiverRecvLoss  , &
-            iBypassRecvLoss , &
-            iAllRecvLoss  
+  PUBLIC :: AppStreamType             , &
+            StrmNodeBudgetType        , & 
+            f_iDiverRecvLoss          , &
+            f_iBypassRecvLoss         , &
+            f_iAllRecvLoss            , &
+            f_iBudgetType_StrmNode    , &
+            f_iBudgetType_StrmReach   , &
+            f_iBudgetType_DiverDetail 
   
   
   ! -------------------------------------------------------------
@@ -96,49 +112,90 @@ MODULE Package_AppStream
       PROCEDURE,PASS   :: AppStream_SetDynamicComponent
       PROCEDURE,PASS   :: AppStream_SetAllComponents
       PROCEDURE,PASS   :: AppStream_SetAllComponentsWithoutBinFile           
-      PROCEDURE,PASS   :: Kill                             => AppStream_Kill
-      PROCEDURE,PASS   :: GetNDataList_AtLocationType      
-      PROCEDURE,PASS   :: GetDataList_AtLocationType       => AppStream_GetDataList_AtLocationType
-      PROCEDURE,PASS   :: GetLocationsWithData             => AppStream_GetLocationsWithData
-      PROCEDURE,PASS   :: GetSubDataList_AtLocation        => AppStream_GetSubDataList_AtLocation
-      PROCEDURE,PASS   :: GetModelData_AtLocation_FromFullModel
-      PROCEDURE,NOPASS :: GetModelData_AtLocation_FromInquiryModel
-      PROCEDURE,PASS   :: GetNames                         => AppStream_GetNames
-      PROCEDURE,PASS   :: GetNHydrographs                  => AppStream_GetNHydrographs
-      PROCEDURE,PASS   :: GetHydrographCoordinates         => AppStream_GetHydrographCoordinates
-      PROCEDURE,PASS   :: GetNStrmNodes                    => AppStream_GetNStrmNodes                 
-      PROCEDURE,PASS   :: GetNReaches                      => AppStream_GetNReaches                  
-      PROCEDURE,PASS   :: GetNDiver                        => AppStream_GetNDiver                    
-      PROCEDURE,PASS   :: GetNBypass                       => AppStream_GetNBypass
-      PROCEDURE,PASS   :: GetUpstrmNodeFlags               => AppStream_GetUpstrmNodeFlags
-      PROCEDURE,PASS   :: GetReachUpstrmNode               => AppStream_GetReachUpstrmNode           
-      PROCEDURE,PASS   :: GetReachDownstrmNode             => AppStream_GetReachDownstrmNode         
-      PROCEDURE,PASS   :: GetReachOutflowDestType          => AppStream_GetReachOutflowDestType      
-      PROCEDURE,PASS   :: GetReachOutflowDest              => AppStream_GetReachOutflowDest          
-      PROCEDURE,PASS   :: GetStageFlowRatingTable          => AppStream_GetStageFlowRatingTable 
-      PROCEDURE,PASS   :: GetDiversionDestination          => AppStream_GetDiversionDestination
+      PROCEDURE,PASS   :: Kill                            
+      PROCEDURE,PASS   :: GetHydrograph_GivenAppStream
+      PROCEDURE,NOPASS :: GetHydrograph_GivenFile
+      PROCEDURE,PASS   :: GetBudget_List
+      PROCEDURE,PASS   :: GetBudget_NColumns
+      PROCEDURE,PASS   :: GetBudget_ColumnTitles
+      PROCEDURE,PASS   :: GetBudget_MonthlyFlows_GivenAppStream
+      PROCEDURE,NOPASS :: GetBudget_MonthlyFlows_GivenFile
+      PROCEDURE,PASS   :: GetBudget_TSData
+      PROCEDURE,PASS   :: GetStrmNodeIDs                   
+      PROCEDURE,PASS   :: GetStrmNodeID                    
+      PROCEDURE,PASS   :: GetStrmNodeIndex
+      PROCEDURE,PASS   :: GetReaches_ForStrmNodes
+      PROCEDURE,PASS   :: GetNames                         
+      PROCEDURE,PASS   :: GetHydrographTypeList
+      PROCEDURE,PASS   :: GetNHydrographs 
+      PROCEDURE,PASS   :: GetHydrographIDs                 
+      PROCEDURE,PASS   :: GetHydrographCoordinates   
+      PROCEDURE,PASS   :: GetNStrmNodes_WithBudget
+      PROCEDURE,PASS   :: GetStrmNodeIDs_WithBudget
+      PROCEDURE,PASS   :: GetNStrmNodes                                    
+      PROCEDURE,PASS   :: GetNReaches                                        
+      PROCEDURE,PASS   :: GetNDiver                         
+      PROCEDURE,PASS   :: GetDiversionIDs
+      PROCEDURE,PASS   :: GetDeliveryAtDiversion
+      PROCEDURE,PASS   :: GetDiversionsForDeliveries
+      PROCEDURE,PASS   :: GetActualDiversions_AtSomeDiversions
+      PROCEDURE,PASS   :: GetActualDiversions_AtSomeNodes
+      PROCEDURE,PASS   :: GetDiversionsExportNodes
+      PROCEDURE,PASS   :: GetDiversionPurpose
+      PROCEDURE,PASS   :: GetDiversionDestination          
+      PROCEDURE,PASS   :: GetNBypass                       
+      PROCEDURE,PASS   :: GetBypassDiverOriginDestData
+      PROCEDURE,PASS   :: GetBypassIDs
+      PROCEDURE,PASS   :: GetBypassReceived_FromABypass
+      PROCEDURE,PASS   :: GetNetBypassInflows
+      PROCEDURE,PASS   :: GetStrmBypassInflows
+      PROCEDURE,PASS   :: GetBypassOutflows
+      PROCEDURE,PASS   :: GetReachIDs  
+      PROCEDURE,PASS   :: GetReachNNodes
+      PROCEDURE,PASS   :: GetReachIndex
+      PROCEDURE,PASS   :: GetUpstrmNodeFlags
+      PROCEDURE,PASS   :: GetNUpstrmNodes
+      PROCEDURE,PASS   :: GetUpstrmNodes
+      PROCEDURE,PASS   :: GetStrmConnectivity              
+      PROCEDURE,PASS   :: GetReachUpstrmNode                        
+      PROCEDURE,PASS   :: GetReachDownstrmNode 
+      PROCEDURE,PASS   :: GetNReaches_InUpstrmNetwork
+      PROCEDURE,PASS   :: GetReaches_InUpstrmNetwork
+      PROCEDURE,PASS   :: GetReachNUpstrmReaches
+      PROCEDURE,PASS   :: GetReachUpstrmReaches
+      PROCEDURE,PASS   :: GetReachStrmNodes
+      PROCEDURE,PASS   :: GetReachOutflowDestType           
+      PROCEDURE,PASS   :: GetReachOutflowDest                       
+      PROCEDURE,PASS   :: GetStageFlowRatingTable           
       PROCEDURE,PASS   :: GetSupply                        => AppStream_GetSupply                    
       PROCEDURE,PASS   :: GetSupplySpecs                   => AppStream_GetSupplySpecs                    
       PROCEDURE,PASS   :: GetSupplyAdjustData              => AppStream_GetSupplyAdjustData          
       PROCEDURE,PASS   :: GetElemRecvLosses                => AppStream_GetElemRecvLosses            
       PROCEDURE,PASS   :: GetElemsWithRecvLoss             => AppStream_GetElemsWithRecvLoss         
       PROCEDURE,PASS   :: GetMaxDiversionRank              => AppStream_GetMaxDiversionRank          
-      PROCEDURE,PASS   :: GetiColAdjust                    => AppStream_GetiColAdjust                
-      PROCEDURE,PASS   :: GetFlows                         => AppStream_GetFlows                     
-      PROCEDURE,PASS   :: GetHeads                         => AppStream_GetHeads 
-      PROCEDURE,PASS   :: GetStages                        => AppStream_GetStages
-      PROCEDURE,PASS   :: GetHead_AtOneNode                => AppStream_GetHead_AtOneNode                     
-      PROCEDURE,NOPASS :: GetVersion                       => AppStream_GetVersion                   
+      PROCEDURE,PASS   :: GetiColAdjust                     
+      PROCEDURE,PASS   :: GetInflow_AtANode
+      PROCEDURE,PASS   :: GetInflows_AtSomeNodes
+      PROCEDURE,PASS   :: GetInflows_AtSomeInflows
+      PROCEDURE,PASS   :: GetNInflows
+      PROCEDURE,PASS   :: GetInflowNodes
+      PROCEDURE,PASS   :: GetInflowIDs
+      PROCEDURE,PASS   :: GetFlow                                               
+      PROCEDURE,PASS   :: GetFlows                                              
+      PROCEDURE,PASS   :: GetHeads                          
+      PROCEDURE,PASS   :: GetStages                        
+      PROCEDURE,PASS   :: GetHead_AtOneNode                                     
+      PROCEDURE,NOPASS :: GetVersion                                          
       PROCEDURE,PASS   :: GetBottomElevations              => AppStream_GetBottomElevations          
       PROCEDURE,PASS   :: GetSubregionalRecvLosses         => AppStream_GetSubregionalRecvLosses     
       PROCEDURE,PASS   :: GetStrmConnectivityInGWNodes     => AppStream_GetStrmConnectivityInGWNodes 
-      PROCEDURE,PASS   :: GetNRatingTablePoints            => AppStream_GetNRatingTablePoints        
+      PROCEDURE,PASS   :: GetNRatingTablePoints                    
       PROCEDURE,PASS   :: IsDefined                        => AppStream_IsDefined
       PROCEDURE,PASS   :: IsRouted                         => AppStream_IsRouted
       PROCEDURE,PASS   :: IsDiversionsDefined              => AppStream_IsDiversionsDefined
       PROCEDURE,PASS   :: IsDiversionToModelDomain         => AppStream_IsDiversionToModelDomain
-      PROCEDURE,PASS   :: IsUpstreamNode                   => AppStream_IsUpstreamNode
-      PROCEDURE,PASS   :: ReadTSData                       => AppStream_ReadTSData                   
+      PROCEDURE,PASS   :: IsUpstreamNode                   
+      PROCEDURE,PASS   :: ReadTSData                                         
       PROCEDURE,PASS   :: ReadRestartData                  => AppStream_ReadRestartData                   
       PROCEDURE,PASS   :: PrintResults                     => AppStream_PrintResults 
       Procedure,PASS   :: PrintRestartData                 => AppStream_PrintRestartData
@@ -148,6 +205,9 @@ MODULE Package_AppStream
       PROCEDURE,PASS   :: SetIrigFracsRead                 => AppStream_SetIrigFracsRead             
       PROCEDURE,PASS   :: SetSupplySpecs                   => AppStream_SetSupplySpecs               
       PROCEDURE,PASS   :: SetStreamFlow                    => AppStream_SetStreamFlow              
+      PROCEDURE,PASS   :: SetStreamInflow                 
+      PROCEDURE,PASS   :: SetBypassFlows_AtABypass
+      PROCEDURE,PASS   :: SetDiversionRead
       PROCEDURE,PASS   :: UpdateHeads                      => AppStream_UpdateHeads                  
       PROCEDURE,PASS   :: ConvertTimeUnit                  => AppStream_ConvertTimeUnit
       PROCEDURE,PASS   :: ConvertFlowToElev                => AppStream_ConvertFlowToElev
@@ -156,14 +216,18 @@ MODULE Package_AppStream
       PROCEDURE,PASS   :: AdvanceState                     => AppStream_AdvanceState                 
       PROCEDURE,PASS   :: Simulate                         => AppStream_Simulate 
       PROCEDURE,PASS   :: RegisterWithMatrix               => AppStream_RegisterWithMatrix
-      PROCEDURE,PASS   :: TransferOutputToHDF              => AppStream_TransferOutputToHDF
+      PROCEDURE,PASS   :: TransferOutputToHDF              
+      PROCEDURE,PASS   :: DestinationIDs_To_Indices                   
+      PROCEDURE,PASS   :: AddBypass
       GENERIC          :: New                              => AppStream_SetStaticComponent                       , &
                                                               AppStream_SetStaticComponentFromBinFile            , &
                                                               AppStream_SetDynamicComponent                      , &
                                                               AppStream_SetAllComponents                         , &
                                                               AppStream_SetAllComponentsWithoutBinFile
-      GENERIC          :: GetModelData_AtLocation          => GetModelData_AtLocation_FromFullModel              , &
-                                                              GetModelData_AtLocation_FromInquiryModel
+      GENERIC          :: GetBudget_MonthlyFlows           => GetBudget_MonthlyFlows_GivenFile                   , &
+                                                              GetBudget_MonthlyFlows_GivenAppStream
+      GENERIC          :: GetHydrograph                    => GetHydrograph_GivenFile                            , &
+                                                              GetHydrograph_GivenAppStream
   END TYPE AppStreamType
   
 
@@ -251,6 +315,12 @@ CONTAINS
             IF (iStat .EQ. -1) RETURN
             AppStream%iVersion = 42
             AppStream%lDefined = .TRUE.
+        CASE ('4.21')
+            ALLOCATE(AppStream_v421_Type :: AppStream%Me)
+            CALL AppStream%Me%New(cFileName,AppGrid,Stratigraphy,IsRoutedStreams,StrmGWConnector,StrmLakeConnector,iStat)
+            IF (iStat .EQ. -1) RETURN
+            AppStream%iVersion = 421
+            AppStream%lDefined = .TRUE.
         CASE ('5.0')
             ALLOCATE(AppStream_v50_Type :: AppStream%Me)
             CALL AppStream%Me%New(cFileName,AppGrid,Stratigraphy,IsRoutedStreams,StrmGWConnector,StrmLakeConnector,iStat)
@@ -258,7 +328,7 @@ CONTAINS
             AppStream%iVersion = 50
             AppStream%lDefined = .TRUE.
         CASE DEFAULT
-            CALL SetLastMessage('Stream Component version number is not recognized ('//TRIM(cVersionLocal)//')!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Stream Component version number is not recognized ('//TRIM(cVersionLocal)//')!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
     END SELECT
@@ -269,12 +339,12 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INSTANTIATE DYNAMIC COMPONENT STREAM DATA (GENERALLY CALLED IN SIMULATION)
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_SetDynamicComponent(AppStream,IsForInquiry,cFileName,cWorkingDirectory,TimeStep,NTIME,AppGrid,Stratigraphy,StrmGWConnector,StrmLakeConnector,iStat)
+  SUBROUTINE AppStream_SetDynamicComponent(AppStream,IsForInquiry,cFileName,cWorkingDirectory,TimeStep,NTIME,iLakeIDs,AppGrid,Stratigraphy,StrmGWConnector,StrmLakeConnector,iStat)
     CLASS(AppStreamType)              :: AppStream
     LOGICAL,INTENT(IN)                :: IsForInquiry
     CHARACTER(LEN=*),INTENT(IN)       :: cFileName,cWorkingDirectory
     TYPE(TimeStepType),INTENT(IN)     :: TimeStep
-    INTEGER,INTENT(IN)                :: NTIME
+    INTEGER,INTENT(IN)                :: NTIME,iLakeIDs(:)
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
     TYPE(StrmGWConnectorType)         :: StrmGWConnector
@@ -297,7 +367,7 @@ CONTAINS
         IF (AppStream%lDefined) THEN
             MessageArray(1) = 'For proper simulation of streams, relevant stream data files must'
             MessageArray(2) = 'be specified when stream nodes are defined in Pre-Processor.'
-            CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         ELSE
@@ -323,10 +393,12 @@ CONTAINS
             IF (AppStream%iVersion .NE. 41) ErrorCode = 1
         CASE ('4.2')
             IF (AppStream%iVersion .NE. 42) ErrorCode = 1
+        CASE ('4.21')
+            IF (AppStream%iVersion .NE. 421) ErrorCode = 1
         CASE ('5.0')
             IF (AppStream%iVersion .NE. 50) ErrorCode = 1
         CASE DEFAULT
-            CALL SetLastMessage('Stream Component version number is not recognized ('//TRIM(cVersionSim)//')!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Stream Component version number is not recognized ('//TRIM(cVersionSim)//')!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
     END SELECT
@@ -334,13 +406,13 @@ CONTAINS
         MessageArray(1) = 'Stream Component versions used in Pre-Processor and Simulation must match!'
         WRITE(MessageArray(2),'(A,F3.1)') 'Version number in Pre-Processor = ',rVersionPre
         MessageArray(3) = 'Version number in Simulation    = ' // TRIM(cVersionSim)
-        CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
     
     !Instantiate the dynamic component
-    CALL AppStream%Me%New(IsForInquiry,cFileName,cWorkingDirectory,TimeStep,NTIME,AppGrid,Stratigraphy,StrmLakeConnector,StrmGWConnector,iStat)
+    CALL AppStream%Me%New(IsForInquiry,cFileName,cWorkingDirectory,TimeStep,NTIME,iLakeIDs,AppGrid,Stratigraphy,StrmLakeConnector,StrmGWConnector,iStat)
         
   END SUBROUTINE AppStream_SetDynamicComponent
   
@@ -387,6 +459,12 @@ CONTAINS
             IF (iStat .EQ. -1) RETURN
             AppStream%iVersion = 42
             AppStream%lDefined = .TRUE.
+        CASE (421)
+            ALLOCATE(AppStream_v421_Type :: AppStream%Me)
+            CALL AppStream%Me%New(BinFile,iStat)
+            IF (iStat .EQ. -1) RETURN
+            AppStream%iVersion = 421
+            AppStream%lDefined = .TRUE.
         CASE (50)
             ALLOCATE(AppStream_v50_Type :: AppStream%Me)
             CALL AppStream%Me%New(BinFile,iStat)
@@ -394,7 +472,7 @@ CONTAINS
             AppStream%iVersion = 50
             AppStream%lDefined = .TRUE.
         CASE DEFAULT
-            CALL SetLastMessage('Stream Component version number is not recognized ('//TRIM(IntToText(iVersion))//')!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Stream Component version number is not recognized ('//TRIM(IntToText(iVersion))//')!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
     END SELECT
@@ -405,12 +483,12 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INSTANTIATE COMPLETE STREAM DATA
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_SetAllComponents(AppStream,IsForInquiry,cFileName,cSimWorkingDirectory,TimeStep,NTIME,AppGrid,Stratigraphy,BinFile,StrmLakeConnector,StrmGWConnector,iStat)
+  SUBROUTINE AppStream_SetAllComponents(AppStream,IsForInquiry,cFileName,cSimWorkingDirectory,TimeStep,NTIME,iLakeIDs,AppGrid,Stratigraphy,BinFile,StrmLakeConnector,StrmGWConnector,iStat)
     CLASS(AppStreamType),INTENT(OUT)  :: AppStream
     LOGICAL,INTENT(IN)                :: IsForInquiry
     CHARACTER(LEN=*),INTENT(IN)       :: cFileName,cSimWorkingDirectory
     TYPE(TimeStepType),INTENT(IN)     :: TimeStep
-    INTEGER,INTENT(IN)                :: NTIME
+    INTEGER,INTENT(IN)                :: NTIME,iLakeIDs(:)
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
     TYPE(GenericFileType)             :: BinFile
@@ -426,14 +504,14 @@ CONTAINS
     iStat = 0
     
     !If a binary file is supplied, read the flag to see if streams are simulated 
-    IF (BinFile%iGetFileType() .NE. UNKNOWN) THEN
+    IF (BinFile%iGetFileType() .NE. f_iUNKNOWN) THEN
         CALL BinFile%ReadData(iVersion,iStat)  
         IF (iStat .EQ. -1) RETURN
         IF (iVersion .EQ. 0) RETURN
     END IF
 
     !Return if a Simulation filename is not specified
-    IF (cFileName .EQ. ''  .OR.  BinFile%iGetFileType() .EQ. UNKNOWN) RETURN
+    IF (cFileName .EQ. ''  .OR.  BinFile%iGetFileType() .EQ. f_iUNKNOWN) RETURN
     
     !If AppStream is already instantiated, kill first
     IF (ALLOCATED(AppStream%Me)) CALL AppStream%Kill()
@@ -442,30 +520,36 @@ CONTAINS
     SELECT CASE (iVersion)
         CASE (40)
             ALLOCATE(AppStream_v40_Type :: AppStream%Me)
-            CALL AppStream%Me%New(IsForInquiry,cFileName,cSimWorkingDirectory,TimeStep,NTIME,AppGrid,Stratigraphy,BinFile,StrmLakeConnector,StrmGWConnector,iStat)
+            CALL AppStream%Me%New(IsForInquiry,cFileName,cSimWorkingDirectory,TimeStep,NTIME,iLakeIDs,AppGrid,Stratigraphy,BinFile,StrmLakeConnector,StrmGWConnector,iStat)
             IF (iStat .EQ. -1) RETURN
             AppStream%iVersion = 40
             AppStream%lDefined = .TRUE.
         CASE (41)
             ALLOCATE(AppStream_v41_Type :: AppStream%Me)
-            CALL AppStream%Me%New(IsForInquiry,cFileName,cSimWorkingDirectory,TimeStep,NTIME,AppGrid,Stratigraphy,BinFile,StrmLakeConnector,StrmGWConnector,iStat)
+            CALL AppStream%Me%New(IsForInquiry,cFileName,cSimWorkingDirectory,TimeStep,NTIME,iLakeIDs,AppGrid,Stratigraphy,BinFile,StrmLakeConnector,StrmGWConnector,iStat)
             IF (iStat .EQ. -1) RETURN
             AppStream%iVersion = 41
             AppStream%lDefined = .TRUE.
         CASE (42)
             ALLOCATE(AppStream_v42_Type :: AppStream%Me)
-            CALL AppStream%Me%New(IsForInquiry,cFileName,cSimWorkingDirectory,TimeStep,NTIME,AppGrid,Stratigraphy,BinFile,StrmLakeConnector,StrmGWConnector,iStat)
+            CALL AppStream%Me%New(IsForInquiry,cFileName,cSimWorkingDirectory,TimeStep,NTIME,iLakeIDs,AppGrid,Stratigraphy,BinFile,StrmLakeConnector,StrmGWConnector,iStat)
             IF (iStat .EQ. -1) RETURN
             AppStream%iVersion = 42
             AppStream%lDefined = .TRUE.
+        CASE (421)
+            ALLOCATE(AppStream_v421_Type :: AppStream%Me)
+            CALL AppStream%Me%New(IsForInquiry,cFileName,cSimWorkingDirectory,TimeStep,NTIME,iLakeIDs,AppGrid,Stratigraphy,BinFile,StrmLakeConnector,StrmGWConnector,iStat)
+            IF (iStat .EQ. -1) RETURN
+            AppStream%iVersion = 421
+            AppStream%lDefined = .TRUE.
         CASE (50)
             ALLOCATE(AppStream_v50_Type :: AppStream%Me)
-            CALL AppStream%Me%New(IsForInquiry,cFileName,cSimWorkingDirectory,TimeStep,NTIME,AppGrid,Stratigraphy,BinFile,StrmLakeConnector,StrmGWConnector,iStat)
+            CALL AppStream%Me%New(IsForInquiry,cFileName,cSimWorkingDirectory,TimeStep,NTIME,iLakeIDs,AppGrid,Stratigraphy,BinFile,StrmLakeConnector,StrmGWConnector,iStat)
             IF (iStat .EQ. -1) RETURN
             AppStream%iVersion = 50
             AppStream%lDefined = .TRUE.
         CASE DEFAULT
-            CALL SetLastMessage('Stream Component version number is not recognized ('//TRIM(IntToText(iVersion))//')!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Stream Component version number is not recognized ('//TRIM(IntToText(iVersion))//')!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
     END SELECT
@@ -476,14 +560,14 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INSTANTIATE COMPLETE STREAM DATA WITHOUT INTERMEDIATE BINARY FILE
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_SetAllComponentsWithoutBinFile(AppStream,IsRoutedStreams,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,StrmLakeConnector,StrmGWConnector,iStat)
+  SUBROUTINE AppStream_SetAllComponentsWithoutBinFile(AppStream,IsRoutedStreams,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,iLakeIDs,StrmLakeConnector,StrmGWConnector,iStat)
     CLASS(AppStreamType),INTENT(OUT)      :: AppStream
     LOGICAL,INTENT(IN)                    :: IsRoutedStreams,IsForInquiry
     CHARACTER(LEN=*),INTENT(IN)           :: cPPFileName,cSimFileName,cSimWorkingDirectory
     TYPE(AppGridType),INTENT(IN)          :: AppGrid
     TYPE(StratigraphyType),INTENT(IN)     :: Stratigraphy
     TYPE(TimeStepType),INTENT(IN)         :: TimeStep
-    INTEGER,INTENT(IN)                    :: NTIME
+    INTEGER,INTENT(IN)                    :: NTIME,iLakeIDs(:)
     TYPE(StrmLakeConnectorType)           :: StrmLakeConnector
     TYPE(StrmGWConnectorType),INTENT(OUT) :: StrmGWConnector
     INTEGER,INTENT(OUT)                   :: iStat
@@ -511,30 +595,36 @@ CONTAINS
     SELECT CASE (TRIM(cVersionPre))
         CASE ('4.0')
             ALLOCATE(AppStream_v40_Type :: AppStream%Me)
-            CALL AppStream%Me%New(IsRoutedStreams,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,StrmLakeConnector,StrmGWConnector,iStat)
+            CALL AppStream%Me%New(IsRoutedStreams,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,iLakeIDs,StrmLakeConnector,StrmGWConnector,iStat)
             IF (iStat .EQ. -1) RETURN
             AppStream%iVersion = 40
             AppStream%lDefined = .TRUE.
         CASE ('4.1')
             ALLOCATE(AppStream_v41_Type :: AppStream%Me)
-            CALL AppStream%Me%New(IsRoutedStreams,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,StrmLakeConnector,StrmGWConnector,iStat)
+            CALL AppStream%Me%New(IsRoutedStreams,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,iLakeIDs,StrmLakeConnector,StrmGWConnector,iStat)
             IF (iStat .EQ. -1) RETURN
             AppStream%iVersion = 41
             AppStream%lDefined = .TRUE.
         CASE ('4.2')
             ALLOCATE(AppStream_v42_Type :: AppStream%Me)
-            CALL AppStream%Me%New(IsRoutedStreams,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,StrmLakeConnector,StrmGWConnector,iStat)
+            CALL AppStream%Me%New(IsRoutedStreams,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,iLakeIDs,StrmLakeConnector,StrmGWConnector,iStat)
             IF (iStat .EQ. -1) RETURN
             AppStream%iVersion = 42
             AppStream%lDefined = .TRUE.
+        CASE ('4.21')
+            ALLOCATE(AppStream_v421_Type :: AppStream%Me)
+            CALL AppStream%Me%New(IsRoutedStreams,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,iLakeIDs,StrmLakeConnector,StrmGWConnector,iStat)
+            IF (iStat .EQ. -1) RETURN
+            AppStream%iVersion = 421
+            AppStream%lDefined = .TRUE.
         CASE ('5.0')
             ALLOCATE(AppStream_v50_Type :: AppStream%Me)
-            CALL AppStream%Me%New(IsRoutedStreams,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,StrmLakeConnector,StrmGWConnector,iStat)
+            CALL AppStream%Me%New(IsRoutedStreams,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,iLakeIDs,StrmLakeConnector,StrmGWConnector,iStat)
             IF (iStat .EQ. -1) RETURN
             AppStream%iVersion = 50
             AppStream%lDefined = .TRUE.
         CASE DEFAULT
-            CALL SetLastMessage('Stream Component version number is not recognized ('//TRIM(cVersionPre)//')!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Stream Component version number is not recognized ('//TRIM(cVersionPre)//')!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
     END SELECT
@@ -557,7 +647,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- KILL AppStream OBJECT 
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_Kill(AppStream)
+  SUBROUTINE Kill(AppStream)
     CLASS(AppStreamType) :: AppStream
     
     !Local variables
@@ -570,7 +660,7 @@ CONTAINS
         AppStream%lDefined = .FALSE.
     END IF
     
-  END SUBROUTINE AppStream_Kill
+  END SUBROUTINE Kill
   
   
 
@@ -586,165 +676,557 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
-  ! --- GET NUMBER OF DATA TYPES FOR POST-PROCESSING AT A LOCATION TYPE
+  ! --- GET NUMBER OF STREAM NODES WITH BUDGET OUTPUT 
   ! -------------------------------------------------------------
-  FUNCTION GetNDataList_AtLocationType(AppStream,iLocationType) RESULT(NData)
+  FUNCTION GetNStrmNodes_WithBudget(AppStream) RESULT(iNStrmNodeBud)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
-    INTEGER,INTENT(IN)              :: iLocationType
-    INTEGER                         :: NData
+    INTEGER                         :: iNStrmNodeBud
     
-    IF (AppStream%lDefined) THEN
-        NData = AppStream%Me%GetNDataList_AtLocationType(iLocationType)
+    IF (ALLOCATED(AppStream%Me)) THEN
+        iNStrmNodeBud = AppStream%Me%GetNStrmNodes_WithBudget()
     ELSE
-        NData = 0
+        iNStrmNodeBud = 0
     END IF
     
-  END FUNCTION GetNDataList_AtLocationType
+  END FUNCTION GetNStrmNodes_WithBudget
   
   
   ! -------------------------------------------------------------
-  ! --- GET A LIST OF DATA TYPES FOR POST-PROCESSING AT A LOCATION TYPE
+  ! --- GET STREAM NODE IDS WITH BUDGET OUTPUT 
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_GetDataList_AtLocationType(AppStream,iLocationType,cDataList,cFileList,lBudgetType) 
+  SUBROUTINE GetStrmNodeIDs_WithBudget(AppStream,iIDs)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
-    INTEGER,INTENT(IN)              :: iLocationType
-    CHARACTER(LEN=*),ALLOCATABLE    :: cDataList(:),cFileList(:)
-    LOGICAL,ALLOCATABLE             :: lBudgetType(:)
+    INTEGER,ALLOCATABLE,INTENT(OUT) :: iIDs(:)
     
-    IF (AppStream%lDefined) CALL AppStream%Me%GetDataList_AtLocationType(iLocationType,cDataList,cFileList,lBudgetType)
+    IF (ALLOCATED(AppStream%Me)) THEN
+        CALL AppStream%Me%GetStrmNodeIDs_WithBudget(iIDs)
+    ELSE
+        ALLOCATE (iIDs(0))
+    END IF
     
-  END SUBROUTINE AppStream_GetDataList_AtLocationType
+  END SUBROUTINE GetStrmNodeIDs_WithBudget
   
   
   ! -------------------------------------------------------------
-  ! --- GET LOCATIONS THAT HAS A DATA TYPE FOR POST-PROCESSING
+  ! --- GET ACTUAL DIVERSIONS FROM SOME NODES
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_GetLocationsWithData(AppStream,iLocationType,cDataType,iLocations) 
+  SUBROUTINE GetActualDiversions_AtSomeNodes(AppStream,iNodes,rDivers,iStat)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
-    INTEGER,INTENT(IN)              :: iLocationType
-    CHARACTER(LEN=*),INTENT(IN)     :: cDataType
-    INTEGER,ALLOCATABLE,INTENT(OUT) :: iLocations(:)
+    INTEGER,INTENT(IN)              :: iNodes(:)
+    REAL(8),INTENT(OUT)             :: rDivers(:)
+    INTEGER,INTENT(OUT)             :: iStat
     
-    IF (AppStream%lDefined) CALL AppStream%Me%GetLocationsWithData(iLocationType,cDataType,iLocations)
+    CALL AppStream%Me%GetActualDiversions_AtSomeNodes(iNodes,rDivers,iStat)
     
-  END SUBROUTINE AppStream_GetLocationsWithData
+  END SUBROUTINE GetActualDiversions_AtSomeNodes
   
   
   ! -------------------------------------------------------------
-  ! --- GET A LIST OF SUB-DATA TYPES FOR POST-PROCESSING AT A LOCATION TYPE, GIVEN A LOCATION ID
+  ! --- GET ACTUAL DIVERSIONS FOR SOME DIVERSIONS
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_GetSubDataList_AtLocation(AppStream,iLocationType,iLocationID,cDataType,cSubDataList) 
-    CLASS(AppStreamType),INTENT(IN)          :: AppStream
-    INTEGER,INTENT(IN)                       :: iLocationType,iLocationID
-    CHARACTER(LEN=*),INTENT(IN)              :: cDataType
-    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cSubDataList(:)
+  SUBROUTINE GetActualDiversions_AtSomeDiversions(AppStream,iDivers,rDivers,iStat)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iDivers(:)
+    REAL(8),INTENT(OUT)             :: rDivers(:)
+    INTEGER,INTENT(OUT)             :: iStat
     
-    IF (AppStream%lDefined) CALL AppStream%Me%GetSubDataList_AtLocation(iLocationType,iLocationID,cDataType,cSubDataList)
+    CALL AppStream%Me%GetActualDiversions_AtSomeDiversions(iDivers,rDivers,iStat)
     
-  END SUBROUTINE AppStream_GetSubDataList_AtLocation
+  END SUBROUTINE GetActualDiversions_AtSomeDiversions
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET DIVERSIONS FOR A SPECIFIED DELIVERIES; I.E. ADD LOSSES TO DELIVERIES
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetDiversionsForDeliveries(AppStream,iDivers,rDelis,rDivers)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iDivers(:)
+    REAL(8),INTENT(IN)              :: rDelis(:)
+    REAL(8),INTENT(OUT)             :: rDivers(:)
+    
+    CALL AppStream%Me%GetDiversionsForDeliveries(iDivers,rDelis,rDivers)
+    
+  END SUBROUTINE GetDiversionsForDeliveries
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET DELIVERY RELATED TO A DIVERSION
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetDeliveryAtDiversion(AppStream,iDiver) RESULT(rDeli)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iDiver
+    REAL(8)                         :: rDeli
+    
+    IF (AppStream%lDefined) THEN
+        rDeli = AppStream%Me%GetDeliveryAtDiversion(iDiver)
+    ELSE
+        rDeli = 0.0
+    END IF
+    
+  END FUNCTION GetDeliveryAtDiversion
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM NODE INDICES FOR A GIVEN SET OF DIVERSION INDICES
+  ! -------------------------------------------------------------
+  SUBROUTINE GetDiversionsExportNodes(AppStream,iDivList,iStrmNodeList)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iDivList(:)
+    INTEGER,INTENT(OUT)             :: iStrmNodeList(:)
+    
+    !If streams are not defined, return
+    IF (AppStream%iVersion .EQ. 0) THEN
+        iStrmNodeList = 0
+        RETURN
+    END IF
+    
+    !Get the stream nodes for diversions
+    CALL AppStream%Me%GetDiversionsExportNodes(iDivList,iStrmNodeList)
+    
+  END SUBROUTINE GetDiversionsExportNodes
+
+
+  ! -------------------------------------------------------------
+  ! --- GET PURPOSE OF DIVERSIONS (IF THEY SERVE AG, URBAN OR BOTH) BEFORE ANY ADJUSTMENT
+  ! -------------------------------------------------------------
+  SUBROUTINE GetDiversionPurpose(AppStream,iDivers,iAgOrUrban,iStat)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iDivers(:)
+    INTEGER,INTENT(OUT)             :: iAgOrUrban(:),iStat
+    
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%GetDiversionPurpose(iDivers,iAgOrUrban,iStat)
+    END IF
+    
+  END SUBROUTINE GetDiversionPurpose
 
   
   ! -------------------------------------------------------------
-  ! --- GET MODEL DATA AT A LOCATION FOR POST-PROCESSING FROM FULLY INSTANTIATED MODEL
+  ! --- GET HYDROGRAPH FROM AppStream OBJECT
   ! -------------------------------------------------------------
-  SUBROUTINE GetModelData_AtLocation_FromFullModel(AppStream,iLocationType,iLocationID,cDataType,iCol,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
+  SUBROUTINE GetHydrograph_GivenAppStream(AppStream,TimeStep,iHydIndex,rFact_LT,rFact_VL,cBeginDate,cEndDate,cInterval,iDataUnitType,rDates,rValues,iStat) 
     CLASS(AppStreamType),INTENT(IN) :: AppStream
-    INTEGER,INTENT(IN)              :: iLocationType,iLocationID,iCol
-    CHARACTER(LEN=*),INTENT(IN)     :: cDataType,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval
-    REAL(8),INTENT(IN)              :: rFact_LT,rFact_AR,rFact_VL
-    INTEGER,INTENT(OUT)             :: iDataUnitType,nActualOutput
-    REAL(8),INTENT(OUT)             :: rOutputDates(:),rOutputValues(:)
-    INTEGER,INTENT(OUT)             :: iStat
-    
-    iStat = 0
-    IF (AppStream%lDefined) CALL AppStream%Me%GetModelData_AtLocation(iLocationType,iLocationID,cDataType,iCol,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-    
-  END SUBROUTINE GetModelData_AtLocation_FromFullModel
-  
-    
-  ! -------------------------------------------------------------
-  ! --- GET MODEL DATA AT A LOCATION FOR POST-PROCESSING FROM THE INQUIRY MODEL
-  ! -------------------------------------------------------------
-  SUBROUTINE GetModelData_AtLocation_FromInquiryModel(cFileName,TimeStep,iLocationType,iLocationID,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_LT,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat) 
-    CHARACTER(LEN=*),INTENT(IN)   :: cFileName
-    TYPE(TimeStepType),INTENT(IN) :: TimeStep
-    INTEGER,INTENT(IN)            :: iLocationType,iLocationID
-    CHARACTER(LEN=*),INTENT(IN)   :: cOutputBeginDateAndTime,cOutputEndDateAndTime
-    REAL(8),INTENT(IN)            :: rFact_LT,rFact_VL
-    INTEGER,INTENT(OUT)           :: iDataUnitType,nActualOutput
-    REAL(8),INTENT(OUT)           :: rOutputDates(:),rOutputValues(:)
-    INTEGER,INTENT(OUT)           :: iStat
+    TYPE(TimeStepType),INTENT(IN)   :: TimeStep
+    INTEGER,INTENT(IN)              :: iHydIndex
+    REAL(8),INTENT(IN)              :: rFact_LT,rFact_VL
+    CHARACTER(LEN=*),INTENT(IN)     :: cBeginDate,cEndDate,cInterval
+    REAL(8),ALLOCATABLE,INTENT(OUT) :: rDates(:),rValues(:)
+    INTEGER,INTENT(OUT)             :: iDataUnitType,iStat
     
     !Local variables
-    INTEGER               :: iHydType,FileReadCode
-    REAL(8)               :: rFactor
+    CHARACTER(LEN=ModNameLen+28) :: ThisProcedure = ModName // 'GetHydrograph_GivenAppStream'
+    CHARACTER(:),ALLOCATABLE     :: cFileName
+    
+    !Return if AppStream is not defined
+    IF (.NOT. AppStream%lDefined) THEN
+       ALLOCATE (rDates(0) , rValues(0))
+       iDataUnitType = -1
+       iStat         = 0
+       RETURN
+    END IF
+    
+    !Get filename
+    CALL AppStream%Me%GetHydOutputFileName(cFileName)
+    
+    !If filename is empty, return with error
+    IF (LEN_TRIM(cFileName) .EQ. 0) THEN
+        CALL SetLastMessage('Stream hydrographs are not part of model output!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
+    
+    !Replace filename extension with hdf
+    cFileName = TRIM(StripTextUntilCharacter(ADJUSTL(cFileName),'.',Back=.TRUE.)) // '.hdf' 
+    
+    !Retrieve data
+    CALL GetHydrograph_GivenFile(cFileName,TimeStep,iHydIndex,rFact_LT,rFact_VL,cBeginDate,cEndDate,cInterval,iDataUnitType,rDates,rValues,iStat)
+
+  END SUBROUTINE GetHydrograph_GivenAppStream
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET HYDROGRAPH FROM A GIVEN FILE
+  ! -------------------------------------------------------------
+  SUBROUTINE GetHydrograph_GivenFile(cFileName,TimeStep,iHydIndex,rFact_LT,rFact_VL,cBeginDate,cEndDate,cInterval,iDataUnitType,rDates,rValues,iStat) 
+    CHARACTER(LEN=*),INTENT(IN)     :: cFileName
+    TYPE(TimeStepType),INTENT(IN)   :: TimeStep
+    INTEGER,INTENT(IN)              :: iHydIndex
+    REAL(8),INTENT(IN)              :: rFact_LT,rFact_VL
+    CHARACTER(LEN=*),INTENT(IN)     :: cBeginDate,cEndDate,cInterval
+    REAL(8),ALLOCATABLE,INTENT(OUT) :: rDates(:),rValues(:)
+    INTEGER,INTENT(OUT)             :: iDataUnitType,iStat
+    
+    !Local variables
+    INTEGER               :: iHydType,iFileReadCode,iNData,iErrorCode,iNDataReturn,iDeltaT_InMinutes,iNIntervals
+    REAL(8)               :: rFactor,rDummy
+    CHARACTER             :: cDate*f_iTimeStampLength
+    REAL(8),ALLOCATABLE   :: rDates_Local(:),rValues_Local(:)
     TYPE(GenericFileType) :: InFile
     
     !Initialize
-    iStat         = 0
-    nActualOutput = 0
+    iStat = 0
     
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_StrmHydObs)
-            !Open file
-            CALL InFile%New(FileName=cFileName,InputFile=.TRUE.,IsTSFile=.TRUE.,iStat=iStat)
-            IF (iStat .EQ. -1) RETURN
+    !Open file
+    CALL InFile%New(FileName=cFileName,InputFile=.TRUE.,IsTSFile=.TRUE.,iStat=iStat)
+    IF (iStat .EQ. -1) RETURN
+    
+    !Read hydrograph type (flow or stream surface elevation?)
+    CALL InFile%ReadData('/Stream_Hydrographs','HydrographType',ScalarAttrData=iHydType,iStat=iStat)
+    
+    !Data type and conversion factor
+    IF (iHydType .EQ. iHydFlow) THEN
+        iDataUnitType = f_iDataUnitType_Volume
+        rFactor       = rFact_VL
+    ELSE
+        iDataUnitType = f_iDataUnitType_Length
+        rFactor       = rFact_LT
+    END IF
+    
+    !Number of timesteps for which data will be read
+    iNData = NPeriods(TimeStep%DELTAT_InMinutes,cBeginDate,cEndDate) + 1
+    ALLOCATE (rValues_Local(iNData) , rDates_Local(iNData))
+    
+    !Julian dates for data
+    CALL GetJulianDatesBetweenTimeStampsWithTimeIncrement(TimeStep%DeltaT_InMinutes,cBeginDate,cEndDate,rDates_Local)
+    
+    !Read data
+    CALL InFile%ReadData(cBeginDate,1,iHydIndex,rValues_Local,iFileReadCode,iStat)
+    IF (iStat .NE. 0) GOTO 10
+    
+    !Number of timesteps to sample data
+    CALL CTimeStep_To_RTimeStep(cInterval,rDummy,iDeltaT_InMinutes,iStat)  
+    IF (iStat .NE. 0) GOTO 10
+    iNDataReturn = NPeriods(iDELTAT_InMinutes,cBeginDate,cEndDate) + 1
+    ALLOCATE (rDates(iNDataReturn) , rValues(iNDataReturn))
+    
+    !Sample read data into return argument
+    IF (iNData .EQ. iNDataReturn) THEN
+        rValues = rValues_Local * rFactor
+        rDates  = rDates_Local
+    ELSE
+        cDate       = IncrementTimeStamp(cBeginDate,iDeltaT_InMinutes,1)
+        iNIntervals = NPeriods(TimeStep%DELTAT_InMinutes,cBeginDate,cDate)
+        rValues     = rValues_Local(iNIntervals::iNIntervals) * rFactor
+        rDates      = rDates_Local(iNIntervals::iNIntervals)
+    END IF
+    
+    !Close file
+10  CALL InFile%Kill()
             
-            !Read hydrograph type (flow or stream surface elevation?)
-            CALL InFile%ReadData('/Stream_Hydrographs','HydrographType',ScalarAttrData=iHydType,iStat=iStat)
-            
-            !Data type and conversion factor
-            IF (iHydType .EQ. iHydFlow) THEN
-                iDataUnitType = iDataUnitType_Volume
-                rFactor       = rFact_VL
-            ELSE
-                iDataUnitType = iDataUnitType_Length
-                rFactor       = rFact_LT
-            END IF
-            
-            !Number of timesteps for which data will be read
-            nActualOutput = NPeriods(TimeStep%DELTAT_InMinutes,cOutputBeginDateAndTime,cOutputEndDateAndTime)
-            
-            !Julian dates for data
-            CALL GetJulianDatesBetweenTimeStampsWithTimeIncrement(TimeStep%DeltaT_InMinutes,cOutputBeginDateAndTime,cOutputEndDateAndTime,rOutputDates(1:nActualOutput))
-            
-            !Read data
-            CALL InFile%ReadData(cOutputBeginDateAndTime,1,iLocationID,rOutputValues(1:nActualOutput),FileReadCode,iStat)
-            rOutputValues(1:nActualOutput) = rOutputValues(1:nActualOutput) * rFactor
-            
-            !Close file
-            CALL InFile%Kill()
-            
+    !Clear memory
+    DEALLOCATE (rValues_Local , rDates_Local , STAT=iErrorCode)
+    
+  END SUBROUTINE GetHydrograph_GivenFile
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET LIST 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_List(AppStream,iBudgetTypeList,iBudgetLocationTypeList,cBudgetDescriptions,cBudgetFiles)
+    CLASS(AppStreamType),INTENT(IN)          :: AppStream
+    INTEGER,ALLOCATABLE,INTENT(OUT)          :: iBudgetTypeList(:),iBudgetLocationTypeList(:)          
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cBudgetDescriptions(:),cBudgetFiles(:)
+    
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%GetBudget_List(iBudgetTypeList,iBudgetLocationTypeList,cBudgetDescriptions,cBudgetFiles)
+    ELSE
+        ALLOCATE (iBudgetTypeList(0),iBudgetLocationTypeList(0),cBudgetDescriptions(0),cBudgetFiles(0))
+    ENDIF
+    
+  END SUBROUTINE GetBudget_List
+
+
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF COLUMNS IN BUDGET FILE (EXCLUDING TIME COLUMN) 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_NColumns(AppStream,iBudgetType,iLocationIndex,iNCols,iStat)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iBudgetType,iLocationIndex
+    INTEGER,INTENT(OUT)             :: iNCols,iStat       
+        
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%GetBudget_NColumns(iBudgetType,iLocationIndex,iNCols,iStat)
+    ELSE
+        iStat  = 0
+        iNCols = 0
+    ENDIF
+        
+  END SUBROUTINE GetBudget_NColumns
+
+
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET COLUMN TITLES (EXCLUDING TIME COLUMN) 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_ColumnTitles(AppStream,iBudgetType,iLocationIndex,cUnitLT,cUnitAR,cUnitVL,cColTitles,iStat)
+    CLASS(AppStreamType),INTENT(IN)          :: AppStream
+    INTEGER,INTENT(IN)                       :: iBudgetType,iLocationIndex
+    CHARACTER(LEN=*),INTENT(IN)              :: cUnitLT,cUnitAR,cUnitVL
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cColTitles(:)       
+    INTEGER,INTENT(OUT)                      :: iStat
+        
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%GetBudget_ColumnTitles(iBudgetType,iLocationIndex,cUnitLT,cUnitAR,cUnitVL,cColTitles,iStat)
+    ELSE
+        iStat = 0
+        ALLOCATE (cColTitles(0))
+    ENDIF
+        
+  END SUBROUTINE GetBudget_ColumnTitles
+
+
+  ! -------------------------------------------------------------
+  ! --- GET MONTHLY BUDGET FLOWS FROM AppStream OBJECT
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_MonthlyFlows_GivenAppStream(AppStream,iBudgetType,iLocationIndex,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    CLASS(AppStreamType),INTENT(IN)          :: AppStream
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate
+    INTEGER,INTENT(IN)                       :: iBudgetType,iLocationIndex !Location can be stream node, reach or diversion
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)     !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    IF (AppStream%lDefined) THEN    
+        CALL AppStream%Me%GetBudget_MonthlyFlows_GivenAppStream(iBudgetType,iLocationIndex,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    ELSE
+        iStat = 0
+        ALLOCATE (rFlows(0,0) , cFlowNames(0))
+    END IF
+    
+  END SUBROUTINE GetBudget_MonthlyFlows_GivenAppStream
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET MONTHLY BUDGET FLOWS FROM A DEFINED BUDGET FILE
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_MonthlyFlows_GivenFile(Budget,iBudgetType,iLocationID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    TYPE(BudgetType),INTENT(IN)              :: Budget          !Assumes Budget file is already open
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate
+    INTEGER,INTENT(IN)                       :: iBudgetType,iLocationID !Location can be stream node, reach or diversion
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)     !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+32) :: ThisProcedure = ModName // 'GetBudget_MonthlyFlows_GivenFile'
+    INTEGER                      :: iErrorCode  
+    CHARACTER(:),ALLOCATABLE     :: cVersion
+    TYPE(AppStreamType)          :: AppStream
+    
+    !Get version number
+    CALL GetPackageVersion(Budget,cVersion)
+    
+    !Based on component version, allocate base stream type
+    SELECT CASE (cVersion)
+        CASE ('4.0')
+            ALLOCATE(AppStream_v40_Type :: AppStream%Me)
+        CASE ('4.1')
+            ALLOCATE(AppStream_v41_Type :: AppStream%Me)
+        CASE ('4.2')
+            ALLOCATE(AppStream_v42_Type :: AppStream%Me)
+        CASE ('4.21')
+            ALLOCATE(AppStream_v421_Type :: AppStream%Me)
+        CASE ('5.0')
+            ALLOCATE(AppStream_v50_Type :: AppStream%Me)
+        CASE DEFAULT
+            CALL SetLastMessage('Stream Component version number is not recognized ('//TRIM(cVersion)//')!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
     END SELECT
         
-  END SUBROUTINE GetModelData_AtLocation_FromInquiryModel
+    !Get monthly data    
+    CALL AppStream%Me%GetBudget_MonthlyFlows_GivenFile(Budget,iBudgetType,iLocationID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    
+    !Clear memory
+    DEALLOCATE (AppStream%Me , cVersion , STAT=iErrorCode)
+    
+  CONTAINS
+   
+    !#######################################################
+    !### FIND THE VERSION NUMBER OF THE STREAM PACKAGE USED
+    !#######################################################
+    SUBROUTINE GetPackageVersion(Budget,cVersion)
+      TYPE(BudgetType),INTENT(IN) :: Budget
+      CHARACTER(:),ALLOCATABLE,INTENT(OUT) :: cVersion
+      
+      !Local variables
+      INTEGER                      :: iNTitles,iLenTitles,indx,iLoc
+      CHARACTER(LEN=:),ALLOCATABLE :: cTitles(:)
+      CHARACTER(:),ALLOCATABLE     :: cTitlesConc
+     
+      !Get the ASCII titles from the Budget file; one of these titles include component version number
+      iNTitles   = Budget%GetNPersistentTitles()
+      iLenTitles = Budget%GetTitleLen()
+      ALLOCATE (CHARACTER(iLenTitles) :: cTitles(iNTitles))
+      cTitles = Budget%GetPersistentTitles(iNTitles)
+      
+      !Concotonate titles
+      ALLOCATE (CHARACTER(LEN=iNTitles*iLenTitles) :: cTitlesConc)
+      cTitlesConc = ''
+      DO indx=1,iNTitles
+          cTitlesConc = TRIM(cTitlesConc) // TRIM(ADJUSTL(cTitles(indx)))
+      END DO  
+      
+      !Check for version 4.0
+      CALL FindSubStringInString('v4.0.',TRIM(cTitlesConc),iLoc)
+      IF (iLoc .GT. 0) THEN
+          ALLOCATE (CHARACTER(3) :: cVersion)
+          cVersion = '4.0'
+          RETURN
+      END IF 
+      
+      !Check for version 4.1
+      CALL FindSubStringInString('v4.1.',TRIM(cTitlesConc),iLoc)
+      IF (iLoc .GT. 0) THEN
+          ALLOCATE (CHARACTER(3) :: cVersion)
+          cVersion = '4.1'
+          RETURN
+      END IF  
+
+      !Check for version 4.2
+      CALL FindSubStringInString('v4.2.',TRIM(cTitlesConc),iLoc)
+      IF (iLoc .GT. 0) THEN
+          ALLOCATE (CHARACTER(3) :: cVersion)
+          cVersion = '4.2'
+          RETURN
+      END IF  
+
+      !Check for version 4.21
+      CALL FindSubStringInString('v4.21.',TRIM(cTitlesConc),iLoc)
+      IF (iLoc .GT. 0) THEN
+          ALLOCATE (CHARACTER(4) :: cVersion)
+          cVersion = '4.21'
+          RETURN
+      END IF  
+
+      !Check for version 5.0
+      CALL FindSubStringInString('v5.0.',TRIM(cTitlesConc),iLoc)
+      IF (iLoc .GT. 0) THEN
+          ALLOCATE (CHARACTER(3) :: cVersion)
+          cVersion = '5.0'
+          RETURN
+      END IF 
+      
+      !If made to this point, something is wrong
+      ALLOCATE (CHARACTER(3) :: cVersion)
+      cVersion = '0.0'
+
+    END SUBROUTINE GetPackageVersion
+    
+  END SUBROUTINE GetBudget_MonthlyFlows_GivenFile
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET TIME SERIES DATA FOR A SET OF COLUMNS 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_TSData(AppStream,iBudgetType,iLocationIndex,iCols,cBeginDate,cEndDate,cInterval,rFactLT,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iBudgetType,iLocationIndex,iCols(:)
+    CHARACTER(LEN=*),INTENT(IN)     :: cBeginDate,cEndDate,cInterval
+    REAL(8),INTENT(IN)              :: rFactLT,rFactAR,rFactVL
+    REAL(8),INTENT(OUT)             :: rOutputDates(:),rOutputValues(:,:)    !rOutputValues is in (timestep,column) format
+    INTEGER,INTENT(OUT)             :: iDataTypes(:),inActualOutput,iStat
+    
+    IF (AppStream%lDefined) THEN    
+        CALL AppStream%Me%GetBudget_TSData(iBudgetType,iLocationIndex,iCols,cBeginDate,cEndDate,cInterval,rFactLT,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+    ELSE
+        iStat          = 0
+        inActualOutput = 0
+        iDataTypes     = -1
+        rOutputDates   = 0.0
+        rOutputValues  = 0.0
+    END IF
+           
+  END SUBROUTINE GetBudget_TSData
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM NODE IDS
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetStrmNodeIDs(AppStream,iStrmNodeIDs)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(OUT)             :: iStrmNodeIDs(:)
+    
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%GetStrmNodeIDs(iStrmNodeIDs)
+    ENDIF
+    
+  END SUBROUTINE GetStrmNodeIDs
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM NODE ID GIVEN INDEX
+  ! -------------------------------------------------------------
+  FUNCTION GetStrmNodeID(AppStream,indx) RESULT(iStrmNodeID)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: indx
+    INTEGER                         :: iStrmNodeID
+    
+    IF (AppStream%lDefined) THEN
+        iStrmNodeID = AppStream%Me%GetStrmNodeID(indx)
+    ELSE
+        iStrmNodeID = 0
+    ENDIF
+    
+  END FUNCTION GetStrmNodeID
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM INDEX GIVEN ID
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetStrmNodeIndex(AppStream,iNodeID) RESULT(Index)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iNodeID
+    INTEGER                         :: Index
+    
+    IF (AppStream%lDefined) THEN
+        Index = AppStream%Me%GetStrmNodeIndex(iNodeID)
+    ELSE
+        Index = 0
+    END IF
+    
+  END FUNCTION GetStrmNodeIndex
   
   
   ! -------------------------------------------------------------
   ! --- GET NAMES OF LOCATIONS FOR POST_PROCESSING
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_GetNames(AppStream,iLocationType,cNamesList)
+  SUBROUTINE GetNames(AppStream,iLocationType,cNamesList)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
     INTEGER,INTENT(IN)              :: iLocationType
     CHARACTER(LEN=*),INTENT(OUT)    :: cNamesList(:)  !Assumes array is previously dimensioned according to the number of locations
     
     IF (AppStream%lDefined) THEN
-      SELECT CASE (iLocationType)
-          CASE (iLocationType_StrmReach)
-              CALL AppStream%Me%GetReachNames(cNamesList)
-          
-          CASE (iLocationType_StrmHydObs)
-              CALL AppStream%Me%StrmHyd%GetNames(cNamesList)
-      END SELECT
+        CALL AppStream%Me%GetNames(iLocationType,cNamesList)
+    ELSE
+        cNamesList = ''
     END IF
     
-  END SUBROUTINE AppStream_GetNames
+  END SUBROUTINE GetNames
   
     
   ! -------------------------------------------------------------
+  ! --- GET A LIST OF HYDROGRAPH TYPES AVAILABLE FOR RETRIEVAL
+  ! -------------------------------------------------------------
+  SUBROUTINE GetHydrographTypeList(AppStream,cHydTypeList,iHydLocationTypeList,cHydFileList)
+    CLASS(AppStreamType),INTENT(IN)          :: AppStream
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cHydTypeList(:),cHydFileList(:)
+    INTEGER,ALLOCATABLE,INTENT(OUT)          :: iHydLocationTypeList(:)
+    
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%GetHydrographTypeList(cHydTypeList,iHydLocationTypeList,cHydFileList)
+    ELSE
+        ALLOCATE(cHydTypeList(0) , iHydLocationTypeList(0) , cHydFileList(0))
+    END IF
+        
+  END SUBROUTINE GetHydrographTypeList
+  
+  
+  ! -------------------------------------------------------------
   ! --- GET NUMBER OF HYDROGRAPHS PRINTED
   ! -------------------------------------------------------------
-  FUNCTION AppStream_GetNHydrographs(AppStream) RESULT(NHydrographs)
+  FUNCTION GetNHydrographs(AppStream) RESULT(NHydrographs)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
     INTEGER                         :: NHydrographs
     
@@ -754,17 +1236,42 @@ CONTAINS
         NHydrographs = 0
     END IF
 
-  END FUNCTION AppStream_GetNHydrographs
+  END FUNCTION GetNHydrographs
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM NODE IDS WHERE HYDROGRAPHS AREPRINTED
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetHydrographIDs(AppStream,IDs)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(OUT)             :: IDs(:)
+    
+    !Localk variables
+    INTEGER,ALLOCATABLE :: iStrmNodeIDs(:)
+    
+    IF (AppStream%lDefined) THEN
+        !Return if the size of IDs array is zero
+        IF (SIZE(IDs) .EQ. 0) RETURN
+    
+        ALLOCATE (iStrmNodeIDs(AppStream%Me%NStrmNodes))
+        CALL AppStream%Me%GetStrmNodeIDs(iStrmNodeIDs)
+        CALL AppStream%Me%StrmHyd%GetHydrographNodes(IDs)
+        
+        IDs = iStrmNodeIDs(IDs)
+        
+    END IF
+
+  END SUBROUTINE GetHydrographIDs
   
   
   ! -------------------------------------------------------------
   ! --- GET COORDINATES OF HYDROGRAPHS PRINTED
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_GetHydrographCoordinates(AppStream,StrmGWConnector,GridNodeCoordinates,X,Y)
+  SUBROUTINE GetHydrographCoordinates(AppStream,StrmGWConnector,GridX,GridY,XHyd,YHyd)
     CLASS(AppStreamType),INTENT(IN)      :: AppStream
     TYPE(StrmGWConnectorType),INTENT(IN) :: StrmGWConnector
-    TYPE(NodeType),INTENT(IN)            :: GridNodeCoordinates(:)
-    REAL(8),INTENT(OUT)                  :: X(:),Y(:)
+    REAL(8),INTENT(IN)                   :: GridX(:),GridY(:)
+    REAL(8),INTENT(OUT)                  :: XHyd(:),YHyd(:)
     
     !Local variables
     INTEGER,ALLOCATABLE :: iGWNodes(:)
@@ -775,21 +1282,33 @@ CONTAINS
     !Get the corresponding gw nodes
     CALL StrmGWConnector%GetAllGWNodes(iGWNodes)
     
-    CALL AppStream%Me%StrmHyd%GetCoordinates(iGWNodes,GridNodeCoordinates,X,Y)
+    CALL AppStream%Me%StrmHyd%GetCoordinates(iGWNodes,GridX,GridY,XHyd,YHyd)
 
-  END SUBROUTINE AppStream_GetHydrographCoordinates
+  END SUBROUTINE GetHydrographCoordinates
   
   
   ! -------------------------------------------------------------
   ! --- GET DESTINATION FOR DIVERSIONS
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_GetDiversionDestination(AppStream,Destination)
+  SUBROUTINE GetDiversionDestination(AppStream,Destination)
     CLASS(AppStreamType),INTENT(IN)       :: AppStream
     TYPE(FlowDestinationType),ALLOCATABLE :: Destination(:)
     
     IF (AppStream%lDefined) CALL Supply_GetDestination(AppStream%Me%AppDiverBypass%Diver%Deli , Destination)
     
-  END SUBROUTINE AppStream_GetDiversionDestination
+  END SUBROUTINE GetDiversionDestination
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET DIVERSION IDs
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE AppStream_GetDiversionIDs(AppStream,IDs)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(OUT)             :: IDs(:)
+    
+    IF (AppStream%lDefined) CALL AppStream%Me%GetDiversionIDs(IDs)
+    
+  END SUBROUTINE AppStream_GetDiversionIDs
   
   
   ! -------------------------------------------------------------
@@ -811,7 +1330,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET RATING TABLE (STAGE VS. FLOW) AT A NODE
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_GetStageFlowRatingTable(AppStream,iNode,Stage,Flow)
+  SUBROUTINE GetStageFlowRatingTable(AppStream,iNode,Stage,Flow)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
     INTEGER,INTENT(IN)              :: iNode
     REAL(8),INTENT(OUT)             :: Stage(:),Flow(:)
@@ -823,13 +1342,13 @@ CONTAINS
         Flow  = 0.0
     END IF
     
-  END SUBROUTINE AppStream_GetStageFlowRatingTable
+  END SUBROUTINE GetStageFlowRatingTable
   
   
   ! -------------------------------------------------------------
   ! --- GET REACH DESTINATION
   ! -------------------------------------------------------------
-  PURE FUNCTION AppStream_GetReachOutflowDest(AppStream,iReach) RESULT(iDest)
+  PURE FUNCTION GetReachOutflowDest(AppStream,iReach) RESULT(iDest)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
     INTEGER,INTENT(IN)              :: iReach
     INTEGER                         :: iDest
@@ -840,13 +1359,13 @@ CONTAINS
         iDest = -1
     END IF
     
-  END FUNCTION AppStream_GetReachOutflowDest
+  END FUNCTION GetReachOutflowDest
 
   
   ! -------------------------------------------------------------
   ! --- GET REACH DESTINATION TYPE
   ! -------------------------------------------------------------
-  PURE FUNCTION AppStream_GetReachOutflowDestType(AppStream,iReach) RESULT(iDestType)
+  PURE FUNCTION GetReachOutflowDestType(AppStream,iReach) RESULT(iDestType)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
     INTEGER,INTENT(IN)              :: iReach
     INTEGER                         :: iDestType
@@ -857,13 +1376,30 @@ CONTAINS
         iDestType = -1
     END IF
     
-  END FUNCTION AppStream_GetReachOutflowDestType
+  END FUNCTION GetReachOutflowDestType
 
 
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF STREAM NODES IN A REACH DEFINED WITH ITS INDEX
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetReachNNodes(AppStream,iReach) RESULT(iNNodes)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iReach
+    INTEGER                         :: iNNodes
+    
+    IF (AppStream%lDefined) THEN
+        iNNodes = Appstream%Me%GetReachNNodes(iReach)
+    ELSE
+        iNNodes = 0
+    END IF
+    
+  END FUNCTION GetReachNNodes
+
+  
   ! -------------------------------------------------------------
   ! --- GET DOWNSTREAM NODE FOR A REACH
   ! -------------------------------------------------------------
-  PURE FUNCTION AppStream_GetReachDownstrmNode(AppStream,iReach) RESULT(iNode)
+  PURE FUNCTION GetReachDownstrmNode(AppStream,iReach) RESULT(iNode)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
     INTEGER,INTENT(IN)              :: iReach
     INTEGER                         :: iNode
@@ -874,13 +1410,13 @@ CONTAINS
         iNode = 0
     END IF
     
-  END FUNCTION AppStream_GetReachDownstrmNode
+  END FUNCTION GetReachDownstrmNode
     
 
   ! -------------------------------------------------------------
   ! --- GET UPSTREAM NODE FLAGS FOR ALL STREAM NODES
   ! -------------------------------------------------------------
-  PURE SUBROUTINE AppStream_GetUpstrmNodeFlags(AppStream,lUpstrmNode)
+  PURE SUBROUTINE GetUpstrmNodeFlags(AppStream,lUpstrmNode)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
     LOGICAL,INTENT(OUT)             :: lUpstrmNode(:)
     
@@ -890,13 +1426,13 @@ CONTAINS
         lUpstrmNode = .FALSE.
     END IF
     
-  END SUBROUTINE AppStream_GetUpstrmNodeFlags
+  END SUBROUTINE GetUpstrmNodeFlags
 
   
   ! -------------------------------------------------------------
   ! --- GET UPSTREAM NODE FOR A REACH
   ! -------------------------------------------------------------
-  PURE FUNCTION AppStream_GetReachUpstrmNode(AppStream,iReach) RESULT(iNode)
+  PURE FUNCTION GetReachUpstrmNode(AppStream,iReach) RESULT(iNode)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
     INTEGER,INTENT(IN)              :: iReach
     INTEGER                         :: iNode
@@ -907,7 +1443,176 @@ CONTAINS
         iNode = 0
     END IF
     
-  END FUNCTION AppStream_GetReachUpstrmNode
+  END FUNCTION GetReachUpstrmNode
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM NODES FOR A GIVEN REACH 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetReachStrmNodes(AppStream,iReach,iStrmNodes,iStat)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iReach
+    INTEGER,ALLOCATABLE             :: iStrmNodes(:)
+    INTEGER,INTENT(OUT)             :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+17),PARAMETER :: ThisProcedure = ModName // 'GetReachStrmNodes'
+    
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%GetReachStrmNodes(iReach,iStrmNodes,iStat)
+    ELSE
+        CALL SetLastMessage('Streams are not defined to retrieve stream node IDs for a given reach!',f_iFatal,ThisProcedure)
+        iStat = -1
+    END IF
+    
+  END SUBROUTINE GetReachStrmNodes
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF ALL REACHES WITHIN THE NETWORK UPSTREAM FROM A REACH GIVEN WITH ITS INDEX
+  ! --- Note: Must be used after reach network is compiled
+  ! -------------------------------------------------------------
+  FUNCTION GetNReaches_InUpstrmNetwork(AppStream,iReach) RESULT(iNReaches)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iReach
+    INTEGER                         :: iNReaches
+    
+    !Return if AppStream object is not instantiated
+    IF (.NOT. AppStream%lDefined) THEN
+        iNReaches = 0
+        RETURN
+    END IF
+    
+    !Get number of reaches upstream
+    iNReaches = AppStream%Me%GetNReaches_InUpstrmNetwork(iReach)
+    
+  END FUNCTION GetNReaches_InUpstrmNetwork
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET ALL REACH NETWORK UPSTREAM FROM A REACH GIVEN WITH ITS INDEX
+  ! --- Note: Must be used after reach network is compiled
+  ! -------------------------------------------------------------
+  SUBROUTINE GetReaches_InUpstrmNetwork(AppStream,iReach,iUpstrmReaches)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iReach
+    INTEGER,ALLOCATABLE             :: iUpstrmReaches(:)
+    
+    !Return if AppStream object is not instantiated
+    IF (.NOT. AppStream%lDefined) THEN
+        ALLOCATE(iUpstrmReaches(0))
+        RETURN
+    END IF
+    
+    !Get reaches upstream
+    CALL AppStream%Me%GetReaches_InUpstrmNetwork(iReach,iUpstrmReaches)
+    
+  END SUBROUTINE GetReaches_InUpstrmNetwork
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF REACHES IMMEDIATELY UPSTREAM OF A GIVEN REACH
+  ! --- Note: Must be used after reach network is compiled
+  ! -------------------------------------------------------------
+  FUNCTION GetReachNUpstrmReaches(AppStream,iReach) RESULT(iNReaches)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iReach
+    INTEGER                         :: iNReaches
+    
+    !Return if AppStream object is not instantiated
+    IF (.NOT. AppStream%lDefined) THEN
+        iNReaches = 0
+        RETURN
+    END IF
+    
+    !Get number of reaches upstream
+    iNReaches = AppStream%Me%GetReachNUpstrmReaches(iReach)
+    
+  END FUNCTION GetReachNUpstrmReaches
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET REACHES IMMEDIATELY UPSTREAM OF A GIVEN REACH
+  ! --- Note: Must be used after reach network is compiled
+  ! -------------------------------------------------------------
+  SUBROUTINE GetReachUpstrmReaches(AppStream,iReach,iUpstrmReaches)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iReach
+    INTEGER,ALLOCATABLE             :: iUpstrmReaches(:)
+    
+    !Return if AppStream object is not instantiated
+    IF (.NOT. AppStream%lDefined) THEN
+        ALLOCATE(iUpstrmReaches(0))
+        RETURN
+    END IF
+    
+    !Get reaches upstream
+    CALL AppStream%Me%GetReachUpstrmReaches(iReach,iUpstrmReaches)
+    
+  END SUBROUTINE GetReachUpstrmReaches
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM NODE CONNECTIVITY
+  ! -------------------------------------------------------------
+  SUBROUTINE GetStrmConnectivity(AppStream,StrmConnectivity)
+    CLASS(AppStreamType),INTENT(IN)        :: AppStream
+    TYPE(ConnectivityListType),ALLOCATABLE :: StrmConnectivity(:)
+    
+    !Local variables
+    INTEGER :: indxNode
+    
+    IF (AppStream%lDefined) THEN
+        ALLOCATE (StrmConnectivity(AppStream%Me%NStrmNodes))
+        DO indxNode=1,AppStream%Me%NStrmNodes
+            CALL AppStream%Me%GetUpstrmNodes(indxNode,StrmConnectivity(indxNode)%ConnectedNodes)
+            StrmConnectivity(indxNode)%nConnectedNodes = SIZE(StrmConnectivity(indxNode)%ConnectedNodes)
+        END DO
+    ELSE
+        ALLOCATE (StrmConnectivity(0))
+    END IF
+    
+  END SUBROUTINE GetStrmConnectivity
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF STREAM NODES DRAINING INTO A NODE
+  ! -------------------------------------------------------------
+  FUNCTION GetNUpstrmNodes(AppStream,iStrmNode) RESULT(iNNodes)
+     CLASS(AppStreamType),INTENT(IN) :: AppStream
+     INTEGER,INTENT(IN)              :: iStrmNode
+     INTEGER                         :: iNNodes
+     
+    IF (AppStream%lDefined) THEN
+        iNNodes = AppStream%Me%GetNUpstrmNodes(iStrmNode) 
+    ELSE
+        iNNodes = 0
+    END IF
+    
+  END FUNCTION GetNUpstrmNodes
+     
+     
+  ! -------------------------------------------------------------
+  ! --- GET STREAM NODE INDICES FLOWING INTO ANOTHER NODE
+  ! -------------------------------------------------------------
+  SUBROUTINE GetUpstrmNodes(AppStream,iStrmNode,iUpstrmNodes)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iStrmNode
+    INTEGER,ALLOCATABLE             :: iUpstrmNodes(:)
+    
+    !Local variables
+    INTEGER :: ErrorCode
+    
+    !Initailize
+    DEALLOCATE (iUpstrmNodes , STAT=ErrorCode)
+    
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%GetUpstrmNodes(iStrmNode,iUpstrmNodes) 
+    ELSE
+        ALLOCATE (iUpstrmNodes(0))
+    END IF
+    
+  END SUBROUTINE GetUpstrmNodes
   
   
   ! -------------------------------------------------------------
@@ -982,7 +1687,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET NUMBER OF RATING TABLE POINTS AT A STREAM NODE
   ! -------------------------------------------------------------
-  PURE FUNCTION AppStream_GetNRatingTablePoints(AppStream,iStrmNode) RESULT(N)
+  PURE FUNCTION GetNRatingTablePoints(AppStream,iStrmNode) RESULT(N)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
     INTEGER,INTENT(IN)              :: iStrmNode
     INTEGER                         :: N
@@ -998,17 +1703,37 @@ CONTAINS
       N = 0
     END IF
     
-  END FUNCTION AppStream_GetNRatingTablePoints
+  END FUNCTION GetNRatingTablePoints
 
 
   ! -------------------------------------------------------------
   ! --- GET BOTTOM ELEVATIONS
   ! -------------------------------------------------------------
-  PURE SUBROUTINE AppStream_GetBottomElevations(AppStream,BottomElev)
+  SUBROUTINE AppStream_GetBottomElevations(AppStream,lModel_ForInquiry_Defined,BottomElev,iStat)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
+    LOGICAL,INTENT(IN)              :: lModel_ForInquiry_Defined
     REAL(8),INTENT(INOUT)           :: BottomElev(:)
+    INTEGER,INTENT(OUT)             :: iStat
     
-    IF (AppStream%lDefined)  BottomElev = AppStream%Me%GetBottomElevations()
+    !Local variables
+    CHARACTER(LEN=ModNameLen+29),PARAMETER :: ThisProcedure = ModName // 'AppStream_GetBottomElevations'
+    
+    IF (AppStream%lDefined)  THEN
+        IF (lModel_ForInquiry_Defined) THEN
+            SELECT TYPE (p => AppStream%Me)
+                TYPE IS (AppStream_v50_Type)
+                    CALL SetLastMessage('Model is instantiated only partially. Stream bottom elevations for Stream Package Component v5.0 cannot be retrieved from a partially instantiated model.',f_iWarn,ThisProcedure)
+                    BottomElev = 0.0
+                    iStat      = -1
+                CLASS DEFAULT
+                    BottomElev = AppStream%Me%GetBottomElevations()
+                    iStat      = 0
+            END SELECT
+        ELSE
+            BottomElev = AppStream%Me%GetBottomElevations()
+            iStat      = 0
+        END IF
+    END IF
     
   END SUBROUTINE AppStream_GetBottomElevations
   
@@ -1016,53 +1741,188 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET STREAM FLOWS
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_GetFlows(AppStream,Flows)
+  SUBROUTINE GetFlows(AppStream,Flows)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
     REAL(8),INTENT(INOUT)           :: Flows(:)
     
     IF (AppStream%lDefined) CALL AppStream%Me%GetFlows(Flows)
     
-  END SUBROUTINE AppStream_GetFlows
+  END SUBROUTINE GetFlows
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM FLOW AT A NODE
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetFlow(AppStream,iStrmNode) RESULT(Flow)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iStrmNode
+    REAL(8)                         :: Flow
+    
+    IF (AppStream%lDefined) THEN
+        Flow = AppStream%Me%GetFlow(iStrmNode)
+    ELSE
+        Flow = 0.0
+    END IF
+    
+  END FUNCTION GetFlow
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM INFLOWS AT SOME INFLOWS
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetInflows_AtSomeInflows(AppStream,iInflows,rInflows)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iInflows(:)
+    REAL(8),INTENT(OUT)             :: rInflows(:)
+    
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%GetInflows_AtSomeInflows(iInflows,rInflows)
+    ELSE
+        rInflows = 0.0
+    END IF
+       
+  END SUBROUTINE GetInflows_AtSomeInflows
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM INFLOWS AT A SET OF NODES
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetInflows_AtSomeNodes(AppStream,iStrmNodes,rInflows)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iStrmNodes(:)
+    REAL(8),INTENT(OUT)             :: rInflows(:)
+    
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%GetInflows_AtSomeNodes(iStrmNodes,rInflows)
+    ELSE
+        rInflows = 0.0
+    END IF
+    
+  END SUBROUTINE GetInflows_AtSomeNodes
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM INFLOW AT A NODE
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetInflow_AtANode(AppStream,iStrmNode) RESULT(rInflow)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iStrmNode
+    REAL(8)                         :: rInflow
+    
+    IF (AppStream%lDefined) THEN
+        rInflow = AppStream%Me%GetInflow_AtANode(iStrmNode)
+    ELSE
+        rInflow = 0.0
+    END IF
+    
+  END FUNCTION GetInflow_AtANode
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF INFLOWS
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetNInflows(AppStream) RESULT(iNInflows)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER                         :: iNInflows
+    
+    IF (AppStream%lDefined) THEN
+        iNInflows = AppStream%Me%GetNInflows()
+    ELSE
+        iNInflows = 0
+    END IF
+    
+  END FUNCTION GetNInflows
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET INFLOW NODES
+  ! -------------------------------------------------------------
+  SUBROUTINE GetInflowNodes(AppStream,iNodes)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,ALLOCATABLE             :: iNodes(:)
+    
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%GetInflowNodes(iNodes)
+    ELSE
+        ALLOCATE (iNodes(0))
+    END IF
+    
+  END SUBROUTINE GetInflowNodes
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET INFLOW IDs
+  ! -------------------------------------------------------------
+  SUBROUTINE GetInflowIDs(AppStream,IDs)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,ALLOCATABLE             :: IDs(:)
+    
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%GetInflowIDs(IDs)
+    ELSE
+        ALLOCATE (IDs(0))
+    END IF
+    
+  END SUBROUTINE GetInflowIDs
   
   
   ! -------------------------------------------------------------
   ! --- GET STREAM HEADS
   ! -------------------------------------------------------------
-  PURE SUBROUTINE AppStream_GetHeads(AppStream,Heads)
+  PURE SUBROUTINE GetHeads(AppStream,Heads)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
     REAL(8),INTENT(INOUT)           :: Heads(:)
     
     IF (AppStream%lDefined) CALL AppStream%Me%GetHeads(Heads)
     
-  END SUBROUTINE AppStream_GetHeads
+  END SUBROUTINE GetHeads
   
   
   ! -------------------------------------------------------------
   ! --- GET STREAM STAGES
   ! -------------------------------------------------------------
-  PURE SUBROUTINE AppStream_GetStages(AppStream,Stages)
+  SUBROUTINE GetStages(AppStream,lModel_ForInquiry_Defined,Stages,iStat)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
+    LOGICAL,INTENT(IN)              :: lModel_ForInquiry_Defined
     REAL(8),INTENT(INOUT)           :: Stages(:)
+    INTEGER,INTENT(OUT)             :: iStat
     
     !Local variables
-    INTEGER             :: NStrmNodes
-    REAL(8),ALLOCATABLE :: Heads(:),BottomElev(:)
+    CHARACTER(LEN=ModNameLen+9),PARAMETER :: ThisProcedure = ModName // 'GetStages'
+    INTEGER                               :: NStrmNodes
+    REAL(8),ALLOCATABLE                   :: Heads(:),BottomElev(:)
     
     IF (AppStream%lDefined) THEN
-        NStrmNodes = AppStream%GetNStrmNodes()
-        ALLOCATE (Heads(NStrmNodes) , BottomElev(NStrmNodes))
-        CALL AppStream%GetHeads(Heads)
-        CALL AppStream%GetBottomElevations(BottomElev)
-        Stages = Heads - BottomElev
+        IF (lModel_ForInquiry_Defined) THEN
+            SELECT TYPE (p => AppStream%Me)
+                TYPE IS (AppStream_v50_Type)
+                    CALL SetLastMessage('Model is instantiated only partially. Stream stages for Stream Package Component v5.0 cannot be retrieved from a partially instantiated model.',f_iWarn,ThisProcedure)
+                    Stages = 0.0
+                    iStat  = -1
+                CLASS DEFAULT
+                    NStrmNodes = AppStream%GetNStrmNodes()
+                    ALLOCATE (Heads(NStrmNodes) , BottomElev(NStrmNodes))
+                    CALL AppStream%GetHeads(Heads)
+                    CALL AppStream%GetBottomElevations(lModel_ForInquiry_Defined,BottomElev,iStat)
+                    Stages = Heads - BottomElev
+                    iStat  = 0
+            END SELECT
+        ELSE
+            NStrmNodes = AppStream%GetNStrmNodes()
+            ALLOCATE (Heads(NStrmNodes) , BottomElev(NStrmNodes))
+            CALL AppStream%GetHeads(Heads)
+            CALL AppStream%GetBottomElevations(lModel_ForInquiry_Defined,BottomElev,iStat)
+            Stages = Heads - BottomElev
+        END IF
     END IF
     
-  END SUBROUTINE AppStream_GetStages
+  END SUBROUTINE GetStages
   
   
   ! -------------------------------------------------------------
   ! --- GET STREAM HEAD AT A NODE
   ! -------------------------------------------------------------
-  PURE FUNCTION AppStream_GetHead_AtOneNode(AppStream,iNode,lPrevious) RESULT(Head)
+  PURE FUNCTION GetHead_AtOneNode(AppStream,iNode,lPrevious) RESULT(Head)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
     INTEGER,INTENT(IN)              :: iNode
     LOGICAL,INTENT(IN)              :: lPrevious
@@ -1070,19 +1930,19 @@ CONTAINS
     
     IF (AppStream%lDefined) Head = AppStream%Me%GetHead_AtOneNode(iNode,lPrevious)
     
-  END FUNCTION AppStream_GetHead_AtOneNode
+  END FUNCTION GetHead_AtOneNode
   
   
   ! -------------------------------------------------------------
   ! --- GET SUPPLY ADJUSTMENT FLAGS
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_GetiColAdjust(AppStream,iColAdjust)
+  SUBROUTINE GetiColAdjust(AppStream,iColAdjust)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
     INTEGER,INTENT(OUT)             :: iColAdjust(:)
     
     CALL AppStream%Me%GetiColAdjust(iColAdjust)
         
-  END SUBROUTINE AppStream_GetiColAdjust
+  END SUBROUTINE GetiColAdjust
 
 
   ! -------------------------------------------------------------
@@ -1117,7 +1977,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET THE NUMBER OF DIVERSIONS
   ! -------------------------------------------------------------
-  PURE FUNCTION AppStream_GetNDiver(AppStream) RESULT(NDiver)
+  PURE FUNCTION GetNDiver(AppStream) RESULT(NDiver)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
     INTEGER                         :: NDiver
     
@@ -1127,13 +1987,13 @@ CONTAINS
         NDiver = 0
     END IF
     
-  END FUNCTION AppStream_GetNDiver
+  END FUNCTION GetNDiver
   
   
   ! -------------------------------------------------------------
   ! --- GET THE NUMBER OF BYPASSES
   ! -------------------------------------------------------------
-  PURE FUNCTION AppStream_GetNBypass(AppStream) RESULT(NBypass)
+  PURE FUNCTION GetNBypass(AppStream) RESULT(NBypass)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
     INTEGER                         :: NBypass
     
@@ -1143,13 +2003,13 @@ CONTAINS
         NBypass = 0
     END IF
     
-  END FUNCTION AppStream_GetNBypass
+  END FUNCTION GetNBypass
   
   
   ! -------------------------------------------------------------
   ! --- GET THE NUMBER OF REACHES
   ! -------------------------------------------------------------
-  PURE FUNCTION AppStream_GetNReaches(AppStream) RESULT(NReaches)
+  PURE FUNCTION GetNReaches(AppStream) RESULT(NReaches)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
     INTEGER                         :: NReaches
     
@@ -1159,13 +2019,13 @@ CONTAINS
         NReaches = 0
     END IF
     
-  END FUNCTION AppStream_GetNReaches
+  END FUNCTION GetNReaches
   
   
   ! -------------------------------------------------------------
   ! --- GET THE NUMBER OF STREAM NODES
   ! -------------------------------------------------------------
-  PURE FUNCTION AppStream_GetNStrmNodes(AppStream) RESULT(NStrmNodes)
+  PURE FUNCTION GetNStrmNodes(AppStream) RESULT(NStrmNodes)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
     INTEGER                         :: NStrmNodes
     
@@ -1175,26 +2035,180 @@ CONTAINS
         NStrmNodes = 0
     END IF
     
-  END FUNCTION AppStream_GetNStrmNodes
+  END FUNCTION GetNStrmNodes
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET DIVERSION/DELIVERY IDS
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetDiversionIDs(AppStream,IDs)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(OUT)             :: IDs(:)
+    
+    IF (AppStream%lDefined) CALL AppStream%Me%GetDiversionIDs(IDs)
+    
+  END SUBROUTINE GetDiversionIDs
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET BYPASS IDS
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetBypassIDs(AppStream,IDs)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(OUT)             :: IDs(:)
+    
+    IF (AppStream%lDefined) CALL AppStream%Me%GetBypassIDs(IDs)
+    
+  END SUBROUTINE GetBypassIDs
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET BYPASS/DIVERSION ORIGIN AND DESTINATION DATA
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetBypassDiverOriginDestData(AppStream,lIsBypass,iBypassOrDiver,iNodeExport,iDestType,iDest)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    LOGICAL,INTENT(IN)              :: lIsBypass
+    INTEGER,INTENT(IN)              :: iBypassOrDiver
+    INTEGER,INTENT(OUT)             :: iNodeExport,iDestType,iDest
+    
+    IF (AppStream%lDefined) CALL AppStream%Me%GetBypassDiverOriginDestData(lIsBypass,iBypassOrDiver,iNodeExport,iDestType,iDest)
+    
+  END SUBROUTINE GetBypassDiverOriginDestData
+  
+
+  ! -------------------------------------------------------------
+  ! --- GET NET FLOW FROM A BYPASS (AFTER RECOVERABLE AND NON-RECOVERABLE LOSSES ARE TAKEN OUT)
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetBypassReceived_FromABypass(AppStream,iBypass) RESULT(rFlow)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iBypass
+    REAL(8)                         :: rFlow
+    
+    IF (AppStream%lDefined) THEN
+        rFlow = AppStream%Me%GetBypassReceived_FromABypass(iBypass)
+    ELSE
+        rFlow = 0.0
+    END IF
+    
+  END FUNCTION GetBypassReceived_FromABypass
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET NET BYPASS INFLOWS AT ALL STREAM NODES
+  ! -------------------------------------------------------------
+  SUBROUTINE GetNetBypassInflows(AppStream,rBPInflows)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    REAL(8),INTENT(OUT)             :: rBPInflows(:)
+    
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%GetNetBypassInflows(rBPInflows)
+    ELSE
+        rBPInflows = 0.0
+    END IF
+    
+  END SUBROUTINE GetNetBypassInflows
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET BYPASS INFLOWS AT ALL STREAM NODES
+  ! -------------------------------------------------------------
+  SUBROUTINE GetStrmBypassInflows(AppStream,rBPInflows)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    REAL(8),INTENT(OUT)             :: rBPInflows(:)
+    
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%GetStrmBypassInflows(rBPInflows)
+    ELSE
+        rBPInflows = 0.0
+    END IF
+    
+  END SUBROUTINE GetStrmBypassInflows
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET BYPASS OUTFLOWS FOR ALL BYPASSES
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetBypassOutflows(AppStream,rOutflows)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    REAL(8),INTENT(OUT)             :: rOutflows(:)
+    
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%GetBypassOutflows(rOutflows)
+    ELSE
+        rOutflows = 0.0
+    END IF
+    
+  END SUBROUTINE GetBypassOutflows
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM REACH IDS
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetReachIDs(AppStream,IDs)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(OUT)             :: IDs(:)
+    
+    IF (AppStream%lDefined) CALL AppStream%Me%GetReachIDs(IDs)
+    
+  END SUBROUTINE GetReachIDs
+  
+  
+  ! -------------------------------------------------------------
+  ! --- CONVERT STREAM REACH ID TO INDEX
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetReachIndex(AppStream,iReachID) RESULT(Index)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iReachID
+    INTEGER                         :: Index
+    
+    IF (AppStream%lDefined) THEN
+        Index = AppStream%Me%GetReachIndex(iReachID)
+    ELSE
+        Index = 0
+    END IF
+    
+  END FUNCTION GetReachIndex
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET REACHES FOR SOME STREAM NODES
+  ! -------------------------------------------------------------
+  SUBROUTINE GetReaches_ForStrmNodes(AppStream,iStrmNodes,iReaches,iStat)
+    CLASS(AppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)              :: iStrmNodes(:)
+    INTEGER,INTENT(OUT)             :: iReaches(:),iStat
+    
+    !Return if no streams are defined
+    IF (AppStream%iVersion .EQ. 0) THEN
+        iReaches = 0
+        iStat    = 0
+        RETURN
+    END IF
+    
+    !Get reaches for stream nodes
+    CALL AppStream%Me%GetReaches_ForStrmNodes(iStrmNodes,iReaches,iStat)
+    
+  END SUBROUTINE GetReaches_ForStrmNodes
   
   
   ! -------------------------------------------------------------
   ! --- GET VERSION NUMBER
   ! -------------------------------------------------------------
-  FUNCTION AppStream_GetVersion() RESULT(cVrs)
+  FUNCTION GetVersion() RESULT(cVrs)
     CHARACTER(:),ALLOCATABLE :: cVrs
     
     !Local variables
-    TYPE(AppStream_v40_Type) :: v40
-    TYPE(AppStream_v41_Type) :: v41
-    TYPE(AppStream_v42_Type) :: v42
-    TYPE(AppStream_v50_Type) :: v50
-    TYPE(VersionType)        :: MyVersion
+    TYPE(AppStream_v40_Type)  :: v40
+    TYPE(AppStream_v41_Type)  :: v41
+    TYPE(AppStream_v42_Type)  :: v42
+    TYPE(AppStream_v421_Type) :: v421
+    TYPE(AppStream_v50_Type)  :: v50
+    TYPE(VersionType)         :: MyVersion
     
     MyVersion = MyVersion%New(iLenVersion,cVersion,cRevision)
-    cVrs      = TRIM(MyVersion%GetVersion()) // ' (Interface) ; ' // TRIM(v40%GetVersion()) // ', ' // TRIM(v41%GetVersion()) // ', ' // TRIM(v42%GetVersion()) // ', ' // TRIM(v50%GetVersion()) // ' (Components)'
+    cVrs      = TRIM(MyVersion%GetVersion()) // ' (Interface) ; ' // TRIM(v40%GetVersion()) // ', ' // TRIM(v41%GetVersion()) // ', ' // TRIM(v42%GetVersion()) // ', '  // TRIM(v421%GetVersion()) // ', ' // TRIM(v50%GetVersion()) // ' (Components)'
     
-  END FUNCTION AppStream_GetVersion
+  END FUNCTION GetVersion
 
     
 
@@ -1209,6 +2223,19 @@ CONTAINS
 ! ******************************************************************
 ! ******************************************************************
 
+  ! -------------------------------------------------------------
+  ! --- SET DIVERSION READ
+  ! -------------------------------------------------------------
+  SUBROUTINE SetDiversionRead(AppStream,iDiver,rDiversion)
+    CLASS(AppStreamType) :: AppStream
+    INTEGER,INTENT(IN)   :: iDiver
+    REAL(8),INTENT(IN)   :: rDiversion
+    
+    IF (AppStream%lDefined) CALL AppStream%Me%SetDiversionRead(iDiver,rDiversion) 
+    
+  END SUBROUTINE SetDiversionRead
+  
+  
   ! -------------------------------------------------------------
   ! --- SET SUPPLY SPECS
   ! -------------------------------------------------------------
@@ -1253,7 +2280,7 @@ CONTAINS
     IF (AppStream%lDefined) THEN
         !Make sure this is done only when streams are non-routed
         IF (AppStream%Me%lRouted) THEN
-            CALL SetLastMessage('Stream flows can only be assigned when streams are simulated as non-routed streams!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Stream flows can only be assigned when streams are simulated as non-routed streams!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -1263,7 +2290,40 @@ CONTAINS
   END SUBROUTINE AppStream_SetStreamFlow
   
   
+  ! -------------------------------------------------------------
+  ! --- SET STREAM INFLOW AT A NODE
+  ! -------------------------------------------------------------
+  SUBROUTINE SetStreamInflow(AppStream,iStrmNode,rFlow,lAdd,iStat)
+    CLASS(AppStreamType) :: AppStream
+    INTEGER,INTENT(IN)   :: iStrmNode
+    REAL(8),INTENT(IN)   :: rFlow
+    LOGICAL,INTENT(IN)   :: lAdd
+    INTEGER,INTENT(OUT)  :: iStat
+    
+    !Initialize
+    iStat = 0
+    
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%SetStreamInflow(iStrmNode,rFlow,lAdd)
+    END IF
+    
+  END SUBROUTINE SetStreamInflow
   
+  
+  ! -------------------------------------------------------------
+  ! --- SET BYPASS ORIGINATING FLOW AS WELL AS OTHER RELATED FLOWS
+  ! -------------------------------------------------------------
+  SUBROUTINE SetBypassFlows_AtABypass(AppStream,iBypass,rOriginatingFlow)
+    CLASS(AppStreamType) :: AppStream
+    INTEGER,INTENT(IN)   :: iBypass
+    REAL(8),INTENT(IN)   :: rOriginatingFlow
+    
+    IF (AppStream%lDefined) CALL AppStream%Me%SetBypassFlows_AtABypass(iBypass,rOriginatingFlow) 
+    
+  END SUBROUTINE SetBypassFlows_AtABypass
+
+  
+
   
 ! ******************************************************************
 ! ******************************************************************
@@ -1295,26 +2355,23 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ APPLICATION STREAMS RELATED DATA
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_ReadTSData(AppStream,lDiverAdjusted,TimeStep,iStat,DiversionsOverwrite)
+  SUBROUTINE ReadTSData(AppStream,lDiverAdjusted,TimeStep,iDiversions,rDiversions,iStrmInflows,rStrmInflows,iBypasses,rBypasses,iStat)
     CLASS(AppStreamType)          :: AppStream
     LOGICAL,INTENT(IN)            :: lDiverAdjusted
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
+    INTEGER,INTENT(IN)            :: iDiversions(:),iStrmInflows(:),iBypasses(:)
+    REAL(8),INTENT(IN)            :: rDiversions(:),rStrmInflows(:),rBypasses(:)
     INTEGER,INTENT(OUT)           :: iStat
-    REAL(8),OPTIONAL,INTENT(IN)   :: DiversionsOverwrite(:)
     
     iStat = 0
     
     IF (AppStream%lDefined) THEN
-        IF (AppStream%Me%lRouted) THEN
-            IF (PRESENT(DiversionsOverwrite)) THEN
-                CALL AppStream%Me%ReadTSData(lDiverAdjusted,TimeStep,iStat,DiversionsOverwrite)
-            ELSE
-                CALL AppStream%Me%ReadTSData(lDiverAdjusted,TimeStep,iStat)
-            END IF
+        IF (AppStream%Me%lRouted) THEN 
+            CALL AppStream%Me%ReadTSData(lDiverAdjusted,TimeStep,iDiversions,rDiversions,iStrmInflows,rStrmInflows,iBypasses,rBypasses,iStat)
         END IF
     END IF
     
-  END SUBROUTINE AppStream_ReadTSData
+  END SUBROUTINE ReadTSData
   
 
 
@@ -1368,8 +2425,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- WRITE PREPROCESSED DATA TO TEXT FILE
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_WriteDataToTextFile(AppStream,UNITLTOU,FACTLTOU,Stratigraphy,StrmGWConnector,iStat)
+  SUBROUTINE AppStream_WriteDataToTextFile(AppStream,iGWNodeIDs,UNITLTOU,FACTLTOU,Stratigraphy,StrmGWConnector,iStat)
     CLASS(AppStreamType),INTENT(IN)      :: AppStream
+    INTEGER,INTENT(IN)                   :: iGWNodeIDs(:)
     CHARACTER(LEN=*),INTENT(IN)          :: UNITLTOU
     REAL(8),INTENT(IN)                   :: FACTLTOU
     TYPE(StratigraphyType),INTENT(IN)    :: Stratigraphy
@@ -1377,7 +2435,7 @@ CONTAINS
     INTEGER,INTENT(OUT)                  :: iStat
     
     IF (AppStream%lDefined) THEN
-        CALL AppStream%Me%WriteDataToTextFile(UNITLTOU,FACTLTOU,Stratigraphy,StrmGWConnector,iStat)
+        CALL AppStream%Me%WriteDataToTextFile(iGWNodeIDs,UNITLTOU,FACTLTOU,Stratigraphy,StrmGWConnector,iStat)
     ELSE
         iStat = 0
     END IF
@@ -1414,6 +2472,23 @@ CONTAINS
 ! ******************************************************************
 ! ******************************************************************
 
+  ! -------------------------------------------------------------
+  ! --- CONVERT REACH DESTINATION IDs TO INDICES (MAINLY FOR LAKE DESTINATIONS)
+  ! -------------------------------------------------------------
+  SUBROUTINE DestinationIDs_To_Indices(AppStream,iLakeIDs,iStat)
+    CLASS(AppStreamType) :: AppStream
+    INTEGER,INTENT(IN)   :: iLakeIDs(:)
+    INTEGER,INTENT(OUT)  :: iStat
+    
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%DestinationIDs_To_Indices(iLakeIDs,iStat)
+    ELSE
+        iStat = 0
+    END IF
+    
+  END SUBROUTINE DestinationIDs_To_Indices
+  
+  
   ! -------------------------------------------------------------
   ! --- MODIFY HEADS USING DELTA_HEADS
   ! -------------------------------------------------------------
@@ -1602,24 +2677,28 @@ CONTAINS
   ! --- CHECK IF ONE STREAM NODE (Node1) IS UPSTREAM OF ANOTHER (Node2)
   ! --- Note: If lBypass is TRUE then, Node2 is the bypass ID number
   ! -------------------------------------------------------------
-  FUNCTION AppStream_IsUpstreamNode(AppStream,Node1,Node2,lBypass,iStat) RESULT(lUpstream)
+  SUBROUTINE IsUpstreamNode(AppStream,Node1,Node2,lBypass,lUpstream,iStat)
     CLASS(AppStreamType),INTENT(IN) :: AppStream
     INTEGER,INTENT(IN)              :: Node1,Node2
     LOGICAL,INTENT(IN)              :: lBypass
+    LOGICAL,INTENT(OUT)             :: lUpstream
     INTEGER,INTENT(OUT)             :: iStat
-    LOGICAL                         :: lUpstream
     
     iStat = 0
     
-    IF (AppStream%lDefined) lUpstream = AppStream%Me%IsUpstreamNode(Node1,Node2,lBypass,iStat)
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%IsUpstreamNode(Node1,Node2,lBypass,lUpstream,iStat)
+    ELSE
+        lUpstream = .FALSE.
+    END IF
     
-  END FUNCTION AppStream_IsUpstreamNode
+  END SUBROUTINE IsUpstreamNode
   
   
   ! -------------------------------------------------------------
   ! ---TRANSFER ANY TEXT/DSS OUTPUT TO HDF FOR POST_PROCESSING
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_TransferOutputToHDF(AppStream,TimeStep,NTIME,iStat)
+  SUBROUTINE TransferOutputToHDF(AppStream,TimeStep,NTIME,iStat)
     CLASS(AppStreamType)          :: AppStream
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
     INTEGER,INTENT(IN)            :: NTIME
@@ -1629,9 +2708,31 @@ CONTAINS
     
     IF (AppStream%lDefined) CALL AppStream%Me%TransferOutputToHDF(TimeStep,NTIME,iStat)
         
-  END SUBROUTINE AppStream_TransferOutputToHDF
+  END SUBROUTINE TransferOutputToHDF
 
 
+  ! -------------------------------------------------------------
+  ! --- ADD BYPASS
+  ! -------------------------------------------------------------
+  SUBROUTINE AddBypass(AppStream,ID,iNode_Exp,iColBypass,cName,rFracRecvLoss,rFracNonRecvLoss,iNRechargeElems,iRechargeElems,rRechargeFractions,iDestType,iDest,StrmLakeConnector,iStat)
+    CLASS(AppStreamType)        :: AppStream
+    INTEGER,INTENT(IN)          :: ID,iNode_Exp,iColBypass,iNRechargeElems,iRechargeElems(iNRechargeElems),iDestType,iDest
+    CHARACTER(LEN=*),INTENT(IN) :: cName
+    REAL(8),INTENT(IN)          :: rFracRecvLoss,rFracNonRecvLoss,rRechargeFractions(iNRechargeElems)
+    TYPE(StrmLakeConnectorType) :: StrmLakeConnector
+    INTEGER,INTENT(OUT)         :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+9),PARAMETER :: ThisProcedure = ModName // 'AddBypass'
+    
+    IF (AppStream%lDefined) THEN
+        CALL AppStream%Me%AddBypass(ID,iNode_Exp,iColBypass,cName,rFracRecvLoss,rFracNonRecvLoss,iNRechargeElems,iRechargeElems,rRechargeFractions,iDestType,iDest,StrmLakeConnector,iStat)
+    ELSE
+        CALL SetLastMessage('Streams not not defined to add bypass!',f_iFatal,ThisProcedure)
+        iStat = -1
+    END IF
+    
+  END SUBROUTINE AddBypass
 
   
 END MODULE

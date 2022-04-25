@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -23,13 +23,16 @@
 MODULE Package_Matrix
   !$ USE OMP_LIB
   USE Class_Version    , ONLY: VersionType
-  USE MessageLogger    , ONLY: SetLastMessage   , &
-                               MessageArray     , &
-                               iFatal
-  USE GeneralUtilities
-  USE IOInterface
-  USE Package_Misc     , ONLY: SolverDataType   , &
-                               cCompNames
+  USE MessageLogger    , ONLY: SetLastMessage           , &
+                               MessageArray             , &
+                               f_iFatal                   
+  USE GeneralUtilities , ONLY: LocateInList             , &
+                               IntToText                , &
+                               GetUniqueArrayComponents , &
+                               ShellSort
+  USE IOInterface      , ONLY: GenericFileType
+  USE Package_Misc     , ONLY: SolverDataType           , &
+                               f_cCompNames
   IMPLICIT NONE
   
 
@@ -102,15 +105,17 @@ MODULE Package_Matrix
       PROCEDURE,PASS         :: GetConnectivityIndex
       PROCEDURE,PASS         :: GetConnectivitySize
       PROCEDURE,PASS         :: GetMaxIter
+      PROCEDURE,PASS         :: GetRHSL2
       PROCEDURE,PASS,PRIVATE :: GetRHS_Component
-      PROCEDURE,PASS,PRIVATE :: GetRHS_Global
       PROCEDURE,PASS         :: GetCompRowIndices
       PROCEDURE,PASS         :: GetMaxHDeltaNode_CompID
       PROCEDURE,NOPASS       :: GetVersion
       PROCEDURE,PASS         :: SetSolver
       PROCEDURE,PASS         :: SetRHS
       PROCEDURE,PASS,PRIVATE :: SetCOEFF_OneEntry
-      PROCEDURE,PASS,PRIVATE :: SetCOEFF_Row
+      PROCEDURE,PASS,PRIVATE :: SetCOEFF_RowToSameValue
+      PROCEDURE,PASS,PRIVATE :: SetCOEFF_SomeValuesAtARow
+      PROCEDURE,PASS,PRIVATE :: SetCOEFF_AllDiagonalsForComponent
       PROCEDURE,PASS         :: WritePreprocessedData
       PROCEDURE,PASS         :: Solve
       PROCEDURE,PASS         :: ResetToZero
@@ -118,7 +123,7 @@ MODULE Package_Matrix
       PROCEDURE,PASS         :: PrintCOEFF_In_MatrixForm
       PROCEDURE,PASS,PRIVATE :: UpdateRHS_Random
       PROCEDURE,PASS,PRIVATE :: UpdateRHS_StartAtRow
-      PROCEDURE,PASS         :: ComputeRHSL2
+      PROCEDURE,PASS         :: GlobalNode_to_LocalNode
       PROCEDURE,PASS         :: New             => ReadPreprocessedData
       GENERIC,PUBLIC         :: AddConnectivity => AddConnectivity_ToOne             , &
                                                    AddConnectivity_ToMany_Sequential , &
@@ -126,9 +131,11 @@ MODULE Package_Matrix
       GENERIC,PUBLIC         :: UpdateRHS       => UpdateRHS_Random                  , &
                                                    UpdateRHS_StartAtRow
       GENERIC,PUBLIC         :: SetCOEFF        => SetCOEFF_OneEntry                 , &
-                                                   SetCOEFF_Row
-      GENERIC,PUBLIC         :: GetRHS          => GetRHS_Component                  , &
-                                                   GetRHS_Global                     
+                                                   SetCOEFF_RowToSameValue           , &
+                                                   SetCOEFF_SomeValuesAtARow         , &
+                                                   SetCOEFF_AllDiagonalsForComponent
+      GENERIC,PUBLIC         :: GetRHS          => GetRHS_Component                   
+                                                   
   END TYPE MatrixType
 
 
@@ -262,7 +269,7 @@ CONTAINS
         iNodeMaxHDelta = MAXLOC(ABS(Matrix%HDelta),DIM=1)
         CALL GlobalNode_to_LocalNode(Matrix,iNodeMaxHDelta,iCompID,iNodeID)
         iNodeMaxHDelta = iNodeID
-        cCompName      = cCompNames(iCompID)
+        cCompName      = f_cCompNames(iCompID)
     ELSE
         iNodeMaxHDelta = 0
         cCompName      = ""
@@ -300,6 +307,20 @@ CONTAINS
   
     
   ! -------------------------------------------------------------
+  ! --- GET L-2 NORM OF THE RHS VECTOR
+  ! -------------------------------------------------------------
+  FUNCTION GetRHSL2(Matrix) RESULT(RHSL2)
+    CLASS(MatrixType),INTENT(IN) :: Matrix
+    REAL(8)                      :: RHSL2
+    
+    REAL(8),EXTERNAL :: DNRM2
+    
+    RHSL2 = DNRM2(SIZE(Matrix%RHS),Matrix%RHS,1)
+    
+  END FUNCTION GetRHSL2
+  
+  
+  ! -------------------------------------------------------------
   ! --- GET THE RHS FOR A ROW OF A COMPONENT
   ! -------------------------------------------------------------
   FUNCTION GetRHS_Component(Matrix,iCompID,iNodeID) RESULT(RHS)
@@ -317,20 +338,6 @@ CONTAINS
     RHS = Matrix%RHS(iGlobalNodeID)
     
   END FUNCTION GetRHS_Component
-    
-    
-  ! -------------------------------------------------------------
-  ! --- GET THE RHS FOR A ROW OF THE GLOBAL VECTOR
-  ! -------------------------------------------------------------
-  FUNCTION GetRHS_Global(Matrix,iGlobalNodeID) RESULT(RHS)
-    CLASS(MatrixType),INTENT(IN) :: Matrix
-    INTEGER,INTENT(IN)           :: iGlobalNodeID
-    REAL(8)                      :: RHS
-    
-    !Get the RHS value
-    RHS = Matrix%RHS(iGlobalNodeID)
-    
-  END FUNCTION GetRHS_Global
     
     
   ! -------------------------------------------------------------
@@ -420,7 +427,7 @@ CONTAINS
     
     !Make sure solver is recognized
     IF (LocateInList(iSolver,iSolverList) .EQ. 0)  THEN
-        CALL SetLastMessage('Solver ID '//TRIM(IntToText(iSolver))//' is not recognized!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Solver ID '//TRIM(IntToText(iSolver))//' is not recognized!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -428,7 +435,7 @@ CONTAINS
     !Make sure relaxation parameter is between 1 and 2.
     IF (iSolver .EQ. iSolver_SOR) THEN
         IF (Relax .LT. 1.0   .OR.   Relax .GT. 2.0)  THEN
-            CALL SetLastMessage('Relaxation parameter for SOR matrix solver must be between 1.0 and 2.0!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Relaxation parameter for SOR matrix solver must be between 1.0 and 2.0!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -468,6 +475,26 @@ CONTAINS
 
   
   ! -------------------------------------------------------------
+  ! --- SET COEFF FOR THE DIAGONAL FOR AN ENTIRE COMPONENT
+  ! -------------------------------------------------------------
+  SUBROUTINE SetCOEFF_AllDiagonalsForComponent(Matrix,iCompID,rValues)
+    CLASS(MatrixType)  :: Matrix
+    INTEGER,INTENT(IN) :: iCompID
+    REAL(8),INTENT(IN) :: rValues(:)
+    
+    !Local variables
+    INTEGER :: iStartIndex,iEndIndex
+    
+    !Get the global start and end index for the component
+    CALL Matrix%GetCompRowIndices(iCompID,iStartIndex,iEndIndex)
+    
+    !Set the diagonal
+    Matrix%COEFF(Matrix%iIndexDiag(iStartIndex:iEndIndex)) = rValues
+    
+  END SUBROUTINE SetCOEFF_AllDiagonalsForComponent
+
+ 
+  ! -------------------------------------------------------------
   ! --- SET THE VALUE OF A COEFF ENTRY
   ! -------------------------------------------------------------
   SUBROUTINE SetCOEFF_OneEntry(Matrix,iCompID,iNodeID,iCompID_Connect,iNodeID_Connect,rValue)
@@ -483,8 +510,8 @@ CONTAINS
     CALL LocalNode_To_GlobalNode(Matrix,iCompID_Connect,iNodeID_Connect,iGlobalNodeID_Connect)
     
     !Get a pointer to entry in the COEFF array that will be set 
-    indx_S             = Matrix%NJD(iGlobalNodeID)
-    indx_L             = Matrix%NJD(iGlobalNOdeID+1) - 1
+    indx_S = Matrix%NJD(iGlobalNodeID)
+    indx_L = Matrix%NJD(iGlobalNOdeID+1) - 1
     DO indx=indx_S,indx_L
         IF (Matrix%JND(indx) .EQ. iGlobalNodeID_Connect) THEN
             Matrix%COEFF(indx) = rValue
@@ -496,9 +523,9 @@ CONTAINS
 
  
   ! -------------------------------------------------------------
-  ! --- SET THE VALUE OF AN ENTIRE COEFF ROW
+  ! --- SET THE VALUE OF AN ENTIRE COEFF ROW TO THE SAME VALUE
   ! -------------------------------------------------------------
-  SUBROUTINE SetCOEFF_Row(Matrix,iCompID,iNodeID,rValue)
+  SUBROUTINE SetCOEFF_RowToSameValue(Matrix,iCompID,iNodeID,rValue)
     CLASS(MatrixType)  :: Matrix
     INTEGER,INTENT(IN) :: iCompID,iNodeID
     REAL(8),INTENT(IN) :: rValue
@@ -514,9 +541,48 @@ CONTAINS
     indx_L                      = Matrix%NJD(iGlobalNOdeID+1) - 1
     Matrix%COEFF(indx_S:indx_L) = rValue
     
-  END SUBROUTINE SetCOEFF_Row
+  END SUBROUTINE SetCOEFF_RowToSameValue
 
-  
+
+  ! -------------------------------------------------------------
+  ! --- SET THE VALUE OF AN SOME COEFF ENTRIES AT A ROW
+  ! -------------------------------------------------------------
+  SUBROUTINE SetCOEFF_SomeValuesAtARow(Matrix,iCompID,iNodeID,iCompIDs_Connect,iNodeIDs_Connect,rValues)
+    CLASS(MatrixType)  :: Matrix
+    INTEGER,INTENT(IN) :: iCompID,iNodeID,iCompIDs_Connect(:),iNodeIDs_Connect(:)
+    REAL(8),INTENT(IN) :: rValues(:)
+    
+    !Local variables
+    INTEGER :: iGlobalNodeID,iGlobalNodeIDs_Connect(SIZE(iNodeIDs_Connect)),  &
+               indx,indx_S,indx_L,iCount,nConnectedNodes
+    
+    !Initialize
+    nConnectedNodes = SIZE(iCompIDs_Connect)
+    
+    !Convert to global node IDs
+    CALL LocalNode_to_GlobalNode(Matrix,iCompID,iNodeID,iGlobalNodeID)
+    CALL LocalNode_to_GlobalNode(Matrix,iCompIDs_Connect,iNodeIDs_Connect,iGlobalNodeIDs_Connect)
+    
+    !Sort the nodes along with update values
+    IF (nConnectedNodes .GT. 1) CALL ShellSort(iGlobalNodeIDs_Connect,rValues)
+    
+    !Get a pointer to the data for the matrix row that will be updated
+    indx_S = Matrix%NJD(iGlobalNodeID)
+    indx_L = Matrix%NJD(iGlobalNodeID+1) - 1
+    
+    !Update values
+    iCount = 1
+    DO indx=indx_S,indx_L
+        IF (Matrix%JND(indx) .EQ. iGlobalNodeIDs_Connect(iCount)) THEN
+            Matrix%COEFF(indx) = rValues(iCount)
+            iCount             = iCount + 1
+            IF (iCount .GT. nConnectedNodes) EXIT
+        END IF
+    END DO
+    
+  END SUBROUTINE SetCOEFF_SomeValuesAtARow
+
+
   
 ! ******************************************************************
 ! ******************************************************************
@@ -572,12 +638,12 @@ CONTAINS
     CALL BinFile%ReadData(Matrix%JND,iStat)  ;  IF (iStat .EQ. -1) RETURN
     
     !Allocate memory for the other array attributes
-    ALLOCATE (Matrix%COEFF(iDimJND) , Matrix%RHS(iDimNJD-1)  , Matrix%HDelta(iDimNJD-1) , STAT=ErrorCode , ERRMSG=cErrMessage)  
+    ALLOCATE (Matrix%COEFF(iDimJND) , Matrix%RHS(iDimNJD-1)  ,  Matrix%HDelta(iDimNJD-1) , STAT=ErrorCode , ERRMSG=cErrMessage)  
     IF (ErrorCode .NE. 0) THEN
         CALL EmitError(cErrMessage)
         RETURN
     END IF
-       
+    
     Matrix%lConnectivityFlattened = .TRUE.
     
   CONTAINS
@@ -585,7 +651,7 @@ CONTAINS
     SUBROUTINE EmitError(cErrMessage)
       CHARACTER(LEN=*),INTENT(IN) :: cErrMessage
       
-      CALL SetLastMessage('Error in allocating memory for the matrix equation!'//NEW_LINE('x')//TRIM(cErrMessage),iFatal,ThisProcedure)
+      CALL SetLastMessage('Error in allocating memory for the matrix equation!'//NEW_LINE('x')//TRIM(cErrMessage),f_iFatal,ThisProcedure)
       iStat = -1
     
     END SUBROUTINE EmitError
@@ -661,7 +727,7 @@ CONTAINS
     
     !Make sure component has not been added before
     IF (LocateInList(iCompID,Matrix%iComps) .GT. 0) THEN
-        CALL SetLastMessage('Component ID '//TRIM(IntToText(iCompID))//' has already been added to matrix!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Component ID '//TRIM(IntToText(iCompID))//' has already been added to matrix!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -702,12 +768,12 @@ CONTAINS
     
     !Make sure both component IDs are added
     IF (LocateInList(iCompID_To,Matrix%iComps) .EQ. 0) THEN
-        CALL SetLastMessage('Component ID '//TRIM(IntToText(iCompID_To))//' to add connectivity to has not been added to the matrix!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Component ID '//TRIM(IntToText(iCompID_To))//' to add connectivity to has not been added to the matrix!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
     IF (LocateInList(iCompID_Connect,Matrix%iComps) .EQ. 0) THEN
-        CALL SetLastMessage('Component ID '//TRIM(IntToText(iCompID_Connect))//' to add connectivity from has not been added to the matrix!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Component ID '//TRIM(IntToText(iCompID_Connect))//' to add connectivity from has not been added to the matrix!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -732,11 +798,12 @@ CONTAINS
     IF (iDimConnectivityList .LT. iGlobalNodeID_To_End) THEN
         ALLOCATE (Temp_ConnectivityList(iGlobalNodeID_To_End) , STAT=ErrorCode , ERRMSG=cErrMessage)
         IF (ErrorCode .NE. 0) THEN
-            CALL SetLastMessage('Error in allocating memory for matrix connectivity list!'//NEW_LINE('x')//TRIM(cErrMessage),iFatal,ThisProcedure)
+            CALL SetLastMessage('Error in allocating memory for matrix connectivity list!'//NEW_LINE('x')//TRIM(cErrMessage),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
-        Temp_ConnectivityList(1:iDimConnectivityList) = Matrix%ConnectivityList
+        IF (iDimConnectivityList .GT. 0) &
+            Temp_ConnectivityList(1:iDimConnectivityList) = Matrix%ConnectivityList
         CALL MOVE_ALLOC(Temp_ConnectivityList , Matrix%ConnectivityList)
     END IF
     
@@ -787,12 +854,12 @@ CONTAINS
     
     !Make sure both component IDs are added
     IF (LocateInList(iCompID_To,Matrix%iComps) .EQ. 0) THEN
-        CALL SetLastMessage('Component ID '//TRIM(IntToText(iCompID_To))//' to add connectivity to has not been added to the matrix!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Component ID '//TRIM(IntToText(iCompID_To))//' to add connectivity to has not been added to the matrix!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
     IF (LocateInList(iCompID_Connect,Matrix%iComps) .EQ. 0) THEN
-        CALL SetLastMessage('Component ID '//TRIM(IntToText(iCompID_Connect))//' to add connectivity from has not been added to the matrix!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Component ID '//TRIM(IntToText(iCompID_Connect))//' to add connectivity from has not been added to the matrix!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -817,7 +884,7 @@ CONTAINS
     IF (iDimConnectivityList .LT. iDimMax) THEN
         ALLOCATE (Temp_ConnectivityList(iDimMax) , STAT=ErrorCode , ERRMSG=cErrMessage)
         IF (ErrorCode .NE. 0) THEN
-            CALL SetLastMessage('Error in allocating memory for matrix connectivity list!'//NEW_LINE('x')//TRIM(cErrMessage),iFatal,ThisProcedure)
+            CALL SetLastMessage('Error in allocating memory for matrix connectivity list!'//NEW_LINE('x')//TRIM(cErrMessage),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -870,12 +937,12 @@ CONTAINS
     
     !Make sure both component IDs are added
     IF (LocateInList(iCompID_To,Matrix%iComps) .EQ. 0) THEN
-        CALL SetLastMessage('Component ID '//TRIM(IntToText(iCompID_To))//' to add connectivity to has not been added to the matrix!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Component ID '//TRIM(IntToText(iCompID_To))//' to add connectivity to has not been added to the matrix!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
     IF (LocateInList(iCompID_Connect,Matrix%iComps) .EQ. 0) THEN
-        CALL SetLastMessage('Component ID '//TRIM(IntToText(iCompID_Connect))//' to add connectivity from has not been added to the matrix!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Component ID '//TRIM(IntToText(iCompID_Connect))//' to add connectivity from has not been added to the matrix!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -890,7 +957,7 @@ CONTAINS
     IF (iDimConnectivityList .LT. iGlobalNodeID_To) THEN
         ALLOCATE (Temp_ConnectivityList(iGlobalNodeID_To) , STAT=ErrorCode , ERRMSG=cErrMessage)
         IF (ErrorCode .NE. 0) THEN
-            CALL SetLastMessage('Error in allocating memory for matrix connectivity list!'//NEW_LINE('x')//TRIM(cErrMessage),iFatal,ThisProcedure)
+            CALL SetLastMessage('Error in allocating memory for matrix connectivity list!'//NEW_LINE('x')//TRIM(cErrMessage),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -984,9 +1051,9 @@ CONTAINS
   ! --- CONVERT A GLOBAL NODE NUMBER INTO LOCAL NODE NUMBER
   ! -------------------------------------------------------------
   SUBROUTINE GlobalNode_to_LocalNode(Matrix,iGlobalNodeID,iCompID,iNodeID)
-    TYPE(MatrixType),INTENT(IN) :: Matrix
-    INTEGER,INTENT(IN)          :: iGlobalNodeID
-    INTEGER,INTENT(OUT)         :: iCompID,iNodeID
+    CLASS(MatrixType),INTENT(IN) :: Matrix
+    INTEGER,INTENT(IN)           :: iGlobalNodeID
+    INTEGER,INTENT(OUT)          :: iCompID,iNodeID
     
     !Local variables
     INTEGER :: indx,iStart,iEnd
@@ -1037,7 +1104,7 @@ CONTAINS
               STAT = ErrorCode             , &
               ERRMSG = cErrMessage         )
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for the NJD and JND arrays of the matrix!'//NEW_LINE('x')//TRIM(cErrMessage),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for the NJD and JND arrays of the matrix!'//NEW_LINE('x')//TRIM(cErrMessage),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -1065,7 +1132,7 @@ CONTAINS
     !Allocate memory for the other array attributes
     ALLOCATE (Matrix%COEFF(iDimJND) , Matrix%RHS(iDimNJD-1)  , Matrix%HDelta(iDimNJD-1) , STAT=ErrorCode , ERRMSG=cErrMessage)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for COEFF, RHS or HDelta arrays of the matrix!'//NEW_LINE('x')//TRIM(cErrMessage),iFatal,ThisProcedure)    
+        CALL SetLastMessage('Error in allocating memory for COEFF, RHS or HDelta arrays of the matrix!'//NEW_LINE('x')//TRIM(cErrMessage),f_iFatal,ThisProcedure)    
         iStat = -1
         RETURN
     END IF
@@ -1120,17 +1187,17 @@ CONTAINS
                 !Convert matrix storage to CRS storage
                 CALL ConvertToCRSFormat(Matrix%COEFF , Matrix%NJD , Matrix%JND , COEFF_CRS , NJD_CRS , JND_CRS)
                 
-                CALL PGMRES(NRow              , &
-                            NJD_CRS           , &
-                            JND_CRS           , &
-                            Matrix%RHS        , &
-                            COEFF_CRS         , &
-                            Matrix%HDelta     , &
-                            Matrix%RHSL2      , &
-                            NewtonRaphsonIter , &
-                            pSolver%IterMax   , &
-                            pSolver%Tolerance , &
-                            iStat             )
+                CALL PGMRES(NRow                            , &
+                            SIZE(COEFF_CRS)                 , &
+                            NJD_CRS                         , &
+                            JND_CRS                         , &
+                            Matrix%RHS                      , &
+                            Matrix%RHSL2(NewtonRaphsonIter) , &
+                            COEFF_CRS                       , &
+                            Matrix%HDelta                   , &
+                            pSolver%IterMax                 , &
+                            pSolver%Tolerance               , &
+                            iStat                           )
     
         END SELECT 
 
@@ -1272,7 +1339,7 @@ CONTAINS
             WRITE (MessageArray(3), '(A,I8)')   'Iteration =', Iter
             WRITE (MessageArray(4), '(A,I8)')   'Variable  =', NODEMAX
             WRITE (MessageArray(5),'(A,E12.3)') 'Difference=', ADIFFMAX
-            CALL SetLastMessage(MessageArray(1:5),iFatal,ThisProcedure)
+            CALL SetLastMessage(MessageArray(1:5),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -1374,7 +1441,7 @@ CONTAINS
             WRITE (MessageArray(3), '(A,I8)')   'Iteration =', Iter
             WRITE (MessageArray(4), '(A,I8)')   'Variable  =', NODEMAX
             WRITE (MessageArray(5),'(A,E12.3)') 'Difference=', ADIFFMAX
-            CALL SetLastMessage(MessageArray(1:5),iFatal,ThisProcedure)
+            CALL SetLastMessage(MessageArray(1:5),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -1405,17 +1472,17 @@ CONTAINS
   ! more reliable the code is. Efficiency may also be much improved.     *
   ! Note that lfil=n and tol=0.0 in ILUT  will yield the same factors as *
   ! Gaussian elimination without pivoting.                               *
-  SUBROUTINE PGMRES(N,NJD,JND,RHS,COEFF,U,RHSL2,NR_ITERX,MXITER,Toler,iStat)
-    INTEGER,INTENT(IN)  :: N,NR_ITERX,MXITER,NJD(:),JND(:)
-    REAL(8),INTENT(IN)  :: COEFF(:),RHS(:),RHSL2(:),Toler     
-    REAL(8)             :: U(:)
+  SUBROUTINE PGMRES(N,iDimCOEFF,NJD,JND,RHS,RHS_L2,COEFF,U,MXITER,Toler,iStat)
+    INTEGER,INTENT(IN)  :: N,iDimCOEFF,MXITER,NJD(N+1),JND(iDimCOEFF)
+    REAL(8),INTENT(IN)  :: COEFF(iDimCOEFF),RHS(N),RHS_L2,Toler     
+    REAL(8)             :: U(N)
     INTEGER,INTENT(OUT) :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+6) :: ThisProcedure=ModName // 'PGMRES'
     INTEGER, ALLOCATABLE        :: JLU(:)
     REAL(8), ALLOCATABLE        :: COEFFLU(:),W(:)
-    REAL(8)                     :: DNRM2, DROPTOL, RES, FPAR(16),rDiv
+    REAL(8)                     :: DNRM2, DROPTOL, RES, FPAR(16)
     INTEGER                     :: LFIL, IM, IWK, IERR, Iter,IPAR(16),JU(N),IW(3*N)  
     EXTERNAL                    :: DNRM2
     
@@ -1451,12 +1518,11 @@ CONTAINS
     !endif
     !STOPCD=min(1.0d3*Toler,max(STOPCD,Toler))
     !! END ADAPTIVE TOLERANCES
-    rDiv = DNRM2(N,RHS,1)
-    IF (rDiv .EQ. 0.0) THEN
+    IF (RHS_L2 .EQ. 0.0) THEN
         FPAR(1) = 0.0
     ELSE
         !FPAR(1) = STOPCD/rDiv                           ! NEW TOLERANCE CONDITION
-        FPAR(1) = Toler/rDiv
+        FPAR(1) = Toler / RHS_L2
     END IF
     FPAR(2)     = EPSILON(0d0)                           ! MACHINE PRECISION
     
@@ -1468,21 +1534,21 @@ CONTAINS
       CASE (-1)
         MessageArray(1) = 'Bad coefficent matrix! Execution cannot proceed.'
         MessageArray(2) = 'Please check input data.'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
        
       CASE (-3:-2)
         MessageArray(1) = 'Insufficent storage for LU factorization!'
         MessageArray(2) = 'Please contact IWFM techical support.'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
         
       CASE (:-5)
         MessageArray(1) = 'All matrix entries for variable '//TRIM(IntToText(-5-IERR))//' are zero!'
         MessageArray(2) = 'Check all data specified for this variable.'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
         
@@ -1512,25 +1578,25 @@ CONTAINS
            MessageArray(1) = 'Convergence problem in the solution of equation system using PGMRES(M).'     
            WRITE(MessageArray(2),'(A,I8)')     'Iteration =', Iter
            WRITE (MessageArray(3),'(A,E12.3)') 'Residual  =', RES
-           CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+           CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
            iStat = -1
            RETURN
 
          ELSE IF (IPAR(1).EQ.-2) THEN
             MessageArray(1)='ITERATIVE SOLVER WAS NOT GIVEN ENOUGH WORK SPACE.'
             WRITE (MessageArray(2),'(A,I12,A)') 'THE WORK SPACE SHOULD AT LEAST HAVE ', IPAR(4),' ELEMENTS.'
-            CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
             
          ELSE IF (IPAR(1).EQ.-3) THEN
-           CALL SetLastMessage('ITERATIVE SOLVER IS FACING A BREAK-DOWN.',iFatal,ThisProcedure)
+           CALL SetLastMessage('ITERATIVE SOLVER IS FACING A BREAK-DOWN.',f_iFatal,ThisProcedure)
            iStat = -1
            RETURN
            
          ELSE
            WRITE(MessageArray(1),'(A,I8)') 'ITERATIVE SOLVER TERMINATED. CODE =', IPAR(1) 
-           CALL SetLastMessage(MessageArray(1),iFatal,ThisProcedure)
+           CALL SetLastMessage(MessageArray(1),f_iFatal,ThisProcedure)
            iStat = -1
            RETURN
            
@@ -1546,7 +1612,7 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
-  ! --- RESET MATRIX TO ZERO
+  ! --- RESET COEFF AND RHS TO ZERO
   ! -------------------------------------------------------------
   SUBROUTINE ResetToZero(Matrix)
     CLASS(MatrixType) :: Matrix
@@ -1605,10 +1671,10 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- UPDATE COEFF
   ! -------------------------------------------------------------
-  SUBROUTINE UpdateCOEFF(Matrix,iCompID,iNodeID,iCompIDs_Connect,iNodeIDs_Connect,rUpdateValues)
+  SUBROUTINE UpdateCOEFF(Matrix,iCompID,iNodeID,iDim,iCompIDs_Connect,iNodeIDs_Connect,rUpdateValues)
     CLASS(MatrixType)  :: Matrix
-    INTEGER,INTENT(IN) :: iCompID,iNodeID,iCompIDs_Connect(:),iNodeIDs_Connect(:)
-    REAL(8),INTENT(IN) :: rUpdateValues(:)
+    INTEGER,INTENT(IN) :: iCompID,iNodeID,iDim,iCompIDs_Connect(iDim),iNodeIDs_Connect(iDim)
+    REAL(8),INTENT(IN) :: rUpdateValues(iDim)
     
     !Local variables
     INTEGER :: iGlobalNodeID,iGlobalNodeIDs_Connect(SIZE(iNodeIDs_Connect)),  &
@@ -1693,7 +1759,7 @@ CONTAINS
         !Is the component included in the matrix?
         iLoc = LocateInList(iCompID,Matrix%iComps)
         IF (iLoc .EQ. 0) THEN
-            CALL SetLastMessage('Component ID '//TRIM(IntTotext(Local_iCompID))//' is not included in the matrix!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Component ID '//TRIM(IntTotext(Local_iCompID))//' is not included in the matrix!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -1733,18 +1799,4 @@ CONTAINS
   END SUBROUTINE PrintCOEFF_In_MatrixForm 
   
   
-  ! -------------------------------------------------------------
-  ! --- COMPUTE L-2 NORM OF THE RHS VECTOR
-  ! -------------------------------------------------------------
-  SUBROUTINE ComputeRHSL2(Matrix,ITERX)
-    CLASS(MatrixType) :: Matrix
-    INTEGER,INTENT(IN) :: ITERX
-    
-    REAL(8),EXTERNAL :: DNRM2
-    
-    Matrix%RHSL2(ITERX) = DNRM2(SIZE(Matrix%RHS),Matrix%RHS,1)
-    
-  END SUBROUTINE ComputeRHSL2
-
-
 END MODULE

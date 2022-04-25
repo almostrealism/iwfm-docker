@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,14 +21,45 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Util_Package_RootZone
-  USE IOInterface
+  USE MessageLogger    , ONLY: SetLastMessage     , &
+                               f_iFatal             
+  USE GeneralUtilities , ONLY: LowerCase          , &
+                               ConvertID_To_Index
+  USE IOInterface      , ONLY: GenericFileType
+  USE Package_Misc     , ONLY: f_iRootZoneComp
   IMPLICIT NONE
   
   
   ! -------------------------------------------------------------
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
-  PUBLIC 
+  PRIVATE
+  PUBLIC :: WaterSupplyType                      , &
+            ReadRealData                         , & 
+            ReadPointerData                      , &
+            AddStringToStringList                , &
+            f_iNoIrigPeriod                      , &
+            f_iIrigPeriod                        , &
+            f_iPreIrigPeriod                     , &
+            f_iDemandFromMoistAtBegin            , &
+            f_iDemandFromMoistAtEnd              , &
+            f_iIrigPeriodFlags                   , &
+            f_iBudgetType_LWU                    , &
+            f_iBudgetType_RootZone               , &
+            f_iBudgetType_NonPondedCrop_LWU      , &
+            f_iBudgetType_NonPondedCrop_RZ       , & 
+            f_iBudgetType_PondedCrop_LWU         , &
+            f_iBudgetType_PondedCrop_RZ          , & 
+            f_cDescription_LWUBudget             , &
+            f_cDescription_RootZoneBudget        , &
+            f_cDescription_NPCrop_LWUBudget      , &
+            f_cDescription_NPCrop_RootZoneBudget , &
+            f_cDescription_PCrop_LWUBudget       , &
+            f_cDescription_PCrop_RootZoneBudget  , &
+            f_iZBudgetType_RootZone              , &
+            f_iZBudgetType_LWU                   , &
+            f_cDescription_RootZoneZBudget       , &           
+            f_cDescription_LWUZBudget      
 
   
   ! -------------------------------------------------------------
@@ -46,19 +77,51 @@ MODULE Util_Package_RootZone
   ! -------------------------------------------------------------
   ! --- IRRIGATION PERIOD FLAGS
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER :: NoIrigPeriod  = 0  , &
-                       IrigPeriod    = 1  , &
-                       PreIrigPeriod = 2
-  INTEGER,PARAMETER :: IrigPeriodFlags(3) = [NoIrigPeriod , IrigPeriod , PreIrigPeriod]
+  INTEGER,PARAMETER :: f_iNoIrigPeriod  = 0  , &
+                       f_iIrigPeriod    = 1  , &
+                       f_iPreIrigPeriod = 2
+  INTEGER,PARAMETER :: f_iIrigPeriodFlags(3) = [f_iNoIrigPeriod , f_iIrigPeriod , f_iPreIrigPeriod]
   
   
   ! -------------------------------------------------------------
   ! --- FLAGS FOR BEGINNING OR ENDING SOIL MOISTURE FOR AG DEMAND CALCULATION
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER :: iDemandFromMoistAtBegin = 0 , &
-                       iDemandFromMoistAtEnd   = 1
+  INTEGER,PARAMETER :: f_iDemandFromMoistAtBegin = 0 , &
+                       f_iDemandFromMoistAtEnd   = 1
 
                                            
+  ! -------------------------------------------------------------
+  ! ---FLAGS FOR BUDGET FILES
+  ! -------------------------------------------------------------
+  INTEGER,PARAMETER           :: f_iBudgetType_LWU                    = f_iRootZoneComp*1000 + 1 , &
+                                 f_iBudgetType_RootZone               = f_iRootZoneComp*1000 + 2 , &
+                                 f_iBudgetType_NonPondedCrop_LWU      = f_iRootZoneComp*1000 + 3 , &
+                                 f_iBudgetType_NonPondedCrop_RZ       = f_iRootZoneComp*1000 + 4 , & 
+                                 f_iBudgetType_PondedCrop_LWU         = f_iRootZoneComp*1000 + 5 , &
+                                 f_iBudgetType_PondedCrop_RZ          = f_iRootZoneComp*1000 + 6  
+  CHARACTER(LEN=25),PARAMETER :: f_cDescription_LWUBudget             = 'Land and water use budget'                          
+  CHARACTER(LEN=16),PARAMETER :: f_cDescription_RootZoneBudget        = 'Root zone budget'                                   
+  CHARACTER(LEN=50),PARAMETER :: f_cDescription_NPCrop_LWUBudget      = 'Non-ponded-crop specific land and water use budget' 
+  CHARACTER(LEN=41),PARAMETER :: f_cDescription_NPCrop_RootZoneBudget = 'Non-ponded-crop specific root zone budget'          
+  CHARACTER(LEN=46),PARAMETER :: f_cDescription_PCrop_LWUBudget       = 'Ponded-crop specific land and water use budget'     
+  CHARACTER(LEN=37),PARAMETER :: f_cDescription_PCrop_RootZoneBudget  = 'Ponded-crop specific root zone budget'              
+  
+  
+  ! -------------------------------------------------------------
+  ! --- FLAGS FOR ZONE BUDGET FILES
+  ! -------------------------------------------------------------
+  INTEGER,PARAMETER           :: f_iZBudgetType_RootZone        = f_iRootZoneComp*1000 + 1 , &
+                                 f_iZBudgetType_LWU             = f_iRootZoneComp*1000 + 2
+  CHARACTER(LEN=21),PARAMETER :: f_cDescription_RootZoneZBudget = 'Root zone zone budget'           
+  CHARACTER(LEN=30),PARAMETER :: f_cDescription_LWUZBudget      = 'Land and water use zone budget'  
+
+                                           
+  ! -------------------------------------------------------------
+  ! --- MISC. ENTITIES
+  ! -------------------------------------------------------------
+  INTEGER,PARAMETER                   :: ModNameLen = 23
+  CHARACTER(LEN=ModNameLen),PARAMETER :: ModName    = 'Util_Package_RootZone::'
+  
   
   
   
@@ -69,14 +132,16 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- SUBROUTINE TO READ DATA FROM PARAMETER FILE
   ! -------------------------------------------------------------
-  SUBROUTINE ReadPointerData(File,iRow,iCol,DummyIntArray,iStat)
+  SUBROUTINE ReadPointerData(File,cDescription,cFeatures,iRow,iCol,iFeatureIDs,DummyIntArray,iStat)
     TYPE(GenericFileType)           :: File
-    INTEGER,INTENT(IN)              :: iRow,iCol
+    CHARACTER(LEN=*),INTENT(IN)     :: cDescription,cFeatures
+    INTEGER,INTENT(IN)              :: iRow,iCol,iFeatureIDs(iRow)
     INTEGER,ALLOCATABLE,INTENT(OUT) :: DummyIntArray(:,:)
     INTEGER,INTENT(OUT)             :: iStat
       
     !Local variables
-    INTEGER :: indxElem,FirstLine(iCol),ErrorCode
+    CHARACTER(LEN=ModNameLen+15),PARAMETER :: ThisProcedure = ModName // 'ReadPointerData'
+    INTEGER                                :: indxElem,FirstLine(iCol),ErrorCode,IDs(iRow),iIndices(iRow)
       
     !Allocate memory for DummyIntArray
     IF (ALLOCATED(DummyIntArray)) DEALLOCATE(DummyIntArray,STAT=ErrorCode)
@@ -88,12 +153,26 @@ CONTAINS
       
     !If Element number in first line is zero, apply the data to all DummyIntArray
     IF (FirstLine(1) .EQ. 0) THEN
-      FORALL (indxElem=1:iRow) DummyIntArray(indxElem,:) = FirstLine
+        DO indxElem=1,iRow
+            DummyIntArray(indxElem,1)  = indxElem
+            DummyIntArray(indxElem,2:) = FirstLine(2:)
+        END DO
       
     !Otherwise, read data for each element seperately
     ELSE
-      DummyIntArray(1,:) = FirstLine
-      CALL File%ReadData(DummyIntArray(2:,:),iStat)  
+        DummyIntArray(1,:) = FirstLine
+        CALL File%ReadData(DummyIntArray(2:,:),iStat)  
+        IF (iStat .EQ. -1) RETURN
+        
+        !Convert IDs to indices
+        IDs = DummyIntArray(:,1)
+        CALL ConvertID_To_Index(IDs,iFeatureIDs,iIndices)
+        IF (ANY(iIndices.EQ.0)) THEN
+            CALL SetLastMessage('One or more '//TRIM(cFeatures)//' listed for '//TRIM(LowerCase(cDescription))//' are not in the model!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        DummyIntArray(:,1) = iIndices
     END IF
             
   END SUBROUTINE ReadPointerData
@@ -102,15 +181,17 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- SUBROUTINE TO READ REAL DATA FROM PARAMETER FILE
   ! -------------------------------------------------------------
-  SUBROUTINE ReadRealData(File,iRow,iCol,DummyRealArray,iStat)
+  SUBROUTINE ReadRealData(File,cDescription,cFeatures,iRow,iCol,iFeatureIDs,DummyRealArray,iStat)
     TYPE(GenericFileType)           :: File
-    INTEGER,INTENT(IN)              :: iRow,iCol
+    CHARACTER(LEN=*),INTENT(IN)     :: cDescription,cFeatures
+    INTEGER,INTENT(IN)              :: iRow,iCol,iFeatureIDs(iRow)
     REAL(8),ALLOCATABLE,INTENT(OUT) :: DummyRealArray(:,:)
     INTEGER,INTENT(OUT)             :: iStat
     
     !Local variables
-    INTEGER :: indxElem,ErrorCode
-    REAL(8) :: FirstLine(iCol)
+    CHARACTER(LEN=ModNameLen+12),PARAMETER :: ThisProcedure = ModName // 'ReadRealData'
+    INTEGER                                :: indxElem,ErrorCode,IDs(iRow),iIndices(iRow)
+    REAL(8)                                :: FirstLine(iCol)
     
     !Allocate memory for DummyRealArray
     IF (ALLOCATED(DummyRealArray)) DEALLOCATE(DummyRealArray,STAT=ErrorCode)
@@ -122,13 +203,26 @@ CONTAINS
     
     !If Element number in first line is zero, apply the data to all DummyIntArray
     IF (FirstLine(1) .EQ. 0) THEN
-      FORALL (indxElem=1:iRow) DummyRealArray(indxElem,:) = FirstLine
+        DO indxElem=1,iRow
+            DummyRealArray(indxElem,1)  = indxElem
+            DummyRealArray(indxElem,2:) = FirstLine(2:)
+        END DO
     
     !Otherwise, read data for each element seperately
     ELSE
-      DummyRealArray(1,:) = FirstLine
-      CALL File%ReadData(DummyRealArray(2:,:),iStat)  
-      IF (iStat .EQ. -1) RETURN
+        DummyRealArray(1,:) = FirstLine
+        CALL File%ReadData(DummyRealArray(2:,:),iStat)  
+        IF (iStat .EQ. -1) RETURN
+        
+        !Convert IDs to indices
+        IDs = DummyRealArray(:,1)
+        CALL ConvertID_To_Index(IDs,iFeatureIDs,iIndices)
+        IF (ANY(iIndices.EQ.0)) THEN
+            CALL SetLastMessage('One or more '//TRIM(cFeatures)//' listed for '//TRIM(LowerCase(cDescription))//' are not in the model!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        DummyRealArray(:,1) = iIndices
     END IF
     
   END SUBROUTINE ReadRealData

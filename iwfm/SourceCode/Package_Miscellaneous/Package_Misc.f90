@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -22,32 +22,48 @@
 !***********************************************************************
 MODULE Package_Misc
   USE Class_Version              , ONLY: VersionType
-  USE Class_GeneralHeadBoundary
+  USE Class_GeneralHeadBoundary  , ONLY: GeneralHeadBoundaryType
   USE Class_PairedData           , ONLY: PairedDataType
-  USE Class_SolverData
-  USE Opening_screen
-  USE TSDFileHandler
+  USE Class_SolverData           , ONLY: SolverDataType
+  USE Opening_screen             , ONLY: PRINT_SCREEN            ,  &
+                                         GET_MAIN_FILE   
+  USE TSDFileHandler             , ONLY: IntTSDataInFileType     ,  &
+                                         RealTSDataInFileType    ,  &
+                                         Real2DTSDataInFileType  ,  &
+                                         PrepareTSDOutputFile    ,  &
+                                         ReadTSData
   USE AbstractFunction           , ONLY: AbstractFunctionType
+  USE Class_BaseHydrograph       , ONLY: BaseHydrographType     , &
+                                         HydOutputType          , &
+                                         f_iHyd_AtXY            , &
+                                         f_iHyd_AtNode          , &
+                                         f_iHyd_GWHead          , &
+                                         f_iHyd_Subsidence
+  USE Class_TecplotOutput        , ONLY: TecplotOutputType
   IMPLICIT NONE
-    
+  
+  
+  PUBLIC 
+  
   
   ! -------------------------------------------------------------
   ! --- MODEL COMPONENT IDENTIFIERS
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER :: nMaxComps      = 6  , &
-                       iStrmComp      = 1  , &
-                       iLakeComp      = 2  , &
-                       iGWComp        = 3  , &
-                       iRootZoneComp  = 4  , &
-                       iUnsatZoneComp = 5  , &
-                       iSWShedComp    = 6
-  CHARACTER(LEN=16),PARAMETER :: cCompNames(nMaxComps) = ["STREAM" , "LAKE" , "GROUNDWATER" , "ROOT ZONE" , "UNSATURATED ZONE" , "SMALL WATERSHEDS"]
+  INTEGER,PARAMETER           :: f_iStrmComp      = 1  , &
+                                 f_iLakeComp      = 2  , &
+                                 f_iGWComp        = 3  , &
+                                 f_iRootZoneComp  = 4  , &
+                                 f_iUnsatZoneComp = 5  , &
+                                 f_iSWShedComp    = 6
+  INTEGER,PARAMETER,PRIVATE   :: f_iNMaxComps     = 6  
+  CHARACTER(LEN=16),PARAMETER :: f_cCompNames(f_iNMaxComps) = ["STREAM" , "LAKE" , "GROUNDWATER" , "ROOT ZONE" , "UNSATURATED ZONE" , "SMALL WATERSHEDS"]
   
   
   ! -------------------------------------------------------------
   ! --- DESTINATION AS A GROUP OF ELEMENTS FOR A FLOW TERM
   ! -------------------------------------------------------------
   TYPE ElemGroupType
+      INTEGER             :: ID        = 0
       INTEGER             :: NElems    = 0
       INTEGER,ALLOCATABLE :: iElems(:)
   END TYPE ElemGroupType
@@ -58,7 +74,7 @@ MODULE Package_Misc
   ! -------------------------------------------------------------
   TYPE FlowDestinationType
     INTEGER             :: iDestType   = 0    !Destination type
-    INTEGER             :: iDest       = 0    !Destination ID number
+    INTEGER             :: iDest       = 0    !Destination index number
     INTEGER             :: iDestRegion = 0    !Subregion that the destination belongs to
     TYPE(ElemGroupType) :: iDestElems         !List of elements as destination
   END TYPE FlowDestinationType
@@ -67,57 +83,79 @@ MODULE Package_Misc
   ! -------------------------------------------------------------
   ! --- SURFACE FLOW DESTINATION TYPES
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER :: FlowDest_Outside    = 0  , &
-                       FlowDest_StrmNode   = 1  , &
-                       FlowDest_Element    = 2  , &
-                       FlowDest_Lake       = 3  , &
-                       FlowDest_Subregion  = 4  , &
-                       FlowDest_GWElement  = 5  , &
-                       FlowDest_ElementSet = 6
+  INTEGER,PARAMETER :: f_iFlowDest_Outside    = 0  , &
+                       f_iFlowDest_StrmNode   = 1  , &
+                       f_iFlowDest_Element    = 2  , &
+                       f_iFlowDest_Lake       = 3  , &
+                       f_iFlowDest_Subregion  = 4  , &
+                       f_iFlowDest_GWElement  = 5  , &
+                       f_iFlowDest_ElementSet = 6
                        
                        
-  ! -------------------------------------------------------------
-  ! --- WATER SUPPLY TYPES
-  ! -------------------------------------------------------------
-  INTEGER,PARAMETER :: Supply_Diversion_Ag     = 1 , &
-                       Supply_Diversion_Urb    = 2 , &
-                       Supply_Pumping_Ag       = 3 , &
-                       Supply_Pumping_Urb      = 4 , &
-                       Supply_UpstrmElemRunoff = 5 , &
-                       iSupply_Diversion       = 6 , &
-                       iSupply_ElemPump        = 7 , &
-                       iSupply_Well            = 8
-  
-  
   ! -------------------------------------------------------------
   ! --- LOCATION TYPES FOR PRE- AND POST-PROCESSING TOOLS
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER :: iLocationType_Subregion      = 1  , &
-                       iLocationType_Zone           = 2  , &
-                       iLocationType_Node           = 3  , &
-                       iLocationType_GWHeadObs      = 4  , &
-                       iLocationType_SubsidenceObs  = 5  , &
-                       iLocationType_StrmReach      = 6  , &
-                       iLocationType_StrmNode       = 7  , &
-                       iLocationType_StrmHydObs     = 8  , &
-                       iLocationType_Lake           = 9  , &
-                       iLocationType_TileDrain      = 10 , &
-                       iLocationType_SmallWatershed = 11 , &
-                       iLocationType_Element        = 12 
-  
+  INTEGER,PARAMETER :: f_iLocationType_StrmNode       = 1  , &
+                       f_iLocationType_Element        = 2  , &
+                       f_iLocationType_Lake           = 3  , &
+                       f_iLocationType_Subregion      = 4  , &
+!                      f_iLocationType_GWElement      = 5  , &  //These location types
+!                      f_iLocationType_ElementSet     = 6  , &  // are not used
+                       f_iLocationType_Zone           = 7  , &
+                       f_iLocationType_Node           = 8  , &
+                       f_iLocationType_GWHeadObs      = 9  , &
+                       f_iLocationType_SubsidenceObs  = 10 , &
+                       f_iLocationType_StrmReach      = 11 , &
+                       f_iLocationType_StrmHydObs     = 12 , &
+                       f_iLocationType_TileDrainObs   = 13 , &  !Tile drain with a hydrograph print-out
+                       f_iLocationType_SmallWatershed = 14 , &
+                       f_iLocationType_Bypass         = 15 , &
+                       f_iLocationType_Diversion      = 16 , &
+                       f_iLocationType_TileDrain      = 17 , &  !Any tile drain, with or without hydrograph print-out
+                       f_iLocationType_StrmNodeBud    = 18
+ 
   
   ! -------------------------------------------------------------
   ! --- FLAG THAT SAYS ALL LOCATION IDs ARE INCLUDED IN A LIST
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER :: iAllLocationIDsListed = -1
+  INTEGER,PARAMETER :: f_iAllLocationIDsListed = -1
+  
+  
+  ! -------------------------------------------------------------
+  ! --- WATER SUPPLY TYPES
+  ! -------------------------------------------------------------
+  INTEGER,PARAMETER :: f_iSupply_UpstrmElemRunoff = 5 , &
+                       f_iSupply_Diversion        = 6 , &
+                       f_iSupply_ElemPump         = 7 , &
+                       f_iSupply_Well             = 8 , &
+                       f_iSupply_Pumping          = 3      !Defines general pumping independent of well or element pumping
+                    
+  
+  
+  ! -------------------------------------------------------------
+  ! --- FLAGS FOR LAND USE TYPES
+  ! -------------------------------------------------------------
+  INTEGER,PARAMETER :: f_iAg          = 1 , &   !Flag to specify that some entity is for General Ag
+                       f_iUrb         = 2 , &   !Flag to specify that some entity is for Urban
+                       f_iNonPondedAg = 3 , &   !Flag to specify that some entity is for Non-ponded Ag
+                       f_iRice        = 4 , &   !Flag to specify that some entity is for Rice
+                       f_iRefuge      = 5 , &   !Flag to specify that some entity is for Refuge
+                       f_iNVRV        = 6       !Flag to specify that some entity is for Native & Riparian Veg.
   
   
   ! -------------------------------------------------------------
   ! --- DATA UNIT TYPES
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER :: iDataUnitType_Length = 0  , &
-                       iDataUnitType_Area   = 1  , &
-                       iDataUnitType_Volume = 2 
+  INTEGER,PARAMETER :: f_iDataUnitType_Length = 0  , &
+                       f_iDataUnitType_Area   = 1  , &
+                       f_iDataUnitType_Volume = 2 
+  
+  
+  ! -------------------------------------------------------------
+  ! --- PARAMETERS USED IN SMOOTHING
+  ! -------------------------------------------------------------
+  REAL(8),PARAMETER :: f_rSmoothMaxP  = 1d-4  , &  !Parameter to smooth max function
+                       f_rSmoothStepP = 10d0       !Parameter to smooth step function
   
   
   ! -------------------------------------------------------------

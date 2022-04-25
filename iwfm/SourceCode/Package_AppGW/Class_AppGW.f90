@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,72 +21,96 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_AppGW
-  USE GeneralUtilities            
-  USE TimeSeriesUtilities         , ONLY: TimeStepType                                     , &
-                                          NPeriods                                         , &
-                                          IsTimeIntervalValid                              , &
-                                          TimeIntervalConversion                           , &
-                                          IncrementTimeStamp                               , &
-                                          GetJulianDatesBetweenTimeStampsWithTimeIncrement , &
-                                          OPERATOR(.TULE.)
-  USE IOInterface                
-  USE MessageLogger               , ONLY: LogMessage                                       , &
-                                          SetLastMessage                                   , &
-                                          EchoProgress                                     , &
-                                          IsLogFileDefined                                 , &
-                                          FILE                                             , &
-                                          MessageArray                                     , &
-                                          iMessage                                         , &
-                                          iFatal                                           
-  USE Package_Budget              , ONLY: BudgetType                                       , &
-                                          BudgetHeaderType                                 , &
-                                          VolumeUnitMarker                                 , &
-                                          AreaUnitMarker                                   , &
-                                          AreaMarker                                       , &
-                                          LocationNameMarker                               , &
-                                          VR                                               , &
-                                          VLB                                              , &
-                                          VLE                                              , &
-                                          PER_CUM                                          
-  USE Package_ComponentConnectors , ONLY: SupplyType                                       , &
-                                          SupplyToDestinationType                          , &
-                                          SupplyDestinationConnectorType                   , &
-                                          StrmGWConnectorType                              , &
-                                          LakeGWConnectorType                                   
-  USE Package_Misc                , ONLY: RealTSDataInFileType                             , &
-                                          Real2DTSDataInFileType                           , &
-                                          FlowDestinationType                              , &
-                                          iGWComp                                          , &
-                                          iAllLocationIDsListed                            , &
-                                          iLocationType_Subregion                          , &
-                                          iLocationType_Node                               , &
-                                          iLocationType_GWHeadObs                          , &
-                                          iLocationType_SubsidenceObs                      , &
-                                          iLocationType_TileDrain                          , &
-                                          iDataUnitType_Length                             , &
-                                          iDataUnitType_Volume                             
-  USE Package_Discretization      , ONLY: NodeType                                         , &
-                                          AppGridType                                      , &
-                                          StratigraphyType                                 , &
-                                          GetValuesFromParametricGrid                      
-  USE Class_GWState               , ONLY: GWStateType                                      
-  USE GWHydrograph                , ONLY: GWHydrographType                                 , &
-                                          AllHeadOutFile_ForInquiry_New                    , &
-                                          AllHeadOutFile_ForInquiry_ReadGWHead             
-  USE Class_LayerBC               , ONLY: SpFlowBCID                                       , &
-                                          SpHeadBCID                                       , &
-                                          GHBCID                                           , &
-                                          ConstrainedGHBCID                                   
-  USE Class_AppBC                                                                          
-  USE Class_AppSubsidence         , ONLY: AppSubsidenceType                                
-  USE Package_AppTileDrain        , ONLY: AppTileDrainType                                 , &
-                                          iTileDrain                                       , &
-                                          iSubIrig                                         
-  USE Package_AppPumping          , ONLY: AppPumpingType                                   , &
-                                          iPump_Well                                       , &
-                                          iPump_ElemPump                                   
-  USE VerticalFlow                                                                         
-  USE Package_Matrix              , ONLY: MatrixType                                       , &
+  USE GenericLinkedList           , ONLY: GenericLinkedListType
+  USE GeneralUtilities            , ONLY: IntToText                                          , &
+                                          StripTextUntilCharacter                            , &
+                                          ArrangeText                                        , &
+                                          UpperCase                                          , &
+                                          CleanSpecialCharacters                             , &
+                                          EstablishAbsolutePathFileName                      , &
+                                          ConvertID_To_Index                                 , &
+                                          LocateInList                                       , &
+                                          FEXP
+  USE TimeSeriesUtilities         , ONLY: TimeStepType                                       , &
+                                          NPeriods                                           , &
+                                          IsTimeIntervalValid                                , &
+                                          TimeIntervalConversion                             , &
+                                          IncrementTimeStamp                                 , &
+                                          CTimeStep_To_RTimeStep                             , &
+                                          GetJulianDatesBetweenTimeStampsWithTimeIncrement   , &
+                                          TimeStampToJulian                                  , &
+                                          f_iTimeStampLength                                 , &
+                                          OPERATOR(.TULE.)                                   
+  USE IOInterface                 , ONLY: GenericFileType                                    , &
+                                          DoesFileExist                                      , &
+                                          f_iTXT                                                
+  USE MessageLogger               , ONLY: LogMessage                                         , &
+                                          SetLastMessage                                     , &
+                                          EchoProgress                                       , &
+                                          IsLogFileDefined                                   , &
+                                          MessageArray                                       , &
+                                          f_iFILE                                            , &
+                                          f_iMessage                                         , &
+                                          f_iFatal                                           , &
+                                          f_iWarn                                            , &
+                                          f_iInfo                                              
+  USE Package_Budget              , ONLY: BudgetType                                         , &
+                                          BudgetHeaderType                                   , &
+                                          f_iColumnHeaderLen                                 , &
+                                          f_cVolumeUnitMarker                                , &
+                                          f_cAreaUnitMarker                                  , &
+                                          f_cAreaMarker                                      , &
+                                          f_cLocationNameMarker                              , &
+                                          f_iVR                                              , &
+                                          f_iVLB                                             , &
+                                          f_iVLE                                             , &
+                                          f_iPER_CUM                                            
+  USE Package_ComponentConnectors , ONLY: SupplyType                                         , &
+                                          SupplyToDestinationType                            , &
+                                          SupplyDestinationConnectorType                     , &
+                                          StrmGWConnectorType                                , &
+                                          LakeGWConnectorType                                     
+  USE Package_Misc                , ONLY: RealTSDataInFileType                               , &
+                                          Real2DTSDataInFileType                             , &
+                                          FlowDestinationType                                , &
+                                          f_iGWComp                                          , &
+                                          f_rSmoothMaxP                                      , &
+                                          f_rSmoothStepP                                     , &
+                                          f_iAllLocationIDsListed                            , &
+                                          f_iLocationType_Subregion                          , &
+                                          f_iLocationType_Node                               , &
+                                          f_iLocationType_GWHeadObs                          , &
+                                          f_iLocationType_SubsidenceObs                      , &
+                                          f_iLocationType_TileDrainObs                       , &
+                                          f_iDataUnitType_Length                             , &
+                                          f_iDataUnitType_Volume                               
+  USE Package_Discretization      , ONLY: AppGridType                                        , &
+                                          StratigraphyType                                   , &
+                                          GetValuesFromParametricGrid                        
+  USE Class_GWState               , ONLY: GWStateType                                        
+  USE GWHydrograph                , ONLY: GWHydrographType                                     
+  USE Class_LayerBC               , ONLY: f_iSpFlowBCID                                      , &
+                                          f_iSpHeadBCID                                      , &
+                                          f_iGHBCID                                          , &
+                                          f_iConstrainedGHBCID                                     
+  USE Class_AppBC                 , ONLY: AppBCType                                                           
+  USE Package_AppSubsidence       , ONLY: AppSubsidenceType                                  , &
+                                          f_cDescription_SubsHyd
+  USE Package_AppTileDrain        , ONLY: AppTileDrainType                                   , &
+                                          f_iTileDrain                                       , &
+                                          f_iSubIrig                                         , &
+                                          f_cDescription_TDHyd
+  USE Package_AppPumping          , ONLY: AppPumpingType                                     , &
+                                          f_iPump_Well                                       , &
+                                          f_iPump_ElemPump                                     
+  USE VerticalFlow                , ONLY: VerticalFlowOutputType                             , &
+                                          VerticalFlowOutput_New                             , &
+                                          VerticalFlowOutput_Kill                            , &
+                                          VerticalFlowOutput_PrintResults                    , &
+                                          VerticalFlow_ComputeAtNodesLayer                   , &
+                                          VerticalFlow_ComputeDerivativesAtNodesLayer        , &
+                                          VerticalFlow_ComputeElementsUpwardDownward_AtLayer 
+  USE Package_Matrix              , ONLY: MatrixType                                         , &
                                           ConnectivityListType
   IMPLICIT NONE
   
@@ -107,13 +131,15 @@ MODULE Class_AppGW
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC :: AppGWType                               , &
-            SpFlowBCID                              , &
-            SpHeadBCID                              , &
-            GHBCID                                  , &
-            ConstrainedGHBCID                       , &
-            iTileDrain                              , &
-            iSubIrig
+  PUBLIC :: AppGWType                         , &
+            f_iSpFlowBCID                     , &
+            f_iSpHeadBCID                     , &
+            f_iGHBCID                         , &
+            f_iConstrainedGHBCID              , &
+            f_iTileDrain                      , &
+            f_iSubIrig                        , &
+            f_iBudgetType_GW                  , &
+            f_cDescription_GWHyd_AtNodeLayer    
   
   
   ! -------------------------------------------------------------
@@ -121,6 +147,8 @@ MODULE Class_AppGW
   ! -------------------------------------------------------------
   TYPE GWNodeType
       REAL(8) :: Kh          = 0.0    !Aquifer horizontal hydraulic conductivity
+      REAL(8) :: Kv          = 0.0    !Aquifer vertical hyadraulic conductivity
+      REAL(8) :: AquitardKv  = 0.0    !Aquitard vertical hydraulic conductivity   
       REAL(8) :: LeakageV    = 0.0    !Vertical leakage between the aquifer and the aquifer above
       REAL(8) :: Ss          = 0.0    !Aquifer specific storage
       REAL(8) :: Sy          = 0.0    !Aquifer specific yield
@@ -134,10 +162,10 @@ MODULE Class_AppGW
       PRIVATE
       CHARACTER(LEN=6)              :: VarTimeUnit                  = ''       !Time unit for aquifer variables
       TYPE(GWNodeType),ALLOCATABLE  :: Nodes(:,:)                              !Groundwater data at each (node,layer) combination
-      TYPE(GWStateType),ALLOCATABLE :: State(:,:)                              !State of the groundwater at each (node,layer) combination
+      TYPE(GWStateType)             :: State                                   !Data type that stores the state of the groundwater
       REAL(8),ALLOCATABLE           :: ElemTransmissivity(:,:)                 !Element transmissivity at each (element,layer) combination computed using AppGW%State%Head
       REAL(8),ALLOCATABLE           :: RegionalStorage(:)                      !Subregional gw storage at the current time step (computed only when gw budget output is required)
-      REAL(8),ALLOCATABLE           :: RegionalStorage_P(:)                    !Subregionsl gw storage at the previous time step (computed only when gw budget output is required)
+      REAL(8),ALLOCATABLE           :: RegionalStorage_P(:)                    !Subregional gw storage at the previous N-R iteration for each (node), counting all the nodes for all the layers
       TYPE(GWHydrographType)        :: GWHyd                                   !Groundwater hydrograph output related data
       REAL(8)                       :: FactHead                     = 1.0      !Conversion factor for output groundwater heads
       CHARACTER(LEN=10)             :: UnitHead                     = ''       !Unit of output head values
@@ -162,17 +190,31 @@ MODULE Class_AppGW
   CONTAINS
       PROCEDURE,PASS   :: New
       PROCEDURE,PASS   :: Kill
-      PROCEDURE,PASS   :: GetNDataList_AtLocationType
-      PROCEDURE,PASS   :: GetDataList_AtLocationType
-      PROCEDURE,PASS   :: GetLocationsWithData
-      PROCEDURE,PASS   :: GetSubDataList_AtLocation
-      PROCEDURE,PASS   :: GetModelData_AtLocation_FromFullModel
-      PROCEDURE,NOPASS :: GetModelData_AtLocation_FromInquiryModel
+      PROCEDURE,PASS   :: GetBudget_List
+      PROCEDURE,PASS   :: GetBudget_NColumns 
+      PROCEDURE,PASS   :: GetBudget_ColumnTitles
+      PROCEDURE,PASS   :: GetBudget_MonthlyFlows_GivenAppGW
+      PROCEDURE,NOPASS :: GetBudget_MonthlyFlows_GivenFile
+      PROCEDURE,PASS   :: GetBudget_TSData
+      PROCEDURE,PASS   :: GetBudget_CumGWStorChange_GivenAppGW
+      PROCEDURE,NOPASS :: GetBudget_CumGWStorChange_GivenFile
+      PROCEDURE,PASS   :: GetAquiferKh 
+      PROCEDURE,PASS   :: GetAquiferKv 
+      PROCEDURE,PASS   :: GetAquitardKv 
+      PROCEDURE,PASS   :: GetAquiferSy
+      PROCEDURE,PASS   :: GetAquiferSs
+      PROCEDURE,PASS   :: GetHydrographTypeList
       PROCEDURE,PASS   :: GetHydrographNames
       PROCEDURE,PASS   :: GetNHydrographs
+      PROCEDURE,PASS   :: GetHydrographIDs
       PROCEDURE,PASS   :: GetHydrographCoordinates
-      PROCEDURE,PASS   :: GetHeads
+      PROCEDURE,PASS   :: GetHydrograph_GivenAppGW
+      PROCEDURE,NOPASS :: GetHydrograph_GivenFile
+      PROCEDURE,PASS   :: GetHeads_All
       PROCEDURE,PASS   :: GetHead_AtOneNodeLayer
+      PROCEDURE,PASS   :: GetGWHeads_ForALayer_GivenAppGW
+      PROCEDURE,NOPASS :: GetGWHeads_ForALayer_GivenFile 
+      PROCEDURE,PASS   :: GetNodalStorages
       PROCEDURE,PASS   :: GetElementDepthToGW              
       PROCEDURE,PASS   :: GetHorizontalFlow  
       PROCEDURE,PASS   :: GetRotation
@@ -186,17 +228,22 @@ MODULE Class_AppGW
       PROCEDURE,PASS   :: GetSubsidenceAtLayer              
       PROCEDURE,PASS   :: GetNDrain                         
       PROCEDURE,PASS   :: GetNSubIrig                       
+      PROCEDURE,PASS   :: GetTileDrainIDs                      
       PROCEDURE,PASS   :: GetTileDrainNodesLayers                 
       PROCEDURE,PASS   :: GetTileDrainFlows                 
       PROCEDURE,PASS   :: GetTileDrainFlowsToStreams        
       PROCEDURE,PASS   :: GetNWells                         
       PROCEDURE,PASS   :: GetNElemPumps
+      PROCEDURE,PASS   :: GetElemPumpIDs
+      PROCEDURE,PASS   :: GetWellIDs
       PROCEDURE,PASS   :: GetPumpDestination
       PROCEDURE,PASS   :: GetNodalPumpActual 
       PROCEDURE,PASS   :: GetNodalPumpRequired
-      PROCEDURE,PASS   :: GetPumpActual                     
-      PROCEDURE,PASS   :: GetPumpingAtElementLayerNode      
-      PROCEDURE,PASS   :: GetPumpElement                    
+      PROCEDURE,PASS   :: GetElementPumpActual      !Total pumping (element pumping + well pumping) at all elements
+      PROCEDURE,PASS   :: GetPumpActual             !Pumping for a given type (element or well) at all elements or wells        
+      PROCEDURE,PASS   :: GetActualPumpingAtElementLayerNode      
+      PROCEDURE,PASS   :: GetPumpElement
+      PROCEDURE,PASS   :: GetPumpPurpose
       PROCEDURE,PASS   :: GetLayerPumpFactors               
       PROCEDURE,PASS   :: GetSupply 
       PROCEDURE,PASS   :: GetSupplySpecs
@@ -206,6 +253,9 @@ MODULE Class_AppGW
       PROCEDURE,PASS   :: GetNodesWithBCType                
       PROCEDURE,PASS   :: GetBoundaryFlowAtElementNodeLayer 
       PROCEDURE,PASS   :: GetSubregionAgPumpingAverageDepthToGW
+      PROCEDURE,PASS   :: GetZoneAgPumpingAverageDepthToGW
+      PROCEDURE,PASS   :: SetBCNodes
+      PROCEDURE,PASS   :: SetBC
       PROCEDURE,PASS   :: SetIrigFracsRead                  
       PROCEDURE,PASS   :: SetSupplySpecs  
       PROCEDURE,PASS   :: SetVelocities
@@ -228,53 +278,59 @@ MODULE Class_AppGW
       PROCEDURE,PASS   :: UpdateStorage                     
       PROCEDURE,PASS   :: ResetHeads                        
       PROCEDURE,PASS   :: AdvanceState                      
-      PROCEDURE,PASS   :: ComputeNodalPumpActual            
       PROCEDURE,PASS   :: UpdatePumpDistFactors             
       PROCEDURE,PASS   :: ResetIrigFracs                    
       PROCEDURE,PASS   :: CheckSupplyDestinationConnection 
       PROCEDURE,PASS   :: ResetActualPumping
+      PROCEDURE,PASS   :: RestorePumpingToReadValues
       PROCEDURE,PASS   :: TransferOutputToHDF
-      GENERIC          :: GetModelData_AtLocation           => GetModelData_AtLocation_FromFullModel    , &
-                                                               GetModelData_AtLocation_FromInquiryModel
+      PROCEDURE,PASS   :: RemoveBC
+      GENERIC          :: GetGWHeads_ForALayer              => GetGWHeads_ForALayer_GivenFile        , &
+                                                               GetGWHeads_ForALayer_GivenAppGW
+      GENERIC          :: GetBudget_MonthlyFlows            => GetBudget_MonthlyFlows_GivenFile      , &
+                                                               GetBudget_MonthlyFlows_GivenAppGW     
+      GENERIC          :: GetBudget_CumGWStorChange         => GetBudget_CumGWStorChange_GivenFile   , &
+                                                               GetBudget_CumGWStorChange_GivenAppGW  
+      GENERIC          :: GetHydrograph                     => GetHydrograph_GivenFile               , &
+                                                               GetHydrograph_GivenAppGW
   END TYPE AppGWType
   
   
   ! -------------------------------------------------------------
-  ! --- ENTITIES USED TO UPDATE MATRIX EQUATION
-  ! -------------------------------------------------------------
-  INTEGER,PARAMETER :: iCompIDs(1) = [iGWComp]
-
-  
-  ! -------------------------------------------------------------
   ! --- DATA TYPES FOR POST-PROCESSING
   ! -------------------------------------------------------------
-  INTEGER                     :: indx
-  INTEGER,PARAMETER           :: iGWHead_AtNode(200)   = [(indx,indx=1,200)]      !Assumes an application can have maximum 200 aquifer layers only for the purpose of post-processing
-  CHARACTER(LEN=18),PARAMETER :: cDataList_AtSubregion = 'Groundwater budget'
-  CHARACTER(LEN=25),PARAMETER :: cDataList_AtNode      = 'Groundwater head at layer' 
-  CHARACTER(LEN=22),PARAMETER :: cDataList_AtWell      = 'Groundwater hydrograph'
+  INTEGER,PARAMETER           :: f_iBudgetType_GW                 = f_iGWComp*1000 + 1
+  CHARACTER(LEN=18),PARAMETER :: f_cDescription_GWBudget          = 'Groundwater budget'
+  CHARACTER(LEN=22),PARAMETER :: f_cDescription_GWHyd_AtWell      = 'Groundwater hydrograph at well'
+  CHARACTER(LEN=40),PARAMETER :: f_cDescription_GWHyd_AtNodeLayer = 'Groundwater hydrograph at node and layer'
   
   
   ! -------------------------------------------------------------
   ! --- BUDGET RELATED DATA
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER           :: NGWBudColumns = 16
-  CHARACTER(LEN=25),PARAMETER :: cBudgetColumnTitles(NGWBudColumns) = ['Percolation'                , &
-                                                                       'Beginning Storage (+)'      , &
-                                                                       'Ending Storage (-)'         , &
-                                                                       'Deep Percolation (+)'       , &
-                                                                       'Gain from Stream (+)'       , &
-                                                                       'Recharge (+)'               , &
-                                                                       'Gain from Lake (+)'         , &
-                                                                       'Boundary Inflow (+)'        , &
-                                                                       'Subsidence (+)'             , &
-                                                                       'Subsurface Irrigation (+)'  , &
-                                                                       'Tile Drain Outflow (-)'     , &
-                                                                       'Pumping (-)'                , &
-                                                                       'Outflow to Root Zone (-)'   , &
-                                                                       'Net Subsurface Inflow (+)'  , &
-                                                                       'Discrepancy (=)'            , &
-                                                                       'Cumulative Subsidence'      ]
+  INTEGER,PARAMETER           :: f_iNGWBudColumns = 16
+  CHARACTER(LEN=25),PARAMETER :: f_cBudgetColumnTitles(f_iNGWBudColumns) = ['Percolation'                , &
+                                                                            'Beginning Storage (+)'      , &
+                                                                            'Ending Storage (-)'         , &
+                                                                            'Deep Percolation (+)'       , &
+                                                                            'Gain from Stream (+)'       , &
+                                                                            'Recharge (+)'               , &
+                                                                            'Gain from Lake (+)'         , &
+                                                                            'Boundary Inflow (+)'        , &
+                                                                            'Subsidence (+)'             , &
+                                                                            'Subsurface Irrigation (+)'  , &
+                                                                            'Tile Drain Outflow (-)'     , &
+                                                                            'Pumping (-)'                , &
+                                                                            'Outflow to Root Zone (-)'   , &
+                                                                            'Net Subsurface Inflow (+)'  , &
+                                                                            'Discrepancy (=)'            , &
+                                                                            'Cumulative Subsidence'      ]
+  
+  
+  ! -------------------------------------------------------------
+  ! --- ELEVATION ABOVE BOOTOM OF AQUIFER AT WHICH HORIZONTAL FLOW WILL START SCALING DOWN
+  ! -------------------------------------------------------------
+  REAL(8),PARAMETER :: f_rScaleElevation = 1d0
   
   
   ! -------------------------------------------------------------
@@ -302,15 +358,15 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INSTANTIATE GW COMPONENT
   ! -------------------------------------------------------------
-  SUBROUTINE New(AppGW,IsForInquiry,cFileName,cWorkingDirectory,AppGrid,Stratigraphy,StrmConnectivity,TimeStep,NTIME,cIWFMVersion,iStat) 
+  SUBROUTINE New(AppGW,lIsForInquiry,cFileName,cWorkingDirectory,AppGrid,Stratigraphy,StrmConnectivity,iStrmNodeIDs,TimeStep,NTIME,cIWFMVersion,iStat) 
     CLASS(AppGWType),INTENT(OUT)      :: AppGW
-    LOGICAL,INTENT(IN)                :: IsForInquiry
+    LOGICAL,INTENT(IN)                :: lIsForInquiry
     CHARACTER(LEN=*),INTENT(IN)       :: cFileName,cWorkingDirectory,cIWFMVersion
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
     COMPLEX,INTENT(IN)                :: StrmConnectivity(:)
     TYPE(TimeStepType),INTENT(IN)     :: TimeStep
-    INTEGER,INTENT(IN)                :: NTIME
+    INTEGER,INTENT(IN)                :: NTIME,iStrmNodeIDs(:)
     INTEGER,INTENT(OUT)               :: iStat
     
     !Local variables
@@ -320,15 +376,15 @@ CONTAINS
     CHARACTER                   :: ALine*3000,cErrorMsg*300,cAllHeadOutFileName*1000,cHeadTecplotFileName*1200, &
                                    cVelTecplotFileName*1200,cBCFileName*1200,cOverwriteFileName*1200,           &
                                    cCellVelocityFileName*1200
-    INTEGER                     :: NNodes,NElements,NLayers,NRegions,NStrmNodes,ErrorCode,iDebug
-    REAL(8)                     :: AquitardV(AppGrid%NNodes,Stratigraphy%NLayers),                              &
-                                   Kv(AppGrid%NNodes,Stratigraphy%NLayers),                                     &
-                                   Head(AppGrid%NNodes,Stratigraphy%NLayers)
+    INTEGER                     :: NNodes,NElements,NLayers,NRegions,iGWNodeIDs(AppGrid%NNodes),     &
+                                   ErrorCode,iDebug
+    REAL(8)                     :: Head(AppGrid%NNodes,Stratigraphy%NLayers)
     INTEGER,PARAMETER           :: YesDebug = 1
     CHARACTER(:),ALLOCATABLE    :: cAbsPathFileName
     
     !Initialize
-    iStat = 0
+    iStat      = 0
+    iGWNodeIDs = AppGrid%AppNode%ID
     
     !Return if no filename is given
     IF (cFileName .EQ. '') RETURN
@@ -337,25 +393,27 @@ CONTAINS
     CALL EchoProgress('Instantiating groundwater component')
     
     !Initialize
-    NNodes     = AppGrid%GetNNodes()
-    NElements  = AppGrid%GetNElements()
-    NLayers    = Stratigraphy%GetNLayers()
-    NRegions   = AppGrid%NSubregions
-    NStrmNodes = SIZE(StrmConnectivity)
+    NNodes    = AppGrid%GetNNodes()
+    NElements = AppGrid%GetNElements()
+    NLayers   = Stratigraphy%GetNLayers()
+    NRegions  = AppGrid%NSubregions
         
     !Allocate memory
     ALLOCATE (AppGW%Nodes(NNodes,NLayers)                 , &
-              AppGW%State(NNodes,NLayers)                 , &
               AppGW%ElemTransmissivity(NElements,NLayers) , &
               STAT = ErrorCode                            , &
               ERRMSG = cErrorMsg                          )
     IF (ErrorCode .NE. 0) THEN
         MessageArray(1) = 'Error in allocating memory for the groundwater component.'
         MessageArray(2) = cErrorMsg
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
+    
+    !Instantiate State data
+    CALL AppGW%State%New(NNodes,NLayers,iStat)  
+    IF (iStat .NE. 0) RETURN
 
     !Open file
     CALL AppGWParamFile%New(FileName=cFileName,InputFile=.TRUE.,IsTSFile=.FALSE.,Descriptor='groundwater data main input',iStat=iStat)
@@ -379,7 +437,7 @@ CONTAINS
     ALine = StripTextUntilCharacter(ALine,'/')  
     CALL CleanSpecialCharacters(ALine)
     CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-    CALL AppGW%AppTileDrain%New(IsForInquiry,cAbsPathFileName,cWorkingDirectory,NStrmNodes,TimeStep,AppGrid,Stratigraphy,iStat)
+    CALL AppGW%AppTileDrain%New(lIsForInquiry,cAbsPathFileName,cWorkingDirectory,iStrmNodeIDs,TimeStep,AppGrid,Stratigraphy,iStat)
     IF (iStat .EQ. -1) RETURN
     IF (AppGW%AppTileDrain%GetNDrain() .GT. 0   .OR.   AppGW%AppTileDrain%GetNSubIrig() .GT. 0)  &
         AppGW%lTileDrain_Defined = .TRUE.
@@ -389,7 +447,7 @@ CONTAINS
     ALine = StripTextUntilCharacter(ALine,'/')  
     CALL CleanSpecialCharacters(ALine)
     CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-    CALL AppGW%AppPumping%New(cAbsPathFileName,cWorkingDirectory,AppGrid,Stratigraphy,TimeStep,iStat)
+    CALL AppGW%AppPumping%New(lIsForInquiry,cAbsPathFileName,cWorkingDirectory,AppGrid,Stratigraphy,TimeStep,iStat)
     IF (iStat .EQ. -1) RETURN
     IF (AppGW%AppPumping%GetNWells() .GT. 0   .OR.   AppGW%AppPumping%GetNElemPumps() .GT. 0)   &
         AppGW%lPumping_Defined = .TRUE.
@@ -399,7 +457,7 @@ CONTAINS
     ALine = StripTextUntilCharacter(ALine,'/')  
     CALL CleanSpecialCharacters(ALine)
     CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-    CALL AppGW%AppSubsidence%New(IsForInquiry,cAbsPathFileName,cWorkingDirectory,AppGrid,Stratigraphy,StrmConnectivity,TimeStep,iStat)
+    CALL AppGW%AppSubsidence%New(lIsForInquiry,cAbsPathFileName,cWorkingDirectory,iGWNodeIDs,AppGrid,Stratigraphy,StrmConnectivity,TimeStep,iStat)
     IF (iStat .EQ. -1) RETURN
     AppGW%lSubsidence_Defined = AppGW%AppSubsidence%IsDefined()
 
@@ -433,7 +491,7 @@ CONTAINS
     CALL CleanSpecialCharacters(ALine) 
     ALine = ADJUSTL(StripTextUntilCharacter(ALine,'/'))
     CALL EstablishAbsolutePathFileName(TRIM(ALine),cWorkingDirectory,cAbsPathFileName)
-    CALL VerticalFlowOutput_New(IsForInquiry,TimeStep,NLayers,NRegions,AppGW%UnitFlow,cAbsPathFileName,AppGW%VerticalFlowOutput,iStat)
+    CALL VerticalFlowOutput_New(lIsForInquiry,TimeStep,NLayers,NRegions,AppGW%UnitFlow,cAbsPathFileName,AppGW%VerticalFlowOutput,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Output file for heads at all nodes and layers
@@ -463,7 +521,7 @@ CONTAINS
     CALL CleanSpecialCharacters(ALine)
     IF (ALine .NE. '') THEN
         CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-        IF (IsForInquiry) THEN
+        IF (lIsForInquiry) THEN
             CALL AppGW%GWBudFile%New(cAbsPathFileName,iStat)
             IF (iStat .EQ. -1) RETURN
         ELSE
@@ -476,7 +534,7 @@ CONTAINS
             IF (ErrorCode .NE. 0) THEN 
                 MessageArray(1) = 'Error in allocating memory for the regional storage values for groundwater budget.'
                 MessageArray(2) = cErrorMsg
-                CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+                CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
@@ -497,14 +555,14 @@ CONTAINS
     CALL CleanSpecialCharacters(ALine)
     IF (ALine .NE. '') THEN
         CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-        IF (IsForInquiry) THEN
+        IF (lIsForInquiry) THEN
             CALL AppGW%FinalHeadsFile%New(FileName=cAbsPathFileName,InputFile=.TRUE.,Descriptor='final groundwater heads output',iStat=iStat)
         ELSE
             CALL AppGW%FinalHeadsFile%New(FileName=cAbsPathFileName,InputFile=.FALSE.,Descriptor='final groundwater heads output',iStat=iStat)
         END IF
         IF (iStat .EQ. -1) RETURN
-        IF (AppGW%FinalHeadsFile%iGetFileType() .NE. TXT) THEN
-            CALL SetLastMessage('End-of-simulation groundwater heads output file must be a text file!',iFatal,ThisProcedure)
+        IF (AppGW%FinalHeadsFile%iGetFileType() .NE. f_iTXT) THEN
+            CALL SetLastMessage('End-of-simulation groundwater heads output file must be a text file!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -515,45 +573,45 @@ CONTAINS
     CALL AppGWParamFile%ReadData(iDebug,iStat)  ;  IF (iStat .EQ. -1) RETURN
     
     !Groundwater hydrographs
-    CALL AppGW%GWHyd%New(IsForInquiry,AppGrid,Stratigraphy,cWorkingDirectory,AppGW%FactHead,AppGW%UnitHead,AppGW%UnitFlow,AppGW%UnitVelocity,TRIM(cAllHeadOutFileName),TRIM(cCellVelocityFileName),TRIM(cHeadTecplotFileName),TRIM(cVelTecplotFileName),TimeStep,AppGWParamFile,iStat)
+    CALL AppGW%GWHyd%New(lIsForInquiry,AppGrid,Stratigraphy,cWorkingDirectory,iGWNodeIDs,AppGW%FactHead,AppGW%UnitHead,AppGW%UnitFlow,AppGW%UnitVelocity,TRIM(cAllHeadOutFileName),TRIM(cCellVelocityFileName),TRIM(cHeadTecplotFileName),TRIM(cVelTecplotFileName),TimeStep,AppGWParamFile,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Aquifer parameters
-    CALL ReadAquiferParameters(NLayers,AppGrid,TimeStep,AppGWParamFile,AppGW%VarTimeUnit,AquitardV,Kv,AppGW%Nodes,iStat)
+    CALL ReadAquiferParameters(NLayers,AppGrid,TimeStep,AppGWParamFile,AppGW%VarTimeUnit,AppGW%Nodes,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Aquifer overwrite parameters
     IF (cOverwriteFileName .NE. '') THEN
-        CALL OverwriteParameters(cOverwriteFileName,AppGW%VarTimeUnit,TimeStep%TrackTime,AppGW%lSubsidence_Defined,AquitardV,Kv,AppGW%Nodes,AppGW%AppSubsidence,iStat)
+        CALL OverwriteParameters(cOverwriteFileName,iGWNodeIDs,AppGW%VarTimeUnit,TimeStep%TrackTime,AppGW%lSubsidence_Defined,AppGW%Nodes,AppGW%AppSubsidence,iStat)
         IF (iStat .EQ. -1) RETURN
     END IF
     
     !Print final aquifer parameters, if desired
     IF (iDebug .EQ. YesDebug) THEN
         IF (IsLogFileDefined()) THEN
-            CALL PrintAquiferParameters(AquitardV,Kv,AppGW%Nodes)
-            IF (AppGW%lSubsidence_Defined) CALL AppGW%AppSubsidence%PrintParameters()
+            CALL PrintAquiferParameters(iGWNodeIDs,AppGW%Nodes)
+            IF (AppGW%lSubsidence_Defined) CALL AppGW%AppSubsidence%PrintParameters(iGWNodeIDs,AppGrid%AppNode%Area)
         END IF
     END IF
     
     !Initial conditions
-    CALL ReadInitialHeads(AppGWParamFile,NNodes,Stratigraphy,Head,iStat)
+    CALL ReadInitialHeads(AppGWParamFile,NNodes,iGWNodeIDs,Stratigraphy,Head,iStat)
     IF (iStat .EQ. -1) RETURN
     AppGW%State%Head = Head
     
     !Instantiate the boundary conditions data and overwrite the initial conditions if necessary
-    CALL AppGW%AppBC%New(IsForInquiry,ADJUSTL(cBCFileName),cWorkingDirectory,AppGrid,Stratigraphy,AppGW%UnitFlow,TimeStep,AppGW%State%Head,iStat)
+    CALL AppGW%AppBC%New(lIsForInquiry,ADJUSTL(cBCFileName),cWorkingDirectory,AppGrid,Stratigraphy,iGWNodeIDs,AppGW%UnitFlow,TimeStep,AppGW%State%Head,iStat)
     IF (iStat .EQ. -1) RETURN
     AppGW%lAppBC_Defined = AppGW%AppBC%IsDefined()
 
     !Print initial conditions for hydrographs including head at all nodes and Tecplot output
-    IF (.NOT. IsForInquiry) CALL AppGW%GWHyd%PrintInitialValues(AppGrid,Stratigraphy,AppGW%State%Head,AppGW%FactHead,AppGW%FactVelocity,StrmConnectivity,TimeStep)
+    IF (.NOT. lIsForInquiry) CALL AppGW%GWHyd%PrintInitialValues(AppGrid,Stratigraphy,AppGW%State%Head,AppGW%FactHead,AppGW%FactVelocity,StrmConnectivity,TimeStep)
     
     !Assign previous head as current head
     AppGW%State%Head_P = AppGW%State%Head
     
     !Process aquifer parameters for use in simulation
-    CALL ProcessAquiferParameters(AppGrid,Stratigraphy,AppGW%lSubsidence_Defined,AquitardV,Kv,AppGW%AppSubsidence,AppGW%Nodes,AppGW%State,iStat)
+    CALL ProcessAquiferParameters(AppGrid,Stratigraphy,AppGW%lSubsidence_Defined,AppGW%AppSubsidence,AppGW%Nodes,AppGW%State,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Compute initial subregional groundwater storages
@@ -590,11 +648,13 @@ CONTAINS
     
     !Deallocate allocatable arrays
     DEALLOCATE (AppGW%Nodes              , &
-                AppGW%State              , &
                 AppGW%ElemTransmissivity , &
                 AppGW%RegionalStorage    , &
                 AppGW%RegionalStorage_P  , &
                 STAT=ErrorCode           )
+    
+    !Kill gw state related data
+    CALL AppGW%State%Kill()
     
     !Kill groundwater hydrographs related data
     CALL AppGW%GWHyd%Kill()
@@ -645,7 +705,7 @@ CONTAINS
   ! --- CHECK IF A BOUNDARY NODE FLOW NODE
   ! --- Note: It is assumed that the node is already on the model boundary 
   ! -------------------------------------------------------------
-  FUNCTION IsBoundaryFlowNode(AppGW,iNode,iLayer) RESULT(lFlowNode)
+  PURE FUNCTION IsBoundaryFlowNode(AppGW,iNode,iLayer) RESULT(lFlowNode)
     CLASS(AppGWType),INTENT(IN) :: AppGW
     INTEGER,INTENT(IN)          :: iNode,iLayer
     LOGICAL                     :: lFlowNode
@@ -756,334 +816,223 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
-  ! --- GET THE NUMBER OF DATA TYPES FOR POST-PROCESSING AT A LOCATION TYPE
+  ! --- GET ALL GW HEADS AT A LAYER FOR A PERIOD FOR POST-PROCESSING WHEN AppGW OBJECT IS FULLY INSTANTIATED
   ! -------------------------------------------------------------
-  FUNCTION GetNDataList_AtLocationType(AppGW,iLocationType) RESULT(NData) 
-    CLASS(AppGWType),INTENT(IN) :: AppGW
-    INTEGER,INTENT(IN)          :: iLocationType
-    INTEGER                     :: NData
-    
-    !Initialize
-    NData = 0
-    
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_Subregion)
-            !Is groundwater budget defined?
-            IF (AppGW%lGWBudFile_Defined) NData = 1
-           
-           
-        CASE (iLocationType_Node)
-            !Is groundwater head Data at all nodes defined?
-            IF (AppGW%GWHyd%IsAllHeadOutputDefined()) NData = SIZE(AppGW%Nodes , DIM=2)
-            
-            
-        CASE (iLocationType_GWHeadObs)
-            !Is hydrograph print-out defined for the given well?
-            IF (AppGW%GWHyd%IsGWHydOutputDefined()) NData = 1
-            
-            
-        CASE (iLocationType_SubsidenceObs)
-            IF (AppGW%lSubsidence_Defined) NData = AppGW%AppSubsidence%GetNDataList_AtLocationType()
-                
-            
-        CASE (iLocationType_TileDrain)
-            IF (AppGW%lTileDrain_Defined) NData = AppGW%AppTileDrain%GetNDataList_AtLocationType()
-            
-    END SELECT
-    
-  END FUNCTION GetNDataList_AtLocationType
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET A LIST OF DATA TYPES FOR POST-PROCESSING AT A LOCATION TYPE
-  ! -------------------------------------------------------------
-  SUBROUTINE GetDataList_AtLocationType(AppGW,iLocationType,cDataList,cFileList,lBudgetType) 
-    CLASS(AppGWType),INTENT(IN)  :: AppGW
-    INTEGER,INTENT(IN)           :: iLocationType
-    CHARACTER(LEN=*),ALLOCATABLE :: cDataList(:),cFileList(:)
-    LOGICAL,ALLOCATABLE          :: lBudgetType(:)
-    
-    !Local variables
-    INTEGER                  :: ErrorCode,nLayers,indx
-    CHARACTER(:),ALLOCATABLE :: cFileName
-    
-    !Initialize
-    DEALLOCATE (cDataList , cFileList , lBudgetType , STAT=ErrorCode)
-    
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_Subregion)
-            !Is groundwater budget defined?
-            IF (AppGW%lGWBudFile_Defined) THEN
-                ALLOCATE (cDataList(1) , cFileList(1) , lBudgetType(1))
-                cDataList   = cDataList_AtSubregion
-                lBudgetType = .TRUE.
-                CALL AppGW%GWBudFile%GetFileName(cFileName)
-                cFileList = ''
-                cFileList = cFileName
-            END IF
-           
-           
-        CASE (iLocationType_Node)
-            !Is groundwater head Data at all nodes defined?
-            IF (AppGW%GWHyd%IsAllHeadOutputDefined()) THEN
-                nLayers = SIZE(AppGW%Nodes , DIM=2)
-                ALLOCATE (cDataList(nLayers) , cFileList(nLayers) , lBudgetType(nLayers))
-                cDataList   = [(cDataList_AtNode // ' ' // TRIM(IntToText(indx)) , indx=1,nLayers)]
-                lBudgetType = .FALSE.
-                CALL AppGW%GWHyd%GetAllHeadOutputFileName(cFileName)
-                cFileList = ''
-                cFileList = TRIM(StripTextUntilCharacter(ADJUSTL(cFileName),'.',Back=.TRUE.)) // '.hdf'  !Before this method, all hydrographs must have copied into an HDF file
-            END IF
-            
-            
-        CASE (iLocationType_GWHeadObs)
-            !Is hydrograph print-out defined for the given well?
-            IF (AppGW%GWHyd%IsGWHydOutputDefined()) THEN
-                ALLOCATE (cDataList(1) , cFileList(1) , lBudgetType(1))
-                cDataList   = cDataList_AtWell
-                lBudgetType = .FALSE.
-                CALL AppGW%GWHyd%GetGWHydOutputFileName(cFileName)
-                cFileList = ''
-                cFileList = TRIM(StripTextUntilCharacter(ADJUSTL(cFileName),'.',Back=.TRUE.)) // '.hdf'  !Before this method, all hydrographs must have copied into an HDF file
-            END IF
-            
-            
-        CASE (iLocationType_SubsidenceObs)
-            IF (AppGW%lSubsidence_Defined) CALL AppGW%AppSubsidence%GetDataList_AtLocationType(cDataList,cFileList,lBudgetType)
-                
-            
-        CASE (iLocationType_TileDrain)
-            IF (AppGW%lTileDrain_Defined) CALL AppGW%AppTileDrain%GetDataList_AtLocationType(cDataList,cFileList,lBudgetType)
-            
-    END SELECT
-    
-  END SUBROUTINE GetDataList_AtLocationType
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET A LIST LOCATION IDs THAT HAS A SPECIFED DATA TYPE FOR POST-PROCESSING
-  ! -------------------------------------------------------------
-  SUBROUTINE GetLocationsWithData(AppGW,iLocationType,cDataType,iLocations)
-    CLASS(AppGWType),INTENT(IN)     :: AppGW
-    INTEGER,INTENT(IN)              :: iLocationType
-    CHARACTER(LEN=*),INTENT(IN)     :: cDataType     !Not used since each location type has one data type
-    INTEGER,ALLOCATABLE,INTENT(OUT) :: iLocations(:)
-    
-    !Local variables
-    INTEGER :: indx,NHyds
-    
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_Subregion)
-            IF (AppGW%lGWBudFile_Defined) THEN
-                ALLOCATE (iLocations(1))
-                iLocations = iAllLocationIDsListed
-            END IF
-           
-           
-        CASE (iLocationType_Node)
-            IF (AppGW%GWHyd%IsAllHeadOutputDefined()) THEN
-                ALLOCATE (iLocations(1))
-                iLocations = iAllLocationIDsListed
-            END IF
-            
-            
-        CASE (iLocationType_GWHeadObs)
-            IF (AppGW%GWHyd%IsGWHydOutputDefined()) THEN
-                ALLOCATE (iLocations(1))
-                iLocations = iAllLocationIDsListed
-            END IF
-            
-            
-        CASE (iLocationType_SubsidenceObs)
-            IF (AppGW%lSubsidence_Defined) THEN
-                NHyds = AppGW%GetNHydrographs(iLocationType_SubsidenceObs)
-                ALLOCATE (iLocations(NHyds))
-                iLocations = [(indx,indx=1,NHyds)]
-            END IF    
-            
-        CASE (iLocationType_TileDrain)
-            IF (AppGW%lTileDrain_Defined) THEN
-                NHyds = AppGW%GetNHydrographs(iLocationType_TileDrain)
-                ALLOCATE (iLocations(NHyds))
-                iLocations = [(indx,indx=1,NHyds)]
-            END IF    
-
-    END SELECT
-    
-    
-  END SUBROUTINE GetLocationsWithData
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET SUB-COMPONENTS OF A DATA TYPE FOR POST-PROCESSING AT A LOCATION TYPE
-  ! -------------------------------------------------------------
-  SUBROUTINE GetSubDataList_AtLocation(AppGW,iLocationType,cDataType,cSubDataList)
-    CLASS(AppGWType),INTENT(IN)              :: AppGW
-    INTEGER,INTENT(IN)                       :: iLocationType
-    CHARACTER(LEN=*),INTENT(IN)              :: cDataType
-    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cSubDataList(:)
-    
-    !Local variables
-    INTEGER :: ErrorCode
-    
-    !Initialize
-    DEALLOCATE (cSubDataList , STAT=ErrorCode)
-    
-    !Only groundwater budget at subregion has sub-data
-    IF (iLocationType .EQ. iLocationType_Subregion) THEN
-        IF (TRIM(cDataType) .EQ. cDataList_AtSubregion) THEN
-            IF (AppGW%lGWBudFile_Defined) THEN
-                ALLOCATE (cSubDataList(NGWBudColumns))
-                cSubDataList = cBudgetColumnTitles
-            END IF
-        END IF
-    END IF
-    
-  END SUBROUTINE GetSubDataList_AtLocation
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET MODEL DATA AT A LOCATION FOR POST-PROCESSING WHEN AppGW OBJECT IS FULLY INSTANTIATED
-  ! -------------------------------------------------------------
-  SUBROUTINE GetModelData_AtLocation_FromFullModel(AppGW,iLocationType,iLocationID,cDataType,iSubDataIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-    CLASS(AppGWType)            :: AppGW
-    INTEGER,INTENT(IN)          :: iLocationType,iLocationID,iSubDataIndex
-    CHARACTER(LEN=*),INTENT(IN) :: cDataType,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval
-    REAL(8),INTENT(IN)          :: rFact_LT,rFact_AR,rFact_VL
-    INTEGER,INTENT(OUT)         :: iDataUnitType,nActualOutput                           !This is the actual number of elements of rOutputValues and rOutputDates arrays that are populated (can be less than or equal to the size of these arrays)
-    REAL(8),INTENT(OUT)         :: rOutputDates(:),rOutputValues(:)
-    INTEGER,INTENT(OUT)         :: iStat
-    
-    !Local variables
-    INTEGER   :: indxLayer
-    CHARACTER :: cData*50
-    
-    !Initialize
-    iStat         = 0
-    nActualOutput = 0
-    
-    !Proceed based on location type
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_Subregion)
-            IF (AppGW%lGWBudFile_Defined) THEN
-                IF (TRIM(cDataType) .EQ. cDataList_AtSubregion) THEN
-                    CALL AppGW%GWBudFile%ReadData(iLocationID,iSubDataIndex,cOutputInterval,cOutputBeginDateAndTime,cOutputEndDateAndTime,1d0,0d0,0d0,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-                END IF
-            END IF
-           
-           
-        CASE (iLocationType_Node)
-           IF (AppGW%GWHyd%IsAllHeadOutputDefined()) THEN
-               DO indxLayer=1,SIZE(AppGW%Nodes , DIM=2)
-                    cData = TRIM(cDataList_AtNode) // ' ' // TRIM(IntToText(indxLayer))
-                    IF (TRIM(cDataType) .EQ. TRIM(cData)) THEN
-                        CALL AppGW%GWHyd%ReadGWHead_AtNodeLayer(iLocationID,indxLayer,cOutputBeginDateAndTime,cOutputEndDateAndTime,AppGW%FactHead,rFact_LT,nActualOutput,rOutputDates,rOutputValues,iStat)
-                        iDataUnitType = iDataUnitType_Length
-                        EXIT
-                    END IF
-               END DO
-           END IF
-            
-            
-        CASE (iLocationType_GWHeadObs)
-            IF (AppGW%GWHyd%IsGWHydOutputDefined()) THEN
-                CALL AppGW%GWHyd%ReadGWHead_AtWell(iLocationID,cOutputBeginDateAndTime,cOutputEndDateAndTime,AppGW%FactHead,rFact_LT,nActualOutput,rOutputDates,rOutputValues,iStat)
-                iDataUnitType = iDataUnitType_Length
-            END IF
-            
-            
-        CASE (iLocationType_SubsidenceObs)
-            IF (AppGW%lSubsidence_Defined) THEN
-                CALL AppGW%AppSubsidence%GetModelData_AtLocation(iLocationID,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_LT,nActualOutput,rOutputDates,rOutputValues,iStat)
-                iDataUnitType = iDataUnitType_Length
-            END IF
-            
-            
-        CASE (iLocationType_TileDrain)
-            IF (AppGW%lTileDrain_Defined) THEN
-                CALL AppGW%AppTileDrain%GetModelData_AtLocation(iLocationID,cDataType,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_VL,nActualOutput,rOutputDates,rOutputValues,iStat)
-                iDataUnitType = iDataUnitType_Volume
-            END IF
-                        
-    END SELECT
-        
-  END SUBROUTINE GetModelData_AtLocation_FromFullModel
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET MODEL DATA AT A LOCATION FOR POST-PROCESSING WHEN AppGW OBJECT IS NOT FULLY INSTANTIATED
-  ! --- Note: This procedure is used only to read data from text or DSS output files
-  ! -------------------------------------------------------------
-  SUBROUTINE GetModelData_AtLocation_FromInquiryModel(cFileName,NLayers,TimeStep,iLocationType,iLocationID,cDataType,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_LT,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-    INTEGER,INTENT(IN)            :: NLayers,iLocationType,iLocationID
+  SUBROUTINE GetGWHeads_ForALayer_GivenAppGW(AppGW,iNNodes,iNLayers,iLayer,TimeStep,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_LT,rOutputDates,rGWHeads,iStat)
+    CLASS(AppGWType)              :: AppGW
+    INTEGER,INTENT(IN)            :: iNNodes,iNLayers,iLayer
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
-    CHARACTER(LEN=*),INTENT(IN)   :: cFileName,cDataType,cOutputBeginDateAndTime,cOutputEndDateAndTime
-    REAL(8),INTENT(IN)            :: rFact_LT,rFact_VL
-    INTEGER,INTENT(OUT)           :: iDataUnitType,nActualOutput                           !This is the actual number of elements of rOutputValues and rOutputDates arrays that are populated (can be less than or equal to the size of these arrays)
-    REAL(8),INTENT(OUT)           :: rOutputDates(:),rOutputValues(:)
+    CHARACTER(LEN=*),INTENT(IN)   :: cOutputBeginDateAndTime,cOutputEndDateAndTime
+    REAL(8),INTENT(IN)            :: rFact_LT
+    REAL(8),INTENT(OUT)           :: rOutputDates(:),rGWHeads(:,:)    !rGWHeads in (node,time) combination
     INTEGER,INTENT(OUT)           :: iStat
     
     !Local variables
-    INTEGER               :: indxLayer,FileReadCode,iColNo,iLocNo
-    REAL(8)               :: rFactor
-    CHARACTER             :: cData*50
+    CHARACTER(LEN=ModNameLen+31) :: ThisProcedure = ModName // 'GetGWHeads_ForALayer_GivenAppGW'
+    CHARACTER(:),ALLOCATABLE     :: cFileName
+    
+    !Initialize
+    iStat = 0
+    
+    IF (AppGW%GWHyd%IsAllHeadOutputDefined()) THEN
+        !Get the name of the text output file and convert it to the same name but HDF version
+        CALL AppGW%GWHyd%GetAllHeadOutputFileName(cFileName)
+        cFileName(LEN_TRIM(cFileName)-2:) = 'hdf'
+        
+        !The hdf file should already have been created by now but still check that it exists
+        IF (DoesFileExist(cFileName)) THEN
+            CALL GetGWHeads_ForALayer_GivenFile(cFileName,iNNodes,iNLayers,iLayer,TimeStep,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_LT,rOutputDates,rGWHeads,iStat)
+        ELSE
+            MessageArray(1) = 'File '//cFileName//' cannot be found for data retrieval!'
+            MessageArray(2) = 'Groundwater heads at a layer will be retrieved from the text output file.'
+            MessageArray(3) = 'This may take a substantially long time.'
+            CALL LogMessage(MessageArray(1:3),f_iWarn,ThisProcedure)
+            CALL AppGW%GWHyd%ReadGWHeadsAll_ForALayer(iNNodes,iLayer,cOutputBeginDateAndTime,cOutputEndDateAndTime,AppGW%FactHead,rFact_LT,rOutputDates,rGWHeads,iStat)
+        END IF
+    ELSE
+        MessageArray(1) = 'GW heads at all nodes for a layer cannot be retrieved '
+        MessageArray(2) = 'this output file was not generated for the model!'
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
+        iStat = -1
+    END IF
+        
+  END SUBROUTINE GetGWHeads_ForALayer_GivenAppGW
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET ALL GW HEADS AT A LAYER FOR A PERIOD FOR POST-PROCESSING WHEN AppGW OBJECT IS NOT FULLY INSTANTIATED
+  ! -------------------------------------------------------------
+  SUBROUTINE GetGWHeads_ForALayer_GivenFile(cFileName,NNodes,NLayers,iLayer,TimeStep,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_LT,rOutputDates,rGWHeads,iStat)
+    INTEGER,INTENT(IN)            :: NNodes,NLayers,iLayer
+    TYPE(TimeStepType),INTENT(IN) :: TimeStep
+    CHARACTER(LEN=*),INTENT(IN)   :: cFileName,cOutputBeginDateAndTime,cOutputEndDateAndTime
+    REAL(8),INTENT(IN)            :: rFact_LT
+    REAL(8),INTENT(OUT)           :: rOutputDates(:),rGWHeads(:,:)    !rGWHeads in (node,time) combination
+    INTEGER,INTENT(OUT)           :: iStat
+    
+    !Local variables
+    INTEGER               :: FileReadCode,indxS,indxL
+    REAL(8)               :: rValues(NNodes*NLayers,SIZE(rOutputDates))
     TYPE(GenericFileType) :: InFile
     
     !Initialize
-    iStat         = 0
-    nActualOutput = 0
-    iLocNo        = 1
-    iColNo        = 0
-    
-    !Proceed based on location type
-    SELECT CASE (iLocationType)          
-        CASE (iLocationType_Node)
-            DO indxLayer=1,NLayers
-                 cData = TRIM(cDataList_AtNode) // ' ' // TRIM(IntToText(indxLayer))
-                 IF (TRIM(cDataType) .EQ. TRIM(cData)) THEN
-                     iColNo        = (iLocationID - 1) * NLayers + indxLayer
-                     iDataUnitType = iDataUnitType_Length
-                     rFactor       = rFact_LT
-                     EXIT
-                 END IF
-            END DO
-            
-            
-        CASE (iLocationType_GWHeadObs , iLocationType_SubsidenceObs)
-            iColNo        = iLocationID
-            iDataUnitType = iDataUnitType_Length
-            rFactor       = rFact_LT
-            
-            
-        CASE (iLocationType_TileDrain)
-            iColNo        = iLocationID
-            iDataUnitType = iDataUnitType_Volume
-            rFactor       = rFact_VL
-                        
-        END SELECT
-        
-    !Return if there is no data to read
-    IF (iColNo .EQ. 0) RETURN
+    iStat = 0
     
     !Open file
     CALL InFile%New(FileName=cFileName,InputFile=.TRUE.,IsTSFile=.TRUE.,iStat=iStat)
     IF (iStat .EQ. -1) RETURN
     
-    !Number of timesteps for which data will be read
-    nActualOutput = NPeriods(TimeStep%DELTAT_InMinutes,cOutputBeginDateAndTime,cOutputEndDateAndTime)
-    
     !Julian dates for data
-    CALL GetJulianDatesBetweenTimeStampsWithTimeIncrement(TimeStep%DeltaT_InMinutes,cOutputBeginDateAndTime,cOutputEndDateAndTime,rOutputDates(1:nActualOutput))
+    CALL GetJulianDatesBetweenTimeStampsWithTimeIncrement(TimeStep%DeltaT_InMinutes,cOutputBeginDateAndTime,cOutputEndDateAndTime,rOutputDates)
     
     !Read data
-    CALL InFile%ReadData(cOutputBeginDateAndTime,iLocNo,iColNo,rOutputValues(1:nActualOutput),FileReadCode,iStat)
-    rOutputValues(1:nActualOutput) = rOutputValues(1:nActualOutput) * rFactor
+    CALL InFile%ReadData(cOutputBeginDateAndTime,1,rValues,FileReadCode,iStat)
+    
+    !Transfer read data to permenant array
+    indxS    = (iLayer-1)*NNodes + 1
+    indxL    = iLayer * NNodes
+    rGWHeads = rValues(indxS:indxL,:)
+    IF (rFact_LT .NE. 1.0) rGWHeads = rGWHeads * rFact_LT
     
     !Close file
     CALL InFile%Kill()
         
-  END SUBROUTINE GetModelData_AtLocation_FromInquiryModel
+  END SUBROUTINE GetGWHeads_ForALayer_GivenFile
   
+  
+  ! -------------------------------------------------------------
+  ! --- GET NODAL STORAGES (AND TEHIR DERIVATIVES, IF DESIRED)
+  ! -------------------------------------------------------------
+  SUBROUTINE GetNodalStorages(AppGW,AppGrid,Stratigraphy,rNodalStor,rdNodalStor)
+    CLASS(AppGWType),INTENT(IN)       :: AppGW
+    TYPE(AppGridType),INTENT(IN)      :: AppGrid
+    TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
+    REAL(8),INTENT(OUT)               :: rNodalStor(AppGrid%NNodes,Stratigraphy%NLayers)
+    REAL(8),OPTIONAL,INTENT(OUT)      :: rdNodalStor(AppGrid%NNodes,Stratigraphy%NLayers)
+    
+    !Local variables
+    INTEGER :: indxNode,indxLayer
+    
+    !Compute
+    ASSOCIATE (pTopElev    => Stratigraphy%TopElev    , &
+               pBottomElev => Stratigraphy%BottomElev , &
+               pHead       => AppGW%State%Head        , &
+               pSs         => AppGW%Nodes%Ss          , &
+               pSy         => AppGW%Nodes%Sy          )
+        !Compute storage
+        DO indxLayer=1,Stratigraphy%NLayers
+            DO indxNode=1,AppGrid%NNodes
+                IF (.NOT. Stratigraphy%ActiveNode(indxNode,indxLayer)) THEN
+                    rNodalStor(indxNode,indxLayer) = 0.0
+                    CYCLE
+                END IF
+                
+                IF (pHead(indxNode,indxLayer) .LT. pTopElev(indxNode,indxLayer)) THEN
+                    rNodalStor(indxNode,indxLayer) = (pHead(indxNode,indxLayer)-pBottomElev(indxNode,indxLayer)) * pSy(indxNode,indxLayer) 
+                ELSE
+                    rNodalStor(indxNode,indxLayer) = (pHead(indxNode,indxLayer)-pTopElev(indxNode,indxLayer)) * pSs(indxNode,indxLayer)      &
+                                                   + (pTopElev(indxNode,indxLayer)-pBottomElev(indxNode,indxLayer)) * pSy(indxNode,indxLayer)
+                END IF          
+            END DO
+        END DO
+        
+        !Compute derivative of storage, if requested
+        IF (PRESENT(rdNodalStor)) THEN
+            DO indxLayer=1,Stratigraphy%NLayers
+                DO indxNode=1,AppGrid%NNodes
+                    IF (.NOT. Stratigraphy%ActiveNode(indxNode,indxLayer)) THEN
+                        rdNodalStor(indxNode,indxLayer) = 0.0
+                        CYCLE
+                    END IF
+                    
+                    IF (pHead(indxNode,indxLayer) .LT. pTopElev(indxNode,indxLayer)) THEN
+                        rdNodalStor(indxNode,indxLayer) = pSy(indxNode,indxLayer) 
+                    ELSE
+                        rdNodalStor(indxNode,indxLayer) = pSs(indxNode,indxLayer)      
+                    END IF          
+                END DO
+            END DO
+        END IF
+    END ASSOCIATE
+    
+  END SUBROUTINE GetNodalStorages
+  
+
+  ! -------------------------------------------------------------
+  ! --- GET AQUIFER HORIZONTAL HYDRAULIC CONDUCTIVITY
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetAquiferKh(AppGW,Kh)
+    CLASS(AppGWType),INTENT(IN) :: AppGW
+    REAL(8),INTENT(OUT)         :: Kh(:,:)
+    
+    Kh = AppGW%Nodes%Kh
+    
+  END SUBROUTINE GetAquiferKh
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET AQUIFER VERTICAL HYDRAULIC CONDUCTIVITY
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetAquiferKv(AppGW,Kv)
+    CLASS(AppGWType),INTENT(IN) :: AppGW
+    REAL(8),INTENT(OUT)         :: Kv(:,:)
+    
+    Kv = AppGW%Nodes%Kv
+    
+  END SUBROUTINE GetAquiferKv
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET AQUITARD VERTICAL HYDRAULIC CONDUCTIVITY
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetAquitardKv(AppGW,Kv)
+    CLASS(AppGWType),INTENT(IN) :: AppGW
+    REAL(8),INTENT(OUT)         :: Kv(:,:)
+    
+    Kv = AppGW%Nodes%AquitardKv
+    
+  END SUBROUTINE GetAquitardKv
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET SPECIFIC YIELD
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetAquiferSy(AppGW,AppGrid,Sy)
+    CLASS(AppGWType),INTENT(IN)  :: AppGW
+    TYPE(AppGridType),INTENT(IN) :: AppGrid
+    REAL(8),INTENT(OUT)          :: Sy(:,:)
+    
+    !Local variables
+    INTEGER :: indxNode,indxLayer
+    
+    DO indxLayer=1,SIZE(Sy,DIM=2)
+        DO indxNode=1,AppGrid%NNodes
+            Sy(indxNode,indxLayer) = AppGW%Nodes(indxNode,indxLayer)%Sy / AppGrid%AppNode(indxNode)%Area
+        END DO
+    END DO
+    
+  END SUBROUTINE GetAquiferSy
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STORAGE COEFFICIENT (AFTER SPECIFIC STORAGE IS MULTIPLIED BY AQUIFER THICKNESS)
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetAquiferSs(AppGW,AppGrid,Ss)
+    CLASS(AppGWType),INTENT(IN)  :: AppGW
+    TYPE(AppGridType),INTENT(IN) :: AppGrid
+    REAL(8),INTENT(OUT)          :: Ss(:,:)
+    
+    !Local variables
+    INTEGER :: indxNode,indxLayer
+    
+    DO indxLayer=1,SIZE(Ss,DIM=2)
+        DO indxNode=1,AppGrid%NNodes
+            Ss(indxNode,indxLayer) = AppGW%Nodes(indxNode,indxLayer)%Ss / AppGrid%AppNode(indxNode)%Area
+        END DO
+    END DO
+    
+  END SUBROUTINE GetAquiferSs
+   
   
   ! -------------------------------------------------------------
   ! --- GET NUMBER OF GW HEAD OR SUBSIDENCE HYDROGRAPHS
@@ -1094,39 +1043,66 @@ CONTAINS
     INTEGER                     :: NHydrographs
     
     SELECT CASE (iLocationType)
-        CASE (iLocationType_GWHeadObs)
+        CASE (f_iLocationType_GWHeadObs)
             NHydrographs = AppGW%GWHyd%GetNGWHeadHydrographs()
         
-        CASE (iLocationType_SubsidenceObs)
+        CASE (f_iLocationType_SubsidenceObs)
             IF (AppGW%lSubsidence_Defined) THEN
                 NHydrographs = AppGW%AppSubsidence%GetNHydrographs()
             ELSE
                 NHydrographs = 0
             END IF
             
-        CASE (iLocationType_TileDrain)
-            NHydrographs = AppGW%AppTileDrain%GetNHydrographs(iTileDrain)
+        CASE (f_iLocationType_TileDrainObs)
+            NHydrographs = AppGW%AppTileDrain%GetNHydrographs(f_iTileDrain)
     END SELECT
     
   END FUNCTION GetNHydrographs
   
   
   ! -------------------------------------------------------------
-  ! --- GET GW HEAD OR SUBSIDENCE HYDROGRAPH COORDINATES
+  ! --- GET HYDROGRAPH IDS
   ! -------------------------------------------------------------
-  SUBROUTINE GetHydrographCoordinates(AppGW,iLocationType,GridNodeCoordinates,X,Y)
+  PURE SUBROUTINE GetHydrographIDs(AppGW,iLocationType,IDs)
     CLASS(AppGWType),INTENT(IN) :: AppGW
     INTEGER,INTENT(IN)          :: iLocationType
-    TYPE(NodeType),INTENT(IN)   :: GridNodeCoordinates(:)
-    REAL(8),INTENT(OUT)         :: X(:),Y(:)
+    INTEGER,INTENT(OUT)         :: IDs(:)
     
     SELECT CASE (iLocationType)
-        CASE (iLocationType_GWHeadObs)
-            CALL AppGW%GWHyd%GetGWHeadHydrographCoordinates(GridNodeCoordinates,X,Y)
+        CASE (f_iLocationType_GWHeadObs)
+            CALL AppGW%GWHyd%GetGWHeadHydrographIDs(IDs)
         
-        CASE (iLocationType_SubsidenceObs)
+        CASE (f_iLocationType_SubsidenceObs)
+            IF (AppGW%lSubsidence_Defined) CALL AppGW%AppSubsidence%GetHydrographIDs(IDs)
+            
+        CASE (f_iLocationType_TileDrainObs)
+            IF (AppGW%lTileDrain_Defined) CALL AppGW%AppTileDrain%GetHydrographIDs(f_iTileDrain,IDs)
+    END SELECT
+    
+  END SUBROUTINE GetHydrographIDs
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET GW HEAD, SUBSIDENCE OR TILE DRAIN HYDROGRAPH COORDINATES
+  ! -------------------------------------------------------------
+  SUBROUTINE GetHydrographCoordinates(AppGW,iLocationType,GridX,GridY,XHyd,YHyd)
+    CLASS(AppGWType),INTENT(IN) :: AppGW
+    INTEGER,INTENT(IN)          :: iLocationType
+    REAL(8),INTENT(IN)          :: GridX(:),GridY(:)
+    REAL(8),INTENT(OUT)         :: XHyd(:),YHyd(:)
+    
+    SELECT CASE (iLocationType)
+        CASE (f_iLocationType_GWHeadObs)
+            CALL AppGW%GWHyd%GetGWHeadHydrographCoordinates(GridX,GridY,XHyd,YHyd)
+        
+        CASE (f_iLocationType_SubsidenceObs)
             IF (AppGW%lSubsidence_Defined) THEN
-                CALL AppGW%AppSubsidence%GetHydrographCoordinates(GridNodeCoordinates,X,Y)
+                CALL AppGW%AppSubsidence%GetHydrographCoordinates(GridX,GridY,XHyd,YHyd)
+            END IF
+            
+        CASE (f_iLocationType_TileDrainObs)
+            IF (AppGW%lTileDrain_Defined) THEN
+                CALL AppGW%AppTileDrain%GetHydrographCoordinates(f_iTileDrain,GridX,GridY,XHyd,YHyd)
             END IF
     END SELECT
     
@@ -1134,7 +1110,7 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
-  ! --- GET GW HEAD OR SUBSIDENCE HYDROGRAPH NAMES
+  ! --- GET GW HEAD, SUBSIDENCE OR TILE DRAIN HYDROGRAPH NAMES
   ! -------------------------------------------------------------
   SUBROUTINE GetHydrographNames(AppGW,iLocationType,cNamesList)
     CLASS(AppGWType),INTENT(IN)  :: AppGW
@@ -1142,17 +1118,322 @@ CONTAINS
     CHARACTER(LEN=*),INTENT(OUT) :: cNamesList(:) !Assumes array was dimensioned previously based on the number of hydrographs
     
     SELECT CASE (iLocationType)
-        CASE (iLocationType_GWHeadObs)
+        CASE (f_iLocationType_GWHeadObs)
             CALL AppGW%GWHyd%GetGWHeadHydrographNames(cNamesList)
         
-        CASE (iLocationType_SubsidenceObs)
+        CASE (f_iLocationType_SubsidenceObs)
             CALL AppGW%AppSubsidence%GetHydrographNames(cNamesList)
             
-        CASE (iLocationType_TileDrain)
+        CASE (f_iLocationType_TileDrainObs)
             CALL AppGW%AppTileDrain%GetHydrographNames(cNamesList)
     END SELECT
     
   END SUBROUTINE GetHydrographNames
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET GW HEAD, SUBSIDENCE OR TILE DRAIN HYDROGRAPH FOR A GIVEN HYDROGRAPH INDEX FROM A FILE
+  ! -------------------------------------------------------------
+  SUBROUTINE GetHydrograph_GivenAppGW(AppGW,TimeStep,iNNodes,iLocationType,iLocationIndex,iLayer,rFact_LT,rFact_VL,cBeginDate,cEndDate,cInterval,iDataUnitType,rDates,rValues,iStat)
+    CLASS(AppGWType),INTENT(IN)     :: AppGW
+    CHARACTER(LEN=*),INTENT(IN)     :: cBeginDate,cEndDate,cInterval
+    TYPE(TimeStepType),INTENT(IN)   :: TimeStep
+    INTEGER,INTENT(IN)              :: iLocationType,iLocationIndex,iLayer,iNNodes
+    REAL(8),INTENT(IN)              :: rFact_LT,rFact_VL
+    REAL(8),ALLOCATABLE,INTENT(OUT) :: rDates(:),rValues(:)
+    INTEGER,INTENT(OUT)             :: iDataUnitType,iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+24) :: ThisProcedure = ModNAme // 'GetHydrograph_GivenAppGW'
+    CHARACTER(:),ALLOCATABLE     :: cFileName
+    
+    !Get filename
+    SELECT CASE (iLocationType)
+        CASE (f_iLocationType_Node)
+            CALL AppGW%GWHyd%GetAllHeadOutputFileName(cFileName)
+        CASE (f_iLocationType_GWHeadObs)
+            CALL AppGW%GWHyd%GetGWHydOutputFileName(cFileName)
+        CASE (f_iLocationType_SubsidenceObs)
+            CALL AppGW%AppSubsidence%GetHydOutputFileNAme(cFileName)
+        CASE (f_iLocationType_TileDrainObs)
+            CALL AppGW%AppTileDrain%GetHydOutputFileName(cFileName)
+        END SELECT
+        
+    !Return with error if filename is empty
+    IF (LEN_TRIM(cFileName) .EQ. 0) THEN
+        CALL SetLastMessage('Requested hydrograph data is not part of the model output!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
+        
+    !Replace filename extension with hdf
+    cFileName = TRIM(StripTextUntilCharacter(ADJUSTL(cFileName),'.',Back=.TRUE.)) // '.hdf' 
+    
+    !Retrieve data
+    CALL GetHydrograph_GivenFile(cFileName,TimeStep,iNNodes,iLocationType,iLocationIndex,iLayer,rFact_LT,rFact_VL,cBeginDate,cEndDate,cInterval,iDataUnitType,rDates,rValues,iStat)
+        
+  END SUBROUTINE GetHydrograph_GivenAppGW
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET GW HEAD, SUBSIDENCE OR TILE DRAIN HYDROGRAPH FOR A GIVEN HYDROGRAPH INDEX FROM A FILE
+  ! -------------------------------------------------------------
+  SUBROUTINE GetHydrograph_GivenFile(cFileName,TimeStep,iNNodes,iLocationType,iLocationIndex,iLayer,rFact_LT,rFact_VL,cBeginDate,cEndDate,cInterval,iDataUnitType,rDates,rValues,iStat)
+    CHARACTER(LEN=*),INTENT(IN)     :: cFileName,cBeginDate,cEndDate,cInterval
+    TYPE(TimeStepType),INTENT(IN)   :: TimeStep
+    INTEGER,INTENT(IN)              :: iLocationType,iLocationIndex,iLayer,iNNodes
+    REAL(8),INTENT(IN)              :: rFact_LT,rFact_VL
+    REAL(8),ALLOCATABLE,INTENT(OUT) :: rDates(:),rValues(:)
+    INTEGER,INTENT(OUT)             :: iDataUnitType,iStat
+    
+    !Local variables
+    INTEGER               :: iColNo,iFileReadCode,iNData,iDeltaT_InMinutes,iNDataReturn,iNIntervals,iErrorCode
+    REAL(8)               :: rFactor,rDummy
+    CHARACTER             :: cDate*f_iTimeStampLength
+    TYPE(GenericFileType) :: InFile
+    REAL(8),ALLOCATABLE   :: rValues_Local(:),rDates_Local(:)
+    
+    !Set data retrival parameters based on location type
+    SELECT CASE (iLocationType)          
+        CASE (f_iLocationType_Node)
+            iColNo           = (iLayer - 1) * iNNodes + iLocationIndex 
+            iDataUnitType    = f_iDataUnitType_Length
+            rFactor          = rFact_LT
+            
+        CASE (f_iLocationType_GWHeadObs , f_iLocationType_SubsidenceObs) 
+            iColNo           = iLocationIndex
+            iDataUnitType    = f_iDataUnitType_Length
+            rFactor          = rFact_LT
+            
+        CASE (f_iLocationType_TileDrainObs)
+            iColNo           = iLocationIndex
+            iDataUnitType    = f_iDataUnitType_Volume
+            rFactor          = rFact_VL                        
+    END SELECT
+        
+    !Open file
+    CALL InFile%New(FileName=cFileName,InputFile=.TRUE.,IsTSFile=.TRUE.,iStat=iStat)
+    IF (iStat .NE. 0) GOTO 10
+    
+    !Number of timesteps for which data will be read, and allocate array to read data
+    iNData = NPeriods(TimeStep%DELTAT_InMinutes,cBeginDate,cEndDate) + 1 
+    ALLOCATE (rValues_Local(iNData) , rDates_Local(iNData))
+    
+    !Julian dates for data
+    CALL GetJulianDatesBetweenTimeStampsWithTimeIncrement(TimeStep%DELTAT_InMinutes,cBeginDate,cEndDate,rDates_Local)
+    
+    !Read data
+    CALL InFile%ReadData(cBeginDate,1,iColNo,rValues_Local,iFileReadCode,iStat)
+    IF (iStat .NE. 0) GOTO 10
+    
+    !Number of timesteps to sample data
+    CALL CTimeStep_To_RTimeStep(cInterval,rDummy,iDeltaT_InMinutes,iStat)  
+    IF (iStat .NE. 0) GOTO 10
+    iNDataReturn = NPeriods(iDELTAT_InMinutes,cBeginDate,cEndDate) + 1
+    ALLOCATE (rDates(iNDataReturn) , rValues(iNDataReturn))
+    
+    !Sample read data into return argument
+    IF (iNData .EQ. iNDataReturn) THEN
+        rValues = rValues_Local * rFactor
+        rDates  = rDates_Local
+    ELSE
+        cDate       = IncrementTimeStamp(cBeginDate,iDeltaT_InMinutes,1)
+        iNIntervals = NPeriods(TimeStep%DELTAT_InMinutes,cBeginDate,cDate)
+        rValues     = rValues_Local(iNIntervals::iNIntervals) * rFactor
+        rDates      = rDates_Local(iNIntervals::iNIntervals)
+    END IF
+    
+    !Close file
+10  CALL InFile%Kill()
+    
+    !Clear memory
+    DEALLOCATE (rValues_Local , rDates_Local , STAT=iErrorCode)
+    
+  END SUBROUTINE GetHydrograph_GivenFile
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET A LIST OF HYDROGRAPH TYPES AVAILABLE FOR RETRIEVAL
+  ! -------------------------------------------------------------
+  SUBROUTINE GetHydrographTypeList(AppGW,cHydTypeList,iHydLocationTypeList,cHydFileList)
+    CLASS(AppGWType),INTENT(IN)              :: AppGW
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cHydTypeList(:),cHydFileList(:)
+    INTEGER,ALLOCATABLE,INTENT(OUT)          :: iHydLocationTypeList(:)
+    
+    !Local variables
+    INTEGER                  :: iErrorCode,iHydLocationTypeList_Local(5),iCount
+    CHARACTER(LEN=100)       :: cHydTypeList_Local(5)
+    CHARACTER(LEN=500)       :: cHydFileList_Local(5)
+    CHARACTER(:),ALLOCATABLE :: cFileName
+    
+    !Initialize
+    iCount = 0
+    
+    !GW head observations
+    CALL AppGW%GWHyd%GetGWHydOutputFileName(cFileName)
+    IF (ALLOCATED(cFileName)) THEN
+        iCount                             = iCount + 1
+        iHydLocationTypeList_Local(iCount) = f_iLocationType_GWHeadObs
+        cHydTypeList_Local(iCount)         = f_cDescription_GWHyd_AtWell
+        cHydFileList_Local(iCount)         = TRIM(StripTextUntilCharacter(ADJUSTL(cFileName),'.',Back=.TRUE.)) // '.hdf'  !Before this method, all hydrographs must have been copied into an HDF file
+    END IF
+    
+    !GW heads at all nodes and layers
+    CALL AppGW%GWHyd%GetAllHeadOutputFileName(cFileName)
+    IF (ALLOCATED(cFileName)) THEN
+        iCount                             = iCount + 1
+        iHydLocationTypeList_Local(iCount) = f_iLocationType_Node
+        cHydTypeList_Local(iCount)         = f_cDescription_GWHyd_AtNodeLayer
+        cHydFileList_Local(iCount)         = TRIM(StripTextUntilCharacter(ADJUSTL(cFileName),'.',Back=.TRUE.)) // '.hdf'  !Before this method, all hydrographs must have been copied into an HDF file
+    END IF
+    
+    !Subsidence observations
+    CALL AppGW%AppSubsidence%GetHydOutputFileName(cFileName)
+    IF (ALLOCATED(cFileName)) THEN
+        iCount                             = iCount + 1
+        iHydLocationTypeList_Local(iCount) = f_iLocationType_SubsidenceObs
+        cHydTypeList_Local(iCount)         = f_cDescription_SubsHyd
+        cHydFileList_Local(iCount)         = TRIM(StripTextUntilCharacter(ADJUSTL(cFileName),'.',Back=.TRUE.)) // '.hdf'  !Before this method, all hydrographs must have been copied into an HDF file
+    END IF
+
+    !Tile drain observations
+    CALL AppGW%AppTileDrain%GetHydOutputFileName(cFileName)
+    IF (ALLOCATED(cFileName)) THEN
+        iCount                             = iCount + 1
+        iHydLocationTypeList_Local(iCount) = f_iLocationType_TileDrainObs
+        cHydTypeList_Local(iCount)         = f_cDescription_TDHyd
+        cHydFileList_Local(iCount)         = TRIM(StripTextUntilCharacter(ADJUSTL(cFileName),'.',Back=.TRUE.)) // '.hdf'  !Before this method, all hydrographs must have been copied into an HDF file
+    END IF
+    
+    !Store data in return variables
+    DEALLOCATE (iHydLocationTypeList , cHydTypeList , cHydFileList , STAT=iErrorCode)
+    ALLOCATE (iHydLocationTypeList(iCount) , cHydTypeList(iCount) , cHydFileList(iCount)) 
+    iHydLocationTypeList = iHydLocationTypeList_Local(1:iCount)
+    cHydTypeList         = cHydTypeList_Local(1:iCount)        
+    cHydFileList         = cHydFileList_Local(1:iCount)           
+        
+  END SUBROUTINE GetHydrographTypeList
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET AVERAGE AG. PUMPING-WEIGHTED DEPTH-TO-GW FOR DEFINED ZONES
+  ! -------------------------------------------------------------
+  SUBROUTINE GetZoneAgPumpingAverageDepthToGW(AppGW,AppGrid,Stratigraphy,iElems,iElemZones,iZoneList,rElemAgAreas,rZoneAgAreas,rAveDepthToGW)
+    CLASS(AppGWType),INTENT(IN)       :: AppGW
+    TYPE(AppGridType),INTENT(IN)      :: AppGrid
+    TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
+    INTEGER,INTENT(IN)                :: iElems(:),iElemZones(:),iZoneList(:)
+    REAL(8),INTENT(IN)                :: rElemAgAreas(:),rZoneAgAreas(:)
+    REAL(8),INTENT(OUT)               :: rAveDepthToGW(:)
+    
+    !Local variables
+    INTEGER :: indxLayer,indxNode,iVertex(4),iNVertex,iNode,indxPump,iElem,indxZone,    &
+               iNLayers,iLoc,iZone
+    REAL(8) :: rDepthToGW_Node(AppGrid%NNodes,Stratigraphy%NLayers),rPumpSum(SIZE(iZoneList)), &
+               rPump,rPumps(4,Stratigraphy%NLayers),rTotalPump
+    
+    !Initialize
+    iNLayers      = Stratigraphy%NLayers
+    rPumpSum      = 0.0
+    rAveDepthToGW = 0.0
+    
+    !Calculate depth-to-gw at each node
+    DO indxLayer=1,iNLayers
+        DO indxNode=1,AppGrid%NNodes
+            rDepthToGW_Node(indxNode,indxLayer) = MAX(0.0 , Stratigraphy%GSElev(indxNode)-MAX(AppGW%State%Head(indxNode,indxLayer),Stratigraphy%BottomElev(indxNode,indxLayer)))
+        END DO
+    END DO
+    
+    !Process element pumps
+    DO indxPump=1,AppGW%AppPumping%GetNElemPumps()
+        iElem = AppGW%AppPumping%GetElement(indxPump,f_iPump_ElemPump) 
+        
+        !Cycle if element is not listed as part of the zones
+        iLoc = LocateInList(iElem,iElems)
+        IF (iLoc .LT. 1) CYCLE
+        
+        !Cycle if element has no ag land
+        IF (rElemAgAreas(iLoc) .EQ. 0.0) CYCLE
+        
+        !Zone number and its index in return average-pumping array
+        iZone    = iElemZones(iLoc)
+        indxZone = LocateInList(iZone,iZoneList)
+        
+        !Cycle if no ag land in zone
+        IF (rZoneAgAreas(indxZone) .EQ. 0.0) CYCLE
+        
+        !Nodal data
+        iVertex  = AppGrid%Vertex(:,iElem)
+        iNVertex = AppGrid%NVertex(iElem)
+        CALL AppGW%AppPumping%GetActualNodeLayerPump_ForAPump(indxPump,f_iPump_ElemPump,rPumps(1:iNVertex,:))
+        rTotalPump = SUM(rPumps(1:iNVertex,:))
+        IF (rTotalPump .EQ. 0.0) THEN
+            rPumps = 0.0
+        ELSE
+            rPumps(1:iNVertex,:) = rPumps(1:iNVertex,:) / rTotalPump
+        END IF
+        
+        !Cycle through layers and nodes
+        DO indxLayer=1,iNLayers
+            DO indxNode=1,iNVertex
+                iNode                   = iVertex(indxNode)
+                rPump                   = rPumps(indxNode,indxLayer)
+                rPumpSum(indxZone)      = rPumpSum(indxZone) + rPump
+                rAveDepthToGW(indxZone) = rAveDepthToGW(indxZone) + rDepthToGW_Node(iNode,indxLayer) * rPump
+            END DO
+        END DO
+    END DO
+    
+    !Process wells
+    DO indxPump=1,AppGW%AppPumping%GetNWells()
+        iElem = AppGW%AppPumping%GetElement(indxPump,f_iPump_Well) 
+
+        !Cycle if element is not listed as part of the zones
+        iLoc = LocateInList(iElem,iElems)
+        IF (iLoc .LT. 1) CYCLE
+        
+        !Cycle if element has no ag land
+        IF (rElemAgAreas(iLoc) .EQ. 0.0) CYCLE
+        
+        !Zone number and its index in return average-pumping array
+        iZone    = iElemZones(iLoc)
+        indxZone = LocateInList(iZone,iZoneList)
+        
+        !Cycle if no ag land in zone
+        IF (rZoneAgAreas(indxZone) .EQ. 0.0) CYCLE
+        
+        !Nodal data
+        iVertex  = AppGrid%Vertex(:,iElem)
+        iNVertex = AppGrid%NVertex(iElem)
+        CALL AppGW%AppPumping%GetActualNodeLayerPump_ForAPump(indxPump,f_iPump_Well,rPumps(1:iNVertex,:))
+        rTotalPump = SUM(rPumps(1:iNVertex,:))
+        IF (rTotalPump .EQ. 0.0) THEN
+            rPumps = 0.0
+        ELSE
+            rPumps(1:iNVertex,:) = rPumps(1:iNVertex,:) / rTotalPump
+        END IF
+        
+        !Cycle through layers and nodes
+        DO indxLayer=1,iNLayers
+            DO indxNode=1,iNVertex
+                iNode                   = iVertex(indxNode)
+                rPump                   = rPumps(indxNode,indxLayer)
+                rPumpSum(indxZone)      = rPumpSum(indxZone) + rPump
+                rAveDepthToGW(indxZone) = rAveDepthToGW(indxZone) + rDepthToGW_Node(iNode,indxLayer) * rPump
+            END DO
+        END DO
+    END DO
+        
+    !Calculate weighted average
+    DO indxZone=1,SIZE(iZoneList)
+        IF (rPumpSum(indxZone) .NE. 0.0) THEN
+            rAveDepthToGW(indxZone) = rAveDepthToGW(indxZone) / rPumpSum(indxZone)
+        ELSE
+            rAveDepthToGW(indxZone) = -999.0
+        END IF
+    END DO
+    
+  END SUBROUTINE GetZoneAgPumpingAverageDepthToGW
   
   
   ! -------------------------------------------------------------
@@ -1169,7 +1450,7 @@ CONTAINS
     INTEGER :: indxLayer,indxNode,iVertex(4),iRegion,NVertex,iNode,indxRegion,indxPump,iElem,    &
                NLayers
     REAL(8) :: DepthToGW_Node(AppGrid%NNodes,Stratigraphy%NLayers),PumpSum(AppGrid%NSubregions), &
-               Pump,PumpDistFactors(4,Stratigraphy%NLayers)
+               Pump,rPumps(4,Stratigraphy%NLayers),rTotalPump
     
     !Initialize
     NLayers      = Stratigraphy%NLayers
@@ -1179,13 +1460,13 @@ CONTAINS
     !Calculate depth-to-gw at each node
     DO indxLayer=1,Stratigraphy%NLayers
         DO indxNode=1,AppGrid%NNodes
-            DepthToGW_Node(indxNode,indxLayer) = MAX(0.0 , Stratigraphy%GSElev(indxNode)-MAX(AppGW%State(indxNode,indxLayer)%Head,Stratigraphy%BottomElev(indxNode,indxLayer)))
+            DepthToGW_Node(indxNode,indxLayer) = MAX(0.0 , Stratigraphy%GSElev(indxNode)-MAX(AppGW%State%Head(indxNode,indxLayer),Stratigraphy%BottomElev(indxNode,indxLayer)))
         END DO
     END DO
     
     !Process element pumps
     DO indxPump=1,AppGW%AppPumping%GetNElemPumps()
-        iElem   = AppGW%AppPumping%GetElement(indxPump,iPump_ElemPump) 
+        iElem   = AppGW%AppPumping%GetElement(indxPump,f_iPump_ElemPump) 
         iRegion = AppGrid%AppElement(iElem)%Subregion
         
         !Cycle if no ag land in subregion
@@ -1195,15 +1476,21 @@ CONTAINS
         IF (ElemAgAreas(iElem) .EQ. 0.0) CYCLE
         
         !Nodal data
-        iVertex = AppGrid%Element(iElem)%Vertex
-        NVertex = AppGrid%Element(iElem)%NVertex
-        CALL AppGW%AppPumping%GetNodeLayerFactors(indxPump,iPump_ElemPump,PumpDistFactors(1:NVertex,:))
+        iVertex = AppGrid%Vertex(:,iElem)
+        NVertex = AppGrid%NVertex(iElem)
+        CALL AppGW%AppPumping%GetActualNodeLayerPump_ForAPump(indxPump,f_iPump_ElemPump,rPumps(1:NVertex,:))
+        rTotalPump = SUM(rPumps(1:NVertex,:))
+        IF (rTotalPump .EQ. 0.0) THEN
+            rPumps = 0.0
+        ELSE
+            rPumps(1:NVertex,:) = rPumps(1:NVertex,:) / rTotalPump
+        END IF
         
         !Cycle through layers and nodes
         DO indxLayer=1,NLayers
             DO indxNode=1,NVertex
                 iNode                 = iVertex(indxNode)
-                Pump                  = PumpDistFactors(indxNode,indxLayer)
+                Pump                  = rPumps(indxNode,indxLayer)
                 PumpSum(iRegion)      = PumpSum(iRegion) + Pump
                 AveDepthToGW(iRegion) = AveDepthToGW(iRegion) + DepthToGW_Node(iNode,indxLayer) * Pump
             END DO
@@ -1212,7 +1499,7 @@ CONTAINS
     
     !Process wells
     DO indxPump=1,AppGW%AppPumping%GetNWells()
-        iElem   = AppGW%AppPumping%GetElement(indxPump,iPump_Well) 
+        iElem   = AppGW%AppPumping%GetElement(indxPump,f_iPump_Well) 
         iRegion = AppGrid%AppElement(iElem)%Subregion
         
         !Cycle if no ag land in subregion
@@ -1222,15 +1509,21 @@ CONTAINS
         IF (ElemAgAreas(iElem) .EQ. 0.0) CYCLE
         
         !Nodal data
-        iVertex = AppGrid%Element(iElem)%Vertex
-        NVertex = AppGrid%Element(iElem)%NVertex
-        CALL AppGW%AppPumping%GetNodeLayerFactors(indxPump,iPump_Well,PumpDistFactors(1:NVertex,:))
+        iVertex = AppGrid%Vertex(:,iElem)
+        NVertex = AppGrid%NVertex(iElem)
+        CALL AppGW%AppPumping%GetActualNodeLayerPump_ForAPump(indxPump,f_iPump_Well,rPumps(1:NVertex,:))
+        rTotalPump = SUM(rPumps(1:NVertex,:))
+        IF (rTotalPump .EQ. 0.0) THEN
+            rPumps = 0.0
+        ELSE
+            rPumps(1:NVertex,:) = rPumps(1:NVertex,:) / rTotalPump
+        END IF
         
         !Cycle through layers and nodes
         DO indxLayer=1,NLayers
             DO indxNode=1,NVertex
                 iNode                 = iVertex(indxNode)
-                Pump                  = PumpDistFactors(indxNode,indxLayer)
+                Pump                  = rPumps(indxNode,indxLayer)
                 PumpSum(iRegion)      = PumpSum(iRegion) + Pump
                 AveDepthToGW(iRegion) = AveDepthToGW(iRegion) + DepthToGW_Node(iNode,indxLayer) * Pump
             END DO
@@ -1275,8 +1568,8 @@ CONTAINS
         RETURN
     END IF
     
-    CALL AppGW%AppPumping%GetSupplySpecs(iPump_Well,WellSpecs)
-    CALL AppGW%AppPumping%GetSupplySpecs(iPump_ElemPump,ElemPumpSpecs)
+    CALL AppGW%AppPumping%GetSupplySpecs(f_iPump_Well,WellSpecs)
+    CALL AppGW%AppPumping%GetSupplySpecs(f_iPump_ElemPump,ElemPumpSpecs)
     
   END SUBROUTINE GetSupplySpecs
   
@@ -1405,29 +1698,44 @@ CONTAINS
   ! --- COMPUTE HORIZONTAL FLOW BETWEEN TWO VERTICES OF AN ELEMENT
   ! --- Precondition: Both nodes are active
   ! -------------------------------------------------------------
-  PURE FUNCTION GetHorizontalFlow(AppGW,VertexIndex_I,VertexIndex_J,iElem,iLayer,AppGrid) RESULT(rFlow)
+  PURE FUNCTION GetHorizontalFlow(AppGW,VertexIndex_I,VertexIndex_J,iElem,iLayer,rBottomElev_I,rBottomElev_J,AppGrid) RESULT(rFlow)
     CLASS(AppGWType),INTENT(IN)  :: AppGW
     INTEGER,INTENT(IN)           :: VertexIndex_I,VertexIndex_J,iElem,iLayer
+    REAL(8),INTENT(IN)           :: rBottomElev_I,rBottomElev_J
     TYPE(AppGridType),INTENT(IN) :: AppGrid
     REAL(8)                      :: rFlow
     
     !Local variables
     INTEGER :: indx,iRow,jCol,NVertex,Node_I,Node_J
-    REAL(8) :: Alpha,Head_I,Head_J,ElemTransmissivity
+    REAL(8) :: rAlpha,rHead_I,rHead_J,rElemTransmissivity,rSaturatedThick
     
     iRow    = MIN(VertexIndex_I,VertexIndex_J)
     jCol    = MAX(VertexIndex_I,VertexIndex_J)
-    Node_I  = AppGrid%Element(iElem)%Vertex(VertexIndex_I)
-    Node_J  = AppGrid%Element(iElem)%Vertex(VertexIndex_J)
-    NVertex = AppGrid%Element(iElem)%NVertex
+    Node_I  = AppGrid%Vertex(VertexIndex_I,iElem)
+    Node_J  = AppGrid%Vertex(VertexIndex_J,iElem)
+    NVertex = AppGrid%NVertex(iElem)
     indx    = (iRow-1)*NVertex - iRow*(iRow-1)/2+jCol - iRow
-    Alpha   = AppGrid%AppElement(iElem)%Integral_DELShpI_DELShpJ(indx)
+    rAlpha  = AppGrid%AppElement(iElem)%Integral_DELShpI_DELShpJ(indx)
+    IF (rAlpha .GT. 0.0) THEN
+        rFlow = 0.0
+        RETURN
+    END IF
     
-    ElemTransmissivity = AppGW%ElemTransmissivity(iElem,iLayer)
-    Head_I             = AppGW%State(Node_I,iLayer)%Head
-    Head_J             = AppGW%State(Node_J,iLayer)%Head
+    rElemTransmissivity = AppGW%ElemTransmissivity(iElem,iLayer)
+    rHead_I             = AppGW%State%Head(Node_I,iLayer)
+    rHead_J             = AppGW%State%Head(Node_J,iLayer)
     
-    rFlow = Alpha * ElemTransmissivity * (Head_I-Head_J)
+    rFlow = rAlpha * rElemTransmissivity * (rHead_I-rHead_J)
+    
+    !Outflow
+    IF (rFlow .LT. 0.0) THEN
+        rSaturatedThick = rHead_I - (rBottomElev_I + f_rScaleElevation)
+        rFlow           = rFlow / (1d0 + FEXP(-f_rSmoothStepP * rSaturatedThick))
+    !Inflow
+    ELSE
+        rSaturatedThick = rHead_J - (rBottomElev_J + f_rScaleElevation)
+        rFlow           = rFlow / (1d0 + FEXP(-f_rSmoothStepP * rSaturatedThick))
+    END IF    
     
   END FUNCTION GetHorizontalFlow
   
@@ -1448,13 +1756,13 @@ CONTAINS
     
     iRow    = MIN(VertexIndex_I,VertexIndex_J)
     jCol    = MAX(VertexIndex_I,VertexIndex_J)
-    Node_J  = AppGrid%Element(iElem)%Vertex(VertexIndex_J)
-    NVertex = AppGrid%Element(iElem)%NVertex
+    Node_J  = AppGrid%Vertex(VertexIndex_J,iElem)
+    NVertex = AppGrid%NVertex(iElem)
     indx    = (iRow-1)*NVertex - iRow*(iRow-1)/2+jCol - iRow
     Alpha   = AppGrid%AppElement(iElem)%Integral_Rot_DELShpI_DELShpJ(indx)
     
     ElemTransmissivity = AppGW%ElemTransmissivity(iElem,iLayer)
-    Head_J             = AppGW%State(Node_J,iLayer)%Head
+    Head_J             = AppGW%State%Head(Node_J,iLayer)
     
     rRotation = Alpha * ElemTransmissivity * Head_J
     IF (VertexIndex_I .GT. VertexIndex_J) rRotation = -rRotation
@@ -1487,7 +1795,7 @@ CONTAINS
         !Initialize
         rTopElev    = Stratigraphy%TopElev(indxNode,iLayer)
         rBottomElev = Stratigraphy%BottomElev(indxNode,iLayer)
-        Head        = AppGW%State(indxNode,iLayer)%Head
+        Head        = AppGW%State%Head(indxNode,iLayer)
         
         !Compute nodal storage
         IF (Head .GE. rTopElev) THEN  
@@ -1516,7 +1824,7 @@ CONTAINS
     
     !Local variables
     INTEGER :: indxNode
-    REAL(8) :: rTopElev,Head,Head_P,Storativity_P
+    REAL(8) :: rTopElev,rBottomElev,Head,Head_P,Storativity_P
   
     DO indxNode=1,NNodes
         !Cycle if node is inactive
@@ -1528,9 +1836,10 @@ CONTAINS
         
         !Initialize
         rTopElev      = Stratigraphy%TopElev(indxNode,iLayer)
-        Head          = AppGW%State(indxNode,iLayer)%Head
-        Head_P        = AppGW%State(indxNode,iLayer)%Head_P
-        Storativity_P = AppGW%State(indxNode,iLayer)%Storativity_P
+        rBottomElev   = Stratigraphy%BottomElev(indxNode,iLayer)
+        Head          = AppGW%State%Head(indxNode,iLayer)
+        Head_P        = AppGW%State%Head_P(indxNode,iLayer)
+        Storativity_P = AppGW%State%Storativity_P(indxNode,iLayer)
         
         !Define storativity
         IF (Head .GE. rTopElev) THEN  
@@ -1542,7 +1851,7 @@ CONTAINS
         !Compute change in storage
         rStorChange(indxNode) = Storativity(indxNode) * (Head-rTopElev)        &  
                               + Storativity_P         * (rTopElev-Head_P)  
-
+        
     END DO
     
   END SUBROUTINE GetChangeInStorageAtLayer
@@ -1557,7 +1866,7 @@ CONTAINS
     TYPE(StratigraphyTYpe),INTENT(IN) :: Stratigraphy
     REAL(8),INTENT(OUT)               :: rVertFLow(:)
     
-    CALL VerticalFlow_ComputeAtNodesLayer(iLayer,NNodes,Stratigraphy,AppGW%State%Head,AppGW%State%Head_P,AppGW%Nodes%LeakageV,rVertFlow)
+    CALL VerticalFlow_ComputeAtNodesLayer(iLayer,NNodes,Stratigraphy,AppGW%State%Head,AppGW%Nodes%LeakageV,rVertFlow)
     
   END SUBROUTINE GetVerticalFlowAtNodesLayer
   
@@ -1572,7 +1881,7 @@ CONTAINS
     TYPE(StratigraphyTYpe),INTENT(IN) :: Stratigraphy
     REAL(8),INTENT(OUT)               :: rVertFlow_Upward(AppGrid%NElements),rVertFlow_Downward(AppGrid%NElements)
     
-    CALL VerticalFlow_ComputeElementsUpwardDownward_AtLayer(iLayer,AppGrid,Stratigraphy,AppGW%State%Head,AppGW%State%Head_P,AppGW%Nodes%LeakageV,rVertFlow_Upward,rVertFlow_Downward)
+    CALL VerticalFlow_ComputeElementsUpwardDownward_AtLayer(iLayer,AppGrid,Stratigraphy,AppGW%State%Head,AppGW%Nodes%LeakageV,rVertFlow_Upward,rVertFlow_Downward)
     
   END SUBROUTINE GetVerticalElementUpwardDownwardFlow_AtLayer
   
@@ -1628,7 +1937,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET GROUNDWATER HEADS
   ! -------------------------------------------------------------
-  PURE SUBROUTINE GetHeads(AppGW,lPrevious,Heads)
+  PURE SUBROUTINE GetHeads_All(AppGW,lPrevious,Heads)
     CLASS(AppGWType),INTENT(IN) :: AppGW
     LOGICAL,INTENT(IN)          :: lPrevious
     REAL(8),INTENT(OUT)         :: Heads(:,:)
@@ -1639,7 +1948,7 @@ CONTAINS
         Heads = AppGW%State%Head
     END IF
     
-  END SUBROUTINE GetHeads
+  END SUBROUTINE GetHeads_All
   
     
   ! -------------------------------------------------------------
@@ -1652,9 +1961,9 @@ CONTAINS
     REAL(8)                     :: Head
     
     IF (lPrevious) THEN   
-        Head = AppGW%State(iNode,iLayer)%Head_P
+        Head = AppGW%State%Head_P(iNode,iLayer)
     ELSE
-        Head = AppGW%State(iNode,iLayer)%Head
+        Head = AppGW%State%Head(iNode,iLayer)
     END IF
     
   END FUNCTION GetHead_AtOneNodeLayer
@@ -1682,6 +1991,18 @@ CONTAINS
     NSubIrig = AppGW%AppTileDrain%GetNSubIrig()
     
   END FUNCTION GetNSubIrig
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET TILE DRAIN IDS
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetTileDrainIDs(AppGW,IDs)
+    CLASS(AppGWType),INTENT(IN) :: AppGW
+    INTEGER,INTENT(OUT)         :: IDs(:)
+    
+    IF (AppGW%lTileDrain_Defined) CALL AppGW%AppTileDrain%GetDrainIDs(IDs)
+    
+  END SUBROUTINE GetTileDrainIDs
   
   
   ! -------------------------------------------------------------
@@ -1747,6 +2068,30 @@ CONTAINS
   
    
   ! -------------------------------------------------------------
+  ! --- GET WELL IDs
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetWellIDs(AppGW,IDs)
+    CLASS(AppGWType),INTENT(IN) :: AppGW
+    INTEGER,INTENT(OUT)         :: IDs(:)
+    
+    IF (SIZE(IDs) .GT. 0) CALL AppGW%AppPumping%GetWellIDs(IDs)
+    
+  END SUBROUTINE GetWellIDs
+  
+   
+  ! -------------------------------------------------------------
+  ! --- GET ELEMENT PUMPING IDs
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetElemPumpIDs(AppGW,IDs)
+    CLASS(AppGWType),INTENT(IN) :: AppGW
+    INTEGER,INTENT(OUT)         :: IDs(:)
+    
+    IF (SIZE(IDs) .GT. 0) CALL AppGW%AppPumping%GetElemPumpIDs(IDs)
+    
+  END SUBROUTINE GetElemPumpIDs
+  
+   
+  ! -------------------------------------------------------------
   ! --- GET ACTUAL NODAL PUMPING
   ! -------------------------------------------------------------
   PURE SUBROUTINE GetNodalPumpActual(AppGW,NodalPumpActual)
@@ -1771,7 +2116,7 @@ CONTAINS
   
       
   ! -------------------------------------------------------------
-  ! --- GET ACTUAL PUMPING 
+  ! --- GET ACTUAL PUMPING FOR PUMPING TYPE 
   ! -------------------------------------------------------------
   SUBROUTINE GetPumpActual(AppGW,iPumpType,PumpActual)
     CLASS(AppGWType),INTENT(IN)     :: AppGW
@@ -1784,16 +2129,49 @@ CONTAINS
   
 
   ! -------------------------------------------------------------
-  ! --- GET PUMPING AT (ELEMENT,LAYER) 
+  ! --- GET THE PURPOSE OF PUMPING (IF IT SERVES AG, URBAN OR BOTH) BEFORE SUPPLY ADJUSTMENT
   ! -------------------------------------------------------------
-  FUNCTION GetPumpingAtElementLayerNode(AppGW,iElem,iLayer,indxNode,iPumpType) RESULT(Pumping)
+  SUBROUTINE GetPumpPurpose(AppGW,iPumpType,iPumps,iAgOrUrban,iStat)
+    CLASS(AppGWType),INTENT(IN) :: AppGW
+    INTEGER,INTENT(IN)          :: iPumpType,iPumps(:)
+    INTEGER,INTENT(OUT)         :: iAgOrUrban(:),iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+14),PARAMETER :: ThisProcedure = ModName // 'GetPumpPurpose'
+    
+    IF (AppGW%lPumping_Defined) THEN
+        CALL AppGW%AppPumping%GetPumpingPurpose(iPumpType,iPumps,iAgOrUrban,iStat)
+    ELSE
+        iStat = -1
+        CALL SetLastMessage('Pumping is not simulated so purposes for pumping cannot be retrieved!',f_iFatal,ThisProcedure)
+    END IF
+    
+  END SUBROUTINE GetPumpPurpose
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET ACTUAL PUMPING AT ALL ELEMENTS (INCLUDES ELEMENT AND WELL PUMPING) 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetElementPumpActual(AppGW,rPump) 
+    CLASS(AppGWType),INTENT(IN) :: AppGW
+    REAL(8),INTENT(OUT)         :: rPump(:)
+    
+    rPump = AppGW%AppPumping%GetElementPumpActual(SIZE(rPump))
+    
+   END SUBROUTINE GetElementPumpActual
+
+  
+  ! -------------------------------------------------------------
+  ! --- GET ACTUAL PUMPING AT (ELEMENT,LAYER) 
+  ! -------------------------------------------------------------
+  FUNCTION GetActualPumpingAtElementLayerNode(AppGW,iElem,iLayer,indxNode,iPumpType) RESULT(Pumping)
     CLASS(AppGWType),INTENT(IN) :: AppGW
     INTEGER,INTENT(IN)          :: iElem,iLayer,indxNode,iPumpType
     REAL(8)                     :: Pumping
     
-    Pumping = AppGW%AppPumping%GetPumpingAtElementLayerNode(iElem,iLayer,indxNode,iPumpType)
+    Pumping = AppGW%AppPumping%GetActualPumpingAtElementLayerNode(iElem,iLayer,indxNode,iPumpType)
     
-   END FUNCTION GetPumpingAtElementLayerNode
+   END FUNCTION GetActualPumpingAtElementLayerNode
 
   
   ! -------------------------------------------------------------
@@ -1861,6 +2239,270 @@ CONTAINS
     
   END SUBROUTINE GetiColAdjust
 
+
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET LIST 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_List(AppGW,iBudgetTypeList,iBudgetLocationTypeList,cBudgetDescriptions,cBudgetFiles)
+    CLASS(AppGWType),INTENT(IN)              :: AppGW
+    INTEGER,ALLOCATABLE,INTENT(OUT)          :: iBudgetTypeList(:),iBudgetLocationTypeList(:)          
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cBudgetDescriptions(:),cBudgetFiles(:)
+    
+    !Local variables
+    INTEGER                  :: iErrorCode
+    CHARACTER(:),ALLOCATABLE :: cFileName
+    
+    !Initialize
+    DEALLOCATE (iBudgetTypeList , iBudgetLocationTypeList , cBudgetDescriptions , cBudgetFiles , STAT=iErrorCode)
+         
+    !Get the list if there is a Budget generated
+    IF (AppGW%lGWBudFile_Defined) THEN
+        ALLOCATE (iBudgetTypeList(1) , iBudgetLocationTypeList(1) , cBudgetDescriptions(1) , cBudgetFiles(1))
+        CALL AppGW%GWBudFile%GetFileName(cFileName)
+        cBudgetFiles(1)            = cFileName
+        iBudgetTypeList(1)         = f_iBudgetType_GW
+        iBudgetLocationTypeList(1) = f_iLocationType_Subregion
+        cBudgetDescriptions(1)     = f_cDescription_GWBudget
+    ELSE
+        ALLOCATE (iBudgetTypeList(0) , iBudgetLocationTypeList(0) , cBudgetDescriptions(0) , cBudgetFiles(0))
+    END IF
+     
+  END SUBROUTINE GetBudget_List
+
+
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF COLUMNS IN BUDGET FILE (EXCLUDING TIME COLUMN) 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_NColumns(AppGW,iLocationIndex,iNCols,iStat)
+    CLASS(AppGWType),INTENT(IN) :: AppGW
+    INTEGER,INTENT(IN)          :: iLocationIndex
+    INTEGER,INTENT(OUT)         :: iNCols,iStat       
+        
+    IF (AppGW%lGWBudFile_Defined) THEN
+        CALL AppGW%GWBudFile%GetNDataColumns(iLocationIndex,iNCols,iStat)  !Include Time column
+        iNCols = iNCols - 1  !Exclude Time column
+    ELSE
+        iStat  = 0
+        iNCols = 0
+    END IF
+     
+  END SUBROUTINE GetBudget_NColumns
+
+
+  ! -------------------------------------------------------------
+  ! --- GET COLUMN TITLES IN BUDGET FILE (EXCLUDING TIME COLUMN) 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_ColumnTitles(AppGW,iLocationIndex,cUnitLT,cUnitAR,cUnitVL,cColTitles,iStat)
+    CLASS(AppGWType),INTENT(IN)              :: AppGW
+    INTEGER,INTENT(IN)                       :: iLocationIndex
+    CHARACTER(LEN=*),INTENT(IN)              :: cUnitLT,cUnitAR,cUnitVL
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cColTitles(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    !Local variables
+    INTEGER                                       :: iNCols,iErrorCode
+    CHARACTER(LEN=f_iColumnHeaderLen),ALLOCATABLE :: cColTitles_Local(:)
+    
+    IF (AppGW%lGWBudFile_Defined) THEN
+        !Get number of columns (includes Time column)
+        CALL AppGW%GWBudFile%GetNDataColumns(iLocationIndex,iNCols,iStat)  
+        IF (iStat .NE. 0) RETURN
+        
+        !Get column titles (includes (Time column)
+        ALLOCATE (cColTitles_Local(iNCols))
+        cColTitles_Local = AppGW%GWBudFile%GetFullColumnHeaders(iLocationIndex,iNCols)
+        
+        !Insert units
+        CALL AppGW%GWBudFile%ModifyFullColumnHeaders(cUnitLT,cUnitAR,cUnitVL,cColTitles_Local)
+        
+        !Remove time column
+        iNCols = iNCols - 1
+        ALLOCATE (cColTitles(iNCols))
+        cColTitles = ADJUSTL(cColTitles_Local(2:))
+        
+        !Clear memory
+        DEALLOCATE (cColTitles_Local , STAT=iErrorCode)
+    ELSE
+        iStat = 0
+        ALLOCATE (cColTitles(0))
+    END IF
+     
+  END SUBROUTINE GetBudget_ColumnTitles
+
+
+  ! -------------------------------------------------------------
+  ! --- GET MONTHLY BUDGET FLOWS FROM AppGW OBJECT FOR A SPECIFED SUBREGION
+  ! --- (Assumes cBeginDate and cEndDate are adjusted properly)
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_MonthlyFlows_GivenAppGW(AppGW,iSubregionID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    CLASS(AppGWType),INTENT(IN)              :: AppGW      
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate
+    INTEGER,INTENT(IN)                       :: iSubregionID
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)      !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    IF (AppGW%lGWBudFile_Defined) THEN
+        CALL GetBudget_MonthlyFlows_GivenFile(AppGW%GWBudFile,iSubregionID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    ELSE
+        ALLOCATE (rFlows(0,0) , cFlowNames(0))
+        iStat = 0
+    END IF
+    
+  END SUBROUTINE GetBudget_MonthlyFlows_GivenAppGW
+
+
+  ! -------------------------------------------------------------
+  ! --- GET MONTHLY BUDGET FLOWS FROM A DEFINED BUDGET FILE FOR A SPECIFED SUBREGION
+  ! --- (Assumes cBeginDate and cEndDate are adjusted properly)
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_MonthlyFlows_GivenFile(Budget,iSubregionID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    TYPE(BudgetType),INTENT(IN)              :: Budget      !Assumes Budget file is already open
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate
+    INTEGER,INTENT(IN)                       :: iSubregionID
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)  !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    !Local variables
+    INTEGER,PARAMETER   :: iReadCols(13) = [2,3,4,5,6,7,8,9,10,11,12,13,14]
+    INTEGER             :: iDimActual,iNTimeSteps
+    REAL(8),ALLOCATABLE :: rValues(:,:)
+    
+    !Get simulation time steps and allocate array to read data
+    iNTimeSteps = Budget%GetNTimeSteps()
+    ALLOCATE (rValues(14,iNTimeSteps)) !Adding 1 to the first dimension for Time column; it will be removed later
+    
+    !Read data
+    CALL Budget%ReadData(iSubregionID,iReadCols,'1MON',cBeginDate,cEndDate,0d0,0d0,0d0,1d0,1d0,rFactVL,iDimActual,rValues,iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Store values in return argument
+    ALLOCATE (rFlows(12,iDimActual) , cFlowNames(12))
+    rFlows(1,:)  = rValues(2,1:iDimActual) - rValues(3,1:iDimActual)   !Change in storage
+    rFlows(2,:)  = rValues(4,1:iDimActual)                             !Deep Percolation       
+    rFlows(3,:)  = rValues(5,1:iDimActual)                             !Gain from Stream       
+    rFlows(4,:)  = rValues(6,1:iDimActual)                             !Recharge               
+    rFlows(5,:)  = rValues(7,1:iDimActual)                             !Gain from Lake         
+    rFlows(6,:)  = rValues(8,1:iDimActual)                             !Boundary Inflow        
+    rFlows(7,:)  = rValues(9,1:iDimActual)                             !Subsidence             
+    rFlows(8,:)  = rValues(10,1:iDimActual)                            !Subsurface Irrigation  
+    rFlows(9,:)  = -rValues(11,1:iDimActual)                           !Tile Drain Outflow     
+    rFlows(10,:) = -rValues(12,1:iDimActual)                           !Pumping                
+    rFlows(11,:) = -rValues(13,1:iDimActual)                           !Outflow to Root Zone   
+    rFlows(12,:) = rValues(14,1:iDimActual)                            !Net Subsurface Inflow 
+    
+    !Flow names
+    cFlowNames     = ''
+    cFlowNames(1)  = 'Change in Storage'      
+    cFlowNames(2)  = 'Deep Percolation'       
+    cFlowNames(3)  = 'Gain from Stream'       
+    cFlowNames(4)  = 'Recharge'               
+    cFlowNames(5)  = 'Gain from Lake'         
+    cFlowNames(6)  = 'Boundary Inflow'        
+    cFlowNames(7)  = 'Subsidence'             
+    cFlowNames(8)  = 'Subsurface Irrigation'  
+    cFlowNames(9)  = 'Tile Drain Outflow'     
+    cFlowNames(10) = 'Pumping'                
+    cFlowNames(11) = 'Outflow to Root Zone'   
+    cFlowNames(12) = 'Net Subsurface Inflow'    
+    
+  END SUBROUTINE GetBudget_MonthlyFlows_GivenFile
+
+
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET TIME SERIES DATA FOR A SET OF COLUMNS 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_TSData(AppGW,iSubregionID,iCols,cBeginDate,cEndDate,cInterval,rFactLT,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+    CLASS(AppGWType),INTENT(IN) :: AppGW
+    INTEGER,INTENT(IN)          :: iSubregionID,iCols(:)
+    CHARACTER(LEN=*),INTENT(IN) :: cBeginDate,cEndDate,cInterval
+    REAL(8),INTENT(IN)          :: rFactLT,rFactAR,rFactVL
+    REAL(8),INTENT(OUT)         :: rOutputDates(:),rOutputValues(:,:)    !rOutputValues is in (timestep,column) format
+    INTEGER,INTENT(OUT)         :: iDataTypes(:),inActualOutput,iStat
+    
+    !Local variables
+    INTEGER :: indx
+    
+    IF (AppGW%lGWBudFile_Defined) THEN
+        !Read data
+        DO indx=1,SIZE(iCols)
+            CALL AppGW%GWBudFile%ReadData(iSubregionID,iCols(indx),cInterval,cBeginDate,cEndDate,1d0,0d0,0d0,rFactLT,rFactAR,rFactVL,iDataTypes(indx),inActualOutput,rOutputDates,rOutputValues(:,indx),iStat)
+        END DO
+    ELSE
+        inActualOutput = 0
+        iDataTypes     = -1
+        rOutputDates   = 0.0
+        rOutputValues  = 0.0
+    END IF
+    
+  END SUBROUTINE GetBudget_TSData
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET CUMULATIVE CHANGE IN STORAGE FOR A SUBREGION FROM AppGW OBJECT
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_CumGWStorChange_GivenAppGW(AppGW,iSubregionID,cBeginDate,cEndDate,cOutputInterval,rFactVL,rOutDates,rCumStorChange,iStat)
+    CLASS(AppGWType),INTENT(IN)     :: AppGW
+    INTEGER,INTENT(IN)              :: iSubregionID
+    CHARACTER(LEN=*),INTENT(IN)     :: cBeginDate,cEndDate,cOutputInterval
+    REAL(8),INTENT(IN)              :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT) :: rOutDates(:),rCumStorChange(:)
+    INTEGER,INTENT(OUT)             :: iStat
+    
+    IF (AppGW%lGWBudFile_Defined) THEN
+        CALL GetBudget_CumGWStorChange_GivenFile(AppGW%GWBudFile,iSubregionID,cBeginDate,cEndDate,cOutputInterval,rFactVL,rOutDates,rCumStorChange,iStat)
+    ELSE
+        ALLOCATE (rOutDates(0) , rCumStorChange(0))
+        iStat = 0
+    END IF
+
+  END SUBROUTINE GetBudget_CumGWStorChange_GivenAppGW
+    
+  
+  ! -------------------------------------------------------------
+  ! --- GET CUMULATIVE CHANGE IN STORAGE FOR A SUBREGION FROM GW BUDGET FILE
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_CumGWStorChange_GivenFile(Budget,iSubregionID,cBeginDate,cEndDate,cOutputInterval,rFactVL,rOutDates,rCumStorChange,iStat)
+    TYPE(BudgetType),INTENT(IN)     :: Budget      !Assumes Budget file is already open
+    INTEGER,INTENT(IN)              :: iSubregionID
+    CHARACTER(LEN=*),INTENT(IN)     :: cBeginDate,cEndDate,cOutputInterval
+    REAL(8),INTENT(IN)              :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT) :: rOutDates(:),rCumStorChange(:)
+    INTEGER,INTENT(OUT)             :: iStat
+    
+    !Local variables
+    INTEGER,PARAMETER                 :: f_iReadCols(2) = [2,3]
+    INTEGER                           :: iDimActual,iNTimeSteps,indx,iInterval_InMinutes
+    REAL(8)                           :: rDeltaT   
+    REAL(8),ALLOCATABLE               :: rValues(:,:)
+    CHARACTER(LEN=f_iTimeStampLength) :: cTimeZero
+    
+    !Get simulation time steps and allocate array to read data
+    iNTimeSteps = Budget%GetNTimeSteps()
+    ALLOCATE (rValues(3,iNTimeSteps)) !Adding 1 to the first dimension for Time column; it will be removed later
+    
+    !Read data
+    CALL Budget%ReadData(iSubregionID,f_iReadCols,cOutputInterval,cBeginDate,cEndDate,0d0,0d0,0d0,1d0,1d0,rFactVL,iDimActual,rValues,iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Store values in return argument
+    ALLOCATE (rOutDates(iDimActual+1) , rCumStorChange(iDimActual+1))
+    rOutDates(2:iDimActual+1) = rValues(1,1:iDimActual)
+    rCumStorChange(1)         = 0.0
+    DO indx=1,iDimActual
+        rCumStorChange(indx+1) = rCumStorChange(indx) + rValues(3,indx) - rValues(2,indx) 
+    END DO
+    
+    !Calculate first date as t=0
+    CALL CTimeStep_To_RTimeStep(cOutputInterval,rDeltaT,iInterval_InMinutes,iStat)  ;  IF (iStat .NE. 0) RETURN
+    cTimeZero    = IncrementTimeStamp(cBeginDate,iInterval_InMinutes,-1)
+    rOutDates(1) = TimeStampToJulian(cTimeZero)
+    
+  END SUBROUTINE GetBudget_CumGWStorChange_GivenFile
+    
   
   
   
@@ -1874,6 +2516,36 @@ CONTAINS
 ! ******************************************************************
 ! ******************************************************************
 
+  ! -------------------------------------------------------------
+  ! --- SET BOUNDARY CONDITION NODES WITH A CERTAIN TYPE OF B.C.
+  ! -------------------------------------------------------------
+  SUBROUTINE SetBCNodes(AppGW,iNodes,iLayers,iBCType,iStat,iTSCols,iTSColsMaxBCFlow,rConductances,rConstrainingBCHeads)
+    CLASS(AppGWType)            :: AppGW
+    INTEGER,INTENT(IN)          :: iNodes(:),iLayers(:),iBCType
+    INTEGER,INTENT(OUT)         :: iStat
+    INTEGER,OPTIONAL,INTENT(IN) :: iTSCols(:),iTSColsMaxBCFlow(:)
+    REAL(8),OPTIONAL,INTENT(IN) :: rConductances(:),rConstrainingBCHeads(:)
+    
+    CALL AppGW%AppBC%SetBCNodes(iNodes,iLayers,iBCType,iStat,iTSCols,iTSColsMaxBCFlow,rConductances,rConstrainingBCHeads) 
+    AppGW%lAppBC_Defined = .TRUE.
+    
+  END SUBROUTINE SetBCNodes
+  
+  
+  ! -------------------------------------------------------------
+  ! --- SET BOUNDARY CONDITION 
+  ! -------------------------------------------------------------
+  SUBROUTINE SetBC(AppGW,iNode,iLayer,iBCType,iStat,rFlow,rHead,rMaxBCFlow)
+    CLASS(AppGWType)            :: AppGW
+    INTEGER,INTENT(IN)          :: iNode,iLayer,iBCType
+    INTEGER,INTENT(OUT)         :: iStat
+    REAL(8),OPTIONAL,INTENT(IN) :: rFlow,rHead,rMaxBCFlow
+    
+    CALL AppGW%AppBC%SetBC(iNode,iLayer,iBCType,iStat,rFlow,rHead,rMaxBCFlow) 
+    
+  END SUBROUTINE SetBC
+  
+  
   ! -------------------------------------------------------------
   ! --- SET VELOCITIES AT NODES
   ! -------------------------------------------------------------
@@ -1903,16 +2575,14 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- SET SUPPLY SPECS
   ! -------------------------------------------------------------
-  SUBROUTINE SetSupplySpecs(AppGW,SupplyDestConnector,iPumpType,AppGrid,Stratigraphy,PumpRequired,IrigFracs,SupplyToDest)
+  SUBROUTINE SetSupplySpecs(AppGW,SupplyDestConnector,iPumpType,PumpRequired,IrigFracs,SupplyToDest)
     CLASS(AppGWType)                         :: AppGW
     TYPE(SupplyDestinationConnectorType)     :: SupplyDestConnector
     INTEGER,INTENT(IN)                       :: iPumpType
-    TYPE(AppGridType),INTENT(IN)             :: AppGrid
-    TYPE(StratigraphyType),INTENT(IN)        :: Stratigraphy
     REAL(8),INTENT(IN)                       :: PumpRequired(:),IrigFracs(:)
     TYPE(SupplyToDestinationType),INTENT(IN) :: SupplyToDest(:)
     
-    CALL AppGW%AppPumping%SetSupplySpecs(SupplyDestConnector,iPumpType,AppGrid,Stratigraphy,AppGW%Nodes%Kh,AppGW%State%Head,PumpRequired,IrigFracs,SupplyToDest)
+    CALL AppGW%AppPumping%SetSupplySpecs(SupplyDestConnector,iPumpType,PumpRequired,IrigFracs,SupplyToDest)
 
   END SUBROUTINE SetSupplySpecs
   
@@ -1966,7 +2636,7 @@ CONTAINS
     CALL AppGW%AppTileDrain%PrintResults(TimeStep,lEndOfSimulation)
     
     !Print vertical flows
-    CALL VerticalFlowOutput_PrintResults(AppGrid,Stratigraphy,AppGW%State%Head,AppGW%State%Head_P,AppGW%Nodes%LeakageV,AppGW%FactFlow,TimeStep,lEndOfSimulation,AppGW%VerticalFlowOutput)
+    CALL VerticalFlowOutput_PrintResults(AppGrid,Stratigraphy,AppGW%State%Head,AppGW%Nodes%LeakageV,AppGW%FactFlow,TimeStep,lEndOfSimulation,AppGW%VerticalFlowOutput)
   
     !Print gw budget values
     IF (AppGW%lGWBudFile_Defined)   &
@@ -1981,11 +2651,14 @@ CONTAINS
     
     !Subsidence related output
     IF (AppGW%lSubsidence_Defined)  &
-        CALL AppGW%AppSubsidence%PrintResults(Stratigraphy,TimeStep,lEndOfSimulation)
+        CALL AppGW%AppSubsidence%PrintResults(AppGrid,Stratigraphy,TimeStep,lEndOfSimulation)
+    
+    !Pumping output
+    CALL AppGW%AppPumping%PrintResults(AppGrid%NElements,lEndOfSimulation,TimeStep)
     
     !Print end-of-simulation heads
     IF (lEndOfSimulation) THEN
-        IF (AppGW%lFinalHeadsFile_Defined) CALL PrintFinalHeads(AppGW%State%Head,TimeStep,AppGW%FinalHeadsFile)
+        IF (AppGW%lFinalHeadsFile_Defined) CALL PrintFinalHeads(AppGW%State%Head,TimeStep,AppGrid%AppNode%ID,AppGW%FinalHeadsFile)
     END IF
     
   END SUBROUTINE PrintResults
@@ -2003,7 +2676,7 @@ CONTAINS
   
     !Local variables
     INTEGER                                  :: NRegions
-    REAL(8)                                  :: DummyArray(NGWBudColumns,(AppGrid%NSubregions+1))
+    REAL(8)                                  :: DummyArray(f_iNGWBudColumns,(AppGrid%NSubregions+1))
     REAL(8),DIMENSION(AppGrid%NSubregions+1) :: RPerc,RDeepPerc,RStreamGWFlows,RRecharge,RLakeGWFlows,RBound,RSubIrig, &
                                                 RTileDrain,RPump,RSubsidence_P,RSubsidence,RError,RSubInflow,RGWToRZFlows
     
@@ -2019,7 +2692,7 @@ CONTAINS
     RDeepPerc(NRegions+1) = SUM(RDeepPerc(1:NRegions))
     
     !Stream-gw interaction
-    RStreamGWFlows(1:NRegions) = StrmGWConnector%GetSubregionalFlows(AppGrid)      !(+: flow from stream to gw)
+    RStreamGWFlows(1:NRegions) = StrmGWConnector%GetSubregionalFlows(AppGrid,lInsideModel=.TRUE.)      !(+: flow from stream to gw)
     RStreamGWFlows(NRegions+1) = SUM(RStreamGWFlows(1:NRegions))
     
     !Recharge as diversion recovarable losses and from pumping component
@@ -2040,18 +2713,18 @@ CONTAINS
     RBound = RBound + RSWShedIn
     
     !Subsurface irrigation
-    RSubIrig(1:NRegions) = AppGW%AppTileDrain%GetSubregionalFlows(iSubIrig,AppGrid)
+    RSubIrig(1:NRegions) = AppGW%AppTileDrain%GetSubregionalFlows(f_iSubIrig,AppGrid)
     RSubIrig(NRegions+1) = SUM(RSubIrig(1:NRegions))
     
     !Tile drains
-    RTileDrain(1:NRegions) = AppGW%AppTileDrain%GetSubregionalFlows(iTileDrain,AppGrid)
+    RTileDrain(1:NRegions) = AppGW%AppTileDrain%GetSubregionalFlows(f_iTileDrain,AppGrid)
     RTileDrain(NRegions+1) = SUM(RTileDrain(1:NRegions))
     
     !Pumping
     RPump(1:NRegions) = AppGW%AppPumping%GetSubregionalPumping(AppGrid)             
     RPump(NRegions+1) = SUM(RPump(1:NRegions))
     
-    !GW to rrot zone flows
+    !GW to root zone flows
     RGWToRZFlows(1:NRegions) = AppGrid%AccumElemValuesToSubregions(GWToRZFlows)             
     RGWToRZFlows(NRegions+1) = SUM(RGWToRZFlows(1:NRegions))
     
@@ -2113,8 +2786,8 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- PRINT-OUT FINAL AQUIFER PARAMETERS
   ! -------------------------------------------------------------
-  SUBROUTINE PrintAquiferParameters(AquitardV,Kv,GWNodes)
-    REAL(8),INTENT(IN)          :: AquitardV(:,:),Kv(:,:)
+  SUBROUTINE PrintAquiferParameters(iGWNodeIDs,GWNodes)
+    INTEGER,INTENT(IN)          :: iGWNodeIDs(:)
     TYPE(GWNodeType),INTENT(IN) :: GWNodes(:,:)
     
     !Local variables
@@ -2122,37 +2795,37 @@ CONTAINS
     CHARACTER :: Text*500
     
     !Initialize
-    NNodes  = SIZE(AquitardV , DIM=1)
-    NLayers = SIZE(AquitardV , DIM=2)
+    NNodes  = SIZE(GWNodes , DIM=1)
+    NLayers = SIZE(GWNodes , DIM=2)
     
     !Print parameters
-    CALL LogMessage('',iMessage,'',FILE)
-    CALL LogMessage(REPEAT('-',100),iMessage,'',FILE)
-    CALL LogMessage(REPEAT(' ',30)//'AQUIFER PARAMETER VALUES FOR EACH NODE',iMessage,'',FILE)
-    CALL LogMessage(REPEAT(' ',12)//'*** Note: Values Below are After '//'Multiplication by Conversion Factors ***',iMessage,'',FILE)
-    CALL LogMessage(REPEAT('-',100),iMessage,'',FILE)
+    CALL LogMessage('',f_iMessage,'',f_iFILE)
+    CALL LogMessage(REPEAT('-',100),f_iMessage,'',f_iFILE)
+    CALL LogMessage(REPEAT(' ',30)//'AQUIFER PARAMETER VALUES FOR EACH NODE',f_iMessage,'',f_iFILE)
+    CALL LogMessage(REPEAT(' ',12)//'*** Note: Values Below are After '//'Multiplication by Conversion Factors ***',f_iMessage,'',f_iFILE)
+    CALL LogMessage(REPEAT('-',100),f_iMessage,'',f_iFILE)
     WRITE (Text,'(A,2X,5(A,2X))')             &
         '   NODE','        PKH             '   &
                  ,'        PS              '   &
                  ,'        PN              '   &
                  ,'        PV              '   &
                  ,'        PL              '   
-    CALL LogMessage(TRIM(Text),iMessage,'',FILE)
+    CALL LogMessage(TRIM(Text),f_iMessage,'',f_iFILE)
     
     DO indxNode=1,NNodes
       DO indxLayer=1,NLayers                                                                                          
         IF (indxLayer .EQ. 1) THEN                                                                                          
           WRITE (Text,'(I7,2X,5(1PG24.15E3,2X))')                                                               &                                                                                          
-               indxNode ,GWNodes(indxNode,indxLayer)%Kh   ,GWNodes(indxNode,indxLayer)%Ss ,GWNodes(indxNode,indxLayer)%Sy ,AquitardV(indxNode,indxLayer)   ,Kv(indxNode,indxLayer)                                                                                             
+               iGWNodeIDs(indxNode) ,GWNodes(indxNode,indxLayer)%Kh   ,GWNodes(indxNode,indxLayer)%Ss ,GWNodes(indxNode,indxLayer)%Sy ,GWNodes(indxNode,indxLayer)%AquitardKv   ,GWNodes(indxNode,indxLayer)%Kv                                                                                             
         ELSE                                                                                          
           WRITE (Text,'(9X,5(1PG24.15E3,2X))')                                                                  &                                                                                          
-                         GWNodes(indxNode,indxLayer)%Kh   ,GWNodes(indxNode,indxLayer)%Ss ,GWNodes(indxNode,indxLayer)%Sy ,AquitardV(indxNode,indxLayer)   ,Kv(indxNode,indxLayer)                                                                                              
+                         GWNodes(indxNode,indxLayer)%Kh   ,GWNodes(indxNode,indxLayer)%Ss ,GWNodes(indxNode,indxLayer)%Sy ,GWNodes(indxNode,indxLayer)%AquitardKv   ,GWNodes(indxNode,indxLayer)%Kv                                                                                              
         END IF                                                                                          
-        CALL LogMessage(TRIM(Text),iMessage,'',FILE)                                                                                          
+        CALL LogMessage(TRIM(Text),f_iMessage,'',f_iFILE)                                                                                          
       END DO                                                                                          
     END DO  
         
-    CALL LogMessage('',iMessage,'',FILE)
+    CALL LogMessage('',f_iMessage,'',f_iFILE)
 
   END SUBROUTINE PrintAquiferParameters
   
@@ -2160,9 +2833,10 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- PRINT OUT END-OF-SIMULATION HEADS
   ! -------------------------------------------------------------
-  SUBROUTINE PrintFinalHeads(Heads,TimeStep,OutFile)
+  SUBROUTINE PrintFinalHeads(Heads,TimeStep,NodeIDs,OutFile)
     REAL(8),INTENT(IN)            :: Heads(:,:)
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
+    INTEGER,INTENT(IN)            :: NodeIDs(:)
     TYPE(GenericFileType)         :: OutFile
     
     !Local variables
@@ -2200,7 +2874,7 @@ CONTAINS
     !Print final heads
     DO indxNode=1,NNodes
         rHeadWork = Heads(indxNode,:)
-        WRITE (Text,'(I8,100F18.6)') indxNode,rHeadWork
+        WRITE (Text,'(I8,100F18.6)') NodeIDs(indxNode),rHeadWork
         CALL OutFile%WriteData(Text)
     END DO
     
@@ -2246,59 +2920,79 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ INITIAL HEADS
   ! -------------------------------------------------------------
-  SUBROUTINE ReadInitialHeads(AppGWParamFile,NNodes,Stratigraphy,Heads,iStat)
+  SUBROUTINE ReadInitialHeads(AppGWParamFile,NNodes,NodeIDs,Stratigraphy,Heads,iStat)
     TYPE(GenericFileType)             :: AppGWParamFile
-    INTEGER,INTENT(IN)                :: NNodes
+    INTEGER,INTENT(IN)                :: NNodes,NodeIDs(NNodes)
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
     REAL(8)                           :: Heads(NNodes,Stratigraphy%NLayers)
     INTEGER,INTENT(OUT)               :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+16) :: ThisProcedure = ModName // 'ReadInitialHeads'
-    INTEGER                      :: indxNode,indxLayer,iActiveLayerAbove
+    INTEGER                      :: indxNode,indxLayer,iActiveLayerAbove,index,ID
     REAL(8)                      :: rDummyArray(Stratigraphy%NLayers+1),rFactor
+    LOGICAL                      :: lProcessed(NNodes)
     
     !Initialize
-    iStat = 0
+    iStat      = 0
+    lProcessed = .FALSE.
     
     !Read conversion factor
     CALL AppGWParamFile%ReadData(rFactor,iStat)  ;  IF (iStat .EQ. -1) RETURN
     
-    !Read initail heads and process
+    !Read initial heads and process
     DO indxNode=1,NNodes
         CALL AppGWParamFile%ReadData(rDummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
         
-        !Make sure nodes are entered sequentially
-        IF (INT(rDummyArray(1)) .NE. indxNode) THEN
-            MessageArray(1) = 'Initial groundwater heads must be entered sequentailly for each node.'
-            MessageArray(2) = 'Expected node = '//TRIM(IntToText(indxNode))
-            MessageArray(3) = 'Entered node  = '//TRIM(IntToText(INT(rDummyArray(1))))
-            CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+        !Make sure node ID is legit
+        ID = INT(rDummyArray(1))
+        CALL ConvertID_To_Index(ID,NodeIDs,index)
+        IF (index .EQ. 0) THEN
+            CALL SetLastMessage('Node ID '//TRIM(IntToText(ID))//' listed for initial groundwater heads is not in the model!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
         
+        !Make sure same node is not listed more than once
+        IF (lProcessed(index)) THEN
+            CALL SetLastMessage('Node ID '//TRIM(IntToText(ID))//' is listed more than once for initial groundwater heads!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+            
+        !Tag node as processed
+        lProcessed(index) = .TRUE.
+                
         !Apply conversion factor
         rDummyArray(2:) = rDummyArray(2:) * rFactor 
         
         !Make sure initial head is above aquifer bottom and head at inactive node is equal to head in active node above
         DO indxLayer=1,Stratigraphy%NLayers
-            IF (Stratigraphy%ActiveNode(indxNode,indxLayer)) THEN
-                rDummyArray(indxLayer+1) = MAX(rDummyArray(indxLayer+1) , Stratigraphy%BottomElev(indxNode,indxLayer))
+            IF (Stratigraphy%ActiveNode(index,indxLayer)) THEN
+                rDummyArray(indxLayer+1) = MAX(rDummyArray(indxLayer+1) , Stratigraphy%BottomElev(index,indxLayer))
             ELSE
                 IF (indxLayer .EQ. 1) THEN
-                    rDummyArray(indxLayer+1) = Stratigraphy%BottomElev(indxNode,indxLayer)
+                    rDummyArray(indxLayer+1) = Stratigraphy%BottomElev(index,indxLayer)
                     CYCLE
                 END IF
-                iActiveLayerAbove = Stratigraphy%GetActiveLayerAbove(indxNode,indxLayer)
+                iActiveLayerAbove = Stratigraphy%GetActiveLayerAbove(index,indxLayer)
                 IF (iActiveLayerAbove .GT. 0) THEN
                     rDummyArray(indxLayer+1) = rDummyArray(iActiveLayerAbove+1)
                 ELSE
-                    rDummyArray(indxLayer+1) = Stratigraphy%BottomElev(indxNode,indxLayer)
+                    rDummyArray(indxLayer+1) = Stratigraphy%BottomElev(index,indxLayer)
                 END IF
             END IF
         END DO
-        Heads(indxNode,:) = rDummyArray(2:)
+        Heads(index,:) = rDummyArray(2:)
+    END DO
+    
+    !Make sure all nodes are processed
+    DO indxNode=1,NNodes
+        IF (.NOT. lProcessed(indxNode)) THEN
+            CALL SetLastMessage('Initial groundwater heads at node '//TRIM(IntToText(NodeIDs(indxNode)))//' are not defined!',f_iFatal,ThisProcedure)
+            iStat = -1
+            EXIT
+        END IF
     END DO
     
   END SUBROUTINE ReadInitialHeads
@@ -2307,32 +3001,35 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ AQUIFER PARAMETER DATA
   ! -------------------------------------------------------------
-  SUBROUTINE ReadAquiferParameters(NLayers,AppGrid,TimeStep,InFile,VarTimeUnit,AquitardV,Kv,GWNodes,iStat)
+  SUBROUTINE ReadAquiferParameters(NLayers,AppGrid,TimeStep,InFile,VarTimeUnit,GWNodes,iStat)
     INTEGER,INTENT(IN)            :: NLayers
     TYPE(AppGridType),INTENT(IN)  :: AppGrid
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
     TYPE(GenericFileType)         :: InFile
     CHARACTER(LEN=*),INTENT(OUT)  :: VarTimeUnit
-    REAL(8),INTENT(OUT)           :: AquitardV(:,:),Kv(:,:)
     TYPE(GWNodeType),INTENT(OUT)  :: GWNodes(:,:)
     INTEGER,INTENT(OUT)           :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+21) :: ThisProcedure = ModName // 'ReadAquiferParameters'
-    INTEGER                      :: NGroup,indxNode,indxLayer,ID,NNodes,NEBK,IEBK,indxBK,iNode
+    INTEGER                      :: NGroup,indxNode,indxLayer,ID,NNodes,NEBK,IEBK,indxBK,iNode,index,         &
+                                    NodeIDs(AppGrid%NNodes),ElementIDs(AppGrid%NElements)
     REAL(8)                      :: rDummyArray(6),rFactors(6),Factor,Fact,rDummyArray1(2+NLayers),           &
                                     rDummy3DArray(AppGrid%NNodes,NLayers,5),BK(NLayers)
     CHARACTER                    :: cTimeUnit_Kh*6,cTimeUnit_AquitardV*6,cTimeUnit_Kv*6,cTimeUnitMin*6,       &
                                     cTimeUnit_AnomalyKh*6,ALine*200
+    LOGICAL                      :: lProcessed(AppGrid%NNodes)
     
     !Initialize
-    iStat = 0
+    iStat   = 0
     
     !Inform user
     CALL EchoProgress('   Reading aquifer parameters...')
     
     !Initialize
-    NNodes = AppGrid%NNodes
+    NNodes     = AppGrid%NNodes
+    NodeIDs    = AppGrid%AppNode%ID
+    lProcessed = .FALSE.
     
     !Read number of parameteric grids
     CALL InFile%ReadData(NGroup,iStat)  ;  IF (iStat .EQ. -1) RETURN
@@ -2351,17 +3048,17 @@ CONTAINS
     !Make sure time units are valid if time tracking simulation
     IF (TimeStep%TrackTime) THEN
         IF (IsTimeIntervalValid(cTimeUnit_Kh) .EQ. 0) THEN
-            CALL SetLastMessage('Time unit for aquifer horizontal hydraulic conductivity is not valid!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Time unit for aquifer horizontal hydraulic conductivity is not valid!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
         IF (IsTimeIntervalValid(cTimeUnit_AquitardV) .EQ. 0) THEN
-            CALL SetLastMessage('Time unit for aquitard vertical conductivity is not valid!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Time unit for aquitard vertical conductivity is not valid!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
         IF (IsTimeIntervalValid(cTimeUnit_Kv) .EQ. 0) THEN
-            CALL SetLastMessage('Time unit for aquifer vertical hydraulic conductivity is not valid!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Time unit for aquifer vertical hydraulic conductivity is not valid!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -2387,24 +3084,43 @@ CONTAINS
           DO indxLayer=1,NLayers
             IF (indxLayer .EQ. 1) THEN
                 CALL InFile%ReadData(rDummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
-                ID = INT(rDummyArray(1))
-                IF (ID .NE. indxNode) THEN 
-                    MessageArray(1) = 'Groundwater parameters should be entered sequentially for each node.'
-                    MessageArray(2) = 'Expected GW node = '//TRIM(IntToText(indxNode))
-                    MessageArray(3) = 'Entered GW node  = '//TRIM(IntToText(ID))
-                    CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+                
+                !Check that node ID is legit
+                ID = INT(rDummyArray(1))  
+                CALL ConvertID_To_Index(ID,NodeIDs,index)
+                IF (index .EQ. 0) THEN
+                    CALL SetLastMessage('Groundwater node ID '//TRIM(IntToText(ID))//' listed for aquifer parameters is not in the model!',f_iFatal,ThisProcedure)
                     iStat = -1
                     RETURN
                 END IF
+                
+                !Check that node is not listed more than once
+                IF (lProcessed(index)) THEN
+                    CALL SetLastMessage('Groundwater node ID '//TRIM(IntToText(ID))//' is listed more than once for aquifer parameter entry!',f_iFatal,ThisProcedure)
+                    iStat = -1
+                    RETURN
+                END IF
+                
+                !Tag node as processed
+                lProcessed(index) = .TRUE.
             ELSE
                 CALL InFile%ReadData(rDummyArray(2:),iStat)  ;  IF (iStat .EQ. -1) RETURN
             END IF
-            GWNodes(indxNode,indxLayer)%Kh = rDummyArray(2) * rFactors(2)
-            GWNodes(indxNode,indxLayer)%Ss = rDummyArray(3) * rFactors(3)
-            GWNodes(indxNode,indxLayer)%Sy = rDummyArray(4) * rFactors(4)
-            AquitardV(indxNode,indxLayer)  = rDummyArray(5) * rFactors(5)
-            Kv(indxNode,indxLayer)         = rDummyArray(6) * rFactors(6)
+            GWNodes(index,indxLayer)%Kh         = rDummyArray(2) * rFactors(2)
+            GWNodes(index,indxLayer)%Ss         = rDummyArray(3) * rFactors(3)
+            GWNodes(index,indxLayer)%Sy         = rDummyArray(4) * rFactors(4)
+            GWNodes(index,indxLayer)%AquitardKv = rDummyArray(5) * rFactors(5)
+            GWNodes(index,indxLayer)%Kv         = rDummyArray(6) * rFactors(6)
           END DO
+        END DO
+        
+        !Check all nodes are processed
+        DO indxNode=1,NNodes
+            IF (.NOT. lProcessed(indxNode)) THEN
+                CALL SetLastMessage('Aquifer parameters are not defined at node '//TRIM(IntToText(NodeIDs(indxNode)))//'!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
         END DO
     END IF
     
@@ -2412,18 +3128,18 @@ CONTAINS
     IF (NGroup .GT. 0) THEN
 
         !Read the parameter values at parametric nodes and compute the interpolation coefficients for finite element nodes
-        CALL GetValuesFromParametricGrid(InFile,AppGrid%GridType,NGroup,rFactors,.FALSE.,rDummy3DArray,iStat)
+        CALL GetValuesFromParametricGrid(InFile,AppGrid%GridType,NodeIDs,NGroup,rFactors,.FALSE.,'aquifer paremeters',rDummy3DArray,iStat)
         IF (iStat .EQ. -1) RETURN
 
         !Initialize parameter values
         DO indxLayer=1,NLayers
-          DO indxNode=1,NNodes
-            GWNodes(indxNode,indxLayer)%Kh = rDummy3DArray(indxNode,indxLayer,1)
-            GWNodes(indxNode,indxLayer)%Ss = rDummy3DArray(indxNode,indxLayer,2)
-            GWNodes(indxNode,indxLayer)%Sy = rDummy3DArray(indxNode,indxLayer,3)
-            AquitardV(indxNode,indxLayer)  = rDummy3DArray(indxNode,indxLayer,4)
-            Kv(indxNode,indxLayer)         = rDummy3DArray(indxNode,indxLayer,5)
-          END DO
+            DO indxNode=1,NNodes
+                GWNodes(indxNode,indxLayer)%Kh         = rDummy3DArray(indxNode,indxLayer,1)
+                GWNodes(indxNode,indxLayer)%Ss         = rDummy3DArray(indxNode,indxLayer,2)
+                GWNodes(indxNode,indxLayer)%Sy         = rDummy3DArray(indxNode,indxLayer,3)
+                GWNodes(indxNode,indxLayer)%AquitardKv = rDummy3DArray(indxNode,indxLayer,4)
+                GWNodes(indxNode,indxLayer)%Kv         = rDummy3DArray(indxNode,indxLayer,5)
+            END DO
         END DO
     END IF
     
@@ -2432,17 +3148,23 @@ CONTAINS
     CALL InFile%ReadData(Fact,iStat)  ;  IF (iStat .EQ. -1) RETURN
     CALL InFile%ReadData(ALine,iStat)  ;  IF (iStat .EQ. -1) RETURN  ;  CALL CleanSpecialCharacters(ALine)  ;  ALine = StripTextUntilCharacter(ALine,'/')
     cTimeUnit_AnomalyKh = ADJUSTL(ALine)
-    Factor = TimeIntervalConversion(cTimeUnitMin,cTimeUnit_AnomalyKh)  ;  Fact = Fact * Factor          
+    Factor = TimeIntervalConversion(cTimeUnitMin,cTimeUnit_AnomalyKh)  ;  Fact = Fact * Factor 
+    IF (NEBK .GT. 0) ElementIDs = AppGrid%AppElement%ID
     DO indxBK=1,NEBK
-      CALL InFile%ReadData(rDummyArray1,iStat)  ;  IF (iStat .EQ. -1) RETURN
-      IEBK = rDummyArray1(2)
-      BK   = rDummyArray1(3:) * Fact
-      DO indxNode=1,AppGrid%Element(IEBK)%NVertex
-        iNode = AppGrid%Element(IEBK)%Vertex(indxNode)
-        DO indxLayer=1,NLayers
-          GWNodes(iNode,indxLayer)%Kh = BK(indxLayer)
+        CALL InFile%ReadData(rDummyArray1,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        IEBK = rDummyArray1(2)
+        CALL ConvertID_To_Index(IEBK,ElementIDs,index)
+        IF (index .EQ. 0) THEN
+            CALL LogMessage('Element '//TRIM(IntToText(IEBK))//' listed for anomaly hydraulic conductivity is not in the model! Skipping...',f_iInfo,ThisProcedure)
+            CYCLE
+        END IF
+        BK = rDummyArray1(3:) * Fact
+        DO indxNode=1,AppGrid%NVertex(index)
+            iNode = AppGrid%Vertex(indxNode,index)
+            DO indxLayer=1,NLayers
+                GWNodes(iNode,indxLayer)%Kh = BK(indxLayer)
+            END DO
         END DO
-      END DO
     END DO
 
   END SUBROUTINE ReadAquiferParameters
@@ -2458,9 +3180,9 @@ CONTAINS
     LOGICAL,INTENT(IN)                :: lPumpAdjusted
     TYPE(TimeStepType),INTENT(IN)     :: TimeStep
     INTEGER,INTENT(OUT)               :: iStat
-
+    
     !Read time series boundary conditions
-    CALL AppGW%AppBC%ReadTSData(TimeStep,Stratigraphy%BottomElev,AppGW%State%Head,iStat)
+    CALL AppGW%AppBC%ReadTSData(AppGrid%AppNode%ID,TimeStep,Stratigraphy%BottomElev,AppGW%State%Head,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Read pumping
@@ -2482,6 +3204,19 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
+  ! --- RESTORE PUMPING TO READ VALUES
+  ! -------------------------------------------------------------
+  SUBROUTINE RestorePumpingToReadValues(AppGW,AppGrid,Stratigraphy)
+    CLASS(AppGWType)                  :: AppGW
+    TYPE(AppGridType),INTENT(IN)      :: AppGrid
+    TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
+    
+    CALL AppGW%AppPumping%RestorePumpingToReadValues(AppGrid,Stratigraphy,AppGW%Nodes%Kh,AppGW%State%Head)
+    
+  END SUBROUTINE RestorePumpingToReadValues
+  
+  
+  ! -------------------------------------------------------------
   ! --- SET ACTUAL PUMPING TO REQUIRED PUMPING AND DISTRIBUTE PUMPING TO NODES
   ! -------------------------------------------------------------
   SUBROUTINE ResetActualPumping(AppGW,AppGrid,Stratigraphy)
@@ -2497,44 +3232,74 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- PREPARE AQUIFER PARAMETERS TO BE USED IN SIMULATION
   ! -------------------------------------------------------------
-  SUBROUTINE ProcessAquiferParameters(AppGrid,Stratigraphy,lSubsidence_Defined,AquitardV,Kv,AppSubsidence,GWNodes,GWState,iStat)
+  SUBROUTINE ProcessAquiferParameters(AppGrid,Stratigraphy,lSubsidence_Defined,AppSubsidence,GWNodes,GWState,iStat)
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
     LOGICAL,INTENT(IN)                :: lSubsidence_Defined
-    REAL(8),INTENT(IN)                :: AquitardV(:,:),Kv(:,:)
     TYPE(AppSubsidenceType)           :: AppSubsidence
     TYPE(GWNodeType)                  :: GWNodes(:,:)
-    TYPE(GWStateType)                 :: GWState(:,:)
+    TYPE(GWStateType)                 :: GWState
     INTEGER,INTENT(OUT)               :: iStat
+    
+    !Linked list type to report incorrect Ss values
+    TYPE,EXTENDS(GenericLinkedListType) :: ProblemSsNodesType
+    END TYPE ProblemSsNodesType
     
     !Local variables
     CHARACTER(LEN=ModNameLen+24) :: ThisProcedure = ModName // 'ProcessAquiferParameters'
-    INTEGER                      :: indxNode,indxLayer,iActiveLayerAbove
+    INTEGER                      :: indxNode,indxLayer,iActiveLayerAbove,indx_S,indx_L,indxMessage, &
+                                    iNProblemNodes,iNNumbers,ID
     REAL(8)                      :: rAquiferThickness,Area,TopElevAboveLayer,BottomElevAboveLayer,  &
-                                    InterbedThick(AppGrid%NNodes,Stratigraphy%NLayers),DConfine,   &
+                                    InterbedThick(AppGrid%NNodes,Stratigraphy%NLayers),DConfine,    &
                                     TopElev,BottomElev,ALU,ALL,rGWHead
+    LOGICAL                      :: lProblemSsExists
+    INTEGER,ALLOCATABLE          :: iNodeList(:)
+    TYPE(ProblemSsNodesType)     :: ProblemSsNodeList
     
     !Initialize
     iStat = 0
-    IF (lSubsidence_Defined) CALL AppSubsidence%GetInterbedThickAll(InterbedThick)
     
     !Process subsidence related data    
-    IF (lSubsidence_Defined) CALL AppSubsidence%ProcessSubsidenceParameters(GWState%Head)
-                
+    IF (lSubsidence_Defined) THEN
+        CALL AppSubsidence%ProcessSubsidenceParameters(GWState%Head)
+        CALL AppSubsidence%GetInterbedThickAll(InterbedThick) 
+    ELSE
+        InterbedThick = 0.0
+    END IF
+    
     !Process parameters
     DO indxLayer=1,Stratigraphy%NLayers
+        lProblemSsExists = .FALSE.
+        CALL ProblemSsNodeList%Delete()
         DO indxNode=1,AppGrid%NNodes
+            ID   = AppGrid%AppNode(indxNode)%ID
             Area = AppGrid%AppNode(indxNode)%Area
             IF (Stratigraphy%ActiveNode(indxNode,indxLayer)) THEN
                 TopElev    = Stratigraphy%TopElev(indxNode,indxLayer)
                 BottomElev = Stratigraphy%BottomElev(indxNode,indxLayer)
-                rGWHead    = GWState(indxNode,indxLayer)%Head
+                rGWHead    = GWState%Head(indxNode,indxLayer)
                 
                 !Aquifer thickness
                 rAquiferThickness = TopElev - BottomElev 
                 
+                !Make sure interbed thickness is less than aquifer thickness
+                IF (lSubsidence_Defined) THEN
+                    IF (rAquiferThickness .LE. InterbedThick(indxNode,indxLayer)) THEN
+                        CALL SetLastMessage('Aquifer thickness at node '//TRIM(IntToText(ID))//' and layer '//TRIM(IntToText(indxLayer))//' is less than interbed thickness!',f_iFatal,ThisProcedure)
+                        iStat = -1
+                        RETURN
+                    END IF
+                END IF
+                
                 !Storage coefficient
-                GWNodes(indxNode,indxLayer)%Ss = GWNodes(indxNode,indxLayer)%Ss * rAquiferThickness * Area
+                GWNodes(indxNode,indxLayer)%Ss = GWNodes(indxNode,indxLayer)%Ss * (rAquiferThickness-InterbedThick(indxNode,indxLayer))
+                !Check if Ss is greater than 1.0, if so add to reporting list
+                IF (GWNodes(indxNode,indxLayer)%Ss .GT. 1.0) THEN
+                    lProblemSsExists = .TRUE.
+                    CALL ProblemSsNodeList%AddNode(ID,iStat)
+                    IF (iStat .EQ. -1) RETURN
+                END IF
+                GWNodes(indxNode,indxLayer)%Ss = GWNodes(indxNode,indxLayer)%Ss * Area
                 
                 !Specific yield
                 GWNodes(indxNode,indxLayer)%Sy = GWNodes(indxNode,indxLayer)%Sy * Area
@@ -2554,11 +3319,11 @@ CONTAINS
                         BottomElevAboveLayer = Stratigraphy%BottomElev(indxNode,iActiveLayerAbove)
                         DConfine             = BottomElevAboveLayer - TopElev  !Thickness of overlaying aquitard
                         IF (DConfine .GT. 0.0) THEN
-                            GWNodes(indxNode,indxLayer)%LeakageV = AquitardV(indxNode,indxLayer) / DConfine * Area
+                            GWNodes(indxNode,indxLayer)%LeakageV = GWNodes(indxNode,indxLayer)%AquitardKv / DConfine * Area
                         ELSE
-                            IF (Kv(indxNode,iActiveLayerAbove).GT.0.0  .AND.  Kv(indxNode,indxLayer).GT.0.0) THEN
-                                ALU                                  = (TopElevAboveLayer-BottomElevAboveLayer) / Kv(indxNode,iActiveLayerAbove)
-                                ALL                                  = (TopElev-BottomElev) / Kv(indxNode,indxLayer)
+                            IF (GWNodes(indxNode,iActiveLayerAbove)%Kv.GT.0.0  .AND.  GWNodes(indxNode,indxLayer)%Kv.GT.0.0) THEN
+                                ALU                                  = (TopElevAboveLayer-BottomElevAboveLayer) / GWNodes(indxNode,iActiveLayerAbove)%Kv
+                                ALL                                  = (TopElev-BottomElev) / GWNodes(indxNode,indxLayer)%Kv
                                 GWNodes(indxNode,indxLayer)%LeakageV = Area / (0.5*(ALU+ALL))
                             ELSE
                                 !Zero out vertical leakage
@@ -2576,16 +3341,16 @@ CONTAINS
                 
                 !Storage coeff. used for the previous time step
                 IF (rGWHead .GE. TopElev) THEN
-                    GWState(indxNode,indxLayer)%Storativity_P = GWNodes(indxNode,indxLayer)%Ss
+                    GWState%Storativity_P(indxNode,indxLayer) = GWNodes(indxNode,indxLayer)%Ss
                 ELSE
-                    GWState(indxNode,indxLayer)%Storativity_P = GWNodes(indxNode,indxLayer)%Sy
+                    GWState%Storativity_P(indxNode,indxLayer) = GWNodes(indxNode,indxLayer)%Sy
                 END IF
                 
                 !Make sure Kh is not negative
                 IF (GWNodes(indxNode,indxLayer)%Kh .LT. 0.0) THEN
                     MessageArray(1) = 'Hydraulic conductivity is less than zero '
-                    WRITE (MessageArray(2),'(5A,F9.3,A)') 'at node',TRIM(IntToText(indxNode)),', layer ',TRIM(IntToText(indxLayer)),' (',GWNodes(indxNode,indxLayer)%Kh,')'
-                    CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+                    WRITE (MessageArray(2),'(5A,F9.3,A)') 'at node',TRIM(IntToText(ID)),', layer ',TRIM(IntToText(indxLayer)),' (',GWNodes(indxNode,indxLayer)%Kh,')'
+                    CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
                     iStat = -1
                     RETURN
                 END IF
@@ -2593,8 +3358,8 @@ CONTAINS
                 !Make sure storage coeff. is not negative
                 IF (GWNodes(indxNode,indxLayer)%Ss .LT. 0.0) THEN
                     MessageArray(1) = 'Specific storage is less than zero '
-                    WRITE (MessageArray(2),'(5A,F9.3,A)') 'at node',TRIM(IntToText(indxNode)),', layer ',TRIM(IntToText(indxLayer)),' (',GWNodes(indxNode,indxLayer)%Ss,')'
-                    CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+                    WRITE (MessageArray(2),'(5A,F9.3,A)') 'at node',TRIM(IntToText(ID)),', layer ',TRIM(IntToText(indxLayer)),' (',GWNodes(indxNode,indxLayer)%Ss,')'
+                    CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
                     iStat = -1
                     RETURN
                 END IF
@@ -2602,8 +3367,8 @@ CONTAINS
                 !Make sure specific yield is not negative
                 IF (GWNodes(indxNode,indxLayer)%Sy .LT. 0.0) THEN
                     MessageArray(1) = 'Specific yield is less than zero '
-                    WRITE (MessageArray(2),'(5A,F9.3,A)') 'at node',TRIM(IntToText(indxNode)),', layer ',TRIM(IntToText(indxLayer)),' (',GWNodes(indxNode,indxLayer)%Sy,')'
-                    CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+                    WRITE (MessageArray(2),'(5A,F9.3,A)') 'at node',TRIM(IntToText(ID)),', layer ',TRIM(IntToText(indxLayer)),' (',GWNodes(indxNode,indxLayer)%Sy,')'
+                    CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
                     iStat = -1
                     RETURN
                 END IF
@@ -2611,8 +3376,8 @@ CONTAINS
                 !Make sure vertical leakage is not negative
                 IF (GWNodes(indxNode,indxLayer)%LeakageV .LT. 0.0) THEN
                     MessageArray(1) = 'Vertical leakage is less than zero '
-                    WRITE (MessageArray(2),'(5A,F9.3,A)') 'at node',TRIM(IntToText(indxNode)),', layer ',TRIM(IntToText(indxLayer)),' (',GWNodes(indxNode,indxLayer)%LeakageV,')'
-                    CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+                    WRITE (MessageArray(2),'(5A,F9.3,A)') 'at node',TRIM(IntToText(ID)),', layer ',TRIM(IntToText(indxLayer)),' (',GWNodes(indxNode,indxLayer)%LeakageV,')'
+                    CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
                     iStat = -1
                     RETURN
                 END IF
@@ -2622,8 +3387,26 @@ CONTAINS
                 !Do nothing; the values are already instantiated with zero values
             END IF
             
-
         END DO
+        
+        !If problematic Ss data exists for this layer, report 
+        iNProblemNodes = ProblemSsNodeList%GetNNodes()
+        IF (iNProblemNodes .GT. 0) THEN
+            CALL ProblemSsNodeList%GetArray(iNodeList,iStat)  ;  IF (iStat .EQ. -1) RETURN
+            MessageArray(1) = 'The following nodes in layer ' // TRIM(IntToText(indxLayer)) // ' have storage coefficient (= specific storage x aquifer thickness) greater than 1.'
+            !How many numbers can we fit into a single message line?
+            iNNumbers = LEN(MessageArray(1)) / 8
+            !Populate message lines with problem node numbers
+            indx_L = 0
+            DO indxMessage=2,SIZE(MessageArray)
+                indx_S = indx_L + 1
+                indx_L = MIN(indx_S+iNNumbers-1 , iNProblemNodes)
+                WRITE (MessageArray(indxMessage),'(1000I8)') iNodeList(indx_S:indx_L)
+                IF (indx_L .EQ. iNProblemNodes) EXIT
+            END DO
+            IF (indxMessage .GT. SIZE(MessageArray)) indxMessage = indxMessage - 1
+            CALL LogMessage(MessageArray(1:indxMessage),f_iWarn,ThisProcedure)
+        END IF
     END DO
     
   END SUBROUTINE ProcessAquiferParameters
@@ -2632,20 +3415,20 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- OVERWRITE GROUNDWATER PARAMETERS
   ! -------------------------------------------------------------
-  SUBROUTINE OverwriteParameters(cFileName,VarTimeUnit,TrackTime,lSubsidence_Defined,AquitardV,Kv,GWNodes,AppSubsidence,iStat)
+  SUBROUTINE OverwriteParameters(cFileName,NodeIDs,VarTimeUnit,TrackTime,lSubsidence_Defined,GWNodes,AppSubsidence,iStat)
     CHARACTER(LEN=*),INTENT(IN) :: cFileName,VarTimeUnit
+    INTEGER,INTENT(IN)          :: NodeIDs(:)
     LOGICAL,INTENT(IN)          :: TrackTime,lSubsidence_Defined
-    REAL(8)                     :: AquitardV(:,:),Kv(:,:)
     TYPE(GWNodeType)            :: GWNodes(:,:)
     TYPE(AppSubsidenceType)     :: AppSubsidence
     INTEGER,INTENT(OUT)         :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+19) :: ThisProcedure = ModName // 'OverwriteParameters'
-    INTEGER                      :: NWrite,indx,iNode,iLayer
+    INTEGER                      :: NWrite,indx,iNode,iLayer,index
     REAL(8)                      :: rFactors(7),rDummyArrayNoSubs(7),rDummyArraySubs(9),Factor,   &
-                                    ElasticSC(SIZE(Kv,DIM=1),SIZE(Kv,DIM=2)),                     &
-                                    InelasticSC(SIZE(Kv,DIM=1),SIZE(Kv,DIM=2))
+                                    ElasticSC(SIZE(GWNodes,DIM=1),SIZE(GWNodes,DIM=2)),           &
+                                    InelasticSC(SIZE(GWNodes,DIM=1),SIZE(GWNodes,DIM=2))
     CHARACTER                    :: ALine*500,cTimeUnit_Kh*6,cTimeUnit_AquitardV*6,cTimeUnit_Kv*6
     TYPE(GenericFileType)        :: OverwriteFile
     
@@ -2674,17 +3457,17 @@ CONTAINS
     !Make sure time units are valid if time tracking simulation
     IF (TrackTime) THEN
         IF (IsTimeIntervalValid(cTimeUnit_Kh) .EQ. 0) THEN
-            CALL SetLastMessage('Time unit for aquifer horizontal hydraulic conductivity in over-write file is not valid!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Time unit for aquifer horizontal hydraulic conductivity in over-write file is not valid!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
         IF (IsTimeIntervalValid(cTimeUnit_AquitardV) .EQ. 0) THEN
-            CALL SetLastMessage('Time unit for aquitard vertical conductivity in over-write file is not valid!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Time unit for aquitard vertical conductivity in over-write file is not valid!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
         IF (IsTimeIntervalValid(cTimeUnit_Kv) .EQ. 0) THEN
-            CALL SetLastMessage('Time unit for aquifer vertical hydraulic conductivity in over-write file is not valid!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Time unit for aquifer vertical hydraulic conductivity in over-write file is not valid!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -2702,26 +3485,36 @@ CONTAINS
         DO indx=1,NWrite
           CALL OverwriteFile%ReadData(rDummyArraySubs,iStat)  ;  IF (iStat .EQ. -1) RETURN
           iNode  = INT(rDummyArraySubs(1))
+          CALL ConvertID_To_Index(iNode,NodeIDs,index)
+          IF (index .EQ. 0) THEN
+              CALL LogMessage('Node number '//TRIM(IntTotext(iNode))//' listed for aquifer parameter overwrite is not part of the model! Skipping...',f_iInfo,ThisProcedure)
+              CYCLE
+          END IF
           iLayer = INT(rDummyArraySubs(2))
-          IF (rDummyArraySubs(3) .GE. 0.0)  GWNodes(iNode,iLayer)%Kh  = rDummyArraySubs(3) * rFactors(1) 
-          IF (rDummyArraySubs(4) .GE. 0.0)  GWNodes(iNode,iLayer)%Ss  = rDummyArraySubs(4) * rFactors(2) 
-          IF (rDummyArraySubs(5) .GE. 0.0)  GWNodes(iNode,iLayer)%Sy  = rDummyArraySubs(5) * rFactors(3) 
-          IF (rDummyArraySubs(6) .GE. 0.0)  AquitardV(iNode,iLayer)   = rDummyArraySubs(6) * rFactors(4) 
-          IF (rDummyArraySubs(7) .GE. 0.0)  Kv(iNode,iLayer)          = rDummyArraySubs(7) * rFactors(5) 
-          IF (rDummyArraySubs(8) .GE. 0.0)  ElasticSC(iNode,iLayer)   = rDummyArraySubs(8) * rFactors(6) 
-          IF (rDummyArraySubs(9) .GE. 0.0)  InelasticSC(iNode,iLayer) = rDummyArraySubs(9) * rFactors(7) 
+          IF (rDummyArraySubs(3) .GE. 0.0)  GWNodes(index,iLayer)%Kh         = rDummyArraySubs(3) * rFactors(1) 
+          IF (rDummyArraySubs(4) .GE. 0.0)  GWNodes(index,iLayer)%Ss         = rDummyArraySubs(4) * rFactors(2) 
+          IF (rDummyArraySubs(5) .GE. 0.0)  GWNodes(index,iLayer)%Sy         = rDummyArraySubs(5) * rFactors(3) 
+          IF (rDummyArraySubs(6) .GE. 0.0)  GWNodes(index,iLayer)%AquitardKv = rDummyArraySubs(6) * rFactors(4) 
+          IF (rDummyArraySubs(7) .GE. 0.0)  GWNodes(index,iLayer)%Kv         = rDummyArraySubs(7) * rFactors(5) 
+          IF (rDummyArraySubs(8) .GE. 0.0)  ElasticSC(index,iLayer)          = rDummyArraySubs(8) * rFactors(6) 
+          IF (rDummyArraySubs(9) .GE. 0.0)  InelasticSC(index,iLayer)        = rDummyArraySubs(9) * rFactors(7) 
         END DO
         CALL AppSubsidence%OverwriteParameters(ElasticSC,InelasticSC)
     ELSE
         DO indx=1,NWrite
           CALL OverwriteFile%ReadData(rDummyArrayNoSubs,iStat)  ;  IF (iStat .EQ. -1) RETURN
-          iNode  = INT(rDummyArrayNoSubs(1))
+          iNode = INT(rDummyArrayNoSubs(1))
+          CALL ConvertID_To_Index(iNode,NodeIDs,index)
+          IF (index .EQ. 0) THEN
+              CALL LogMessage('Node number '//TRIM(IntTotext(iNode))//' listed for aquifer parameter overwrite is not part of the model! Skipping...',f_iInfo,ThisProcedure)
+              CYCLE
+          END IF
           iLayer = INT(rDummyArrayNoSubs(2))
-          IF (rDummyArrayNoSubs(3) .GE. 0.0)  GWNodes(iNode,iLayer)%Kh = rDummyArrayNoSubs(3) * rFactors(1)   
-          IF (rDummyArrayNoSubs(4) .GE. 0.0)  GWNodes(iNode,iLayer)%Ss = rDummyArrayNoSubs(4) * rFactors(2)   
-          IF (rDummyArrayNoSubs(5) .GE. 0.0)  GWNodes(iNode,iLayer)%Sy = rDummyArrayNoSubs(5) * rFactors(3)   
-          IF (rDummyArrayNoSubs(6) .GE. 0.0)  AquitardV(iNode,iLayer)  = rDummyArrayNoSubs(6) * rFactors(4)   
-          IF (rDummyArrayNoSubs(7) .GE. 0.0)  Kv(iNode,iLayer)         = rDummyArrayNoSubs(7) * rFactors(5)   
+          IF (rDummyArrayNoSubs(3) .GE. 0.0)  GWNodes(index,iLayer)%Kh         = rDummyArrayNoSubs(3) * rFactors(1)   
+          IF (rDummyArrayNoSubs(4) .GE. 0.0)  GWNodes(index,iLayer)%Ss         = rDummyArrayNoSubs(4) * rFactors(2)   
+          IF (rDummyArrayNoSubs(5) .GE. 0.0)  GWNodes(index,iLayer)%Sy         = rDummyArrayNoSubs(5) * rFactors(3)   
+          IF (rDummyArrayNoSubs(6) .GE. 0.0)  GWNodes(index,iLayer)%AquitardKv = rDummyArrayNoSubs(6) * rFactors(4)   
+          IF (rDummyArrayNoSubs(7) .GE. 0.0)  GWNodes(index,iLayer)%Kv         = rDummyArrayNoSubs(7) * rFactors(5)   
         END DO
     END IF
     
@@ -2742,8 +3535,10 @@ CONTAINS
     TYPE(MatrixType)                  :: Matrix
     
     !Local variables
-    INTEGER :: NNodes,iLayer,indxNode,iNodeIDs(1)
-    REAL(8) :: NetElemSourceNode(AppGrid%NNodes),rUpdateValues(1)
+    INTEGER           :: NNodes,iLayer,indxNode,iNodes(1)
+    REAL(8)           :: NetElemSourceNode(AppGrid%NNodes),rUpdateRHS(1),rStor(AppGrid%NNodes,Stratigraphy%NLayers) , &
+                         rdStor(AppGrid%NNodes,Stratigraphy%NLayers)
+    INTEGER,PARAMETER :: iCompIDs(1) = [f_iGWComp]
     
     !Inform user
     CALL EchoProgress('Simulating groundwater flows...')
@@ -2751,46 +3546,47 @@ CONTAINS
     !Initialize
     NNodes = AppGrid%NNodes
     
-    !Convert net source from element level to node level
-    CALL AppGrid%ElemData_To_NodeData(NetElemSource,NetElemSourceNode)
+    !Storage at each node
+    CALL AppGW%GetNodalStorages(AppGrid,Stratigraphy,rStor,rdStor)
     
     !Compute element transmissivities
     CALL ComputeElemTransmissivities(AppGrid,Stratigraphy,AppGW)
     
+    !Compute effect of change in storage (also set the diagonal for inactive nodes to 1.0)
+    CALL ApplyChangeInStorage(NNodes,Stratigraphy,AppGW,Matrix)
+    
     !Compute effect of horizontal flows on r.h.s vector and coefficient matrix
     CALL ApplyHorizontalFlows(AppGrid,Stratigraphy,AppGW,Matrix)
     
-    !Compute effect of change in storage 
-    CALL ApplyChangeInStorage(AppGrid%NNodes,Stratigraphy,AppGW,Matrix)
-    
     !Compute effect of subsidence
-    IF (AppGW%lSubsidence_Defined) CALL AppGW%AppSubsidence%Simulate(AppGrid,Stratigraphy,AppGW%State%Head,AppGW%State%Head_P,Matrix)
+    IF (AppGW%lSubsidence_Defined) CALL AppGW%AppSubsidence%Simulate(Stratigraphy,AppGW%State%Head,AppGW%State%Head_P,rStor,rdStor,Matrix)
     
     !Effect of net source to top active layer
+    CALL AppGrid%ElemData_To_NodeData(NetElemSource,NetElemSourceNode)
     DO indxNode=1,NNodes
         iLayer = Stratigraphy%TopActiveLayer(indxNode)
         IF (iLayer .LT. 1) CYCLE
-        iNodeIDs(1)      = (iLayer-1)*NNodes + indxNode
-        rUpdateValues(1) = - NetElemSourceNode(indxNode)
-        CALL Matrix%UpdateRHS(iCompIDs,iNodeIDs,rUpdateValues)
+        iNodes(1)     = (iLayer-1)*NNodes + indxNode
+        rUpdateRHS(1) = - NetElemSourceNode(indxNode)
+        CALL Matrix%UpdateRHS(iCompIDs,iNodes,rUpdateRHS)
     END DO
+    
+    !Simulate tile drains/subsurface irrigation
+    IF (AppGW%lTileDrain_Defined)  &
+        CALL AppGW%AppTileDrain%Simulate(NNodes,AppGW%State%Head,Matrix)
     
     !Effect of vertical flows
     IF (Stratigraphy%NLayers .GT. 1)  &
         CALL ApplyVerticalFlows(Stratigraphy,NNodes,AppGW%Nodes%LeakageV,AppGW%State,Matrix)
     
-    !Simulate tile drains/subsurface irrigation
-    IF (AppGW%lTileDrain_Defined)  &
-        CALL AppGW%AppTileDrain%Simulate(AppGrid%NNodes,AppGW%State%Head,Matrix)
-    
     !Simulate pumping/recharge
     IF (AppGW%lPumping_Defined)  &
-        CALL AppGW%AppPumping%Simulate(Matrix)
+        CALL AppGW%AppPumping%Simulate(AppGrid,Stratigraphy,rStor,rdStor,Matrix)
     
     !Simulate boundary conditions (must be the last to be simulated for the entire simulation in case any
     !  specified head b.c. are defined; flow at specified head b.c. is equal to the computed RHS vector entry)
     IF (AppGW%lAppBC_Defined)  &
-        CALL AppGW%AppBC%Simulate(AppGrid%NNodes,AppGW%State%Head,Matrix)
+        CALL AppGW%AppBC%Simulate(NNodes,AppGW%State%Head,Stratigraphy%BottomElev,rStor,rdStor,Matrix)
     
   END SUBROUTINE Simulate
   
@@ -2809,10 +3605,12 @@ CONTAINS
     IF (NewUnit .EQ. '') RETURN
     
     !Convert time unit of aquifer parameters
-    Factor               = TimeIntervalConversion(NewUnit,AppGW%VarTimeUnit)
-    AppGW%VarTimeUnit    = NewUnit
-    AppGW%Nodes%Kh       = AppGW%Nodes%Kh * Factor
-    AppGW%Nodes%LeakageV = AppGW%Nodes%LeakageV * Factor
+    Factor                 = TimeIntervalConversion(NewUnit,AppGW%VarTimeUnit)
+    AppGW%VarTimeUnit      = NewUnit
+    AppGW%Nodes%Kh         = AppGW%Nodes%Kh         * Factor
+    AppGW%Nodes%Kv         = AppGW%Nodes%Kv         * Factor
+    AppGW%Nodes%AquitardKv = AppGW%Nodes%AquitardKv * Factor
+    AppGW%Nodes%LeakageV   = AppGW%Nodes%LeakageV   * Factor
     
     !Convert time unit for boundary conditions
     CALL AppGW%AppBC%ConvertTimeUnit(NewUnit)
@@ -2823,21 +3621,6 @@ CONTAINS
   
   END SUBROUTINE ConvertTimeUnit
 
-
-  ! -------------------------------------------------------------
-  ! --- COMPUTE ACTUAL PUMPING IN CASE AQUIFER DRIES
-  ! -------------------------------------------------------------
-  SUBROUTINE ComputeNodalPumpActual(AppGW,AppGrid,Stratigraphy,TimeStep,STOPC)
-    CLASS(AppGWType)                  :: AppGW
-    TYPE(AppGridType),INTENT(IN)      :: AppGrid
-    TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
-    TYPE(TimeStepType),INTENT(IN)     :: TimeStep
-    REAL(8),INTENT(IN)                :: STOPC
-    
-    CALL AppGW%AppPumping%ComputeNodalPumpActual(AppGrid,Stratigraphy,TimeStep,STOPC,AppGW%State%Head,AppGW%State%Head_P,AppGW%State%Storativity_P)
-    
-  END SUBROUTINE ComputeNodalPumpActual
-  
 
   ! -------------------------------------------------------------
   ! --- UPDATE PUMPING DISTRIBUTION FACTORS
@@ -2885,7 +3668,7 @@ CONTAINS
     CLASS(AppGWType)   :: AppGW
     REAL(8),INTENT(IN) :: HDelta(:)
     
-    AppGW%State%Head = AppGW%State%Head + RESHAPE(-HDelta,SHAPE(AppGW%State))
+    AppGW%State%Head = AppGW%State%Head + RESHAPE(-HDelta,SHAPE(AppGW%State%Head))
     
   END SUBROUTINE UpdateHeads
   
@@ -2922,22 +3705,22 @@ CONTAINS
     TYPE(TimeStepType)          :: TimeStepLocal
     CHARACTER                   :: UnitT*10,TextTime*17
     INTEGER                     :: iCount,indxLocation,indxCol,NRegions,I
-    CHARACTER(LEN=18),PARAMETER :: FParts(NGWBudColumns) = ['PERC'               ,&
-                                                            'BEGIN_STORAGE'      ,& 
-                                                            'END_STORAGE'        ,& 
-                                                            'DEEP_PERC'          ,& 
-                                                            'GAIN_FROM_STRM'     ,& 
-                                                            'RECHARGE'           ,& 
-                                                            'GAIN_FROM_LAKE'     ,& 
-                                                            'BOUNDARY_INFLOW'    ,& 
-                                                            'SUBSIDENCE'         ,& 
-                                                            'SUBSURF_IRRIGATION' ,& 
-                                                            'TILE_DRAINS'        ,& 
-                                                            'PUMPING'            ,&
-                                                            'FLOW_TO_ROOTZONE'   ,&
-                                                            'NET_SUBSURF_INFLOW' ,&
-                                                            'DISCREPANCY'        ,&
-                                                            'CUM_SUBSIDENCE'     ]
+    CHARACTER(LEN=18),PARAMETER :: FParts(f_iNGWBudColumns) = ['PERC'               ,&
+                                                               'BEGIN_STORAGE'      ,& 
+                                                               'END_STORAGE'        ,& 
+                                                               'DEEP_PERC'          ,& 
+                                                               'GAIN_FROM_STRM'     ,& 
+                                                               'RECHARGE'           ,& 
+                                                               'GAIN_FROM_LAKE'     ,& 
+                                                               'BOUNDARY_INFLOW'    ,& 
+                                                               'SUBSIDENCE'         ,& 
+                                                               'SUBSURF_IRRIGATION' ,& 
+                                                               'TILE_DRAINS'        ,& 
+                                                               'PUMPING'            ,&
+                                                               'FLOW_TO_ROOTZONE'   ,&
+                                                               'NET_SUBSURF_INFLOW' ,&
+                                                               'DISCREPANCY'        ,&
+                                                               'CUM_SUBSIDENCE'     ]
     
     !Initialize
     NRegions = AppGrid%NSubregions
@@ -2972,8 +3755,8 @@ CONTAINS
       pASCIIOutput%NTitles  = NTitles
       ALLOCATE(pASCIIOutput%cTitles(NTitles) , pASCIIOutput%lTitlePersist(NTitles))
         pASCIIOutput%cTitles(1)         = ArrangeText('IWFM (v'//TRIM(cIWFMVersion)//')' , pASCIIOutput%TitleLen)
-        pASCIIOutput%cTitles(2)         = ArrangeText('GROUNDWATER BUDGET IN '//VolumeUnitMarker//' FOR '//LocationNameMarker , pASCIIOutput%TitleLen)
-        pASCIIOutput%cTitles(3)         = ArrangeText('SUBREGION AREA: '//AreaMarker//' '//AreaUnitMarker , pASCIIOutput%TitleLen)
+        pASCIIOutput%cTitles(2)         = ArrangeText('GROUNDWATER BUDGET IN '//f_cVolumeUnitMarker//' FOR '//f_cLocationNameMarker , pASCIIOutput%TitleLen)
+        pASCIIOutput%cTitles(3)         = ArrangeText('SUBREGION AREA: '//f_cAreaMarker//' '//f_cAreaUnitMarker , pASCIIOutput%TitleLen)
         pASCIIOutput%cTitles(4)         = REPEAT('-',pASCIIOutput%TitleLen)
         pASCIIOutput%lTitlePersist(1:3) = .TRUE.
         pASCIIOutput%lTitlePersist(4)   = .FALSE.
@@ -2989,32 +3772,32 @@ CONTAINS
     
     !Locations
     ALLOCATE (Header%Locations(1)                                                          , &
-              Header%Locations(1)%cFullColumnHeaders(NGWBudColumns+1)                      , &
-              Header%Locations(1)%iDataColumnTypes(NGWBudColumns)                          , &
-              Header%Locations(1)%iColWidth(NGWBudColumns+1)                               , &
-              Header%Locations(1)%cColumnHeaders(NGWBudColumns+1,NColumnHeaderLines)       , &
+              Header%Locations(1)%cFullColumnHeaders(f_iNGWBudColumns+1)                   , &
+              Header%Locations(1)%iDataColumnTypes(f_iNGWBudColumns)                       , &
+              Header%Locations(1)%iColWidth(f_iNGWBudColumns+1)                            , &
+              Header%Locations(1)%cColumnHeaders(f_iNGWBudColumns+1,NColumnHeaderLines)    , &
               Header%Locations(1)%cColumnHeadersFormatSpec(NColumnHeaderLines)             )  
     ASSOCIATE (pLocation => Header%Locations(1))
-      pLocation%NDataColumns           = NGWBudColumns
+      pLocation%NDataColumns           = f_iNGWBudColumns
       pLocation%cFullColumnHeaders(1)  = 'Time'                      
-      pLocation%cFullColumnHeaders(2:) = cBudgetColumnTitles
-      pLocation%iDataColumnTypes       = [VR ,&  !Percolation
-                                          VLB,&  !Beginning storage
-                                          VLE,&  !Ending storage
-                                          VR ,&  !Deep perc
-                                          VR ,&  !Gain from stream
-                                          VR ,&  !Recharge
-                                          VR ,&  !Gain from lake
-                                          VR ,&  !Boundary inflow
-                                          VR ,&  !Subsidence
-                                          VR ,&  !Subsurface irrigation
-                                          VR ,&  !Tile drain outflow
-                                          VR ,&  !Pumping
-                                          VR ,&  !Outflow to root zone
-                                          VR ,&  !Net subsurface inflow
-                                          VR ,&  !Discrepancy
-                                          VLE]   !Cumulative subsidence
-      pLocation%iColWidth              = [17,(13,I=1,NGWBudColumns)]
+      pLocation%cFullColumnHeaders(2:) = f_cBudgetColumnTitles
+      pLocation%iDataColumnTypes       = [f_iVR ,&  !Percolation
+                                          f_iVLB,&  !Beginning storage
+                                          f_iVLE,&  !Ending storage
+                                          f_iVR ,&  !Deep perc
+                                          f_iVR ,&  !Gain from stream
+                                          f_iVR ,&  !Recharge
+                                          f_iVR ,&  !Gain from lake
+                                          f_iVR ,&  !Boundary inflow
+                                          f_iVR ,&  !Subsidence
+                                          f_iVR ,&  !Subsurface irrigation
+                                          f_iVR ,&  !Tile drain outflow
+                                          f_iVR ,&  !Pumping
+                                          f_iVR ,&  !Outflow to root zone
+                                          f_iVR ,&  !Net subsurface inflow
+                                          f_iVR ,&  !Discrepancy
+                                          f_iVLE]   !Cumulative subsidence
+      pLocation%iColWidth              = [17,(13,I=1,f_iNGWBudColumns)]
       ASSOCIATE (pColumnHeaders => pLocation%cColumnHeaders           , &
                  pFormatSpecs   => pLocation%cColumnHeadersFormatSpec )
         pColumnHeaders(:,1) = (/'                 ','              ','     Beginning','       Ending ','      Deep    ','     Gain from','              ','     Gain from','      Boundary','              ','    Subsurface','    Tile Drain','              ','  Outflow to  ','Net Subsurface','              ','    Cumulative'/)
@@ -3024,16 +3807,16 @@ CONTAINS
         pFormatSpecs(1)     = '(A17,16A14)'
         pFormatSpecs(2)     = '(A17,16A14)'
         pFormatSpecs(3)     = '(A17,16A14)'
-        pFormatSpecs(4)     = '('//TRIM(IntToText(TitleLen))//'(1H-),'//TRIM(IntToText(NGWBudColumns+1))//'A0)'
+        pFormatSpecs(4)     = '('//TRIM(IntToText(TitleLen))//'(1H-),'//TRIM(IntToText(f_iNGWBudColumns+1))//'A0)'
       END ASSOCIATE
     END ASSOCIATE
 
     !Data for DSS output  
     ASSOCIATE (pDSSOutput => Header%DSSOutput)
-      ALLOCATE (pDSSOutput%cPathNames(NGWBudColumns*(NRegions+1)) , pDSSOutput%iDataTypes(1))
+      ALLOCATE (pDSSOutput%cPathNames(f_iNGWBudColumns*(NRegions+1)) , pDSSOutput%iDataTypes(1))
       iCount = 1
       DO indxLocation=1,NRegions+1
-        DO indxCol=1,NGWBudColumns
+        DO indxCol=1,f_iNGWBudColumns
           pDSSOutput%cPathNames(iCount) = '/IWFM_GW_BUD/'                                                //  &  !A part
                                           TRIM(UpperCase(Header%cLocationNames(indxLocation)))//'/'      //  &  !B part
                                           'VOLUME/'                                                      //  &  !C part
@@ -3043,7 +3826,7 @@ CONTAINS
           iCount = iCount+1
         END DO
       END DO
-      pDSSOutput%iDataTypes = PER_CUM
+      pDSSOutput%iDataTypes = f_iPER_CUM
     END ASSOCIATE
 
     
@@ -3060,20 +3843,22 @@ CONTAINS
     !Local variables
     INTEGER :: indxNode,indxLayer
     
-    DO indxLayer=1,SIZE(AppGW%State,DIM=2)
-        DO indxNode=1,SIZE(AppGW%State,DIM=1)
-            AppGW%State(indxNode,indxLayer)%Head_P = AppGW%State(indxNode,indxLayer)%Head
+    DO indxLayer=1,Stratigraphy%NLayers
+        DO indxNode=1,SIZE(AppGW%State%Head,DIM=1)
+            AppGW%State%Head_P(indxNode,indxLayer) = AppGW%State%Head(indxNode,indxLayer)
             IF (.NOT. Stratigraphy%ActiveNode(indxNode,indxLayer)) CYCLE
-            IF (AppGW%State(indxNode,indxLayer)%Head .GE. Stratigraphy%TopElev(indxNode,indxLayer)) THEN
-                AppGW%State(indxNode,indxLayer)%Storativity_P = AppGW%Nodes(indxNode,indxLayer)%Ss
+            IF (AppGW%State%Head(indxNode,indxLayer) .GE. Stratigraphy%TopElev(indxNode,indxLayer)) THEN
+                AppGW%State%Storativity_P(indxNode,indxLayer) = AppGW%Nodes(indxNode,indxLayer)%Ss
             ELSE
-                AppGW%State(indxNode,indxLayer)%Storativity_P = AppGW%Nodes(indxNode,indxLayer)%Sy
+                AppGW%State%Storativity_P(indxNode,indxLayer) = AppGW%Nodes(indxNode,indxLayer)%Sy
             END IF
         END DO
     END DO
     
+    !Advance subregional storages
     AppGW%RegionalStorage_P = AppGW%RegionalStorage
     
+    !Advance state for subsidence
     CALL AppGW%AppSubsidence%AdvanceState()
     
   END SUBROUTINE AdvanceState
@@ -3088,45 +3873,23 @@ CONTAINS
     TYPE(AppGWType)                   :: AppGW
     
     !Local variables
-    INTEGER :: indxNode,indxLayer,NNodes,NRegions
-    REAL(8) :: rNodalStor(AppGrid%NNodes)
+    INTEGER :: indxLayer
+    REAL(8) :: rNodalStor(AppGrid%NNodes,Stratigraphy%NLayers)
     
     !Regional storage is computed only when groundwater budget file is generated; return if regional storage is not needed
     IF (.NOT. ALLOCATED(AppGW%RegionalStorage)) RETURN
     
-    !Initialize
-    NNodes                = AppGrid%NNodes
-    NRegions              = AppGrid%NSubregions
-    AppGW%RegionalStorage = 0.0
+    !Get the nodal storages
+    CALL AppGW%GetNodalStorages(AppGrid,Stratigraphy,rNodalStor)
     
-    !Compute
+    !Aggregate the nodal storages over layers for each subregion
+    AppGW%RegionalStorage = 0.0
     DO indxLayer=1,Stratigraphy%NLayers
-        DO indxNode=1,NNodes
-          IF (.NOT. Stratigraphy%ActiveNode(indxNode,indxLayer)) THEN
-              rNodalStor(indxNode) = 0.0
-              CYCLE
-          END IF
-          ASSOCIATE (pTopElev    => Stratigraphy%TopElev(indxNode,indxLayer)    , &
-                     pBottomElev => Stratigraphy%BottomElev(indxNode,indxLayer) , &
-                     pHead       => AppGW%State(indxNode,indxLayer)%Head        , &
-                     pSs         => AppGW%Nodes(indxNode,indxLayer)%Ss          , &
-                     pSy         => AppGW%Nodes(indxNode,indxLayer)%Sy          )
-  
-            IF (pHead .LT. pTopElev) THEN
-                rNodalStor(indxNode) = (pHead-pBottomElev) * pSy 
-            ELSE
-                rNodalStor(indxNode) = (pHead-pTopElev) * pSs  +  (pTopElev-pBottomElev) * pSy
-            END IF          
-          END ASSOCIATE        
-        END DO
-      
-        !Aggregate the layer subregional storages over the vertical
-        AppGW%RegionalStorage = AppGW%RegionalStorage + AppGrid%AccumNodeValuesToSubregions(rNodalStor)
-        
+        AppGW%RegionalStorage = AppGW%RegionalStorage + AppGrid%AccumNodeValuesToSubregions(rNodalStor(:,indxLayer))
     END DO
     
     !Model-wide storage
-    AppGW%RegionalStorage(NRegions+1) = SUM(AppGW%RegionalStorage(1:NRegions))
+    AppGW%RegionalStorage(AppGrid%NSubregions+1) = SUM(AppGW%RegionalStorage(1:AppGrid%NSubregions))
         
   END SUBROUTINE ComputeRegionalStorage
   
@@ -3154,7 +3917,7 @@ CONTAINS
         IF (.NOT. ALLOCATED(Faces)) CYCLE
         DO indxFace=1,SIZE(Faces)
           iFace    = Faces(indxFace)
-          iElem    = AppGrid%AppFace(iFace)%Element
+          iElem    = AppGrid%AppFace%Element(:,iFace)
           WHERE (iElem .EQ. 0) 
             iElemReg = NSubregions+1
           ELSE WHERE
@@ -3202,8 +3965,8 @@ CONTAINS
         DO indxElem=1,AppGrid%NElements
             !Initialize
             TE                    = 0.0
-                Vertex                = AppGrid%Element(indxElem)%Vertex
-                NVertex               = AppGrid%Element(indxElem)%NVertex
+            Vertex                = AppGrid%Vertex(:,indxElem)
+            NVertex               = AppGrid%NVertex(indxElem)
             VertexArea(1:NVertex) = AppGrid%AppElement(indxElem)%VertexArea(1:NVertex)
             ElemArea              = AppGrid%AppElement(indxElem)%Area
             
@@ -3214,7 +3977,7 @@ CONTAINS
                 TopElev    = Stratigraphy%TopElev(iNode,indxLayer)
                 BottomElev = Stratigraphy%BottomElev(iNode,indxLayer)
                 Kh         = AppGW%Nodes(iNode,indxLayer)%Kh
-                Head       = AppGW%State(iNode,indxLayer)%Head
+                Head       = AppGW%State%Head(iNode,indxLayer)
                 TE         = TE + VertexArea(indxVertex) * Kh * MAX(MIN(Head,TopElev)-BottomElev ,  0.0)
             END DO
              
@@ -3237,12 +4000,14 @@ CONTAINS
     TYPE(MatrixType)                  :: Matrix
     
     !Local variables
-    INTEGER           :: indxLayer,indxElem,indxVertex_I,Vertex(4),NVertex,iNode, NNodes,iCount,   &
-                         indxVertex_J,indx,iRow,jCol,jNode,iBase,iGWNode,iNodeIDs(4),iDim     
-    REAL(8)           :: Head_I,Head_J,Alpha,rValue,HeadDiff,ElemTransmissivity,rUpdateValues(4),  &
-                         HeadArray(AppGrid%NNodes),rUpdateRHS(AppGrid%NNodes*Stratigraphy%NLayers),&
-                         Integral_DELShpI_DELShpJ(6)
-    INTEGER,PARAMETER :: iCompIDs(4) = [iGWComp , iGWComp , iGWComp , iGWComp]
+    INTEGER           :: indxLayer,indxElem,indxVertex_I,Vertex(4),NVertex,iNode,NNodes,iCount,       &
+                         indxVertex_J,indx,iRow,jCol,jNode,iBase,iGWNode,iNodes(4),iDim     
+    REAL(8)           :: rHead_I,rHead_J,rAlpha,rValue,rHeadDiff,ElemTransmissivity,rUpdateCOEFF(4),  &
+                         rFlow(4),rHeadArray(4),rUpdateRHS(AppGrid%NNodes*Stratigraphy%NLayers),      &
+                         Integral_DELShpI_DELShpJ(6),rBottomElevs(4),rExp,rSaturatedThick,rFactor,    &
+                         rExpPlusOne,rUpdateCOEFF_Add(4),rSaturatedThick_I,rExp_I,rExpDiv_I,rFactor_I
+    INTEGER,PARAMETER :: iCompIDs(4) = [f_iGWComp , f_iGWComp , f_iGWComp , f_iGWComp] 
+    REAL(8),PARAMETER :: f_rHugeNumber = 1d100
     
     !Initialize
     NNodes     = AppGrid%NNodes
@@ -3251,16 +4016,18 @@ CONTAINS
     LAYER_LOOP:  &
     !*********
     DO indxLayer=1,Stratigraphy%NLayers
-        iBase     = (indxLayer-1) * NNodes
-        HeadArray = AppGW%State(:,indxLayer)%Head
+        iBase = (indxLayer-1) * NNodes
         
         ELEMENT_LOOP:  &
         !***********
         DO indxElem=1,AppGrid%NElements
             !Initialize
             ElemTransmissivity               = AppGW%ElemTransmissivity(indxElem,indxLayer)
-            Vertex                           = AppGrid%Element(indxElem)%Vertex
-            NVertex                          = AppGrid%Element(indxElem)%NVertex
+            IF (ElemTransmissivity .EQ. 0.0) CYCLE
+            Vertex                           = AppGrid%Vertex(:,indxElem)
+            NVertex                          = AppGrid%NVertex(indxElem)
+            rHeadArray(1:NVertex)            = AppGW%State%Head(Vertex(1:NVertex),indxLayer)
+            rBottomElevs(1:NVertex)          = Stratigraphy%BOttomElev(Vertex(1:NVertex),indxLayer)
             iDim                             = SIZE(AppGrid%AppElement(indxElem)%Integral_DELShpI_DELShpJ)
             Integral_DELShpI_DELShpJ(1:iDim) = AppGrid%AppElement(indxElem)%Integral_DELShpI_DELShpJ
             
@@ -3268,178 +4035,99 @@ CONTAINS
             OUTER_VERTEX_LOOP:  &
             !****************
             DO indxVertex_I=1,NVertex
-                iNode       = Vertex(indxVertex_I)
-                iGWNode     = iBase + iNode
-                iNodeIDs(1) = iGWNode
+                iNode     = Vertex(indxVertex_I)
+                iGWNode   = iBase + iNode
+                iNodes(1) = iGWNode
                 !Skip computations if node is inactive
                 IF (.NOT. Stratigraphy%ActiveNode(iNode,indxLayer)) THEN
-                    CALL Matrix%SetCOEFF(iGWComp,iNodeIDs(1),iGWComp,iNodeIDs(1),1d0)
+                    CALL Matrix%SetCOEFF(f_iGWComp,iNodes(1),f_iGWComp,iNodes(1),1d0)
                     CYCLE
                 END IF
-                iCount        = 1
-                rUpdateValues = 0.0
-                Head_I        = HeadArray(iNode)
+                iCount            = 1
+                rUpdateCOEFF      = 0.0
+                rUpdateCOEFF_Add  = 0.0
+                rFlow             = 0.0
+                rHead_I           = rHeadArray(indxVertex_I)
+                rSaturatedThick_I = rHead_I - (rBottomElevs(indxVertex_I) + f_rScaleElevation)  !Start scaling down transmissivity a bit above bottom elevation so that head doesn't fall below the bottom too much
+                rExp_I            = FEXP(-f_rSmoothStepP * rSaturatedThick_I)
+                IF (rExp_I .LT. f_rHugeNumber) THEN
+                    rExpPlusOne = 1d0 + rExp_I
+                    rExpDiv_I   = rExp_I / (rExpPlusOne*rExpPlusOne)
+                    rFactor_I   = 1d0 / rExpPlusOne
+                END IF
 
                 INNER_VERTEX_LOOP:   &
                 !****************
                 DO indxVertex_J=1,NVertex
                     IF (indxVertex_J .EQ. indxVertex_I) CYCLE
-                    iCount           = iCount + 1
-                    jNode            = Vertex(indxVertex_J)
-                    iNodeIDs(iCount) = iBase + jNode
+                    iCount         = iCount + 1
+                    jNode          = Vertex(indxVertex_J)
+                    iNodes(iCount) = iBase + jNode
                     IF (.NOT. Stratigraphy%ActiveNode(jNode,indxLayer)) CYCLE
-                    iRow     = MIN(indxVertex_I,indxVertex_J)
-                    jCol     = MAX(indxVertex_I,indxVertex_J)
-                    indx     = (iRow-1)*NVertex - iRow*(iRow-1)/2+jCol - iRow
-                    Alpha    = Integral_DELShpI_DELShpJ(indx)
-                    Head_J   = HeadArray(jNode)
-                    HeadDiff = Head_I - Head_J
-                    rValue   = Alpha * ElemTransmissivity
+                    iRow      = MIN(indxVertex_I,indxVertex_J)
+                    jCol      = MAX(indxVertex_I,indxVertex_J)
+                    indx      = (iRow-1)*NVertex - iRow*(iRow-1)/2+jCol - iRow
+                    rAlpha    = Integral_DELShpI_DELShpJ(indx)
+                    IF (rAlpha .GE. 0.0) CYCLE
+                    rHead_J   = rHeadArray(indxVertex_J)
+                    rHeadDiff = rHead_I - rHead_J
+                    rValue    = rAlpha * ElemTransmissivity
                     
-                    !R.H.S. function and coeff. matrix diagonal for node I
-                    rUpdateRHS(iGWNode) = rUpdateRHS(iGWNode) - rValue * HeadDiff
-                    rUpdateValues(1)    = rUpdateValues(1) - rValue  
-                    
-                    !Coeff. matrix entries for other nodes that is connected to node I
-                    IF (Head_J .LT. Stratigraphy%TopElev(jNode,indxLayer)) THEN
-                        IF (Head_J .GT. Stratigraphy%BottomElev(jNode,indxLayer)) THEN
-                            rUpdateValues(iCount) = rValue  
+                    !Calculate flow and correct it if drying node; also calculate Jacobian matrix entries 
+                    rFlow(indxVertex_J) = -rValue * rHeadDiff
+                    !Outflow from node
+                    IF (rFlow(indxVertex_J) .GT. 0.0) THEN
+                        IF (rExp_I .LT. f_rHugeNumber) THEN
+                            rFlow(indxVertex_J) = rFactor_I * rFlow(indxVertex_J)
+                            !Jacobian matrix -- diagonal entry for node I
+                            rUpdateCOEFF_Add(indxVertex_J) = - rValue * rHeadDiff * f_rSmoothStepP * rExpDiv_I - rFactor_I * rValue
+                            !Jacobian matrix -- entry for node J connecting to node I
+                            rUpdateCOEFF(iCount) = rFactor_I * rValue
+                        ELSE
+                            !This means there is no flow between the two nodes because node I is dry and no flow between nodes; no need to update matrix equation
+                            rFlow(indxVertex_J) = 0.0
+                            CYCLE
                         END IF
+                    !Inflow to node
                     ELSE
-                        rUpdateValues(iCount) = rValue
+                        rSaturatedThick = rHead_J - (rBottomElevs(indxVertex_J) + f_rScaleElevation)  !Start scaling down transmissivity a bit above bottom elevation so that head doesn't fall below the bottom too much
+                        rExp            = FEXP(-f_rSmoothStepP * rSaturatedThick)
+                        IF (rExp .LT. f_rHugeNumber) THEN
+                            rExpPlusOne         = 1d0 + rExp
+                            rFactor             = 1d0 / rExpPlusOne
+                            rFlow(indxVertex_J) = rFactor * rFlow(indxVertex_J)
+                            !Jacobian matrix -- diagonal entry for node I
+                            rUpdateCOEFF_Add(indxVertex_J) =  - rFactor * rValue  
+                            !Jacobian matrix -- entry for node J connecting to node I
+                            rUpdateCOEFF(iCount) = -rValue * rHeadDiff * f_rSmoothStepP * rExp / (rExpPlusOne*rExpPlusOne) + rFactor * rValue
+                        ELSE
+                            !This means there is no flow between the two nodes because node J is dry and no flow between nodes; no need to update matrix equation
+                            rFlow(indxVertex_J) = 0.0
+                            CYCLE
+                        END IF
                     END IF
+                    
                 END DO INNER_VERTEX_LOOP
-                CALL Matrix%UpdateCOEFF(iGWComp,iGWNode,iCompIDs(1:NVertex),iNodeIDs(1:NVertex),rUpdateValues(1:NVertex))
+  
+                !Accumulate coefficients and RHS for node I
+                rUpdateRHS(iGWNode) = rUpdateRHS(iGWNode) + SUM(rFlow)
+                rUpdateCOEFF(1)     = SUM(rUpdateCOEFF_Add) 
+  
+                !Update Jacobian
+                CALL Matrix%UpdateCOEFF(f_iGWComp,iGWNode,NVertex,iCompIDs(1:NVertex),iNodes(1:NVertex),rUpdateCOEFF(1:NVertex))
+                
             END DO OUTER_VERTEX_LOOP
         END DO ELEMENT_LOOP
     END DO LAYER_LOOP
     
     !Update RHS vector
-    CALL Matrix%UpdateRHS(iGWComp,1,rUpdateRHS)
+    CALL Matrix%UpdateRHS(f_iGWComp,1,rUpdateRHS)
     
   END SUBROUTINE ApplyHorizontalFlows
-    
-    
-  ! -------------------------------------------------------------
-  ! --- COMPUTE CONTRIBUTION OF HORIZONTAL FLOWS TO MATRIX EQUATION
-  ! --- This subroutine does not work correctly. It needs to be corrected and should replace the other subroutine for faster runs.
-  ! -------------------------------------------------------------
-  SUBROUTINE ApplyHorizontalFlows_NEW(AppGrid,Stratigraphy,AppGW,Matrix)  
-    TYPE(AppGridType),INTENT(IN)      :: AppGrid
-    TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
-    TYPE(AppGWType),INTENT(IN)        :: AppGW
-    TYPE(MatrixType)                  :: Matrix
-    
-    !Local variables
-    INTEGER           :: indxLayer,indxElem,indxVertex_I,Vertex(4),NVertex,iNode, NNodes,iCount_I,    &
-                         indxVertex_J,indx,jNode,iBase,iGWNode,iNodeIDs(4),jGWNode,iCount_J     
-    REAL(8)           :: VertexArea(4),rMultip_I,rMultip_J,Head_I,Head_J,Frac,ElemArea,Alpha,rValue,  &
-                         ElemTransmissivity,HeadArray(AppGrid%NNodes),rUpdateValues(4,4),HeadDiff,    &  
-                         rUpdateRHS(AppGrid%NNodes*Stratigraphy%NLayers),Kh(AppGrid%NNodes)
-    INTEGER,PARAMETER :: iCompIDs(4) = [iGWComp , iGWComp , iGWComp , iGWComp]
-    
-    !Initialize
-    NNodes     = AppGrid%NNodes
-    rUpdateRHS = 0.0
-    
-    LAYER_LOOP:  &
-    !*********
-    DO indxLayer=1,Stratigraphy%NLayers
-        iBase      = (indxLayer-1) * NNodes
-        Kh         = AppGW%Nodes(:,indxLayer)%Kh
-        HeadArray  = AppGW%State(:,indxLayer)%Head
-        
-        ELEMENT_LOOP:  &
-        !***********
-        DO indxElem=1,AppGrid%NElements
-            !Initialize
-            ElemTransmissivity    = AppGW%ElemTransmissivity(indxElem,indxLayer)
-            Vertex                = AppGrid%Element(indxElem)%Vertex
-            NVertex               = AppGrid%Element(indxElem)%NVertex
-            VertexArea(1:NVertex) = AppGrid%AppElement(indxElem)%VertexArea(1:NVertex)
-            ElemArea              = AppGrid%AppElement(indxElem)%Area
-            rUpdateValues         = 0.0
-            
-            !Iterate over vertices
-            OUTER_VERTEX_LOOP:  &
-            !****************
-            DO indxVertex_I=1,NVertex
-                iNode       = Vertex(indxVertex_I)
-                iGWNode     = iBase + iNode
-                iNodeIDs(1) = iGWNode
-                !Skip computations if node is inactive
-                IF (.NOT. Stratigraphy%ActiveNode(iNode,indxLayer)) THEN
-                    CALL Matrix%SetCOEFF(iGWComp,iNodeIDs(1),iGWComp,iNodeIDs(1),1d0)
-                    CYCLE
-                END IF
-                iCount_I = 1
-                Head_I   = HeadArray(iNode)
-                IF (Head_I .LT. Stratigraphy%TopElev(iNode,indxLayer)) THEN
-                    IF (Head_I .GT. Stratigraphy%BottomElev(iNode,indxLayer)) THEN
-                        rMultip_I = VertexArea(indxVertex_I) * Kh(iNode)
-                    ELSE
-                        rMultip_I = 0.0
-                    END IF
-                ELSE
-                    rMultip_I = 0.0
-                END IF
-                
-                INNER_VERTEX_LOOP:   &
-                !****************
-                DO indxVertex_J=indxVertex_I+1,NVertex
-                    iCount_I           = iCount_I + 1
-                    jNode              = Vertex(indxVertex_J)
-                    jGWNode            = iBase + jNode
-                    iNodeIDs(iCount_I) = jGWNode
-                    IF (.NOT. Stratigraphy%ActiveNode(jNode,indxLayer)) CYCLE
-                    indx     = (indxVertex_I-1)*NVertex - indxVertex_I*(indxVertex_I-1)/2+indxVertex_J - indxVertex_I
-                    Alpha    = AppGrid%AppElement(indxElem)%Integral_DELShpI_DELShpJ(indx)
-                    Head_J   = HeadArray(jNode)
-                    HeadDiff = Head_I - Head_J
-                    Frac     = Alpha * HeadDiff / ElemArea
-                    rValue   = Alpha * ElemTransmissivity
-                    IF (Head_J .LT. Stratigraphy%TopElev(jNode,indxLayer)) THEN
-                        IF (Head_J .GT. Stratigraphy%BottomElev(jNode,indxLayer)) THEN
-                            rMultip_J = VertexArea(indxVertex_J) * Kh(jNode)
-                        ELSE
-                            rMultip_J = 0.0
-                        END IF
-                    ELSE
-                        rMultip_J = 0.0
-                    END IF               
 
-                    !R.H.S. function and coeff. matrix diagonal for node I and J
-                    rUpdateRHS(iGWNode)           = rUpdateRHS(iGWNode) - rValue * HeadDiff
-                    rUpdateRHS(jGWNode)           = rUpdateRHS(jGWNode) + rValue * HeadDiff
-                    rUpdateValues(1,indxVertex_I) = rUpdateValues(1,indxVertex_I) - rValue  -  Frac * rMultip_I
-                    rUpdateValues(1,indxVertex_J) = rUpdateValues(1,indxVertex_J) - rValue  +  Frac * rMultip_J
-                    
-                    !Coeff. matrix entries for other nodes I and J
-                    iCount_J = NVertex - iCount_I + 2
-                    IF (Head_J .LT. Stratigraphy%TopElev(jNode,indxLayer)) THEN
-                        IF (Head_J .GT. Stratigraphy%BottomElev(jNode,indxLayer)) THEN
-                            rUpdateValues(iCount_I,indxVertex_I) = rValue  -  Frac * VertexArea(indxVertex_J) * Kh(jNode)
-                            rUpdateValues(iCount_J,indxVertex_J) = rValue  +  Frac * VertexArea(indxVertex_I) * Kh(iNode)
-                        END IF
-                    ELSE
-                        rUpdateValues(iCount_I,indxVertex_I) = rValue
-                        rUpdateValues(iCount_J,indxVertex_J) = rValue
-                    END IF                    
-                END DO INNER_VERTEX_LOOP                
-                iNodeIDs(iCount_I+1:NVertex) = Vertex(1:NVertex-iCount_I)
-                CALL Matrix%UpdateCOEFF(iGWComp,iGWNode,iCompIDs(1:NVertex),iNodeIDs(1:NVertex),rUpdateValues(1:NVertex,indxVertex_I))
-            END DO OUTER_VERTEX_LOOP
-        END DO ELEMENT_LOOP
-    END DO LAYER_LOOP
     
-    !Update RHS vector
-    CALL Matrix%UpdateRHS(iGWComp,1,rUpdateRHS)
-    
-  END SUBROUTINE ApplyHorizontalFlows_NEW
-
-        
   ! -------------------------------------------------------------
-  ! --- COMPUTE CONTRIBUTION OF CHNAGE IN STORAGE TO MATRIX EQUATION
+  ! --- COMPUTE CONTRIBUTION OF CHANGE IN STORAGE TO MATRIX EQUATION
   ! -------------------------------------------------------------
   SUBROUTINE ApplyChangeInStorage(NNodes,Stratigraphy,AppGW,Matrix)  
     INTEGER,INTENT(IN)                :: NNodes
@@ -3451,18 +4139,19 @@ CONTAINS
     INTEGER           :: indxLayer,indxNode,iBase,iNodeIDs(1),iGWNode
     REAL(8)           :: Storativity(NNodes),rStorChange(NNodes),rUpdateValues(1), &
                          rUpdateRHS(NNodes*Stratigraphy%NLayers)
-    INTEGER,PARAMETER :: iCompIDs(1) = [iGWComp]
+    INTEGER,PARAMETER :: iCompIDs(1) = [f_iGWComp]
     
     DO indxLayer=1,Stratigraphy%NLayers
         iBase = (indxLayer-1)*NNodes
-        CALL AppGW%GetChangeInStorageAtLayer(indxLayer,NNodes,Stratigraphy,rStorChange,Storativity)
+        CALL GetChangeInStorageAtLayer(AppGW,indxLayer,NNodes,Stratigraphy,rStorChange,Storativity)
         DO indxNode=1,NNodes            
             !GW Node
             iGWNode = iBase + indxNode
             
-            !Cycle if node is inactive
+            !Cycle if node is inactive, set the diagonal for the node to 1.0
             IF (.NOT. Stratigraphy%ActiveNode(indxNode,indxLayer)) THEN
                 rUpdateRHS(iGWNode) = 0.0
+                CALL Matrix%SetCOEFF(f_iGWComp,iGWNode,f_iGWComp,iGWNode,1d0)
                 CYCLE
             END IF
             
@@ -3472,13 +4161,13 @@ CONTAINS
             !Coefficient matrix
             iNodeIDs(1)      = iGWNode
             rUpdateValues(1) = Storativity(indxNode)
-            CALL Matrix%UpdateCOEFF(iGWComp,iGWNode,iCompIDs,iNodeIDs,rUpdateValues)
+            CALL Matrix%UpdateCOEFF(f_iGWComp,iGWNode,1,iCompIDs,iNodeIDs,rUpdateValues)
 
         END DO
     END DO
     
     !Update RHS vector
-    CALL Matrix%UpdateRHS(iGWComp,1,rUpdateRHS)
+    CALL Matrix%UpdateRHS(f_iGWComp,1,rUpdateRHS)
 
   END SUBROUTINE ApplyChangeInStorage
     
@@ -3490,22 +4179,23 @@ CONTAINS
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
     INTEGER,INTENT(IN)                :: NNodes
     REAL(8),INTENT(IN)                :: LeakageV(:,:)
-    TYPE(GWStateType),INTENT(IN)      :: State(:,:)
+    TYPE(GWStateType),INTENT(IN)      :: State
     TYPE(MatrixType)                  :: Matrix
     
     !Local variables
-    INTEGER           :: indxLayer,indxNode,iBase,iNodeIDs(2),iActiveLayerBelow(NNodes),    &
-                         iLayerBelow,iGWNode,iGWNode_Below
-    REAL(8)           :: VerticalFlow(NNodes),Head,Head_P,Head_NodeBelow,Head_NodeBelow_P,  &
-                         rLeakageV,BottomElev,rUpdateValues(2),rUpdateRHS(SIZE(State))
-    INTEGER,PARAMETER :: iCompIDs(2) = [iGWComp,iGWComp]
+    INTEGER           :: indxLayer,indxNode,iBase,iNodeIDs(2),iActiveLayerBelow(NNodes),iLayerBelow,   &
+                         iGWNode,iGWNode_Below
+    REAL(8)           :: VerticalFlow(NNodes),rUpdateCOEFF(2),rUpdateRHS(NNodes*Stratigraphy%NLayers),  &
+                         rUpdateCOEFF_Keep(2),rdVertFlow_dH(NNodes),rdVertFlow_dHb(NNodes)
+    INTEGER,PARAMETER :: iCompIDs(2) = [f_iGWComp,f_iGWComp]
     
     !Initialize
     rUpdateRHS = 0.0
     
     DO indxLayer=1,Stratigraphy%NLayers-1
         iActiveLayerBelow = Stratigraphy%GetAllActiveLayerBelow(indxLayer)
-        CALL VerticalFlow_ComputeAtNodesLayer(indxLayer,NNodes,Stratigraphy,State%Head,State%Head_P,LeakageV,VerticalFlow)
+        CALL VerticalFlow_ComputeAtNodesLayer(indxLayer,NNodes,Stratigraphy,State%Head,LeakageV,VerticalFlow)
+        CALL VerticalFlow_ComputeDerivativesAtNodesLayer(indxLayer,NNodes,Stratigraphy,State%Head,LeakageV,VerticalFlow,rdVertFlow_dH,rdVertFlow_dHb)
         iBase             = (indxLayer-1) * NNodes
         DO indxNode=1,NNodes
             !Indices for node in consideration
@@ -3519,60 +4209,29 @@ CONTAINS
             IF (iLayerBelow .LE. 0) CYCLE
             iGWNode_Below = (iLayerBelow-1)*NNodes + indxNode
             
-            !Heads
-            Head             = State(indxNode,indxLayer)%Head
-            Head_P           = State(indxNode,indxLayer)%Head_P
-            Head_NodeBelow   = State(indxNode,iLayerBelow)%Head
-            Head_NodeBelow_P = State(indxNode,iLayerBelow)%Head_P
+            !Node numbers 
+            iNodeIDs(1) = iGWNode
+            iNodeIDs(2) = iGWNode_Below
             
-            !Coefficient matrix 
-            rLeakageV  = LeakageV(indxNode,iLayerBelow)                         !Vertical leakage
-            BottomElev = Stratigraphy%BottomElev(indxNode,indxLayer)            !Bottom elevation of aquifer
-            IF (Head_NodeBelow_P .GE. BottomElev) THEN
-                IF (Head_P .GE. BottomElev) THEN
-                    !Nodes for which derivatives are calculated
-                    iNodeIDs(1)      = iGWNode
-                    iNodeIDs(2)      = iGWNode_Below
-                    !Update row of COEFF matrix for current node
-                    rUpdateValues(1) =  rLeakageV
-                    rUpdateValues(2) = -rLeakageV
-                    CALL Matrix%UpdateCOEFF(iGWComp,iGWNode,iCompIDs,iNodeIDs,rUpdateValues)
-                    !Update row of COEFF matrix for node below current node
-                    rUpdateValues(1) = -rLeakageV
-                    rUpdateValues(2) =  rLeakageV
-                    CALL Matrix%UpdateCOEFF(iGWComp,iGWNode_Below,iCompIDs,iNodeIDs,rUpdateValues)
-                ELSE
-                    !Nodes for which derivatives are calculated
-                    iNodeIDs(1)      = iGWNode_Below
-                    !Update row of COEFF matrix for node in consideration
-                    rUpdateValues(1) = -rLeakageV
-                    CALL Matrix%UpdateCOEFF(iGWComp,iGWNode,iCompIDs(1:1),iNodeIDs(1:1),rUpdateValues(1:1))
-                    !Update row of COEFF matrix for node below current node
-                    rUpDateValues(1) = rLeakageV
-                    CALL Matrix%UpdateCOEFF(iGWComp,iGWNode_Below,iCompIDs(1:1),iNodeIDs(1:1),rUpdateValues(1:1))
-                END IF
-            ELSE
-                IF (Head_P .GE. BottomElev) THEN
-                    !Nodes for which derivatives are calculated
-                    iNodeIDs(1)      = iGWNode
-                    !Update row of COEFF matrix for node in consideration
-                    rUpdateValues(1) = rLeakageV
-                    CALL Matrix%UpdateCOEFF(iGWComp,iGWNode,iCompIDs(1:1),iNodeIDs(1:1),rUpdateValues(1:1))
-                    !Update row of COEFF matrix for node below current node
-                    rUpDateValues(1) = -rLeakageV
-                    CALL Matrix%UpdateCOEFF(iGWComp,iGWNode_Below,iCompIDs(1:1),iNodeIDs(1:1),rUpdateValues(1:1))
-                END IF
-            END IF
+            !Update row of COEFF matrix for current node
+            rUpdateCOEFF_Keep(1) = -rdVertFlow_dH(indxNode)
+            rUpdateCOEFF_Keep(2) = -rdVertFlow_dHb(indxNode)
+            rUpdateCOEFF         = rUpdateCOEFF_Keep
+            CALL Matrix%UpdateCOEFF(f_iGWComp,iGWNode,2,iCompIDs,iNodeIDs,rUpdateCOEFF)
             
+            !Update row of COEFF matrix for node below current node
+            rUpdateCOEFF = -rUpdateCOEFF_Keep
+            CALL Matrix%UpdateCOEFF(f_iGWComp,iGWNode_Below,2,iCompIDs,iNodeIDs,rUpdateCOEFF)
+
             !R.H.S. values
             rUpdateRHS(iGWNode)       = rUpdateRHS(iGWNode)       - VerticalFlow(indxNode)
             rUpdateRHS(iGWNode_Below) = rUpdateRHS(iGWNode_Below) + VerticalFlow(indxNode)
-
+            
         END DO
     END DO
     
     !Update RHS vector
-    CALL Matrix%UpdateRHS(iGWComp,1,rUpdateRHS)
+    CALL Matrix%UpdateRHS(f_iGWComp,1,rUpdateRHS)
 
   END SUBROUTINE ApplyVerticalFlows
     
@@ -3603,7 +4262,7 @@ CONTAINS
     NLayers = Stratigraphy%NLayers
     
     !Add component to matrix
-    CALL Matrix%AddComponent(iGWComp,NNodes*NLayers,iStat)
+    CALL Matrix%AddComponent(f_iGWComp,NNodes*NLayers,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Compile connectivity list for Matrix
@@ -3631,7 +4290,7 @@ CONTAINS
     END DO
     
     !Add connectivity list to Matrix
-    CALL Matrix%AddConnectivity(iGWComp,1,NNodes*NLayers,iGWComp,ConnectivityLists,iStat)   
+    CALL Matrix%AddConnectivity(f_iGWComp,1,NNodes*NLayers,f_iGWComp,ConnectivityLists,iStat)   
         
   END SUBROUTINE RegisterWithMatrix
     
@@ -3665,5 +4324,18 @@ CONTAINS
     
   END SUBROUTINE TransferOutputToHDF
     
+    
+  ! -------------------------------------------------------------
+  ! --- REMOVE ALL BOUNDARY CONDITIONS AT NODE, LAYER
+  ! -------------------------------------------------------------
+  SUBROUTINE RemoveBC(AppGW,iNodes,iLayers,iStat)
+    CLASS(AppGWType)    :: AppGW
+    INTEGER,INTENT(IN)  :: iNodes(:),iLayers(:)
+    INTEGER,INTENT(OUT) :: iStat
+    
+    CALL AppGW%AppBC%RemoveBC(iNodes,iLayers,iStat) 
+    AppGW%lAppBC_Defined = AppGW%AppBC%IsDefined()
+    
+  END SUBROUTINE RemoveBC
     
 END MODULE

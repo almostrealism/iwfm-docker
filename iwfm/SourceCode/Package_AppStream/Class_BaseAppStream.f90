@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -22,26 +22,33 @@
 !***********************************************************************
 MODULE Class_BaseAppStream
   USE Class_Version               , ONLY: VersionType
-  USE MessageLogger               , ONLY: EchoProgress
+  USE MessageLogger               , ONLY: EchoProgress                           , &
+                                          SetLastMessage                         , &
+                                          f_iWarn                                , &
+                                          f_iFatal
   USE IOInterface                 , ONLY: GenericFileType                        
   USE GeneralUtilities            , ONLY: StripTextUntilCharacter                , &
                                           ArrangeText                            , &
                                           IntToText                              , &
-                                          UpperCase
+                                          UpperCase                              , &
+                                          ConvertID_To_Index
   USE TimeSeriesUtilities         , ONLY: TimeStepType                           , &
                                           IncrementTimeStamp                     
-  USE Package_Misc                , ONLY: FlowDest_Outside                       , &
-                                          FlowDest_Element                       , &
-                                          FlowDest_Subregion                     , &
-                                          iStrmComp                              , &
-                                          iLocationType_StrmReach                , &
-                                          iLocationType_StrmNode                 , &
-                                          iLocationType_StrmHydObs               , &
-                                          iAllLocationIDsListed
+  USE Package_Misc                , ONLY: f_iFlowDest_Outside                    , &
+                                          f_iFlowDest_Element                    , &
+                                          f_iFlowDest_Subregion                  , &
+                                          f_iStrmComp                            , &
+                                          f_iLocationType_StrmReach              , &
+                                          f_iLocationType_StrmNode               , &
+                                          f_iLocationType_StrmHydObs             , &
+                                          f_iLocationType_Bypass                 , &
+                                          f_iLocationType_Diversion              , &
+                                          f_iLocationType_StrmNodeBud            , &
+                                          f_iAllLocationIDsListed                
   USE Package_Discretization      , ONLY: StratigraphyType                       , &
                                           AppGridType
   USE Package_ComponentConnectors , ONLY: StrmLakeConnectorType                  , &
-                                          iLakeToStrmType                        , &
+                                          f_iLakeToStrmFlow                      , &
                                           StrmGWConnectorType                    , &
                                           SupplyType                             , &
                                           SupplyDestinationConnectorType         , &
@@ -54,12 +61,18 @@ MODULE Class_BaseAppStream
                                           ConnectivityListType
   USE Package_Budget              , ONLY: BudgetType                             , &
                                           BudgetHeaderType                       , &
-                                          VolumeUnitMarker                       , &
-                                          LocationNameMarker                     , &
-                                          VR                                     , &
-                                          PER_CUM
+                                          f_iColumnHeaderLen                     , &
+                                          f_cVolumeUnitMarker                    , &
+                                          f_cLocationNameMarker                  , &
+                                          f_iMaxLocationNameLen                  , &
+                                          f_iVR                                  , &
+                                          f_iPER_CUM
   USE Class_StrmReach             , ONLY: StrmReachType                          , &
-                                          StrmReach_IsUpstreamNode
+                                          StrmReach_IsUpstreamNode               , &
+                                          StrmReach_DestinationIDs_To_Indices    , &
+                                          StrmReach_ID_To_Index                  , &
+                                          StrmReach_GetNReaches_InUpstrmNetwork  , &
+                                          StrmReach_GetReaches_InUpstrmNetwork
   USE Class_StrmState             , ONLY: StrmStateType
   USE Class_StrmInflow            , ONLY: StrmInflowType
   USE Class_StrmNodeBudget        , ONLY: StrmNodeBudgetType
@@ -69,9 +82,9 @@ MODULE Class_BaseAppStream
                                           iHydBoth
   USE Class_ElemToRecvLoss        , ONLY: ElemToRecvLoss_GetElems  
   USE Class_AppDiverBypass        , ONLY: AppDiverBypassType                     , &
-                                          iDiverRecvLoss                         , &
-                                          iBypassRecvLoss                        , &
-                                          iAllRecvLoss
+                                          f_iDiverRecvLoss                       , &
+                                          f_iBypassRecvLoss                      , &
+                                          f_iAllRecvLoss
   IMPLICIT NONE
   
   
@@ -81,40 +94,47 @@ MODULE Class_BaseAppStream
   PRIVATE
   PUBLIC :: BaseAppStreamType         , &
             PrepareStreamBudgetHeader , &
-            cDataList_AtStrmReach     , &
-            cDataList_AtStrmNode
+            CalculateNStrmNodes       , &
+            ReadFractionsForGW        , &
+            f_iBudgetType_StrmNode    , &
+            f_iBudgetType_StrmReach   , &
+            f_iBudgetType_DiverDetail 
   
 
   ! -------------------------------------------------------------
   ! --- ABSTRACT BASE APPLICATION STREAM DATA TYPE
   ! -------------------------------------------------------------
   TYPE,ABSTRACT :: BaseAppStreamType
-      TYPE(VersionType)               :: Version                                   !Stream component version number
-      LOGICAL                         :: lRouted                      = .TRUE.     !Flag to check if stream flows are actually routed (used when stream flows are recieved from another model)
-      INTEGER                         :: NStrmNodes                   = 0          !Number of stream nodes
-      INTEGER                         :: NReaches                     = 0          !Number of reaches
-      CHARACTER(LEN=6)                :: TimeUnitRatingTableFlow      = ''         !Time unit of flow in flow vs. head rating table
-      TYPE(StrmReachType),ALLOCATABLE :: Reaches(:)                                !Stream reach data
-      TYPE(StrmStateType),ALLOCATABLE :: State(:)                                  !Stream head and flows at each node
-      TYPE(AppDiverBypassType)        :: AppDiverBypass                            !Diversion and bypass related data
-      TYPE(StrmInflowType)            :: StrmInflowData                            !Stream inflow boundary conditions
-      TYPE(StrmNodeBudgetType)        :: StrmNodeBudget                            !Water budget output at selected nodes
-      LOGICAL                         :: StrmReachBudRawFile_Defined  = .FALSE.    !Flag to check if the stream reach budget output is defined
-      TYPE(BudgetType)                :: StrmReachBudRawFile                       !Stream reach budget binary output
-      TYPE(StrmHydrographType)        :: StrmHyd                                   !Output for stream hydrograph
+      TYPE(VersionType)               :: Version                                             !Stream component version number
+      LOGICAL                         :: lRouted                      = .TRUE.               !Flag to check if stream flows are actually routed (used when stream flows are recieved from another model)
+      INTEGER                         :: NStrmNodes                   = 0                    !Number of stream nodes
+      INTEGER                         :: NReaches                     = 0                    !Number of reaches
+      CHARACTER(LEN=6)                :: TimeUnitRatingTableFlow      = ''                   !Time unit of flow in flow vs. head rating table
+      TYPE(StrmReachType),ALLOCATABLE :: Reaches(:)                                          !Stream reach data
+      TYPE(StrmStateType),ALLOCATABLE :: State(:)                                            !Stream head and flows at each node
+      TYPE(AppDiverBypassType)        :: AppDiverBypass                                      !Diversion and bypass related data
+      TYPE(StrmInflowType)            :: StrmInflowData                                      !Stream inflow boundary conditions
+      TYPE(StrmNodeBudgetType)        :: StrmNodeBudget                                      !Water budget output at selected nodes
+      LOGICAL                         :: StrmReachBudRawFile_Defined  = .FALSE.              !Flag to check if the stream reach budget output is defined
+      TYPE(BudgetType)                :: StrmReachBudRawFile                                 !Stream reach budget binary output
+      INTEGER,ALLOCATABLE             :: iPrintReachBudgetOrder(:)                           !Reaches ordered w.r.t. ID numbers for budget printing  
+      TYPE(StrmHydrographType)        :: StrmHyd                                             !Output for stream hydrograph
   CONTAINS
       PROCEDURE(Abstract_SetStaticComponent),PASS,DEFERRED             :: SetStaticComponent
       PROCEDURE(Abstract_SetStaticComponentFromBinFile),PASS,DEFERRED  :: SetStaticComponentFromBinFile
       PROCEDURE(Abstract_SetAllComponents),PASS,DEFERRED               :: SetAllComponents
       PROCEDURE(Abstract_SetAllComponentsWithoutBinFile),PASS,DEFERRED :: SetAllComponentsWithoutBinFile
       PROCEDURE(Abstract_SetDynamicComponent),PASS,DEFERRED            :: SetDynamicComponent
+      PROCEDURE(Abstract_GetStrmNodeIDs),PASS,DEFERRED                 :: GetStrmNodeIDs
+      PROCEDURE(Abstract_GetStrmNodeID),PASS,DEFERRED                  :: GetStrmNodeID
+      PROCEDURE(Abstract_GetStrmNodeIndex),PASS,DEFERRED               :: GetStrmNodeIndex
       PROCEDURE(Abstract_GetStageFlowRatingTable),PASS,DEFERRED        :: GetStageFlowRatingTable
       PROCEDURE(Abstract_GetVersion),PASS,DEFERRED                     :: GetVersion
       PROCEDURE(Abstract_GetBottomElevations),PASS,DEFERRED            :: GetBottomElevations
       PROCEDURE(Abstract_GetNRatingTablePoints),PASS,DEFERRED          :: GetNRatingTablePoints
+      PROCEDURE(Abstract_GetNUpstrmNodes),PASS,DEFERRED                :: GetNUpstrmNodes
       PROCEDURE(Abstract_GetUpstrmNodes),PASS,DEFERRED                 :: GetUpstrmNodes
       PROCEDURE(Abstract_KillImplementation),PASS,DEFERRED             :: KillImplementation
-      PROCEDURE(Abstract_ReadTSData),PASS,DEFERRED                     :: ReadTSData
       PROCEDURE(Abstract_WritePreprocessedData),PASS,DEFERRED          :: WritePreprocessedData
       PROCEDURE(Abstract_WriteDataToTextFile),PASS,DEFERRED            :: WriteDataToTextFile
       PROCEDURE(Abstract_UpdateHeads),PASS,DEFERRED                    :: UpdateHeads
@@ -122,23 +142,57 @@ MODULE Class_BaseAppStream
       PROCEDURE(Abstract_ConvertFlowToElev),PASS,DEFERRED              :: ConvertFlowToElev
       PROCEDURE(Abstract_Simulate),PASS,DEFERRED                       :: Simulate
       PROCEDURE,PASS                                                   :: Kill
-      PROCEDURE,PASS                                                   :: GetNDataList_AtLocationType
-      PROCEDURE,PASS                                                   :: GetDataList_AtLocationType
-      PROCEDURE,PASS                                                   :: GetLocationsWithData
-      PROCEDURE,PASS                                                   :: GetSubDataList_AtLocation
-      PROCEDURE,PASS                                                   :: GetModelData_AtLocation    => GetModelData_AtLocation_FromFullModel    
+      PROCEDURE,PASS                                                   :: GetBudget_List
+      PROCEDURE,PASS                                                   :: GetBudget_NColumns
+      PROCEDURE,PASS                                                   :: GetBudget_ColumnTitles
+      PROCEDURE,PASS                                                   :: GetBudget_MonthlyFlows_GivenAppStream
+      PROCEDURE,NOPASS                                                 :: GetBudget_MonthlyFlows_GivenFile
+      PROCEDURE,PASS                                                   :: GetBudget_TSData
+      PROCEDURE,PASS                                                   :: GetHydrographTypeList
+      PROCEDURE,PASS                                                   :: GetHydOutputFileName
+      PROCEDURE,PASS                                                   :: GetNStrmNodes_WithBudget
+      PROCEDURE,PASS                                                   :: GetStrmNodeIDs_WithBudget
       PROCEDURE,PASS                                                   :: GetNStrmNodes
       PROCEDURE,PASS                                                   :: GetNReaches
+      PROCEDURE,PASS                                                   :: GetReachIDs
+      PROCEDURE,PASS                                                   :: GetReachIndex
+      PROCEDURE,PASS                                                   :: GetReachNNodes
+      PROCEDURE,PASS                                                   :: GetInflow_AtANode
+      PROCEDURE,PASS                                                   :: GetInflows_AtSomeNodes
+      PROCEDURE,PASS                                                   :: GetInflows_AtSomeInflows
+      PROCEDURE,PASS                                                   :: GetNInflows
+      PROCEDURE,PASS                                                   :: GetInflowNodes
+      PROCEDURE,PASS                                                   :: GetInflowIDs
+      PROCEDURE,PASS                                                   :: GetFlow
       PROCEDURE,PASS                                                   :: GetFlows
       PROCEDURE,PASS                                                   :: GetHeads
       PROCEDURE,PASS                                                   :: GetHead_AtOneNode
       PROCEDURE,PASS                                                   :: GetNDiver
+      PROCEDURE,PASS                                                   :: GetDiversionIDs
+      PROCEDURE,PASS                                                   :: GetDiversionPurpose
+      PROCEDURE,PASS                                                   :: GetDeliveryAtDiversion
+      PROCEDURE,PASS                                                   :: GetDiversionsForDeliveries
+      PROCEDURE,PASS                                                   :: GetActualDiversions_AtSomeDiversions
+      PROCEDURE,PASS                                                   :: GetActualDiversions_AtSomeNodes
+      PROCEDURE,PASS                                                   :: GetDiversionsExportNodes
       PROCEDURE,PASS                                                   :: GetNBypass
+      PROCEDURE,PASS                                                   :: GetBypassIDs
+      PROCEDURE,PASS                                                   :: GetBypassDiverOriginDestData
+      PROCEDURE,PASS                                                   :: GetBypassReceived_FromABypass
+      PROCEDURE,PASS                                                   :: GetNetBypassInflows
+      PROCEDURE,PASS                                                   :: GetStrmBypassInflows
+      PROCEDURE,PASS                                                   :: GetBypassOutflows
       PROCEDURE,PASS                                                   :: GetReachDownstrmNode
       PROCEDURE,PASS                                                   :: GetReachUpstrmNode
       PROCEDURE,PASS                                                   :: GetReachOutflowDestType
       PROCEDURE,PASS                                                   :: GetReachOutflowDest
-      PROCEDURE,PASS                                                   :: GetReachNames
+      PROCEDURE,PASS                                                   :: GetReachStrmNodes
+      PROCEDURE,PASS                                                   :: GetReaches_ForStrmNodes
+      PROCEDURE,PASS                                                   :: GetNReaches_InUpstrmNetwork
+      PROCEDURE,PASS                                                   :: GetReaches_InUpstrmNetwork
+      PROCEDURE,PASS                                                   :: GetReachNUpstrmReaches
+      PROCEDURE,PASS                                                   :: GetReachUpstrmReaches
+      PROCEDURE,PASS                                                   :: GetNames
       PROCEDURE,PASS                                                   :: GetUpstrmNodeFlags
       PROCEDURE,PASS                                                   :: GetStrmConnectivityInGWNodes
       PROCEDURE,PASS                                                   :: GetiColAdjust
@@ -152,6 +206,10 @@ MODULE Class_BaseAppStream
       PROCEDURE,PASS                                                   :: SetSupplySpecs
       PROCEDURE,PASS                                                   :: SetIrigFracsRead
       PROCEDURE,PASS                                                   :: SetStreamFlow
+      PROCEDURE,PASS                                                   :: SetStreamInflow
+      PROCEDURE,PASS                                                   :: SetBypassFlows_AtABypass
+      PROCEDURE,PASS                                                   :: SetDiversionRead
+      PROCEDURE,PASS                                                   :: ReadTSData
       PROCEDURE,PASS                                                   :: ResetIrigFracs
       PROCEDURE,PASS                                                   :: ReadRestartData
       PROCEDURE,PASS                                                   :: PrintResults
@@ -163,6 +221,8 @@ MODULE Class_BaseAppStream
       PROCEDURE,PASS                                                   :: IsUpstreamNode
       PROCEDURE,PASS                                                   :: RegisterWithMatrix
       PROCEDURE,PASS                                                   :: TransferOutputToHDF
+      PROCEDURE,PASS                                                   :: DestinationIDs_To_Indices
+      PROCEDURE,PASS                                                   :: AddBypass
       GENERIC                                                          :: New                     => SetStaticComponent                       , &
                                                                                                      SetStaticComponentFromBinFile            , &
                                                                                                      SetAllComponents                         , &
@@ -174,29 +234,34 @@ MODULE Class_BaseAppStream
   ! -------------------------------------------------------------
   ! --- DATA TYPES FOR POST-PROCESSING
   ! -------------------------------------------------------------
-  CHARACTER(LEN=19),PARAMETER :: cDataList_AtStrmReach        = 'Stream reach budget'
-  CHARACTER(LEN=18),PARAMETER :: cDataList_AtStrmNode         = 'Stream node budget'
-  CHARACTER(LEN=24),PARAMETER :: cDataList_AtStrmHydObs_Flow  = 'Stream hydrograph (flow)'
-  CHARACTER(LEN=25),PARAMETER :: cDataList_AtStrmHydObs_Stage = 'Stream hydrograph (stage)'
+  INTEGER,PARAMETER           :: f_iBudgetType_StrmNode           = f_iStrmComp*1000 + 1 , &
+                                 f_iBudgetType_StrmReach          = f_iStrmComp*1000 + 2 , &
+                                 f_iBudgetType_DiverDetail        = f_iStrmComp*1000 + 3
+  CHARACTER(LEN=18),PARAMETER :: f_cDescription_StrmNodeBudget    = 'Stream node budget'
+  CHARACTER(LEN=19),PARAMETER :: f_cDescription_StrmReachBudget   = 'Stream reach budget'
+  CHARACTER(LEN=23),PARAMETER :: f_cDescription_DiverDetailBudget = 'Diversion detail budget'
+  CHARACTER(LEN=24),PARAMETER :: f_cDescription_StrmHyd_Flow      = 'Stream hydrograph (flow)'
+  CHARACTER(LEN=25),PARAMETER :: f_cDescription_StrmHyd_Stage     = 'Stream hydrograph (stage)'
 
   
   ! -------------------------------------------------------------
   ! --- BUDGET RELATED DATA
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER           :: NStrmBudColumns = 13
-  CHARACTER(LEN=25),PARAMETER :: cBudgetColumnTitles(NStrmBudColumns) = ['Upstream Inflow (+)'        , &
-                                                                         'Downstream Outflow (-)'     , &
-                                                                         'Tributary Inflow (+)'       , &
-                                                                         'Tile Drain (+)'             , &
-                                                                         'Runoff (+)'                 , &
-                                                                         'Return Flow (+)'            , &
-                                                                         'Gain from Groundwater (+)'  , &
-                                                                         'Gain from Lake (+)'         , &
-                                                                         'Riparian ET (-)'            , &
-                                                                         'Diversion (-)'              , &
-                                                                         'By-pass Flow (-)'           , &
-                                                                         'Discrepancy (=)'            , &
-                                                                         'Diversion Shortage'         ]
+  INTEGER,PARAMETER           :: f_iNStrmBudColumns = 14
+  CHARACTER(LEN=30),PARAMETER :: f_cBudgetColumnTitles(f_iNStrmBudColumns) = ['Upstream Inflow (+)'             , &
+                                                                              'Downstream Outflow (-)'          , &
+                                                                              'Tributary Inflow (+)'            , &
+                                                                              'Tile Drain (+)'                  , &
+                                                                              'Runoff (+)'                      , &
+                                                                              'Return Flow (+)'                 , &
+                                                                              'Gain from GW_Inside Model (+)'   , &
+                                                                              'Gain from GW_Outside Model (+)'  , &
+                                                                              'Gain from Lake (+)'              , &
+                                                                              'Riparian ET (-)'                 , &
+                                                                              'Diversion (-)'                   , &
+                                                                              'By-pass Flow (-)'                , &
+                                                                              'Discrepancy (=)'                 , &
+                                                                              'Diversion Shortage'              ]
   
 
   ! -------------------------------------------------------------
@@ -224,13 +289,13 @@ MODULE Class_BaseAppStream
      END SUBROUTINE Abstract_SetStaticComponent
      
      
-     SUBROUTINE Abstract_SetDynamicComponent(AppStream,IsForInquiry,cFileName,cWorkingDirectory,TimeStep,NTIME,AppGrid,Stratigraphy,StrmLakeConnector,StrmGWConnector,iStat)
+     SUBROUTINE Abstract_SetDynamicComponent(AppStream,IsForInquiry,cFileName,cWorkingDirectory,TimeStep,NTIME,iLakeIDs,AppGrid,Stratigraphy,StrmLakeConnector,StrmGWConnector,iStat)
         IMPORT                            :: BaseAppStreamType,TimeStepType,AppGridType,StratigraphyType,StrmLakeConnectorType,StrmGWConnectorType
         CLASS(BaseAppStreamType)          :: AppStream
         LOGICAL,INTENT(IN)                :: IsForInquiry
         CHARACTER(LEN=*),INTENT(IN)       :: cFileName,cWorkingDirectory
         TYPE(TimeStepType),INTENT(IN)     :: TimeStep
-        INTEGER,INTENT(IN)                :: NTIME
+        INTEGER,INTENT(IN)                :: NTIME,iLakeIDs(:)
         TYPE(AppGridType),INTENT(IN)      :: AppGrid
         TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
         TYPE(StrmLakeConnectorType)       :: StrmLakeConnector
@@ -247,13 +312,13 @@ MODULE Class_BaseAppStream
      END SUBROUTINE Abstract_SetStaticComponentFromBinFile
      
     
-     SUBROUTINE Abstract_SetAllComponents(AppStream,IsForInquiry,cFileName,cSimWorkingDirectory,TimeStep,NTIME,AppGrid,Stratigraphy,BinFile,StrmLakeConnector,StrmGWConnector,iStat)
+     SUBROUTINE Abstract_SetAllComponents(AppStream,IsForInquiry,cFileName,cSimWorkingDirectory,TimeStep,NTIME,iLakeIDs,AppGrid,Stratigraphy,BinFile,StrmLakeConnector,StrmGWConnector,iStat)
         IMPORT                               :: BaseAppStreamType,TimeStepType,StratigraphyType,AppGridType,GenericFileType,StrmLakeConnectorType,StrmGWConnectorType
         CLASS(BaseAppStreamType),INTENT(OUT) :: AppStream
         LOGICAL,INTENT(IN)                   :: IsForInquiry
         CHARACTER(LEN=*),INTENT(IN)          :: cFileName,cSimWorkingDirectory
         TYPE(TimeStepType),INTENT(IN)        :: TimeStep
-        INTEGER,INTENT(IN)                   :: NTIME
+        INTEGER,INTENT(IN)                   :: NTIME,iLakeIDs(:)
         TYPE(AppGridType),INTENT(IN)         :: AppGrid
         TYPE(StratigraphyType),INTENT(IN)    :: Stratigraphy
         TYPE(GenericFileType)                :: BinFile
@@ -263,7 +328,7 @@ MODULE Class_BaseAppStream
      END SUBROUTINE Abstract_SetAllComponents
 
      
-     SUBROUTINE Abstract_SetAllComponentsWithoutBinFile(AppStream,IsRoutedStreams,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,StrmLakeConnector,StrmGWConnector,iStat)
+     SUBROUTINE Abstract_SetAllComponentsWithoutBinFile(AppStream,IsRoutedStreams,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,iLakeIDs,StrmLakeConnector,StrmGWConnector,iStat)
         IMPORT                                :: BaseAppStreamType,TimeStepType,StratigraphyType,AppGridType,StrmLakeConnectorType,StrmGWConnectorType
         CLASS(BaseAppStreamType),INTENT(OUT)  :: AppStream
         LOGICAL,INTENT(IN)                    :: IsRoutedStreams,IsForInquiry
@@ -271,11 +336,34 @@ MODULE Class_BaseAppStream
         TYPE(AppGridType),INTENT(IN)          :: AppGrid
         TYPE(StratigraphyType),INTENT(IN)     :: Stratigraphy
         TYPE(TimeStepType),INTENT(IN)         :: TimeStep
-        INTEGER,INTENT(IN)                    :: NTIME
+        INTEGER,INTENT(IN)                    :: NTIME,iLakeIDs(:)
         TYPE(StrmLakeConnectorType)           :: StrmLakeConnector
         TYPE(StrmGWConnectorType),INTENT(OUT) :: StrmGWConnector
         INTEGER,INTENT(OUT)                   :: iStat
      END SUBROUTINE Abstract_SetAllComponentsWithoutBinFile
+     
+     
+     PURE SUBROUTINE Abstract_GetStrmNodeIDs(AppStream,iStrmNodeIDs)
+        IMPORT                              :: BaseAppStreamType
+        CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+        INTEGER,INTENT(OUT)                 :: iStrmNodeIDs(:)
+     END SUBROUTINE Abstract_GetStrmNodeIDs
+     
+     
+     PURE FUNCTION Abstract_GetStrmNodeID(AppStream,indx) RESULT(iStrmNodeID)
+        IMPORT                              :: BaseAppStreamType
+        CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+        INTEGER,INTENT(IN)                  :: indx
+        INTEGER                             :: iStrmNodeID
+     END FUNCTION Abstract_GetStrmNodeID
+     
+     
+     PURE FUNCTION Abstract_GetStrmNodeIndex(AppStream,ID) RESULT(Index)
+        IMPORT                              :: BaseAppStreamType
+        CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+        INTEGER,INTENT(IN)                  :: ID
+        INTEGER                             :: Index
+     END FUNCTION Abstract_GetStrmNodeIndex
      
      
      SUBROUTINE Abstract_GetStageFlowRatingTable(AppStream,iNode,Stage,Flow)
@@ -308,6 +396,14 @@ MODULE Class_BaseAppStream
      END FUNCTION Abstract_GetVersion
      
      
+     FUNCTION Abstract_GetNUpstrmNodes(AppStream,iStrmNode) RESULT(iNNodes)
+        IMPORT                              :: BaseAppStreamType
+        CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+        INTEGER,INTENT(IN)                  :: iStrmNode
+        INTEGER                             :: iNNodes
+     END FUNCTION Abstract_GetNUpstrmNodes
+     
+     
      SUBROUTINE Abstract_GetUpstrmNodes(AppStream,iNode,UpstrmNodes)
         IMPORT                              :: BaseAppStreamType
         CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
@@ -322,16 +418,6 @@ MODULE Class_BaseAppStream
      END SUBROUTINE Abstract_KillImplementation
           
 
-     SUBROUTINE Abstract_ReadTSData(AppStream,lDiverAdjusted,TimeStep,iStat,DiversionsOverwrite)
-        IMPORT                        :: BaseAppStreamType,TimeStepType
-        CLASS(BaseAppStreamType)      :: AppStream
-        LOGICAL,INTENT(IN)            :: lDiverAdjusted
-        TYPE(TimeStepType),INTENT(IN) :: TimeStep
-        INTEGER,INTENT(OUT)           :: iStat
-        REAL(8),OPTIONAL,INTENT(IN)   :: DiversionsOverwrite(:)
-     END SUBROUTINE Abstract_ReadTSData
-     
-     
      SUBROUTINE Abstract_WritePreprocessedData(AppStream,OutFile)
         IMPORT                              :: BaseAppStreamType,GenericFileType
         CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
@@ -339,9 +425,10 @@ MODULE Class_BaseAppStream
      END SUBROUTINE Abstract_WritePreprocessedData
      
      
-     SUBROUTINE Abstract_WriteDataToTextFile(AppStream,UNITLTOU,FACTLTOU,Stratigraphy,StrmGWConnector,iStat)
+     SUBROUTINE Abstract_WriteDataToTextFile(AppStream,iGWNodeIDs,UNITLTOU,FACTLTOU,Stratigraphy,StrmGWConnector,iStat)
         IMPORT                               :: BaseAppStreamType,StratigraphyType,StrmGWConnectorType
         CLASS(BaseAppStreamType),INTENT(IN)  :: AppStream
+        INTEGER,INTENT(IN)                   :: iGWNodeIDs(:)
         CHARACTER(LEN=*),INTENT(IN)          :: UNITLTOU
         REAL(8),INTENT(IN)                   :: FACTLTOU
         TYPE(StratigraphyType),INTENT(IN)    :: Stratigraphy
@@ -445,241 +532,467 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
-  ! --- GET NUMBER OF DATA TYPES FOR POST-PROCESSING AT A LOCATION TYPE
+  ! --- GET NUMBER OF STREAM NODES WITH BUDGET OUTPUT 
   ! -------------------------------------------------------------
-  FUNCTION GetNDataList_AtLocationType(AppStream,iLocationType) RESULT(NData)
+  FUNCTION GetNStrmNodes_WithBudget(AppStream) RESULT(iNStrmNodeBud)
     CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
-    INTEGER,INTENT(IN)                  :: iLocationType
-    INTEGER                             :: NData
-    
-    !Initialize
-    NData = 0
-    
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_StrmReach)
-            !Is stream reach budget defined?
-            IF (AppStream%StrmReachBudRawFile_Defined) THEN
-                NData = 1
-            END IF
-           
-           
-        CASE (iLocationType_StrmNode)
-            !Is stream node budget defined?
-            IF (AppStream%StrmNodeBudget%StrmNodeBudRawFile_Defined) THEN
-                NData = 1
-            END IF
- 
-            
-        CASE (iLocationType_StrmHydObs)
-            !Is hydrograph print-out defined?
-            IF (AppStream%StrmHyd%IsOutFileDefined()) THEN
-                IF (AppStream%StrmHyd%iHydType .EQ. iHydBoth) THEN
-                    NData = 2
-                ELSE
-                    NData = 1
-                END IF
-            END IF
-    END SELECT
-    
-  END FUNCTION GetNDataList_AtLocationType
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET A LIST OF DATA TYPES FOR POST-PROCESSING AT A LOCATION TYPE
-  ! -------------------------------------------------------------
-  SUBROUTINE GetDataList_AtLocationType(AppStream,iLocationType,cDataList,cFileList,lBudgetType) 
-    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
-    INTEGER,INTENT(IN)                  :: iLocationType
-    CHARACTER(LEN=*),ALLOCATABLE        :: cDataList(:),cFileList(:)
-    LOGICAL,ALLOCATABLE                 :: lBudgetType(:)
+    INTEGER                             :: iNStrmNodeBud
     
     !Local variables
-    INTEGER                  :: ErrorCode
+    INTEGER             :: iErrorCode
+    INTEGER,ALLOCATABLE :: iBudNodes(:)
+    
+    CALL AppStream%StrmNodeBudget%GetBudNodes(iBudNodes)
+    iNStrmNodeBud = SIZE(iBudNodes)
+    
+    DEALLOCATE (iBudNodes , STAT=iErrorCode)
+    
+  END FUNCTION GetNStrmNodes_WithBudget
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM NODE IDs WITH BUDGET OUTPUT 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetStrmNodeIDs_WithBudget(AppStream,iIDs)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,ALLOCATABLE,INTENT(OUT)     :: iIDs(:)
+    
+    !Local variables
+    INTEGER :: indx
+    
+    !Get stream node indices
+    CALL AppStream%StrmNodeBudget%GetBudNodes(iIDs)
+    
+    !Convert stream node indices to IDs
+    DO indx=1,SIZE(iIDs)
+        iIDs(indx) = AppStream%GetStrmNodeID(iIDs(indx))
+    END DO
+    
+  END SUBROUTINE GetStrmNodeIDs_WithBudget
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET LIST 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_List(AppStream,iBudgetTypeList,iBudgetLocationTypeList,cBudgetDescriptions,cBudgetFiles)
+    CLASS(BaseAppStreamType),INTENT(IN)      :: AppStream
+    INTEGER,ALLOCATABLE,INTENT(OUT)          :: iBudgetTypeList(:),iBudgetLocationTypeList(:)          
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cBudgetDescriptions(:),cBudgetFiles(:)
+    
+    !Local variables
+    INTEGER                  :: iCount,iErrorCode,iTypeList(3),iLocationList(3)
+    CHARACTER(LEN=500)       :: cFiles(3)
+    CHARACTER(LEN=100)       :: cDescription(3)
     CHARACTER(:),ALLOCATABLE :: cFileName
     
     !Initialize
-    DEALLOCATE (cDataList , cFileList , lBudgetType , STAT=ErrorCode)
+    iCount = 0
+    DEALLOCATE (iBudgetTypeList , iBudgetLocationTypeList , cBudgetDescriptions , cBudgetFiles , STAT=iErrorCode)
+         
+    !Stream node budget
+    IF (AppStream%StrmNodeBudget%StrmNodeBudRawFile_Defined) THEN
+        CALL AppStream%StrmNodeBudget%StrmNodeBudRawFile%GetFileName(cFileName)
+        cFiles(iCount+1)        = cFileName
+        iTypeList(iCount+1)     = f_iBudgetType_StrmNode
+        iLocationList(iCount+1) = f_iLocationType_StrmNodeBud
+        cDescription(iCount+1)  = f_cDescription_StrmNodeBudget
+        iCount                  = iCount + 1 
+    END IF
     
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_StrmReach)
-            !Is stream reach budget defined?
-            IF (AppStream%StrmReachBudRawFile_Defined) THEN
-                ALLOCATE (cDataList(1) , lBudgetType(1) , cFileList(1))
-                cDataList   = cDataList_AtStrmReach
-                lBudgetType = .TRUE.
-                CALL AppStream%StrmReachBudRawFile%GetFileName(cFileName)
-                cFileList = ''
-                cFileList = cFileName
-            END IF
-           
-           
-        CASE (iLocationType_StrmNode)
-            !Is stream node budget defined?
-            IF (AppStream%StrmNodeBudget%StrmNodeBudRawFile_Defined) THEN
-                ALLOCATE (cDataList(1) , lBudgetType(1) , cFileList(1))
-                cDataList   = cDataList_AtStrmNode
-                lBudgetType = .TRUE.
-                CALL AppStream%StrmNodeBudget%StrmNodeBudRawFile%GetFileName(cFileName)
-                cFileList = ''
-                cFileList = cFileName
-            END IF
- 
-            
-        CASE (iLocationType_StrmHydObs)
-            !Is hydrograph print-out defined?
-            IF (AppStream%StrmHyd%IsOutFileDefined()) THEN
-                IF (AppStream%StrmHyd%iHydType .EQ. iHydBoth) THEN
-                    ALLOCATE (cDataList(2) , lBudgetType(2) , cFileList(2))
-                    cDataList(1) = cDataList_AtStrmHydObs_Flow
-                    cDataList(2) = cDataList_AtStrmHydObs_Stage
-                    lBudgetType  = .FALSE.
-                    CALL AppStream%StrmHyd%GetFileName(cFileName)
-                    cFileList = ''
-                    cFileList = TRIM(StripTextUntilCharacter(ADJUSTL(cFileName),'.',Back=.TRUE.)) // '.hdf'  !Before this method, all hydrographs must have been copied into an HDF file
-                ELSE
-                    ALLOCATE (cDataList(1) , lBudgetType(1) , cFileList(1))
-                    IF (AppStream%StrmHyd%iHydType .EQ. iHydFlow) THEN
-                        cDataList = cDataList_AtStrmHydObs_Flow
-                    ELSE
-                        cDataList = cDataList_AtStrmHydObs_Stage
-                    END IF
-                    lBudgetType = .FALSE.
-                    CALL AppStream%StrmHyd%GetFileName(cFileName)
-                    cFileList = ''
-                    cFileList = TRIM(StripTextUntilCharacter(ADJUSTL(cFileName),'.',Back=.TRUE.)) // '.hdf'  !Before this method, all hydrographs must have been copied into an HDF file
-                END IF
-            END IF
-    END SELECT
+    !Stream reach budget
+    IF (AppStream%StrmReachBudRawFile_Defined) THEN
+        CALL AppStream%StrmReachBudRawFile%GetFileName(cFileName)
+        cFiles(iCount+1)        = cFileName
+        iTypeList(iCount+1)     = f_iBudgetType_StrmReach
+        iLocationList(iCount+1) = f_iLocationType_StrmReach
+        cDescription(iCount+1)  = f_cDescription_StrmReachBudget
+        iCount                  = iCount + 1 
+    END IF
+     
+    !Diversion details (ignore for now)
+    !IF (AppStream%AppDiverBypass%DiverDetailsBudRawFile_Defined) THEN
+    !    CALL AppStream%AppDiverBypass%DiverDetailsBudRawFile%GetFileName(cFileName)
+    !    cFiles(iCount+1)        = cFileName
+    !    iTypeList(iCount+1)     = f_iBudgetType_DiverDetail
+    !    iLocationList(iCount+1) = f_iLocationType_Diversion
+    !    cDescription(iCount+1)  = f_cDescription_DiverDetailBudget
+    !    iCount                  = iCount + 1 
+    !END IF
     
-  END SUBROUTINE GetDataList_AtLocationType
-  
-  
+    !Copy info to retrun arguments
+    ALLOCATE (iBudgetTypeList(iCount) , iBudgetLocationTypeList(iCount) , cBudgetDescriptions(iCount) , cBudgetFiles(iCount))
+    iBudgetTypeList         = iTypeList(1:iCount)
+    iBudgetLocationTypeList = iLocationList(1:iCount)
+    cBudgetDescriptions     = cDescription(1:iCount)
+    cBudgetFiles            = cFiles(1:iCount)
+    
+  END SUBROUTINE GetBudget_List
+
+
   ! -------------------------------------------------------------
-  ! --- GET LOCATIONS THAT HAS A DATA TYPE FOR POST-PROCESSING
+  ! --- GET NUMBER OF COLUMNS IN BUDGET FILE (EXCLUDING TIME COLUMN) 
   ! -------------------------------------------------------------
-  SUBROUTINE GetLocationsWithData(AppStream,iLocationType,cDataType,iLocations) 
+  SUBROUTINE GetBudget_NColumns(AppStream,iBudgetType,iLocationIndex,iNCols,iStat)
     CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
-    INTEGER,INTENT(IN)                  :: iLocationType
-    CHARACTER(LEN=*),INTENT(IN)         :: cDataType    !Not used since there is one data type for each location type
-    INTEGER,ALLOCATABLE,INTENT(OUT)     :: iLocations(:)
+    INTEGER,INTENT(IN)                  :: iBudgetType,iLocationIndex
+    INTEGER,INTENT(OUT)                 :: iNCols,iStat  
     
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_StrmReach)
-            !Is stream reach budget defined?
+    !Initialize
+    iStat   =  0
+    iNCols  =  0
+    
+    SELECT CASE (iBudgetType)
+        CASE (f_iBudgetType_StrmNode)
+            CALL AppStream%StrmNodeBudget%GetBudget_NColumns(iLocationIndex,iNCols,iStat)
+
+        CASE (f_iBudgetType_StrmReach)
             IF (AppStream%StrmReachBudRawFile_Defined) THEN
-                ALLOCATE (iLocations(1))
-                iLocations = iAllLocationIDsListed
+                !Get number of columns (includes Time column)
+                CALL AppStream%StrmReachBudRawFile%GetNDataColumns(iLocationIndex,iNCols,iStat) 
+                !Exclude Time column
+                iNCols = iNCols - 1
             END IF
-           
-           
-        CASE (iLocationType_StrmNode)
-            !Is stream node budget defined?
-            IF (AppStream%StrmNodeBudget%StrmNodeBudRawFile_Defined) THEN
-                CALL AppStream%StrmNodeBudget%GetBudNodes(iLocations)
-            END IF
- 
             
-        CASE (iLocationType_StrmHydObs)
-            !Is hydrograph print-out defined?
-            IF (AppStream%StrmHyd%IsOutFileDefined()) THEN
-                ALLOCATE (iLocations(1))
-                iLocations = iAllLocationIDsListed
-            END IF
+        CASE (f_iBudgetType_DiverDetail)
+            CALL AppStream%AppDiverBypass%GetBudget_NColumns(iLocationIndex,iNCols,iStat)
+            
     END SELECT
-    
-  END SUBROUTINE GetLocationsWithData
-  
-  
+        
+  END SUBROUTINE GetBudget_NColumns
+
+
   ! -------------------------------------------------------------
-  ! --- GET SUB-COMPONENTS OF A DATA TYPE FOR POST-PROCESSING AT A LOCATION TYPE
+  ! --- GET BUDGET COLUMN TITLES (EXCLUDING TIME COLUMN) 
   ! -------------------------------------------------------------
-  SUBROUTINE GetSubDataList_AtLocation(AppStream,iLocationType,iLocationID,cDataType,cSubDataList) 
-    CLASS(BaseAppStreamType),INTENT(IN)      :: AppStream
-    INTEGER,INTENT(IN)                       :: iLocationType,iLocationID
-    CHARACTER(LEN=*),INTENT(IN)              :: cDataType
-    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cSubDataList(:)
+  SUBROUTINE GetBudget_ColumnTitles(AppStream,iBudgetType,iLocationIndex,cUnitLT,cUnitAR,cUnitVL,cColTitles,iStat)
+    CLASS(BaseAppStreamType),TARGET,INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                         :: iBudgetType,iLocationIndex
+    CHARACTER(LEN=*),INTENT(IN)                :: cUnitLT,cUnitAR,cUnitVL
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT)   :: cColTitles(:) 
+    INTEGER,INTENT(OUT)                        :: iStat
     
     !Local variables
-    INTEGER :: ErrorCode
+    CHARACTER(LEN=ModNameLen+22)                  :: ThisProcedure = ModName // 'GetBudget_ColumnTitles'
+    INTEGER                                       :: iNCols,iErrorCode
+    CHARACTER(LEN=f_iColumnHeaderLen),ALLOCATABLE :: cColTitles_Local(:)
     
     !Initialize
-    DEALLOCATE (cSubDataList , STAT=ErrorCode)
-    
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_StrmReach)
-            !Only stream reach budget has sub-data
-            IF (TRIM(cDataType) .EQ. cDataList_AtStrmReach) THEN
-                IF (AppStream%StrmReachBudRawFile_Defined) THEN
-                    ALLOCATE (cSubDataList(NStrmBudColumns))
-                    cSubDataList = cBudgetColumnTitles
-                END IF
-            END IF
+    iStat = 0
+        
+    SELECT CASE (iBudgetType)
+        CASE (f_iBudgetType_StrmNode)
+            CALL AppStream%StrmNodeBudget%GetBudget_ColumnTitles(iLocationIndex,cUnitLT,cUnitAR,cUnitVL,cColTitles,iStat)
+
+        CASE (f_iBudgetType_StrmReach)
+            IF (AppStream%StrmReachBudRawFile_Defined) THEN
+                !Number of columns (includes Time column)
+                CALL AppStream%StrmReachBudRawFile%GetNDataColumns(iLocationIndex,iNCols,iStat)
+                IF (iStat .NE. 0) RETURN
+                
+                !Get column titles (includes Time column)
+                ALLOCATE (cColTitles_Local(iNCols))
+                cColTitles_Local = AppStream%StrmReachBudRawFile%GetFullColumnHeaders(iLocationIndex,iNCols)
+                
+                !Insert units
+                CALL AppStream%StrmReachBudRawFile%ModifyFullColumnHeaders(cUnitLT,cUnitAR,cUnitVL,cColTitles_Local)
+                
+                !Remove Time column
+                iNCols = iNCols - 1
+                ALLOCATE (cColTitles(iNCols))
+                cColTitles = ADJUSTL(cColTitles_Local(2:))
+                
+                !Clear memory
+                DEALLOCATE (cColTitles_Local , STAT=iErrorCode)
+            ELSE
+                CALL SetLastMessage('Stream reach budget is not defined to retreive budget column titles!',f_iFatal,ThisProcedure)
+                iStat = -1
+            END IF    
             
-            
-        CASE (iLocationType_StrmNode)
-            !Only stream node budget has sub-data
-            IF (TRIM(cDataType) .EQ. cDataList_AtStrmNode) THEN
-                IF (AppStream%StrmNodeBudget%StrmNodeBudRawFile_Defined) THEN
-                    IF (AppStream%StrmHyd%IsHydrographAtNodeRequested(iLocationID)) THEN
-                        ALLOCATE (cSubDataList(NStrmBudColumns))
-                        cSubDataList = cBudgetColumnTitles
-                    END IF
-                END IF
-            END IF
+        CASE (f_iBudgetType_DiverDetail)
+            CALL AppStream%AppDiverBypass%GetBudget_ColumnTitles(iLocationIndex,cUnitLT,cUnitAR,cUnitVL,cColTitles,iStat)
             
     END SELECT
+        
+  END SUBROUTINE GetBudget_ColumnTitles
+
+
+  ! -------------------------------------------------------------
+  ! --- GET MONTHLY BUDGET FLOWS FROM BaseAppStream OBJECT
+  ! --- (Assumes cBeginDate and cEndDate are adjusted properly)
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_MonthlyFlows_GivenAppStream(AppStream,iBudgetType,iLocationIndex,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    CLASS(BaseAppStreamType),TARGET,INTENT(IN) :: AppStream
+    CHARACTER(LEN=*),INTENT(IN)                :: cBeginDate,cEndDate
+    INTEGER,INTENT(IN)                         :: iBudgetType,iLocationIndex  !Location can be stream node, reach or diversion
+    REAL(8),INTENT(IN)                         :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)            :: rFlows(:,:)  !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT)   :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                        :: iStat
     
-  END SUBROUTINE GetSubDataList_AtLocation
-  
+    !Local variables
+    CHARACTER(LEN=ModNameLen+37) :: ThisProcedure = ModName // 'GetBudget_MonthlyFlows_GivenAppStream'
+    INTEGER                      :: ID
+    
+    !Initialize
+    iStat =  0
+    
+    SELECT CASE (iBudgetType)
+        CASE (f_iBudgetType_StrmNode)
+            ID = AppStream%GetStrmNodeID(iLocationIndex)
+            CALL AppStream%StrmNodeBudget%GetBudget_MonthlyFlows(ID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+            
+        CASE (f_iBudgetType_StrmReach)
+            IF (AppStream%StrmReachBudRawFile_Defined) THEN
+                ID = AppStream%Reaches(iLocationIndex)%ID
+                CALL GetBudget_MonthlyFlows_GivenFile(AppStream%StrmReachBudRawFile,iBudgetType,ID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+            ELSE
+                CALL SetLastMessage('Stream reach budget is not defined to retrieve monthly budget flows!',f_iFatal,ThisProcedure)
+                iStat = -1
+            END IF
+            
+        CASE (f_iBudgetType_DiverDetail)
+            CALL SetLastMessage('Monthly budget values cannot be retrieved from Diversion Details file!',f_iWarn,ThisProcedure)
+            ALLOCATE (rFlows(0,0) , cFlowNames(0))
+            iStat = -1
+    END SELECT
+        
+  END SUBROUTINE GetBudget_MonthlyFlows_GivenAppStream
+
   
   ! -------------------------------------------------------------
-  ! --- GET MODEL DATA AT A LOCATION FOR POST-PROCESSING FROM THE FULLY INSTANTIATED MODEL
+  ! --- GET MONTHLY BUDGET FLOWS FROM A DEFINED BUDGET FILE
+  ! --- (Assumes cBeginDate and cEndDate are adjusted properly)
   ! -------------------------------------------------------------
-  SUBROUTINE GetModelData_AtLocation_FromFullModel(AppStream,iLocationType,iLocationID,cDataType,iCol,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat) 
+  SUBROUTINE GetBudget_MonthlyFlows_GivenFile(Budget,iBudgetType,iLocationID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    TYPE(BudgetType),INTENT(IN)              :: Budget      !Assumes Budget file is already open
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate
+    INTEGER,INTENT(IN)                       :: iBudgetType,iLocationID  !Location can be stream node, reach or diversion
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)  !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+32) :: ThisProcedure = ModName // 'GetBudget_MonthlyFlows_GivenFile'
+    INTEGER,PARAMETER            :: iReadCols(12) = [1,2,3,4,5,6,7,8,9,10,11,12]
+    INTEGER                      :: iDimActual,iNTimeSteps
+    REAL(8),ALLOCATABLE          :: rValues(:,:)
+    TYPE(StrmNodeBudgetType)     :: StrmNodeBudget
+    
+    SELECT CASE (iBudgetType)
+        CASE (f_iBudgetType_StrmNode)
+            CALL StrmNodeBudget%GetBudget_MonthlyFlows(Budget,iLocationID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+  
+        CASE (f_iBudgetType_DiverDetail)
+            CALL SetLastMessage('Monthly budget values cannot be retrieved from Diversion Details file!',f_iWarn,ThisProcedure)
+            iStat = -1
+            
+        CASE (f_iBudgetType_StrmReach)
+            !Get simulation time steps and allocate array to read data
+            iNTimeSteps = Budget%GetNTimeSteps()
+            ALLOCATE (rValues(13,iNTimeSteps)) !Adding 1 to the first dimension for Time column; it will be removed later
+            
+            !Read data
+            CALL Budget%ReadData(iLocationID,iReadCols,'1MON',cBeginDate,cEndDate,0d0,0d0,0d0,1d0,1d0,rFactVL,iDimActual,rValues,iStat)
+            IF (iStat .NE. 0) RETURN
+            
+            !Store values in return argument
+            ALLOCATE (rFlows(11,iDimActual) , cFlowNames(11))
+            rFlows(1,:)  = rValues(2,1:iDimActual)                             !Upstream Inflow              
+            rFlows(2,:)  = -rValues(3,1:iDimActual)                            !Downstream Outflow          
+            rFlows(3,:)  = rValues(4,1:iDimActual)                             !Tributary Inflow            
+            rFlows(4,:)  = rValues(5,1:iDimActual)                             !Tile Drain                  
+            rFlows(5,:)  = rValues(6,1:iDimActual)                             !Runoff                      
+            rFlows(6,:)  = rValues(7,1:iDimActual)                             !Return Flow                  
+            rFlows(7,:)  = rValues(8,1:iDimActual) + rValues(9,1:iDimActual)   !Gain from GW    
+            rFlows(8,:)  = rValues(10,1:iDimActual)                            !Gain from Lake               
+            rFlows(9,:) = -rValues(11,1:iDimActual)                            !Riparian ET                  
+            rFlows(10,:) = -rValues(12,1:iDimActual)                           !Diversion                    
+            rFlows(11,:) = -rValues(13,1:iDimActual)                           !By-pass Flow                 
+            
+            !Flow names
+            cFlowNames     = ''
+            cFlowNames(1)  = 'Upstream Inflow'    
+            cFlowNames(2)  = 'Downstream Outflow' 
+            cFlowNames(3)  = 'Tributary Inflow'   
+            cFlowNames(4)  = 'Tile Drain'         
+            cFlowNames(5)  = 'Runoff'             
+            cFlowNames(6)  = 'Return Flow'        
+            cFlowNames(7)  = 'Gain from GW'    
+            cFlowNames(8)  = 'Gain from Lake'     
+            cFlowNames(9)  = 'Riparian ET'        
+            cFlowNames(10) = 'Diversion'          
+            cFlowNames(11) = 'Bypass Flow'       
+    END SELECT
+        
+  END SUBROUTINE GetBudget_MonthlyFlows_GivenFile
+
+  
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET TIME SERIES DATA FOR A SET OF COLUMNS 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_TSData(AppStream,iBudgetType,iLocationIndex,iCols,cBeginDate,cEndDate,cInterval,rFactLT,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
     CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
-    INTEGER,INTENT(IN)                  :: iLocationType,iLocationID,iCol
-    CHARACTER(LEN=*),INTENT(IN)         :: cDataType,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval
-    REAL(8),INTENT(IN)                  :: rFact_LT,rFact_AR,rFact_VL
-    INTEGER,INTENT(OUT)                 :: iDataUnitType,nActualOutput
-    REAL(8),INTENT(OUT)                 :: rOutputDates(:),rOutputValues(:)
+    INTEGER,INTENT(IN)                  :: iBudgetType,iLocationIndex,iCols(:)
+    CHARACTER(LEN=*),INTENT(IN)         :: cBeginDate,cEndDate,cInterval
+    REAL(8),INTENT(IN)                  :: rFactLT,rFactAR,rFactVL
+    REAL(8),INTENT(OUT)                 :: rOutputDates(:),rOutputValues(:,:)    !rOutputValues is in (timestep,column) format
+    INTEGER,INTENT(OUT)                 :: iDataTypes(:),inActualOutput,iStat
+    
+    !Local variables
+    INTEGER :: indx,ID
+    
+    SELECT CASE (iBudgetType)
+        CASE (f_iBudgetType_StrmNode)
+            ID = AppStream%GetStrmNodeID(iLocationIndex)
+            CALL AppStream%StrmNodeBudget%GetBudget_TSData(ID,iCols,cBeginDate,cEndDate,cInterval,rFactLT,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+            
+        CASE (f_iBudgetType_StrmReach)
+            IF (AppStream%StrmReachBudRawFile_Defined) THEN
+                ID = AppStream%Reaches(iLocationIndex)%ID
+                !Read data
+                DO indx=1,SIZE(iCols)
+                    CALL AppStream%StrmReachBudRawFile%ReadData(ID,iCols(indx),cInterval,cBeginDate,cEndDate,1d0,0d0,0d0,rFactLT,rFactAR,rFactVL,iDataTypes(indx),inActualOutput,rOutputDates,rOutputValues(:,indx),iStat)
+                    IF (iStat .NE. 0) RETURN
+                END DO
+            ELSE
+                iStat          = 0
+                inActualOutput = 0
+                iDataTypes     = -1
+                rOutputDates   = 0.0
+                rOutputValues  = 0.0
+            END IF
+            
+        CASE (f_iBudgetType_DiverDetail)
+            CALL AppStream%AppDiverBypass%GetBudget_TSData(iLocationIndex,iCols,cBeginDate,cEndDate,cInterval,rFactLT,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+
+    END SELECT
+           
+  END SUBROUTINE GetBudget_TSData
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET A LIST OF HYDROGRAPH TYPES AVAILABLE FOR RETRIEVAL
+  ! -------------------------------------------------------------
+  SUBROUTINE GetHydrographTypeList(AppStream,cHydTypeList,iHydLocationTypeList,cHydFileList)
+    CLASS(BaseAppStreamType),INTENT(IN)      :: AppStream
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cHydTypeList(:),cHydFileList(:)
+    INTEGER,ALLOCATABLE,INTENT(OUT)          :: iHydLocationTypeList(:)
+    
+    !Local variables
+    INTEGER                  :: iErrorCode
+    CHARACTER(:),ALLOCATABLE :: cFileName
+    
+    !Initailize
+    DEALLOCATE (cHydTypeList , iHydLocationTypeList , cHydFileList , STAT=iErrorCode)
+    
+    !Is hydrograph print-out defined?
+    IF (AppStream%StrmHyd%IsOutFileDefined()) THEN
+        CALL AppStream%StrmHyd%GetFileName(cFileName)
+        IF (AppStream%StrmHyd%iHydType .EQ. iHydBoth) THEN
+            ALLOCATE (cHydTypeList(2) , cHydFileList(2) , iHydLocationTypeList(2))
+            cHydTypeList(1)      = f_cDescription_StrmHyd_Flow
+            cHydTypeList(2)      = f_cDescription_StrmHyd_Stage
+            iHydLocationTypeList = f_iLocationType_StrmHydObs
+            cHydFileList         = ''
+            cHydFileList         = TRIM(StripTextUntilCharacter(ADJUSTL(cFileName),'.',Back=.TRUE.)) // '.hdf'  !Before this method, all hydrographs must have been copied into an HDF file
+        ELSE
+            ALLOCATE (cHydTypeList(1) , cHydFileList(1) , iHydLocationTypeList(1))
+            IF (AppStream%StrmHyd%iHydType .EQ. iHydFlow) THEN
+                cHydTypeList = f_cDescription_StrmHyd_Flow
+            ELSE
+                cHydTypeList = f_cDescription_StrmHyd_Stage
+            END IF
+            iHydLocationTypeList = f_iLocationType_StrmHydObs
+            cHydFileList         = ''
+            cHydFileList         = TRIM(StripTextUntilCharacter(ADJUSTL(cFileName),'.',Back=.TRUE.)) // '.hdf'  !Before this method, all hydrographs must have been copied into an HDF file
+        END IF
+    ELSE
+        ALLOCATE (cHydTypeList(0) , cHydFileList(0) , iHydLocationTypeList(0))
+    END IF
+        
+  END SUBROUTINE GetHydrographTypeList
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM FLOW HYDROGRAPH OUTPUT FILENAME
+  ! -------------------------------------------------------------
+  SUBROUTINE GetHydOutputFileName(AppStream,cFileName)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    CHARACTER(:),ALLOCATABLE,INTENT(OUT) :: cFileName
+    
+    CALL AppStream%StrmHyd%GetFileName(cFileName)
+    
+  END SUBROUTINE GetHydOutputFileName
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET PURPOSE OF DIVERSIONS (IF THEY SERVE AG, URBAN OR BOTH) BEFORE ANY ADJUSTMENT
+  ! -------------------------------------------------------------
+  SUBROUTINE GetDiversionPurpose(AppStream,iDivers,iAgOrUrban,iStat)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iDivers(:)
+    INTEGER,INTENT(OUT)                 :: iAgOrUrban(:),iStat
+    
+    CALL AppStream%AppDiverBypass%GetDiversionPurpose(iDivers,iAgOrUrban,iStat)
+    
+  END SUBROUTINE GetDiversionPurpose
+
+  
+  ! -------------------------------------------------------------
+  ! --- GET ACTUAL DIVERSIONS FROM SOME NODES
+  ! -------------------------------------------------------------
+  SUBROUTINE GetActualDiversions_AtSomeNodes(AppStream,iNodes,rDivers,iStat)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iNodes(:)
+    REAL(8),INTENT(OUT)                 :: rDivers(:)
     INTEGER,INTENT(OUT)                 :: iStat
     
-    !Initialize
-    iStat         = 0
-    nActualOutput = 0
+    iStat   = 0
+    rDivers = AppStream%AppDiverBypass%GetNodeDiversions(iNodes)
     
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_StrmReach)
-            !Retrieve stream reach budget data
-            IF (TRIM(cDataType) .EQ. cDataList_AtStrmReach) THEN
-                IF (AppStream%StrmReachBudRawFile_Defined) THEN
-                    CALL AppStream%StrmReachBudRawFile%ReadData(iLocationID,iCol,cOutputInterval,cOutputBeginDateAndTime,cOutputEndDateAndTime,1d0,0d0,0d0,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-                END IF
-            END IF
-            
-            
-        CASE (iLocationType_StrmNode)
-            !Retrieve stream node budget data
-            IF (TRIM(cDataType) .EQ. cDataList_AtStrmNode) THEN
-                IF (AppStream%StrmNodeBudget%StrmNodeBudRawFile_Defined) THEN
-                    IF (AppStream%StrmHyd%IsHydrographAtNodeRequested(iLocationID)) THEN
-                        CALL AppStream%StrmNodeBudget%StrmNodeBudRawFile%ReadData(iLocationID,iCol,cOutputInterval,cOutputBeginDateAndTime,cOutputEndDateAndTime,1d0,0d0,0d0,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-                    END IF
-                END IF
-            END IF
-                
-            
-        CASE (iLocationType_StrmHydObs)
-            !Retrieve stream hydrograph
-            IF (TRIM(cDataType).EQ.cDataList_AtStrmHydObs_Flow) THEN    
-                CALL AppStream%StrmHyd%ReadStrmHydrograph_AtNode(iLocationID,iHydFlow,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_LT,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-            ELSEIF (TRIM(cDataType).EQ.cDataList_AtStrmHydObs_Stage) THEN
-                CALL AppStream%StrmHyd%ReadStrmHydrograph_AtNode(iLocationID,iHydStage,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_LT,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-            END IF
-            
-    END SELECT
+  END SUBROUTINE GetActualDiversions_AtSomeNodes
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET ACTUAL DIVERSIONS FOR SOME DIVERSIONS
+  ! -------------------------------------------------------------
+  SUBROUTINE GetActualDiversions_AtSomeDiversions(AppStream,iDivers,rDivers,iStat)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iDivers(:)
+    REAL(8),INTENT(OUT)                 :: rDivers(:)
+    INTEGER,INTENT(OUT)                 :: iStat
     
-  END SUBROUTINE GetModelData_AtLocation_FromFullModel
+    CALL AppStream%AppDiverBypass%GetActualDiversions_AtSomeDiversions(iDivers,rDivers,iStat)
+    
+  END SUBROUTINE GetActualDiversions_AtSomeDiversions
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET DIVERSIONS FOR A SPECIFIED DELIVERIES; I.E. ADD LOSSES TO DELIVERIES
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetDiversionsForDeliveries(AppStream,iDivers,rDelis,rDivers)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iDivers(:)
+    REAL(8),INTENT(IN)                  :: rDelis(:)
+    REAL(8),INTENT(OUT)                 :: rDivers(:)
+    
+    CALL AppStream%AppDiverBypass%GetDiversionsForDeliveries(iDivers,rDelis,rDivers)
+    
+  END SUBROUTINE GetDiversionsForDeliveries
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET DELIVERY RELATED TO A DIVERSION
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetDeliveryAtDiversion(AppStream,iDiver) RESULT(rDeli)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iDiver
+    REAL(8)                             :: rDeli
+    
+    rDeli = AppStream%AppDiverBypass%GetDeliveryAtDiversion(iDiver)
+    
+  END FUNCTION GetDeliveryAtDiversion
   
   
   ! -------------------------------------------------------------
@@ -706,6 +1019,102 @@ CONTAINS
     Flows = AppStream%State%Flow
     
   END SUBROUTINE GetFlows
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM FLOW AT A NODE
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetFlow(AppStream,iStrmNode) RESULT(Flow)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iStrmNode
+    REAL(8)                             :: Flow
+    
+    Flow = AppStream%State(iStrmNode)%Flow
+    
+  END FUNCTION GetFlow
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM INFLOW AT A NODE
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetInflow_AtANode(AppStream,iStrmNode) RESULT(rInflow)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iStrmNode
+    REAL(8)                             :: rInflow
+    
+    rInflow = AppStream%StrmInflowData%GetInflow_AtANode(iStrmNode)
+    
+  END FUNCTION GetInflow_AtANode
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM INFLOWS AT A SET OF NODES
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetInflows_AtSomeNodes(AppStream,iStrmNodes,rInflows)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iStrmNodes(:)
+    REAL(8),INTENT(OUT)                 :: rInflows(:)
+    
+    !Local variables
+    REAL(8) :: rInflowsAll(AppStream%NStrmNodes)
+    
+    rInflowsAll = AppStream%StrmInflowData%GetInflows_AtAllNodes(AppStream%NStrmNodes)
+    rInflows    = rInflowsAll(iStrmNodes)
+    
+  END SUBROUTINE GetInflows_AtSomeNodes
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM INFLOWS AT SOME INFLOWS
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetInflows_AtSomeInflows(AppStream,iInflows,rInflows)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iInflows(:)
+    REAL(8),INTENT(OUT)                 :: rInflows(:)
+    
+    !Local variables
+    REAL(8) :: rInflowsAll(AppStream%StrmInflowData%iSize)
+    
+    CALL AppStream%StrmInflowData%GetInflows_AtAllInflows(rInflowsAll)
+    rInflows    = rInflowsAll(iInflows)
+       
+  END SUBROUTINE GetInflows_AtSomeInflows
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF INFLOWS
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetNInflows(AppStream) RESULT(iNInflows)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER                             :: iNInflows
+    
+    iNInflows = AppStream%StrmInflowData%GetNInflows()
+    
+  END FUNCTION GetNInflows
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET INFLOW NODES
+  ! -------------------------------------------------------------
+  SUBROUTINE GetInflowNodes(AppStream,iNodes)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,ALLOCATABLE                 :: iNodes(:)
+    
+    CALL AppStream%StrmInflowData%GetInflowNodes(iNodes)
+    
+  END SUBROUTINE GetInflowNodes
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET INFLOW IDs
+  ! -------------------------------------------------------------
+  SUBROUTINE GetInflowIDs(AppStream,IDs)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,ALLOCATABLE                 :: IDs(:)
+    
+    CALL AppStream%StrmInflowData%GetInflowIDs(IDs)
+    
+  END SUBROUTINE GetInflowIDs
   
   
   ! -------------------------------------------------------------
@@ -763,6 +1172,85 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
+  ! --- GET DIVERSION/DELIVERY IDS
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetDiversionIDs(AppStream,IDs)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(OUT)                 :: IDs(:)
+    
+    CALL AppStream%AppDiverBypass%GetDiversionIDs(IDs)
+    
+  END SUBROUTINE GetDiversionIDs
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET BYPASS IDS
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetBypassIDs(AppStream,IDs)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(OUT)                 :: IDs(:)
+    
+    CALL AppStream%AppDiverBypass%GetBypassIDs(IDs)
+    
+  END SUBROUTINE GetBypassIDs
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET REACH IDS
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetReachIDs(AppStream,IDs)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(OUT)                 :: IDs(AppStream%NReaches)
+    
+    IDs = AppStream%Reaches%ID
+    
+  END SUBROUTINE GetReachIDs
+  
+  
+  ! -------------------------------------------------------------
+  ! --- CONVERT REACH ID TO INDEX
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetReachIndex(AppStream,iReachID) RESULT(Index)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iReachID
+    INTEGER                             :: Index
+    
+    Index = StrmReach_ID_To_Index(AppStream%Reaches,iReachID)
+    
+  END FUNCTION GetReachIndex
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET REACHES FOR SOME STREAM NODES
+  ! -------------------------------------------------------------
+  SUBROUTINE GetReaches_ForStrmNodes(AppStream,iStrmNodes,iReaches,iStat)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iStrmNodes(:)
+    INTEGER,INTENT(OUT)                 :: iReaches(:),iStat
+    
+    !Local variables
+    INTEGER :: indxNode,indxReach,iStrmNode
+    
+    !Initialize
+    iStat = 0
+    
+    !Get the reach indices for stream nodes
+    DO indxNode=1,SIZE(iStrmNodes)
+        iStrmNode = iStrmNodes(indxNode)
+        DO indxReach=1,AppStream%NReaches
+            IF (iStrmNode .GE. AppStream%Reaches(indxReach)%UpstrmNode) THEN
+                IF (iStrmNode .LE. AppStream%Reaches(indxReach)%DownstrmNode) THEN
+                    iReaches(indxNode) = indxReach
+                    EXIT
+                END IF
+            END IF
+        END DO
+    END DO
+    
+  END SUBROUTINE GetReaches_ForStrmNodes
+  
+  
+  ! -------------------------------------------------------------
   ! --- GET NUMBER OF DIVERSIONS
   ! -------------------------------------------------------------
   PURE FUNCTION GetNDiver(AppStream) RESULT(NDiver)
@@ -772,6 +1260,20 @@ CONTAINS
     NDiver = AppStream%AppDiverBypass%NDiver
     
   END FUNCTION GetNDiver
+
+
+  ! -------------------------------------------------------------
+  ! --- GET STREAM NODES FOR A GIVEN SET OF DIVERSIONS
+  ! -------------------------------------------------------------
+  SUBROUTINE GetDiversionsExportNodes(AppStream,iDivList,iStrmNodeList)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iDivList(:)
+    INTEGER,INTENT(OUT)                 :: iStrmNodeList(:)
+    
+    !Get the stream node index where diversions are originating
+    CALL AppStream%AppDiverBypass%GetDiversionsExportNodes(iDivList,iStrmNodeList)
+    
+  END SUBROUTINE GetDiversionsExportNodes
 
 
   ! -------------------------------------------------------------
@@ -787,15 +1289,107 @@ CONTAINS
 
 
   ! -------------------------------------------------------------
-  ! --- GET REACH NAMES
+  ! --- GET BYPASS/DIVERSION ORIGIN AND DESTINATION DATA
   ! -------------------------------------------------------------
-  PURE SUBROUTINE GetReachNames(AppStream,cNamesList)
+  PURE SUBROUTINE GetBypassDiverOriginDestData(AppStream,lIsBypass,iBypassOrDiver,iNodeExport,iDestType,iDest)
     CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    LOGICAL,INTENT(IN)                  :: lIsBypass
+    INTEGER,INTENT(IN)                  :: iBypassOrDiver
+    INTEGER,INTENT(OUT)                 :: iNodeExport,iDestType,iDest
+    
+    CALL AppStream%AppDiverBypass%GetBypassDiverOriginDestData(lIsBypass,iBypassOrDiver,iNodeExport,iDestType,iDest)
+    
+  END SUBROUTINE GetBypassDiverOriginDestData
+  
+
+  ! -------------------------------------------------------------
+  ! --- GET NET FLOW FROM A BYPASS (AFTER RECOVERABLE AND NON-RECOVERABLE LOSSES ARE TAKEN OUT)
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetBypassReceived_FromABypass(AppStream,iBypass) RESULT(rFlow)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iBypass
+    REAL(8)                             :: rFlow
+    
+    rFlow = AppStream%AppDiverBypass%GetBypassReceived_FromABypass(iBypass)
+    
+  END FUNCTION GetBypassReceived_FromABypass
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET NET BYPASS INFLOWS AT ALL STREAM NODES
+  ! -------------------------------------------------------------
+  SUBROUTINE GetNetBypassInflows(AppStream,rBPInflows)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    REAL(8),INTENT(OUT)                 :: rBPInflows(:)
+    
+    !Local variables
+    INTEGER :: indx,iNodeArray(AppStream%NStrmNodes)
+    
+    !Initialize
+    iNodeArray = [(indx,indx=1,AppStream%NStrmNodes)]
+    
+    !Multiply bypasses by -1 because original values are bypasses as outflow, and we are converting them to inflow
+    rBPInflows = -AppStream%AppDiverBypass%GetNodeNetBypass(iNodeArray)
+    
+  END SUBROUTINE GetNetBypassInflows
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET BYPASS INFLOWS AT ALL STREAM NODES
+  ! -------------------------------------------------------------
+  SUBROUTINE GetStrmBypassInflows(AppStream,rBPInflows)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    REAL(8),INTENT(OUT)                 :: rBPInflows(:)
+    
+    CALL AppStream%AppDiverBypass%GetStrmBypassInflows(rBPInflows)
+    
+  END SUBROUTINE GetStrmBypassInflows
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET BYPASS OUTFLOWS FOR ALL BYPASSES
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetBypassOutflows(AppStream,rOutflows)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    REAL(8),INTENT(OUT)                 :: rOutflows(:)
+    
+    CALL AppStream%AppDiverBypass%GetBypassOutflows(rOutflows)
+    
+  END SUBROUTINE GetBypassOutflows
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET FEATURE NAMES
+  ! -------------------------------------------------------------
+  SUBROUTINE GetNames(AppStream,iLocationType,cNamesList)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iLocationType
     CHARACTER(LEN=*),INTENT(OUT)        :: cNamesList(:)  !Assumes array is previously dimensioned based on the number of reaches
     
-    cNamesList = Appstream%Reaches%cName
+    !Local variables
+    INTEGER             :: indx,ID 
+    INTEGER,ALLOCATABLE :: iBudNodes(:)
     
-  END SUBROUTINE GetReachNames
+    SELECT CASE (iLocationType)
+            CASE (f_iLocationType_StrmReach)
+                cNamesList = Appstream%Reaches%cName
+            
+            CASE (f_iLocationType_StrmHydObs)
+                CALL AppStream%StrmHyd%GetNames(cNamesList)
+                
+            CASE (f_iLocationType_Bypass)
+                cNamesList = AppStream%AppDiverBypass%Bypasses%cName
+                
+            CASE (f_iLocationType_StrmNodeBud)
+                cNamesList = ''
+                CALL AppStream%StrmNodeBudget%GetBudNodes(iBudNodes)
+                DO indx=1,SIZE(iBudNodes)
+                    ID               = AppStream%GetStrmNodeID(iBudNodes(indx))
+                    cNamesList(indx) = TRIM(IntToText(ID))
+                END DO
+    END SELECT
+    
+  END SUBROUTINE GetNames
   
   
   ! -------------------------------------------------------------
@@ -812,6 +1406,20 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
+  ! --- GET NUMBER OF STREAM NODES IN A REACH DEFINED WITH ITS INDEX
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetReachNNodes(AppStream,iReach) RESULT(iNNodes)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iReach
+    INTEGER                             :: iNNodes
+    
+    !Number of nodes
+    iNNodes = Appstream%Reaches(iReach)%DownstrmNode - AppStream%Reaches(iReach)%UpstrmNode + 1
+    
+  END FUNCTION GetReachNNodes
+
+  
+  ! -------------------------------------------------------------
   ! --- GET UPSTREAM NODE FOR A REACH
   ! -------------------------------------------------------------
   PURE FUNCTION GetReachUpstrmNode(AppStream,iReach) RESULT(iNode)
@@ -823,6 +1431,94 @@ CONTAINS
     
   END FUNCTION GetReachUpstrmNode
 
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM NODES FOR A GIVEN REACH 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetReachStrmNodes(AppStream,iReach,iStrmNodes,iStat)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iReach
+    INTEGER,ALLOCATABLE                 :: iStrmNodes(:)
+    INTEGER,INTENT(OUT)                 :: iStat
+    
+    !Local variables
+    INTEGER :: iNNodes,ErrorCode,iOffset,indx
+    
+    !Initialize
+    iStat = 0
+    
+    !Number of reach nodes
+    iNNodes = AppStream%Reaches(iReach)%DownstrmNode - AppStream%Reaches(iReach)%UpstrmNode + 1
+    
+    !Stream nodes for the reach
+    DEALLOCATE (iStrmNodes ,STAT=ErrorCode)
+    ALLOCATE (iStrmNodes(iNNodes))
+    iOffset = AppStream%Reaches(iReach)%UpstrmNode - 1 
+    DO indx=1,iNNodes
+        iStrmNodes(indx) = indx + iOffset
+    END DO
+    
+  END SUBROUTINE GetReachStrmNodes
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF ALL REACHES WITHIN THE NETWORK UPSTREAM FROM A REACH
+  ! --- Note: Must be used after reach network is compiled
+  ! -------------------------------------------------------------
+  FUNCTION GetNReaches_InUpstrmNetwork(AppStream,iReach) RESULT(iNReaches)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iReach
+    INTEGER                             :: iNReaches
+    
+    iNReaches = StrmReach_GetNReaches_InUpstrmNetwork(AppStream%Reaches,iReach)
+    
+  END FUNCTION GetNReaches_InUpstrmNetwork
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET ALL REACH NETWORK UPSTREAM FROM A REACH
+  ! --- Note: Must be used after reach network is compiled
+  ! -------------------------------------------------------------
+  SUBROUTINE GetReaches_InUpstrmNetwork(AppStream,iReach,iReaches)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iReach
+    INTEGER,ALLOCATABLE                 :: iReaches(:)
+    
+    CALL StrmReach_GetReaches_InUpstrmNetwork(AppStream%Reaches,iReach,iReaches)
+    
+  END SUBROUTINE GetReaches_InUpstrmNetwork
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF REACHES IMMEDIATELY UPSTREAM OF A GIVEN REACH
+  ! --- Note: Must be used after reach network is compiled
+  ! -------------------------------------------------------------
+  FUNCTION GetReachNUpstrmReaches(AppStream,iReach) RESULT(iNReaches)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iReach
+    INTEGER                             :: iNReaches
+    
+    !Get number of reaches upstream
+    iNReaches = AppStream%Reaches(iReach)%NUpstrmReaches
+    
+  END FUNCTION GetReachNUpstrmReaches
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET REACHES IMMEDIATELY UPSTREAM OF A GIVEN REACH
+  ! --- Note: Must be used after reach network is compiled
+  ! -------------------------------------------------------------
+  SUBROUTINE GetReachUpstrmReaches(AppStream,iReach,iUpstrmReaches)
+    CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
+    INTEGER,INTENT(IN)                  :: iReach
+    INTEGER,ALLOCATABLE                 :: iUpstrmReaches(:)
+    
+    !Get reaches upstream
+    ALLOCATE (iUpstrmReaches(AppStream%Reaches(iReach)%NUpstrmReaches))
+    iUpstrmReaches = AppStream%Reaches(iReach)%UpstrmReaches
+    
+  END SUBROUTINE GetReachUpstrmReaches
+  
   
   ! -------------------------------------------------------------
   ! --- GET UPSTREAM NODE FLAGS FOR ALL STREAM NODES
@@ -856,7 +1552,7 @@ CONTAINS
     IF (iReach .GT. 0) THEN
       IF (iReach.LE.AppStream%NReaches) iDestType = AppStream%Reaches(iReach)%OutflowDestType
     ELSE
-      iDestType = FlowDest_Outside
+      iDestType = f_iFlowDest_Outside
     END IF
     
   END FUNCTION GetReachOutflowDestType
@@ -1022,15 +1718,15 @@ CONTAINS
     
     SELECT CASE (iSource)
         !Due to diversions
-        CASE (iDiverRecvLoss)
+        CASE (f_iDiverRecvLoss)
             CALL ElemToRecvLoss_GetElems(AppStream%AppDiverBypass%ElemToDiverRecvLoss,Elems)
           
         !Due to bypasses
-        CASE (iBypassRecvLoss)
+        CASE (f_iBypassRecvLoss)
             CALL ElemToRecvLoss_GetElems(AppStream%AppDiverBypass%ElemToBypassRecvLoss,Elems)
           
         !Due to both bypasses and diversions
-        CASE (iAllRecvLoss)
+        CASE (f_iAllRecvLoss)
             CALL ElemToRecvLoss_GetElems(AppStream%AppDiverBypass%ElemToDiverRecvLoss,ElemsDiv)
             CALL ElemToRecvLoss_GetElems(AppStream%AppDiverBypass%ElemToBypassRecvLoss,ElemsBP)
             ALLOCATE (Elems(SIZE(ElemsDiv)+SIZE(ElemsBP)))
@@ -1060,6 +1756,19 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
+  ! --- SET DIVERSION READ
+  ! -------------------------------------------------------------
+  SUBROUTINE SetDiversionRead(AppStream,iDiver,rDiversion)
+    CLASS(BaseAppStreamType) :: AppStream
+    INTEGER,INTENT(IN)       :: iDiver
+    REAL(8),INTENT(IN)       :: rDiversion
+    
+    CALL AppStream%AppDiverBypass%SetDiversionRead(iDiver,rDiversion) 
+    
+  END SUBROUTINE SetDiversionRead
+  
+  
+  ! -------------------------------------------------------------
   ! --- SET SUPPLY SPECS
   ! -------------------------------------------------------------
   SUBROUTINE SetSupplySpecs(AppStream,DeliDestConnector,DeliRequired,IrigFracs,DeliToDest)
@@ -1070,37 +1779,9 @@ CONTAINS
     
     CALL Supply_SetSupplySpecs(AppStream%AppDiverBypass%Diver%Deli,DeliDestConnector,DeliRequired,IrigFracs,DeliToDest)
         
-    CALL SetDiverRequired(DeliRequired,AppStream)
+    CALL AppStream%AppDiverBypass%SetDiverRequired(DeliRequired)
         
   END SUBROUTINE SetSupplySpecs
-  
-  
-  ! -------------------------------------------------------------
-  ! --- SET REQUIRED DIVERSIONS 
-  ! -------------------------------------------------------------
-  SUBROUTINE SetDiverRequired(DeliRequired,AppStream)
-    REAL(8),INTENT(IN)       :: DeliRequired(:)
-    CLASS(BaseAppStreamType) :: AppStream
-    
-    !Local variables
-    INTEGER :: indx
-    REAL(8) :: rFrac
-    
-    ASSOCIATE (pDivers => AppStream%AppDiverBypass%Diver)
-    
-      DO indx=1,AppStream%AppDiverBypass%NDiver
-        rFrac                       = 1d0 - pDivers(indx)%Ratio_RecvLoss - pDivers(indx)%Ratio_NonRecvLoss
-        IF (rFrac .LE. 0.0) CYCLE
-        pDivers(indx)%DiverRequired = DeliRequired(indx) / rFrac
-        pDivers(indx)%DiverActual   = pDivers(indx)%DiverRequired
-      END DO
-      
-    END ASSOCIATE
-    
-    AppStream%AppDiverBypass%lDiverRequired_Updated = .TRUE.
-    CALL AppStream%AppDiverBypass%CompileNodalDiversions()
-    
-  END SUBROUTINE SetDiverRequired
   
   
   ! -------------------------------------------------------------
@@ -1139,6 +1820,33 @@ CONTAINS
   END SUBROUTINE SetStreamFlow
 
   
+  ! -------------------------------------------------------------
+  ! --- SET STREAM INFLOW AT A NODE
+  ! -------------------------------------------------------------
+  SUBROUTINE SetStreamInflow(AppStream,iStrmNode,rFlow,lAdd)
+    CLASS(BaseAppStreamType) :: AppStream
+    INTEGER,INTENT(IN)       :: iStrmNode
+    REAL(8),INTENT(IN)       :: rFlow
+    LOGICAL,INTENT(IN)       :: lAdd
+    
+    CALL AppStream%StrmInflowData%SetInflow(iStrmNode,rFlow,lAdd)
+    
+  END SUBROUTINE SetStreamInflow
+
+  
+  ! -------------------------------------------------------------
+  ! --- SET BYPASS ORIGINATING FLOW AS WELL AS OTHER RELATED FLOWS
+  ! -------------------------------------------------------------
+  SUBROUTINE SetBypassFlows_AtABypass(AppStream,iBypass,rOriginatingFlow)
+    CLASS(BaseAppStreamType) :: AppStream
+    INTEGER,INTENT(IN)       :: iBypass
+    REAL(8),INTENT(IN)       :: rOriginatingFlow
+    
+    CALL AppStream%AppDiverBypass%SetBypassFlows_AtABypass(iBypass,rOriginatingFlow) 
+    
+  END SUBROUTINE SetBypassFlows_AtABypass
+
+  
   
   
 ! ******************************************************************
@@ -1154,6 +1862,31 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ RESTART DATA
   ! -------------------------------------------------------------
+  SUBROUTINE ReadTSData(AppStream,lDiverAdjusted,TimeStep,iDiversions,rDiversions,iStrmInflows,rStrmInflows,iBypasses,rBypasses,iStat)
+     CLASS(BaseAppStreamType)      :: AppStream
+     LOGICAL,INTENT(IN)            :: lDiverAdjusted
+     TYPE(TimeStepType),INTENT(IN) :: TimeStep
+     INTEGER,INTENT(IN)            :: iDiversions(:),iStrmInflows(:),iBypasses(:)
+     REAL(8),INTENT(IN)            :: rDiversions(:),rStrmInflows(:),rBypasses(:)
+     INTEGER,INTENT(OUT)           :: iStat
+     
+     !Read stream boundary inflows
+     CALL AppStream%StrmInflowData%ReadTSData(TimeStep,iStrmInflows,rStrmInflows,iStat)
+     IF (iStat .EQ. -1) RETURN
+     
+     !Read diversion/bypass related timeseries data
+     CALL AppStream%AppDiverBypass%ReadTSData(lDiverAdjusted,TimeStep,iDiversions,rDiversions,iBypasses,rBypasses,iStat)  
+     IF (iStat .EQ. -1) RETURN
+     
+     !Update the diversions from each stream node
+     CALL AppStream%AppDiverBypass%CompileNodalDiversions()
+    
+  END SUBROUTINE ReadTSData
+     
+     
+  ! -------------------------------------------------------------
+  ! --- READ RESTART DATA
+  ! -------------------------------------------------------------
   SUBROUTINE ReadRestartData(AppStream,InFile,iStat)
     CLASS(BaseAppStreamType) :: AppStream
     TYPE(GenericFileType)    :: InFile
@@ -1165,7 +1898,55 @@ CONTAINS
   END SUBROUTINE ReadRestartData
   
   
+  ! -------------------------------------------------------------
+  ! --- READ STREAM NODES AND FRACTIONS OF STREAM_AQUIFER INTERACTION TO APPLY TO GW NODES
+  ! -------------------------------------------------------------
+  SUBROUTINE ReadFractionsForGW(DataFile,iStrmNodeIDs,StrmGWConnector,iStat)
+    TYPE(GenericFileType)     :: DataFile
+    INTEGER,INTENT(IN)        :: iStrmNodeIDs(:)
+    TYPE(StrmGWConnectorType) :: StrmGWConnector
+    INTEGER,INTENT(OUT)       :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+18),PARAMETER :: ThisProcedure = ModName // 'ReadFractionsForGW'
+    INTEGER                                :: iNStrmNodes,indx,iStrmNode
+    REAL(8)                                :: rDummy(2)
+    INTEGER,ALLOCATABLE                    :: iStrmNodes(:)
+    REAL(8),ALLOCATABLE                    :: rFractions(:)
+    
+    !Initilalize
+    iStat = 0
+    
+    !First check if the data is even supplied (backward compatibility)
+    CALL DataFile%ReadData(iNStrmNodes,iStat)
+    IF (iStat .EQ. -1) THEN  !If in error state; data is not supplied; return
+        iStat = 0
+        RETURN
+    END IF
+    
+    !Allocate memory
+    ALLOCATE (iStrmNodes(iNStrmNodes) , rFractions(iNStrmNodes))
+    
+    !Read data
+    DO indx=1,iNStrmNodes
+        CALL DataFile%ReadData(rDummy,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        iStrmNode        = rDummy(1)
+        rFractions(indx) = rDummy(2)
+        CALL ConvertID_To_Index(iStrmNode,iStrmNodeIDs,iStrmNodes(indx))
+        IF (iStrmNodes(indx) .EQ. 0) THEN
+            CALL SetLastMessage('Stream node ID '//TRIM(IntToText(iStrmNode))//' listed for partal stream-aquifer interaction is not in the model!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+    END DO
+    
+    !Pass the information to StrmGWConnector
+    CALL StrmGWConnector%SetFractionsForGW(iStrmNodes,rFractions,iStat)
+    
+  END SUBROUTINE ReadFractionsForGW
 
+  
+  
   
 ! ******************************************************************
 ! ******************************************************************
@@ -1230,79 +2011,88 @@ CONTAINS
     TYPE(StrmLakeConnectorType),INTENT(IN)             :: StrmLakeConnector
     
     !Local variables
-    INTEGER                               :: indxReach,indxReach1,iNode,iUpstrmReach,iUpstrmNode,   &
-                                             iDownstrmNode,indx
-    REAL(8)                               :: DummyArray(NStrmBudColumns,AppStream%NReaches) 
-    REAL(8),DIMENSION(AppStream%NReaches) :: UpstrmFlows,DownstrmFlows,TributaryFlows,DrainInflows, &
-                                             Runoff,ReturnFlows,StrmGWFlows,LakeInflows,Error,      &
-                                             Diversions,Bypasses,DiversionShorts,RiparianET
+    INTEGER                               :: indxReach,indxReach1,iNode,iUpstrmReach,iUpstrmNode,indx,     &
+                                             iDownstrmNode,iReach
+    REAL(8)                               :: DummyArray(f_iNStrmBudColumns,AppStream%NReaches) 
+    REAL(8),DIMENSION(AppStream%NReaches) :: UpstrmFlows,DownstrmFlows,TributaryFlows,DrainInflows,Runoff, &
+                                             ReturnFlows,StrmGWFlows_InModel,StrmGWFlows_OutModel,Error,   &
+                                             LakeInflows,Diversions,Bypasses,DiversionShorts,RiparianET
     
     !Initialize           
     UpstrmFlows = 0.0
     
     !Iterate over reaches
     DO indxReach=1,AppStream%NReaches
-      iUpstrmNode   = AppStream%Reaches(indxReach)%UpstrmNode
-      iDownstrmNode = AppStream%Reaches(indxReach)%DownstrmNode
-      !Upstream flows
-      DO indxReach1=1,AppStream%Reaches(indxReach)%NUpstrmReaches
-        iUpstrmReach           = AppStream%Reaches(indxReach)%UpstrmReaches(indxReach1)
-        iNode                  = AppStream%Reaches(iUpstrmReach)%DownstrmNode
-        UpstrmFlows(indxReach) = UpstrmFlows(indxReach) + AppStream%State(iNode)%Flow
-      END DO
-      IF (AppStream%StrmInflowData%lDefined) UpstrmFlows(indxReach) = UpstrmFlows(indxReach) + SUM(AppStream%StrmInflowData%Inflows(iUpstrmNode:iDownstrmNode))
-    
-      !Tributary flows
-      TributaryFlows(indxReach) = SUM(QTRIB(iUpstrmNode:iDownstrmNode))
+        iReach        = AppStream%iPrintReachBudgetOrder(indxReach)
+        iUpstrmNode   = AppStream%Reaches(iReach)%UpstrmNode
+        iDownstrmNode = AppStream%Reaches(iReach)%DownstrmNode
+        !Upstream flows
+        DO indxReach1=1,AppStream%Reaches(iReach)%NUpstrmReaches
+            iUpstrmReach           = AppStream%Reaches(iReach)%UpstrmReaches(indxReach1)
+            iNode                  = AppStream%Reaches(iUpstrmReach)%DownstrmNode
+            UpstrmFlows(indxReach) = UpstrmFlows(indxReach) + AppStream%State(iNode)%Flow
+        END DO
+        IF (AppStream%StrmInflowData%lDefined) UpstrmFlows(indxReach) = UpstrmFlows(indxReach) + SUM(AppStream%StrmInflowData%Inflows(iUpstrmNode:iDownstrmNode))
+        
+        !Tributary flows
+        TributaryFlows(indxReach) = SUM(QTRIB(iUpstrmNode:iDownstrmNode))
+        
+        !Inflows from tile drains
+        DrainInflows(indxReach) = SUM(QDRAIN(iUpstrmNode:iDownstrmNode))
+        
+        !Runoff
+        Runoff(indxReach) = SUM(QROFF(iUpstrmNode:iDownstrmNode))
+        
+        !Return flow
+        ReturnFlows(indxReach) = SUM(QRTRN(iUpstrmNode:iDownstrmNode))
+        
+        !Stream-gw interaction occuring inside model domain
+        !(+: flow from stream to groundwater)
+        StrmGWFlows_InModel(indxReach) = - StrmGWConnector%GetFlowAtSomeStrmNodes(iUpstrmNode,iDownstrmNode,lInsideModel=.TRUE.)
+        
+        !Stream-gw interaction occuring ousideside model domain
+        !(+: flow from stream to groundwater)
+        StrmGWFlows_OutModel(indxReach) = - StrmGWConnector%GetFlowAtSomeStrmNodes(iUpstrmNode,iDownstrmNode,lInsideModel=.FALSE.)
+        
+        !Inflow from lakes
+        LakeInflows(indxReach) = 0.0
+        DO indx=iUpstrmNode,iDownstrmNode
+            LakeInflows(indxReach) = LakeInflows(indxReach) + StrmLakeConnector%GetFlow(f_iLakeToStrmFlow,indx)
+        END DO
+        
+        !Riparian ET
+        RiparianET(indxReach) = SUM(QRVET(iUpstrmNode:iDownstrmNode))
       
-      !Inflows from tile drains
-      DrainInflows(indxReach) = SUM(QDRAIN(iUpstrmNode:iDownstrmNode))
-      
-      !Runoff
-      Runoff(indxReach) = SUM(QROFF(iUpstrmNode:iDownstrmNode))
-
-      !Return flow
-      ReturnFlows(indxReach) = SUM(QRTRN(iUpstrmNode:iDownstrmNode))
-      
-      !Stream-gw interaction
-      !(+: flow from stream to groundwater)
-      StrmGWFlows(indxReach) = - StrmGWConnector%GetFlowAtSomeStrmNodes(iUpstrmNode,iDownstrmNode)
-    
-      !Inflow from lakes
-      LakeInflows(indxReach) = 0.0
-      DO indx=iUpstrmNode,iDownstrmNode
-        LakeInflows(indxReach) = LakeInflows(indxReach) + StrmLakeConnector%GetFlow(iLakeToStrmType,indx)
-      END DO
-      
-      !Riparian ET
-      RiparianET(indxReach) = SUM(QRVET(iUpstrmNode:iDownstrmNode))
+        !Downstream flows
+        DownstrmFlows(indxReach) = AppStream%State(AppStream%Reaches(iReach)%DownStrmNode)%Flow
       
     END DO
     
-    !Downstream flows
-    DownstrmFlows = AppStream%State(AppStream%Reaches%DownStrmNode)%Flow
-      
     !Diversions
     Diversions = AppStream%AppDiverBypass%GetReachDiversions(AppStream%NReaches,AppStream%Reaches)
+    Diversions = Diversions(AppStream%iPrintReachBudgetOrder)
     
     !Bypasses
-    Bypasses = AppStream%AppDiverBypass%GetReachNetBypass(AppStream%NReaches,AppStream%Reaches)
+    Bypasses = AppStream%AppDiverBypass%GetReachNetBypass(AppStream%NStrmNodes,AppStream%NReaches,AppStream%Reaches)
+    Bypasses = Bypasses(AppStream%iPrintReachBudgetOrder)
     
     !Error
-    Error =  UpstrmFlows    &
-           - DownstrmFlows  &
-           + TributaryFlows &
-           + DrainInflows   &
-           + Runoff         &
-           + ReturnFlows    &
-           + StrmGWFlows    &
-           + LakeInflows    &
-           - RiparianET     &
-           - Diversions     &
+    Error =  UpstrmFlows          &
+           - DownstrmFlows        &
+           + TributaryFlows       &
+           + DrainInflows         &
+           + Runoff               &
+           + ReturnFlows          &
+           + StrmGWFlows_InModel  &
+           + StrmGWFlows_OutModel &
+           + LakeInflows          &
+           - RiparianET           &
+           - Diversions           &
            - Bypasses
            
     !Diversion shortages
-    DiversionShorts = AppStream%AppDiverBypass%GetReachDiversionShort(AppStream%NReaches,AppStream%Reaches)
+    DiversionShorts = AppStream%AppDiverBypass%GetReachDiversionShort(AppStream%NStrmNodes,AppStream%NReaches,AppStream%Reaches)
+    DiversionShorts = DiversionShorts(AppStream%iPrintReachBudgetOrder)
            
     !Compile data in array
     DummyArray(1,:)  = UpstrmFlows
@@ -1311,13 +2101,14 @@ CONTAINS
     DummyArray(4,:)  = DrainInflows
     DummyArray(5,:)  = Runoff
     DummyArray(6,:)  = ReturnFlows
-    DummyArray(7,:)  = StrmGWFlows
-    DummyArray(8,:)  = LakeInflows
-    DummyArray(9,:)  = RiparianET
-    DummyArray(10,:) = Diversions
-    DummyArray(11,:) = Bypasses
-    DummyArray(12,:) = Error
-    DummyArray(13,:) = DiversionShorts
+    DummyArray(7,:)  = StrmGWFlows_InModel
+    DummyArray(8,:)  = StrmGWFlows_OutModel
+    DummyArray(9,:)  = LakeInflows
+    DummyArray(10,:) = RiparianET
+    DummyArray(11,:) = Diversions
+    DummyArray(12,:) = Bypasses
+    DummyArray(13,:) = Error
+    DummyArray(14,:) = DiversionShorts
     
     !Print out values to binary file
     CALL AppStream%StrmReachBudRawFile%WriteData(DummyArray)
@@ -1336,9 +2127,9 @@ CONTAINS
     
     !Local variables
     INTEGER                                               :: iNode,indxNode
-    REAL(8)                                               :: DummyArray(NStrmBudColumns,AppStream%StrmNodeBudget%NBudNodes) 
-    REAL(8),DIMENSION(AppStream%StrmNodeBudget%NBudNodes) :: UpstrmFlows,DownstrmFlows,TributaryFlows,DrainInflows,                 &
-                                                             Runoff,ReturnFlows,StrmGWFlows,LakeInflows,Error,                      &
+    REAL(8)                                               :: DummyArray(f_iNStrmBudColumns,AppStream%StrmNodeBudget%NBudNodes) 
+    REAL(8),DIMENSION(AppStream%StrmNodeBudget%NBudNodes) :: UpstrmFlows,DownstrmFlows,TributaryFlows,DrainInflows,LakeInflows,  &
+                                                             Runoff,ReturnFlows,StrmGWFlows_InModel,StrmGWFlows_OutModel,Error,  &
                                                              Diversions,Bypasses,DiversionShorts,RiparianET
     INTEGER,ALLOCATABLE                                   :: UpstrmNodes(:)
     
@@ -1363,12 +2154,16 @@ CONTAINS
       !Return flow
       ReturnFlows(indxNode) = QRTRN(iNode)
       
-      !Stream-gw interaction
-      !(+: flow from stream to groundwater)
-      StrmGWFlows(indxNode) = - StrmGWConnector%GetFlowAtSomeStrmNodes(iNode,iNode)
+      !Stream-gw interaction occuring inside the model
+      !(+: flow from stream to groundwater, so multiply with - to represent Gain from GW)
+      StrmGWFlows_InModel(indxNode) = - StrmGWConnector%GetFlowAtSomeStrmNodes(iNode,iNode,lInsideModel=.TRUE.)
+    
+      !Stream-gw interaction occuring outside the model
+      !(+: flow from stream to groundwater, so multiply with - to represent Gain from GW)
+      StrmGWFlows_OutModel(indxNode) = - StrmGWConnector%GetFlowAtSomeStrmNodes(iNode,iNode,lInsideModel=.FALSE.)
     
       !Inflow from lakes
-      LakeInflows(indxNode) = StrmLakeConnector%GetFlow(iLakeToStrmType,iNode)
+      LakeInflows(indxNode) = StrmLakeConnector%GetFlow(f_iLakeToStrmFlow,iNode)
       
       !Riparian ET
       RiparianET(indxNode) = QRVET(iNode)
@@ -1385,16 +2180,17 @@ CONTAINS
     Bypasses = AppStream%AppDiverBypass%GetNodeNetBypass(AppStream%StrmNodeBudget%iBudNodes)
     
     !Error
-    Error =  UpstrmFlows    &
-           - DownstrmFlows  &
-           + TributaryFlows &
-           + DrainInflows   &
-           + Runoff         &
-           + ReturnFlows    &
-           + StrmGWFlows    &
-           + LakeInflows    &
-           - RiparianET     &
-           - Diversions     &
+    Error =  UpstrmFlows          &
+           - DownstrmFlows        &
+           + TributaryFlows       &
+           + DrainInflows         &
+           + Runoff               &
+           + ReturnFlows          &
+           + StrmGWFlows_InModel  &
+           + StrmGWFlows_OutModel &
+           + LakeInflows          &
+           - RiparianET           &
+           - Diversions           &
            - Bypasses
            
     !Diversion shortages
@@ -1407,13 +2203,14 @@ CONTAINS
     DummyArray(4,:)  = DrainInflows
     DummyArray(5,:)  = Runoff
     DummyArray(6,:)  = ReturnFlows
-    DummyArray(7,:)  = StrmGWFlows
-    DummyArray(8,:)  = LakeInflows
-    DummyArray(9,:)  = RiparianET
-    DummyArray(10,:) = Diversions
-    DummyArray(11,:) = Bypasses
-    DummyArray(12,:) = Error
-    DummyArray(13,:) = DiversionShorts
+    DummyArray(7,:)  = StrmGWFlows_InModel
+    DummyArray(8,:)  = StrmGWFlows_OutModel
+    DummyArray(9,:)  = LakeInflows
+    DummyArray(10,:) = RiparianET
+    DummyArray(11,:) = Diversions
+    DummyArray(12,:) = Bypasses
+    DummyArray(13,:) = Error
+    DummyArray(14,:) = DiversionShorts
     
     !Print out values to binary file
     CALL AppStream%StrmNodeBudget%StrmNodeBudRawFile%WriteData(DummyArray)
@@ -1433,6 +2230,19 @@ CONTAINS
 ! ******************************************************************
 ! ******************************************************************
 
+  ! -------------------------------------------------------------
+  ! --- CONVERT REACH DESTINATION IDs TO INDICES (MAINLY FOR LAKE DESTINATIONS)
+  ! -------------------------------------------------------------
+  SUBROUTINE DestinationIDs_To_Indices(AppStream,iLakeIDs,iStat)
+    CLASS(BaseAppStreamType) :: AppStream
+    INTEGER,INTENT(IN)       :: iLakeIDs(:)
+    INTEGER,INTENT(OUT)      :: iStat
+    
+    CALL StrmReach_DestinationIDs_To_Indices(AppStream%Reaches,iLakeIDs,iStat)
+    
+  END SUBROUTINE DestinationIDs_To_Indices
+  
+  
   ! -------------------------------------------------------------
   ! --- RESET IRRIGATION FRACTIONS TO THOSE READ FROM FILE
   ! -------------------------------------------------------------
@@ -1498,7 +2308,7 @@ CONTAINS
     lDest = .FALSE.
     
     DO indx=1,AppStream%AppDiverBypass%NDiver
-      IF (AppStream%AppDiverBypass%Diver(indx)%Deli%Destination%iDestType .NE. FlowDest_Outside) THEN
+      IF (AppStream%AppDiverBypass%Diver(indx)%Deli%Destination%iDestType .NE. f_iFlowDest_Outside) THEN
         lDest = .TRUE.
         RETURN
       END IF
@@ -1510,34 +2320,36 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- FUNCTION TO PREPARE THE BUDGET HEADER DATA FOR STREAM BUDGETS
   ! -------------------------------------------------------------
-  FUNCTION PrepareStreamBudgetHeader(NLocations,NTIME,TimeStep,cVersion,iBudNodes) RESULT(Header)
-    INTEGER,INTENT(IN)            :: NLocations,NTIME
-    TYPE(TimeStepType),INTENT(IN) :: TimeStep
-    CHARACTER(LEN=*),INTENT(IN)   :: cVersion
-    INTEGER,OPTIONAL,INTENT(IN)   :: iBudNodes(:)
-    TYPE(BudgetHeaderType)        :: Header
+  FUNCTION PrepareStreamBudgetHeader(NLocations,iPrintReachBudgetOrder,iReachIDs,iStrmNodeIDs,NTIME,TimeStep,cVersion,cReachNames,iBudNodes) RESULT(Header)
+    INTEGER,INTENT(IN)                   :: NLocations,iPrintReachBudgetOrder(:),iReachIDs(:),iStrmNodeIDs(:),NTIME
+    TYPE(TimeStepType),INTENT(IN)        :: TimeStep
+    CHARACTER(LEN=*),INTENT(IN)          :: cVersion
+    CHARACTER(LEN=*),OPTIONAL,INTENT(IN) :: cReachNames(:)
+    INTEGER,OPTIONAL,INTENT(IN)          :: iBudNodes(:)
+    TYPE(BudgetHeaderType)               :: Header
     
     !Local variables
-    INTEGER,PARAMETER           :: TitleLen           = 186  , &
+    INTEGER,PARAMETER           :: TitleLen           = 199  , &
                                    NTitles            = 3    , &
                                    NColumnHeaderLines = 4    
-    INTEGER                     :: iCount,indxLocation,indxCol,indx,I
+    INTEGER                     :: iCount,indxLocation,indxCol,indx,I,ID,iReach,iMaxPathnameLen
     TYPE(TimeStepType)          :: TimeStepLocal
     CHARACTER                   :: UnitT*10,TextTime*17
     LOGICAL                     :: lNodeBudOutput
-    CHARACTER(LEN=16),PARAMETER :: FParts(NStrmBudColumns)=(/'UPSTRM_INFLOW'   ,&
-                                                             'DOWNSTRM_OUTFLOW',& 
-                                                             'TRIB_INFLOW'     ,& 
-                                                             'TILE_DRN'        ,& 
-                                                             'RUNOFF'          ,& 
-                                                             'RETURN_FLOW'     ,& 
-                                                             'GAIN_FROM_GW'    ,& 
-                                                             'GAIN_FROM_LAKE'  ,& 
-                                                             'RIPARIAN_ET'     ,&
-                                                             'DIVERSION'       ,& 
-                                                             'BYPASS'          ,& 
-                                                             'DISCREPANCY'     ,& 
-                                                             'DIVER_SHORTAGE'  /)
+    CHARACTER(LEN=21),PARAMETER :: FParts(f_iNStrmBudColumns) = ['UPSTRM_INFLOW'         , &
+                                                                 'DOWNSTRM_OUTFLOW'      , & 
+                                                                 'TRIB_INFLOW'           , & 
+                                                                 'TILE_DRN'              , & 
+                                                                 'RUNOFF'                , & 
+                                                                 'RETURN_FLOW'           , & 
+                                                                 'GAIN_FROM_GW_INMODEL'  , &
+                                                                 'GAIN_FROM_GW_OUTMODEL' , &
+                                                                 'GAIN_FROM_LAKE'        , & 
+                                                                 'RIPARIAN_ET'           , &
+                                                                 'DIVERSION'             , & 
+                                                                 'BYPASS'                , & 
+                                                                 'DISCREPANCY'           , & 
+                                                                 'DIVER_SHORTAGE'        ]
                                                              
     !Initialize flag for budget type 
     IF (PRESENT(iBudNodes)) THEN
@@ -1578,7 +2390,7 @@ CONTAINS
       pASCIIOutput%NTitles  = NTitles
       ALLOCATE(pASCIIOutput%cTitles(NTitles)  ,  pASCIIOutput%lTitlePersist(NTitles))
         pASCIIOutput%cTitles(1)         = ArrangeText('IWFM STREAM PACKAGE (v'//TRIM(cVersion)//')' , pASCIIOutput%TitleLen)
-        pASCIIOutput%cTitles(2)         = ArrangeText('STREAM FLOW BUDGET IN '//VolumeUnitMarker//' FOR '//LocationNameMarker , pASCIIOutput%TitleLen)
+        pASCIIOutput%cTitles(2)         = ArrangeText('STREAM FLOW BUDGET IN '//f_cVolumeUnitMarker//' FOR '//f_cLocationNameMarker , pASCIIOutput%TitleLen)
         pASCIIOutput%cTitles(3)         = REPEAT('-',pASCIIOutput%TitleLen)
         pASCIIOutput%lTitlePersist(1:2) = .TRUE.
         pASCIIOutput%lTitlePersist(3)   = .FALSE.
@@ -1591,83 +2403,92 @@ CONTAINS
     ALLOCATE (Header%cLocationNames(NLocations))
     IF (lNodeBudOutput) THEN
       DO indx=1,NLocations
-        Header%cLocationNames(indx) = 'NODE '//TRIM(IntToText(iBudNodes(indx))) 
+          ID                          = iStrmNodeIDs(iBudNodes(indx))
+          Header%cLocationNames(indx) = 'NODE '//TRIM(IntToText(ID)) 
       END DO
     ELSE
       DO indx=1,NLocations
-        Header%cLocationNames(indx) = 'REACH '//TRIM(IntToText(indx)) 
+          iReach                      = iPrintReachBudgetOrder(indx)
+          ID                          = iReachIDs(iReach)
+          Header%cLocationNames(indx) = TRIM(cReachNames(iReach)) // '(REACH '// TRIM(IntToText(ID)) // ')' 
       END DO
     END IF
     
     !Locations
-    ALLOCATE (Header%Locations(1)                                                          , &
-              Header%Locations(1)%cFullColumnHeaders(NStrmBudColumns+1)                    , &
-              Header%Locations(1)%iDataColumnTypes(NStrmBudColumns)                        , &
-              Header%Locations(1)%iColWidth(NStrmBudColumns+1)                             , &
-              Header%Locations(1)%cColumnHeaders(NStrmBudColumns+1,NColumnHeaderLines)     , &
-              Header%Locations(1)%cColumnHeadersFormatSpec(NColumnHeaderLines)             )  
+    ALLOCATE (Header%Locations(1)                                                             , &
+              Header%Locations(1)%cFullColumnHeaders(f_iNStrmBudColumns+1)                    , &
+              Header%Locations(1)%iDataColumnTypes(f_iNStrmBudColumns)                        , &
+              Header%Locations(1)%iColWidth(f_iNStrmBudColumns+1)                             , &
+              Header%Locations(1)%cColumnHeaders(f_iNStrmBudColumns+1,NColumnHeaderLines)     , &
+              Header%Locations(1)%cColumnHeadersFormatSpec(NColumnHeaderLines)                )  
     ASSOCIATE (pLocation => Header%Locations(1))
-      pLocation%NDataColumns           = NStrmBudColumns
+      pLocation%NDataColumns           = f_iNStrmBudColumns
       pLocation%cFullColumnHeaders(1)  = 'Time'                       
-      pLocation%cFullColumnHeaders(2:) = cBudgetColumnTitles                               
-      pLocation%iDataColumnTypes       = [VR ,&  !Upstream inflow
-                                          VR ,&  !Downstream outflow
-                                          VR ,&  !Tributary inflow
-                                          VR ,&  !Tile drain
-                                          VR ,&  !Runoff
-                                          VR ,&  !Return flow
-                                          VR ,&  !Gain from GW
-                                          VR ,&  !Gain from lake
-                                          VR ,&  !Riparian ET
-                                          VR ,&  !Diversion
-                                          VR ,&  !By-pass flow
-                                          VR ,&  !Discrepancy
-                                          VR ]  !Diversion shortage
-      pLocation%iColWidth              = [17,(13,I=1,NStrmBudColumns)]
+      pLocation%cFullColumnHeaders(2:) = f_cBudgetColumnTitles                               
+      pLocation%iDataColumnTypes       = [f_iVR ,&  !Upstream inflow
+                                          f_iVR ,&  !Downstream outflow
+                                          f_iVR ,&  !Tributary inflow
+                                          f_iVR ,&  !Tile drain
+                                          f_iVR ,&  !Runoff
+                                          f_iVR ,&  !Return flow
+                                          f_iVR ,&  !Gain from GW inside model
+                                          f_iVR ,&  !Gain from GW outside model
+                                          f_iVR ,&  !Gain from lake
+                                          f_iVR ,&  !Riparian ET
+                                          f_iVR ,&  !Diversion
+                                          f_iVR ,&  !By-pass flow
+                                          f_iVR ,&  !Discrepancy
+                                          f_iVR ]  !Diversion shortage
+      pLocation%iColWidth              = [17,(13,I=1,f_iNStrmBudColumns)]
       ASSOCIATE (pColumnHeaders => pLocation%cColumnHeaders           , &
                  pFormatSpecs   => pLocation%cColumnHeadersFormatSpec )
         TextTime            = ArrangeText(TRIM(UnitT),17)
-        pColumnHeaders(:,1) = (/'                 ','     Upstream','   Downstream','    Tributary','        Tile ','             ','       Return','   Gain from ','    Gain from','   Riparian ','             ','      By-pass','             ','    Diversion'/)
-        pColumnHeaders(:,2) = (/'      Time       ','      Inflow ','    Outflow  ','     Inflow  ','        Drain','       Runoff','        Flow ','  Groundwater','      Lake   ','      ET    ','    Diversion','        Flow ','  Discrepancy','    Shortage '/)
-        pColumnHeaders(:,3) = (/           TextTime,'       (+)   ','      (-)    ','      (+)    ','         (+) ','        (+)  ','        (+)  ','      (+)    ','       (+)   ','      (-)   ','       (-)   ','        (-)  ','      (=)    ','             '/)
+        pColumnHeaders(:,1) = ['                 ','     Upstream','   Downstream','    Tributary','        Tile ','             ','     Return  ','Gain from GW ',' Gain from GW','    Gain from','   Riparian ','             ','      By-pass','             ','    Diversion']
+        pColumnHeaders(:,2) = ['      Time       ','      Inflow ','    Outflow  ','     Inflow  ','        Drain','       Runoff','      Flow   ','inside Model ','outside Model','      Lake   ','      ET    ','    Diversion','        Flow ','  Discrepancy','    Shortage ']
+        pColumnHeaders(:,3) = [           TextTime,'       (+)   ','      (-)    ','      (+)    ','         (+) ','        (+)  ','      (+)    ','     (+)     ','      (+)    ','       (+)   ','      (-)   ','       (-)   ','        (-)  ','      (=)    ','             ']
         pColumnHeaders(:,4) = ''
-        pFormatSpecs(1)     = '(A17,13A13)'
-        pFormatSpecs(2)     = '(A17,13A13)'
-        pFormatSpecs(3)     = '(A17,13A13)'
-        pFormatSpecs(4)     = '('//TRIM(IntToText(TitleLen))//'(1H-),'//TRIM(IntToText(NStrmBudColumns+1))//'A0)'
+        pFormatSpecs(1)     = '(A17,14A13)'
+        pFormatSpecs(2)     = '(A17,14A13)'
+        pFormatSpecs(3)     = '(A17,14A13)'
+        pFormatSpecs(4)     = '('//TRIM(IntToText(TitleLen))//'(1H-),'//TRIM(IntToText(f_iNStrmBudColumns+1))//'A0)'
       END ASSOCIATE
     END ASSOCIATE
                                                    
     !Data for DSS output  
     ASSOCIATE (pDSSOutput => Header%DSSOutput)
-      ALLOCATE (pDSSOutput%cPathNames(NStrmBudColumns*(Header%NLocations)) , pDSSOutput%iDataTypes(1))
-      iCount = 1
-      IF (lNodeBudOutput) THEN
-        DO indxLocation=1,Header%NLocations
-          DO indxCol=1,NStrmBudColumns
-            pDSSOutput%cPathNames(iCount) = '/IWFM_STRMNODE_BUD/'                                           //  &  !A part
-                                            TRIM(UpperCase(Header%cLocationNames(indxLocation)))//'/'      //  &  !B part
-                                            'VOLUME/'                                                      //  &  !C part
-                                            '/'                                                            //  &  !D part
-                                            TRIM(TimeStep%Unit)//'/'                                       //  &  !E part
-                                            TRIM(FParts(indxCol))//'/'                                            !F part
-            iCount = iCount+1
-          END DO
-        END DO
-      ELSE
-        DO indxLocation=1,Header%NLocations
-          DO indxCol=1,NStrmBudColumns
-            pDSSOutput%cPathNames(iCount) = '/IWFM_STRMRCH_BUD/'                                           //  &  !A part
-                                            TRIM(UpperCase(Header%cLocationNames(indxLocation)))//'/'      //  &  !B part
-                                            'VOLUME/'                                                      //  &  !C part
-                                            '/'                                                            //  &  !D part
-                                            TRIM(TimeStep%Unit)//'/'                                       //  &  !E part
-                                            TRIM(FParts(indxCol))//'/'                                            !F part
-            iCount = iCount+1
-          END DO
-        END DO
-      END IF
-      pDSSOutput%iDataTypes = PER_CUM
+        ALLOCATE (pDSSOutput%cPathNames(f_iNStrmBudColumns*(Header%NLocations)) , pDSSOutput%iDataTypes(1))
+        iMaxPathnameLen = LEN(pDSSOutput%cPathNames(1))
+        iCount          = 1
+        IF (lNodeBudOutput) THEN
+            DO indxLocation=1,Header%NLocations
+                DO indxCol=1,f_iNStrmBudColumns
+                    pDSSOutput%cPathNames(iCount) = '/IWFM_STRMNODE_BUD/'                                          //  &  !A part
+                                                    TRIM(UpperCase(Header%cLocationNames(indxLocation)))//'/'      //  &  !B part
+                                                    'VOLUME/'                                                      //  &  !C part
+                                                    '/'                                                            //  &  !D part
+                                                    TRIM(TimeStep%Unit)//'/'                                       //  &  !E part
+                                                    TRIM(FParts(indxCol))//'/'                                            !F part
+                    IF (LEN_TRIM(pDSSOutput%cPathNames(iCount)) .EQ. iMaxPathnameLen)   &
+                        pDSSOutput%cPathNames(iCount)(iMaxPathnameLen:iMaxPathnameLen) = '/'
+                    iCount = iCount+1
+                END DO
+            END DO
+        ELSE
+            DO indxLocation=1,Header%NLocations
+                DO indxCol=1,f_iNStrmBudColumns
+                    pDSSOutput%cPathNames(iCount) = '/IWFM_STRMRCH_BUD/'                                           //  &  !A part
+                                                    TRIM(UpperCase(Header%cLocationNames(indxLocation)))//'/'      //  &  !B part
+                                                    'VOLUME/'                                                      //  &  !C part
+                                                    '/'                                                            //  &  !D part
+                                                    TRIM(TimeStep%Unit)//'/'                                       //  &  !E part
+                                                    TRIM(FParts(indxCol))//'/'                                            !F part
+                    IF (LEN_TRIM(pDSSOutput%cPathNames(iCount)) .EQ. iMaxPathnameLen)   &
+                        pDSSOutput%cPathNames(iCount)(iMaxPathnameLen:iMaxPathnameLen) = '/'
+                    iCount = iCount+1
+                END DO
+            END DO
+        END IF
+        pDSSOutput%iDataTypes = f_iPER_CUM
     END ASSOCIATE
     
   END FUNCTION PrepareStreamBudgetHeader
@@ -1687,7 +2508,7 @@ CONTAINS
     TYPE(ConnectivityListType) :: ConnectivityLists(AppStream%NStrmNodes)
      
     !Add component to matrix
-    CALL Matrix%AddComponent(iStrmComp,AppStream%NStrmNodes,iStat)
+    CALL Matrix%AddComponent(f_iStrmComp,AppStream%NStrmNodes,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Compile connectivity list for each node
@@ -1701,7 +2522,7 @@ CONTAINS
     END DO
     
     !Add connectivity lists to Matrix
-    CALL Matrix%AddConnectivity(iStrmComp,1,AppStream%NStrmNodes,iStrmComp,ConnectivityLists,iStat)   
+    CALL Matrix%AddConnectivity(f_iStrmComp,1,AppStream%NStrmNodes,f_iStrmComp,ConnectivityLists,iStat)   
     
   END SUBROUTINE RegisterWithMatrix
   
@@ -1710,28 +2531,28 @@ CONTAINS
   ! --- CHECK IF ONE STREAM NODE (Node1) IS UPSTREAM OF ANOTHER (Node2)
   ! --- Note: If lBypass is TRUE then, Node2 is the bypass ID number
   ! -------------------------------------------------------------
-  FUNCTION IsUpstreamNode(AppStream,Node1,Node2,lBypass,iStat) RESULT(lUpstream)
+  SUBROUTINE IsUpstreamNode(AppStream,Node1,Node2,lBypass,lUpstream,iStat)
     CLASS(BaseAppStreamType),INTENT(IN) :: AppStream
     INTEGER,INTENT(IN)                  :: Node1,Node2
     LOGICAL,INTENT(IN)                  :: lBypass
+    LOGICAL,INTENT(OUT)                 :: lUpstream
     INTEGER,INTENT(OUT)                 :: iStat
-    LOGICAL                             :: lUpstream
     
     !Local variables
     INTEGER :: BypassExportNode
     
-    !Initailize
+    !Initialize
     iStat = 0
     
     IF (lBypass) THEN
-        CALL AppStream%AppDiverBypass%GetExportNode(Node2,BypassExportNode, iStat)
+        CALL AppStream%AppDiverBypass%GetBypassExportNode(Node2,BypassExportNode, iStat)
         IF (iStat .EQ. -1) RETURN
-        lUpstream = StrmReach_IsUpstreamNode(AppStream%Reaches,Node1,BypassExportNode)
+        lUpstream = StrmReach_IsUpstreamNode(AppStream%Reaches,Node1,BypassExportNode,AppStream%AppDiverBypass%Bypasses%iNode_Exp,AppStream%AppDiverBypass%Bypasses%FlowDestinationType)
     ELSE   
-        lUpstream = StrmReach_IsUpstreamNode(AppStream%Reaches,Node1,Node2)
+        lUpstream = StrmReach_IsUpstreamNode(AppStream%Reaches,Node1,Node2,AppStream%AppDiverBypass%Bypasses%iNode_Exp,AppStream%AppDiverBypass%Bypasses%FlowDestinationType)
     END IF
     
-  END FUNCTION IsUpstreamNode
+  END SUBROUTINE IsUpstreamNode
   
 
   ! -------------------------------------------------------------
@@ -1747,5 +2568,56 @@ CONTAINS
     CALL AppStream%StrmHyd%Transfer_To_HDF(NTIME,TimeStep,iStat)
         
   END SUBROUTINE TransferOutputToHDF
+  
+  
+  ! -------------------------------------------------------------
+  ! --- OBTAIN TOTAL NUMBER OF STREAM NODES
+  ! -------------------------------------------------------------
+  SUBROUTINE CalculateNStrmNodes(DataFile,NReaches,NStrmNodes,iStat)
+    TYPE(GenericFileType) :: DataFile
+    INTEGER,INTENT(IN)    :: NReaches
+    INTEGER,INTENT(OUT)   :: NStrmNodes,iStat
+    
+    !Local variables
+    INTEGER   :: indxReach,indxNode,iDummyArray(2),iDummy
+    CHARACTER :: ALine*7
+    
+    !Initialize
+    iStat      = 0
+    NStrmNodes = 0
+    
+    !Read and accumulate number of stream nodes
+    DO indxReach=1,NReaches
+        CALL DataFile%ReadData(iDummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        NStrmNodes = NStrmNodes + iDummyArray(2)
+        DO indxNode=1,iDummyArray(2)
+            CALL DataFile%ReadData(ALine,iStat)    ;  IF (iStat .EQ. -1) RETURN
+        END DO
+    END DO
+    
+    !Rewind the data file back to where it was
+    CALL DataFile%RewindFile()
+    CALL DataFile%ReadData(ALine,iStat)   ;  IF (iStat .EQ. -1) RETURN   !Stream component version
+    CALL DataFile%ReadData(iDummy,iStat)  ;  IF (iStat .EQ. -1) RETURN   !Number of reaches
+    CALL DataFile%ReadData(iDummy,iStat)  ;  IF (iStat .EQ. -1) RETURN   !Number of points in rating table
+    
+  END SUBROUTINE CalculateNStrmNodes
+   
+
+  ! -------------------------------------------------------------
+  ! --- ADD BYPASS
+  ! -------------------------------------------------------------
+  SUBROUTINE AddBypass(AppStream,ID,iNode_Exp,iColBypass,cName,rFracRecvLoss,rFracNonRecvLoss,iNRechargeElems,iRechargeElems,rRechargeFractions,iDestType,iDest,StrmLakeConnector,iStat)
+    CLASS(BaseAppStreamType)    :: AppStream
+    INTEGER,INTENT(IN)          :: ID,iNode_Exp,iColBypass,iNRechargeElems,iRechargeElems(iNRechargeElems),iDestType,iDest
+    CHARACTER(LEN=*),INTENT(IN) :: cName
+    REAL(8),INTENT(IN)          :: rFracRecvLoss,rFracNonRecvLoss,rRechargeFractions(iNRechargeElems)
+    TYPE(StrmLakeConnectorType) :: StrmLakeConnector
+    INTEGER,INTENT(OUT)         :: iStat
+    
+    CALL AppStream%AppDiverBypass%AddBypass(ID,iNode_Exp,iColBypass,cName,rFracRecvLoss,rFracNonRecvLoss,iNRechargeElems,iRechargeElems,rRechargeFractions,iDestType,iDest,StrmLakeConnector,iStat)
+    
+  END SUBROUTINE AddBypass
+
 
 END MODULE

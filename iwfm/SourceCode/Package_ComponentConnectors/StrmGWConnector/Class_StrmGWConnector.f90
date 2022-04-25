@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -25,15 +25,17 @@ MODULE Class_StrmGWConnector
   USe MessageLogger             , ONLY: SetLastMessage        , &
                                         EchoProgress          , &
                                         MessageArray          , &
-                                        iFatal
+                                        f_iFatal
   USE IOInterface
   USE Package_Discretization
-  USE Package_Matrix            , ONLY: MatrixType
+  USE Package_Matrix            , ONLY: MatrixType               , &
+                                        ConnectivityListType
   USE Package_Misc              , ONLY: AbstractFunctionType
-  USE Class_BaseStrmGWConnector
+  USE Class_BaseStrmGWConnector , ONLY: BaseStrmGWConnectorType 
   USE Class_StrmGWConnector_v40
   USE Class_StrmGWConnector_v41
   USE Class_StrmGWConnector_v42
+  USE Class_StrmGWConnector_v421
   USE Class_StrmGWConnector_v50
   IMPLICIT NONE
   
@@ -53,7 +55,7 @@ MODULE Class_StrmGWConnector
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC :: StrmGWConnectorType
+  PUBLIC :: StrmGWConnectorType       
   
   
   ! -------------------------------------------------------------
@@ -73,6 +75,7 @@ MODULE Class_StrmGWConnector
       PROCEDURE,PASS :: GetnTotalGWNodes
       PROCEDURE,PASS :: GetSubregionalFlows
       PROCEDURE,PASS :: GetFlowAtAllStrmNodes
+      PROCEDURE,PASS :: GetTotalFlowAtAllStrmNodes
       PROCEDURE,PASS :: GetFlowAtSomeStrmNodes
       PROCEDURE,PASS :: GetFlowAtGWNode
       PROCEDURE,PASS :: GetLayer
@@ -81,16 +84,18 @@ MODULE Class_StrmGWConnector
       PROCEDURE,PASS :: GetGWNode
       PROCEDURE,PASS :: GetGWNodesAtStrmNode
       PROCEDURE,PASS :: GetGWHeadsAtStrmNodes
+      PROCEDURE,PASS :: SetInteractionType
       PROCEDURE,PASS :: SetConductance
+      PROCEDURE,PASS :: SetFractionsForGW
       PROCEDURE,PASS :: SetStrmGWFlow
+      PROCEDURE,PASS :: SetDisconnectElevations
       PROCEDURE,PASS :: WritePreprocessedData
       PROCEDURE,PASS :: ConvertTimeUnit
       PROCEDURE,PASS :: ComputeStrmGWFlow_AtMinHead
       PROCEDURE,PASS :: Simulate
       PROCEDURE,PASS :: RegisterWithMatrix
-      PROCEDURE,PASS :: UpdateMatrix_ForBypass
-      GENERIC        :: New => ReadPreprocessedData  , &
-                               AddGWNodes            
+      GENERIC        :: New      => ReadPreprocessedData              , &
+                                    AddGWNodes 
   END TYPE StrmGWConnectorType
 
 
@@ -159,6 +164,13 @@ CONTAINS
             Connector%Me%iVersion = iVersion
             Connector%lDefined    = .TRUE.
 
+        CASE (421)
+            ALLOCATE (StrmGWConnector_v421_Type :: Connector%Me)
+            CALL Connector%Me%New(InFile,iStat)
+            IF (iStat .EQ. -1) RETURN
+            Connector%Me%iVersion = iVersion
+            Connector%lDefined    = .TRUE.
+
         CASE (50)
             ALLOCATE (StrmGWConnector_v50_Type :: Connector%Me)
             CALL Connector%Me%New(InFile,iStat)
@@ -167,7 +179,7 @@ CONTAINS
             Connector%lDefined    = .TRUE.
             
         CASE DEFAULT
-            CALL SetLastMessage('Version number '//TRIM(IntToText(iVersion))//' for stream-groundwater interaction is not recognized!',iFatal,ThisProcedure) 
+            CALL SetLastMessage('Version number '//TRIM(IntToText(iVersion))//' for stream-groundwater interaction is not recognized!',f_iFatal,ThisProcedure) 
             iStat = -1
     END SELECT 
        
@@ -201,7 +213,7 @@ CONTAINS
             Connector%lDefined    = .TRUE.
             
         CASE (42)
-            CALL SetLastMessage('AddGWNodes method is not defined for stream-groundwater interaction component version 4.2!',iFatal,ThisProcedure)
+            CALL SetLastMessage('AddGWNodes method is not defined for stream-groundwater interaction component version 4.2!',f_iFatal,ThisProcedure)
             iStat = -1
             
         CASE (50)
@@ -212,7 +224,7 @@ CONTAINS
             Connector%lDefined    = .TRUE.
             
         CASE DEFAULT
-            CALL SetLastMessage('Version number '//TRIM(IntToText(iVersion))//' for stream-groundwater interaction is not recognized!',iFatal,ThisProcedure) 
+            CALL SetLastMessage('Version number '//TRIM(IntToText(iVersion))//' for stream-groundwater interaction is not recognized!',f_iFatal,ThisProcedure) 
             iStat = -1
     END SELECT 
 
@@ -222,9 +234,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- ADD GW NODE FOR A STREAM NODE
   ! -------------------------------------------------------------
-  SUBROUTINE AddGWNodesToStrmNode(Connector,iVersion,NStrmNodes,iStrmNode,iGWNodes,iLayers,iStat)
+  SUBROUTINE AddGWNodesToStrmNode(Connector,iVersion,NStrmNodes,iStrmNode,iGWNodes,iLayers,iRanks,iStat)
     CLASS(StrmGWConnectorType) :: Connector
-    INTEGER,INTENT(IN)         :: iVersion,NStrmNodes,iStrmNode,iGWNodes(:),iLayers(:)
+    INTEGER,INTENT(IN)         :: iVersion,NStrmNodes,iStrmNode,iGWNodes(:),iLayers(:),iRanks(:)
     INTEGER,INTENT(OUT)        :: iStat
 
     !Local variables
@@ -232,35 +244,51 @@ CONTAINS
     
     SELECT CASE (iVersion)
         CASE (40)
-            CALL SetLastMessage('AddGWNodeToStrmNode method is not defined for stream-groundwater interaction component version 4.0!',iFatal,ThisProcedure) 
+            CALL SetLastMessage('AddGWNodeToStrmNode method is not defined for stream-groundwater interaction component version 4.0!',f_iFatal,ThisProcedure) 
             iStat = -1
             
         CASE (41)
-            CALL SetLastMessage('AddGWNodeToStrmNode method is not defined for stream-groundwater interaction component version 4.1!',iFatal,ThisProcedure) 
+            CALL SetLastMessage('AddGWNodeToStrmNode method is not defined for stream-groundwater interaction component version 4.1!',f_iFatal,ThisProcedure) 
             iStat = -1
             
         CASE (42)
             IF (ALLOCATED(Connector%Me)) THEN
                 SELECT TYPE (p => Connector%Me)
                     TYPE IS (StrmGWConnector_v42_Type)
-                        CALL p%AddGWNodesToStrmNode(NStrmNodes,iStrmNode,iGWNodes,iLayers)
+                        CALL p%AddGWNodesToStrmNode(NStrmNodes,iStrmNode,iGWNodes,iLayers,iRanks)
                 END SELECT
             ELSE
                 ALLOCATE (StrmGWConnector_v42_Type :: Connector%Me)
                 SELECT TYPE (p => Connector%Me)
                     TYPE IS (StrmGWConnector_v42_Type)
-                        CALL p%AddGWNodesToStrmNode(NStrmNodes,iStrmNode,iGWNodes,iLayers)
+                        CALL p%AddGWNodesToStrmNode(NStrmNodes,iStrmNode,iGWNodes,iLayers,iRanks)
+                END SELECT
+                Connector%Me%iVersion = iVersion
+                Connector%lDefined    = .TRUE.
+            END IF
+            
+        CASE (421)
+            IF (ALLOCATED(Connector%Me)) THEN
+                SELECT TYPE (p => Connector%Me)
+                    TYPE IS (StrmGWConnector_v421_Type)
+                        CALL p%AddGWNodesToStrmNode(NStrmNodes,iStrmNode,iGWNodes,iLayers,iRanks)
+                END SELECT
+            ELSE
+                ALLOCATE (StrmGWConnector_v421_Type :: Connector%Me)
+                SELECT TYPE (p => Connector%Me)
+                    TYPE IS (StrmGWConnector_v421_Type)
+                        CALL p%AddGWNodesToStrmNode(NStrmNodes,iStrmNode,iGWNodes,iLayers,iRanks)
                 END SELECT
                 Connector%Me%iVersion = iVersion
                 Connector%lDefined    = .TRUE.
             END IF
             
         CASE (50)
-            CALL SetLastMessage('AddGWNodeToStrmNode method is not defined for stream-groundwater interaction component version 5.0!',iFatal,ThisProcedure)
+            CALL SetLastMessage('AddGWNodeToStrmNode method is not defined for stream-groundwater interaction component version 5.0!',f_iFatal,ThisProcedure)
             iStat = -1
             
         CASE DEFAULT
-            CALL SetLastMessage('Version number '//TRIM(IntToText(iVersion))//' for stream-groundwater interaction is not recognized!',iFatal,ThisProcedure) 
+            CALL SetLastMessage('Version number '//TRIM(IntToText(iVersion))//' for stream-groundwater interaction is not recognized!',f_iFatal,ThisProcedure) 
             iStat = -1
     END SELECT 
 
@@ -342,7 +370,7 @@ CONTAINS
 
     IF (Connector%lDefined) THEN
         SELECT TYPE (p => Connector%Me)
-            TYPE IS (StrmGWConnector_v42_Type)
+            CLASS IS (StrmGWConnector_v42_Type)
                 nTotalGWNodes = p%GetnTotalGWNodes()
             CLASS DEFAULT
                 nTotalGWNodes = SIZE(p%iGWNode)    
@@ -357,13 +385,14 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET TOTAL STREAM-GW FLOW AT SUBREGIONS 
   ! -------------------------------------------------------------
-  FUNCTION GetSubregionalFlows(Connector,AppGrid) RESULT(Flows)
+  FUNCTION GetSubregionalFlows(Connector,AppGrid,lInsideModel) RESULT(Flows)
     CLASS(StrmGWConnectorType),INTENT(IN) :: Connector
     TYPE(AppGridType),INTENT(IN)          :: AppGrid
+    LOGICAL,INTENT(IN)                    :: lInsideModel
     REAL(8)                               :: Flows(AppGrid%NSubregions)
     
     IF (Connector%lDefined) THEN
-        Flows = Connector%Me%GetSubregionalFlows(AppGrid)
+        Flows = Connector%Me%GetSubregionalFlows(AppGrid,lInsideModel)
     ELSE
         Flows = 0.0
     END IF
@@ -372,14 +401,34 @@ CONTAINS
 
 
   ! -------------------------------------------------------------
-  ! --- GET STREAM-GW FLOW AT EVERY STREAM NODE 
+  ! --- GET TOTAL (INSIDE AND OUTSIDE MODEL) STREAM-GW FLOW AT EVERY STREAM NODE 
   ! -------------------------------------------------------------
-  SUBROUTINE GetFlowAtAllStrmNodes(Connector,Flow)
+  SUBROUTINE GetTotalFlowAtAllStrmNodes(Connector,Flow)
     CLASS(StrmGWConnectorType),INTENT(IN) :: Connector
     REAL(8),INTENT(OUT)                   :: Flow(:) 
 
     IF (Connector%lDefined) THEN
-        CALL Connector%Me%GetFlowAtAllStrmNodes(Flow)
+        SELECT TYPE (p => Connector%Me)
+            CLASS IS (StrmGWConnector_v42_Type)
+                CALL p%GetTotalFlowAtAllStrmNodes(Flow)
+        END SELECT
+    ELSE
+        Flow = 0.0
+    END IF
+  
+  END SUBROUTINE GetTotalFlowAtAllStrmNodes
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM-GW FLOW AT EVERY STREAM NODE 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetFlowAtAllStrmNodes(Connector,lInsideModel,Flow)
+    CLASS(StrmGWConnectorType),INTENT(IN) :: Connector
+    LOGICAL,INTENT(IN)                    :: lInsideModel
+    REAL(8),INTENT(OUT)                   :: Flow(:) 
+
+    IF (Connector%lDefined) THEN
+        CALL Connector%Me%GetFlowAtAllStrmNodes(lInsideModel,Flow)
     ELSE
         Flow = 0.0
     END IF
@@ -390,13 +439,14 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET TOTAL STREAM-GW FLOW AT A SET OF STREAM NODES 
   ! -------------------------------------------------------------
-  FUNCTION GetFlowAtSomeStrmNodes(Connector,iNodeBegin,iNodeEnd) RESULT(Flow)
+  FUNCTION GetFlowAtSomeStrmNodes(Connector,iNodeBegin,iNodeEnd,lInsideModel) RESULT(Flow)
     CLASS(StrmGWConnectorType),INTENT(IN) :: Connector
     INTEGER,INTENT(IN)                    :: iNodeBegin,iNodeEnd
+    LOGICAL,INTENT(IN)                    :: lInsideModel
     REAL(8)                               :: Flow 
 
     IF (Connector%lDefined) THEN
-        Flow = Connector%Me%GetFlowAtSomeStrmNodes(iNodeBegin,iNodeEnd)
+        Flow = Connector%Me%GetFlowAtSomeStrmNodes(iNodeBegin,iNodeEnd,lInsideModel)
     ELSE
         Flow = 0.0
     END IF
@@ -446,7 +496,7 @@ CONTAINS
     INTEGER,ALLOCATABLE                   :: Layers(:)
 
     IF (Connector%lDefined) CALL Connector%Me%GetAllLayers(Layers)
-  
+    
   END SUBROUTINE GetAllLayers
   
   
@@ -469,7 +519,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET GW NODE
   ! -------------------------------------------------------------
-  FUNCTION GetGWNode(Connector,iNode) RESULT(GWNode)
+  PURE FUNCTION GetGWNode(Connector,iNode) RESULT(GWNode)
     CLASS(StrmGWConnectorType),INTENT(IN) :: Connector
     INTEGER,INTENT(IN)                    :: iNode
     INTEGER                               :: GWNode
@@ -484,7 +534,7 @@ CONTAINS
     
     SELECT TYPE (p => Connector%Me)
         !Return the first GW node associated with a stream node for version 4.2
-        TYPE IS (StrmGWConnector_v42_Type)
+        CLASS IS (StrmGWConnector_v42_Type)
             CALL p%GetGWNodesAtStrmNode(iNode,iGWNodes)
             GWNode = iGWNodes(1)
             
@@ -512,7 +562,7 @@ CONTAINS
     
     IF (Connector%lDefined) THEN
         SELECT TYPE (p => Connector%Me)
-            TYPE IS (StrmGWConnector_v42_Type)
+            CLASS IS (StrmGWConnector_v42_Type)
                 CALL p%GetGWNodesAtStrmNode(iStrmNode,iGWNodes)
                 
             CLASS DEFAULT
@@ -551,6 +601,40 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
+  ! --- SET DISCONNECT ELEVATIONS (ONLY AVAILBLE FOR v5.0)
+  ! -------------------------------------------------------------
+  SUBROUTINE SetDisconnectElevations(Connector,rBottomElevs)
+    CLASS(StrmGWConnectorType) :: Connector
+    REAL(8),INTENT(IN)         :: rBottomElevs(:)
+    
+    IF (Connector%lDefined) THEN
+        SELECT TYPE (p => Connector%Me)
+            CLASS IS (StrmGWConnector_v50_Type) 
+                CALL p%SetDisconnectElevations(rBottomElevs)
+        END SELECT
+    END IF
+    
+  END SUBROUTINE SetDisconnectElevations
+    
+  
+  ! -------------------------------------------------------------
+  ! --- SET STREAM-GW INTERACTION TYPE
+  ! -------------------------------------------------------------
+  SUBROUTINE SetInteractionType(Connector,iInteractionType,iStat)
+    CLASS(StrmGWConnectorType) :: Connector
+    INTEGER,INTENT(IN)         :: iInteractionType
+    INTEGER,INTENT(OUT)        :: iStat
+    
+    IF (Connector%lDefined) THEN
+        CALL Connector%Me%SetInteractionType(iInteractionType,iStat)
+    ELSE
+        iStat = 0
+    END IF
+
+  END SUBROUTINE SetInteractionType
+  
+  
+  ! -------------------------------------------------------------
   ! --- SET THE CONDUCTANCE
   ! -------------------------------------------------------------
   SUBROUTINE SetConductance(Connector,TimeUnitConductance,Conductance)
@@ -575,6 +659,24 @@ CONTAINS
     IF (Connector%lDefined) CALL Connector%Me%SetStrmGWFlow(iNode,StrmGWFlow)
     
   END SUBROUTINE SetStrmGWFlow
+  
+  
+  ! -------------------------------------------------------------
+  ! --- SET STREAM NODES AND FRACTION OF STREAM-GW INTERACTION TO BE APPLIED TO GW NODES
+  ! -------------------------------------------------------------
+  SUBROUTINE SetFractionsForGW(Connector,iStrmNodes,rFractions,iStat)
+    CLASS(StrmGWConnectorType) :: Connector
+    INTEGER,INTENT(IN)         :: iStrmNodes(:)
+    REAL(8),INTENT(IN)         :: rFractions(:)
+    INTEGER,INTENT(OUT)        :: iStat
+
+    IF (Connector%lDefined) THEN
+        CALL Connector%Me%SetFractionsForGW(iStrmNodes,rFractions,iStat)
+    ELSE
+        iStat = 0
+    END IF
+    
+  END SUBROUTINE SetFractionsForGW
   
   
   
@@ -618,36 +720,20 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
-  ! --- UPDATE MATRIX FOR BYPASS
-  ! -------------------------------------------------------------
-  SUBROUTINE UpdateMatrix_ForBypass(Connector,iNode,StrmHead,GWHead,DeltaX,StrmBottomElev,MaxElev,dBypass_dFlow,WetPerimeterFunction,Matrix)
-    CLASS(StrmGWConnectorType),INTENT(IN)  :: Connector
-    INTEGER,INTENT(IN)                     :: iNode
-    REAL(8),INTENT(IN)                     :: StrmHead(:),GWHead(:),DeltaX(:),StrmBottomElev(:),MaxElev(:),dBypass_dFlow
-    CLASS(AbstractFunctionType),INTENT(IN) :: WetPerimeterFunction(:)                    !In this case, this is the wetted perimeter function defined using Manning's formula 
-    TYPE(MatrixType)                       :: Matrix
-    
-    SELECT TYPE (p => Connector%Me)
-        CLASS IS (StrmGWConnector_v50_Type)
-            CALL StrmGWConnector_v50_UpdateMatrix_ForBypass(p,iNode,StrmHead,GWHead,DeltaX,StrmBottomElev,MaxElev,dBypass_dFlow,WetPerimeterFunction,Matrix)
-    END SELECT
-    
-  END SUBROUTINE UpdateMatrix_ForBypass
-  
-  
-  ! -------------------------------------------------------------
   ! --- ADD CONDUCTANCE RELATED DATA TO CONNECTOR
   ! ---  Note: Assumes GW nodes are already defined
   ! -------------------------------------------------------------
-  SUBROUTINE CompileConductance(Connector,InFile,AppGrid,NStrmNodes,UpstrmNodes,DownstrmNodes,iStat)
-    CLASS(StrmGWConnectorType)   :: Connector
-    TYPE(GenericFileType)        :: InFile
-    TYPE(AppGridType),INTENT(IN) :: AppGrid
-    INTEGER,INTENT(IN)           :: NStrmNodes,UpstrmNodes(:),DownstrmNodes(:)
-    INTEGER,INTENT(OUT)          :: iStat
+  SUBROUTINE CompileConductance(Connector,InFile,AppGrid,Stratigraphy,NStrmNodes,iStrmNodeIDs,UpstrmNodes,DownstrmNodes,BottomElevs,iStat)
+    CLASS(StrmGWConnectorType)        :: Connector
+    TYPE(GenericFileType)             :: InFile
+    TYPE(AppGridType),INTENT(IN)      :: AppGrid
+    TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
+    INTEGER,INTENT(IN)                :: NStrmNodes,iStrmNodeIDs(NStrmNodes),UpstrmNodes(:),DownstrmNodes(:)
+    REAL(8),INTENT(IN)                :: BottomElevs(:)
+    INTEGER,INTENT(OUT)               :: iStat
 
     IF (Connector%lDefined) THEN
-        CALL Connector%Me%CompileConductance(InFile,AppGrid,NStrmNodes,UpstrmNodes,DownstrmNodes,iStat)
+        CALL Connector%Me%CompileConductance(InFile,AppGrid,Stratigraphy,NStrmNodes,iStrmNodeIDs,UpstrmNodes,DownstrmNodes,BottomElevs,iStat)
     ELSE
         iStat = 0
     END IF
@@ -668,23 +754,19 @@ CONTAINS
     
 
   ! -------------------------------------------------------------
-  ! --- COMPUTE STREAM-GW INTERACTION
+  ! --- SIMULATE STREAM-GW INTERACTION
   ! --- *** Note: + flow means loosing stream
   ! -------------------------------------------------------------
-  SUBROUTINE Simulate(Connector,NNodes,GWHead,StrmHead,StrmBottomElev,WetPerimeterFunction,Matrix,DeltaX,MaxElev)
-    CLASS(StrmGWConnectorType)             :: Connector
-    INTEGER,INTENT(IN)                     :: NNodes
-    REAL(8),INTENT(IN)                     :: GWHead(:),StrmHead(:),StrmBottomElev(:)
-    CLASS(AbstractFunctionType),INTENT(IN) :: WetPerimeterFunction(:)
-    TYPE(MatrixType)                       :: Matrix
-    REAL(8),OPTIONAL,INTENT(IN)            :: DeltaX(:),MaxElev(:)
+  SUBROUTINE Simulate(Connector,iNNodes,rGWHeads,rStrmHeads,rAvailableFlows,Matrix,WetPerimeterFunction,rMaxElevs)
+    CLASS(StrmGWConnectorType)                      :: Connector
+    INTEGER,INTENT(IN)                              :: iNNodes
+    REAL(8),INTENT(IN)                              :: rGWHeads(:),rStrmHeads(:),rAvailableFlows(:)
+    TYPE(MatrixType)                                :: Matrix
+    CLASS(AbstractFunctionType),OPTIONAL,INTENT(IN) :: WetPerimeterFunction(:)                     
+    REAL(8),OPTIONAL,INTENT(IN)                     :: rMaxElevs(:)
 
     IF (Connector%lDefined) THEN
-        IF (PRESENT(DeltaX)) THEN
-            CALL Connector%Me%Simulate(NNodes,GWHead,StrmHead,StrmBottomElev,WetPerimeterFunction,Matrix,DeltaX,MaxElev)
-        ELSE
-            CALL Connector%Me%Simulate(NNodes,GWHead,StrmHead,StrmBottomElev,WetPerimeterFunction,Matrix)
-        END IF
+        CALL Connector%Me%Simulate(iNNodes,rGWHeads,rStrmHeads,rAvailableFlows,Matrix,WetPerimeterFunction,rMaxElevs)
     END IF
     
   END SUBROUTINE Simulate
@@ -694,19 +776,17 @@ CONTAINS
   ! --- COMPUTE STREAM-GW INTERACTION WITHOUT UPDATING MATRIX
   ! --- *** Note: + flow means loosing stream
   ! -------------------------------------------------------------
-  SUBROUTINE ComputeStrmGWFlow_AtMinHead(Connector,Flows,GWHead,StrmHead,StrmBottomElev,WetPerimeterFunction,DeltaX)
+  SUBROUTINE ComputeStrmGWFlow_AtMinHead(Connector,rStrmBottomElev,rGWHead,rMaxElev,WetPerimeterFunction,rFlows)
     CLASS(StrmGWConnectorType)             :: Connector
-    REAL(8),INTENT(OUT)                    :: Flows(:)
-    REAL(8),INTENT(IN)                     :: GWHead(:),StrmHead(:),StrmBottomElev(:)
+    REAL(8),INTENT(IN)                     :: rStrmBottomElev(:),rGWHead(:),rMaxElev(:)
     CLASS(AbstractFunctionType),INTENT(IN) :: WetPerimeterFunction(:)
-    REAL(8),OPTIONAL,INTENT(IN)            :: DeltaX(:)
+    REAL(8),INTENT(OUT)                    :: rFlows(:)
 
     IF (Connector%lDefined) THEN
-        IF (PRESENT(DeltaX)) THEN
-            CALL Connector%Me%ComputeStrmGWFlow_AtMinHead(Flows,GWHead,StrmHead,StrmBottomElev,WetPerimeterFunction,DeltaX)
-        ELSE
-            CALL Connector%Me%ComputeStrmGWFlow_AtMinHead(Flows,GWHead,StrmHead,StrmBottomElev,WetPerimeterFunction)
-        END IF
+        SELECT TYPE (p => Connector%Me)
+            CLASS IS (StrmGWConnector_v50_Type)
+                CALL p%ComputeStrmGWFlow_AtMinHead(rStrmBottomElev,rGWHead,rMaxElev,WetPerimeterFunction,rFlows)
+        END SELECT
     END IF
     
   END SUBROUTINE ComputeStrmGWFlow_AtMinHead
@@ -715,10 +795,10 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- ADD STREAM-GW CONNECTIVITY TO MATRIX
   ! -------------------------------------------------------------
-  SUBROUTINE RegisterWithMatrix(Connector,AppGrid,lUpstrmNode,Matrix,iStat)
+  SUBROUTINE RegisterWithMatrix(Connector,StrmConnectivity,AppGrid,Matrix,iStat)
     CLASS(StrmGWConnectorType),INTENT(IN) :: Connector
+    TYPE(ConnectivityListType),INTENT(IN) :: StrmConnectivity(:)
     TYPE(AppGridType),INTENT(IN)          :: AppGrid
-    LOGICAL,INTENT(IN)                    :: lUpstrmNode(:)
     TYPE(MatrixType)                      :: Matrix
     INTEGER,INTENT(OUT)                   :: iStat
     
@@ -732,13 +812,7 @@ CONTAINS
     CALL EchoProgress('Registering stream-groundwater connector with matrix...')
     
     !Register connectivity with matrix
-    SELECT TYPE (p => Connector%Me)
-        TYPE IS (StrmGWConnector_v50_Type)
-            !Connectivity for version 5.0 is different
-            CALL StrmGWConnector_v50_RegisterWithMatrix(p,lUpstrmNode,AppGrid,Matrix,iStat)
-        CLASS DEFAULT
-            CALL p%RegisterWithMatrix(AppGrid,Matrix,iStat)        
-    END SELECT
+    CALL Connector%Me%RegisterWithMatrix(StrmConnectivity,AppGrid,Matrix,iStat)
     
   END SUBROUTINE RegisterWithMatrix
 

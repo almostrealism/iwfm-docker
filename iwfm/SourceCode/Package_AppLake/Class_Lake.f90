@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -23,12 +23,13 @@
 MODULE Class_Lake
   USE MessageLogger          , ONLY: SetLastMessage           , &
                                      MessageArray             , &
-                                     iFatal
+                                     f_iFatal
   USE GeneralUtilities       , ONLY: AllocArray               , &
                                      GetUniqueArrayComponents , &
                                      ShellSort                , &
                                      LocateInList             , &
-                                     IntToText
+                                     IntToText                , &
+                                     ConvertID_To_Index
   USE IOInterface            , ONLY: GenericFileType
   USE Package_Misc           , ONLY: PairedDataType  
   USE Package_Discretization , ONLY: AppGridType
@@ -59,6 +60,7 @@ MODULE Class_Lake
   ! -------------------------------------------------------------
   TYPE LakeType
       CHARACTER(LEN=200)   :: cName           = ''       !Name of the lake
+      INTEGER              :: ID              = 0        !Lake ID
       INTEGER              :: NElements       = 0        !Number of lake elements
       INTEGER              :: NNodes          = 0        !Number of groundwater nodes under lake
       REAL(8)              :: Area            = 0.0      !Lake area
@@ -128,7 +130,7 @@ CONTAINS
     iCounter = 0
       
     !Total number of nodes
-    NNodes = SUM(AppGrid%Element(Lake%Elements)%NVertex)
+    NNodes = SUM(AppGrid%NVertex(Lake%Elements))
     
     !Allocate memory
     CALL AllocArray(Nodes,NNodes,ThisProcedure,iStat)
@@ -137,8 +139,8 @@ CONTAINS
     !Compile all nodes
     DO indxElem=1,Lake%NElements
       ElemNo                             = Lake%Elements(indxElem)
-      NVertex                            = AppGrid%Element(ElemNo)%NVertex
-      Nodes(iCounter+1:iCounter+NVertex) = AppGrid%Element(ElemNo)%Vertex(1:NVertex)
+      NVertex                            = AppGrid%NVertex(ElemNo)
+      Nodes(iCounter+1:iCounter+NVertex) = AppGrid%Vertex(1:NVertex,ElemNo)
       iCounter                           = iCounter + NVertex
     END DO
     
@@ -165,7 +167,7 @@ CONTAINS
     TYPE(AppGridType),INTENT(IN) :: AppGrid
 
     !Local variables
-    INTEGER :: indxElem,indxNode,iNode,ElemNo,NVertex,iVertex(4),iLoc
+    INTEGER :: indxElem,indxNode,iNode,ElemNo,NVertex,Vertex(4),iLoc
     REAL(8) :: VertexArea(4)
 
     !Initialize
@@ -175,11 +177,11 @@ CONTAINS
     !Compute nodal areas
     DO indxElem=1,Lake%NElements
         ElemNo                = Lake%Elements(indxElem)
-        NVertex               = AppGrid%Element(ElemNo)%NVertex
-        iVertex               = AppGrid%Element(ElemNo)%Vertex
+        NVertex               = AppGrid%NVertex(ElemNo)
+        Vertex                = AppGrid%Vertex(:,ElemNo)
         VertexArea(1:NVertex) = AppGrid%AppElement(ElemNo)%VertexArea
         DO indxNode=1,NVertex
-            iNode = iVertex(indxNode)
+            iNode = Vertex(indxNode)
             iLoc  = LocateInList(iNode,Lake%Nodes)
             Lake%NodeAreas(iLoc) = Lake%NodeAreas(iLoc) + VertexArea(indxNode)
         END DO
@@ -194,19 +196,22 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ INITIAL LAKE ELEVATIONS
   ! -------------------------------------------------------------
-  SUBROUTINE ReadInitialLakeElevs(LakeDataFile,Lakes,iStat)
+  SUBROUTINE ReadInitialLakeElevs(LakeDataFile,Lakes,iLakeIDs,iStat)
     TYPE(GenericFileType) :: LakeDataFile
     TYPE(LakeType)        :: Lakes(:)
+    INTEGER,INTENT(IN)    :: iLakeIDs(:)
     INTEGER,INTENT(OUT)   :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+20) :: ThisProcedure = ModName // 'ReadInitialLakeElevs'
-    INTEGER                      :: NLakes,indxLake,ID
+    INTEGER                      :: NLakes,indxLake,ID,iLake
     REAL(8)                      :: Fact,DummyArray(2)
+    LOGICAL                      :: lProcessed(SIZE(iLakeIDs))
     
     !Initialize
-    iStat  = 0
-    NLakes = SIZE(Lakes)
+    iStat      = 0
+    NLakes     = SIZE(Lakes)
+    lProcessed = .FALSE.
     
     !Read conversion factor
     CALL LakeDataFile%ReadData(Fact,iStat)  
@@ -214,37 +219,43 @@ CONTAINS
     
     !Read initial lake elavtions and process
     DO indxLake=1,NLakes
-      CALL LakeDataFile%ReadData(DummyArray,iStat)  
-      IF(iStat .EQ. -1) RETURN
-      
-      !Make sure that lakes are entered sequentially
-      ID = INT(DummyArray(1))
-      IF (ID .NE. indxLake) THEN 
-          MessageArray(1) = 'Initial lake elevations should be entered sequentialy.'
-          MessageArray(2) = 'Expected lake = '//TRIM(IntToText(indxLake))
-          MessageArray(3) = 'Entered lake  = '//TRIM(IntToText(ID))
-          CALL SetLAstMessage(MessageArray(1:3),iFatal,ThisProcedure)
-          iStat = -1
-          RETURN
-      END IF
-      
-      !Assign initial elevations
-      Lakes(indxLake)%Elev   = DummyArray(2) * Fact
-      Lakes(indxLake)%Elev_P = Lakes(indxLake)%Elev
-      
-      !Make sure that initial elevations are not less than the lowest ground surface elevation
-      IF (Lakes(indxLake)%Elev .LT. Lakes(indxLake)%RatingTable%XPoint(1)) THEN
-          MessageArray(1) = 'Initial lake elevation for lake '//TRIM(IntToText(indxLake))//' is lower than the lowest ground surface elevation!'
-          WRITE(MessageArray(2),'(A,F8.4)') 'Lowest ground surface elevation = ',Lakes(indxLake)%RatingTable%XPoint(1)
-          WRITE(MessageArray(3),'(A,F8.4)') 'Initial lake elevation          = ',Lakes(indxLake)%Elev
-          CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-          iStat = -1
-          RETURN
-      END IF
-      
-      !Compute initial storages
-      Lakes(indxLake)%Storage   = Lakes(indxLake)%RatingTable%Evaluate(Lakes(indxLake)%Elev)
-      Lakes(indxLake)%Storage_P = Lakes(indxLake)%Storage
+        CALL LakeDataFile%ReadData(DummyArray,iStat)  
+        IF(iStat .EQ. -1) RETURN
+        
+        !Make sure that lake ID number is recognized
+        ID = INT(DummyArray(1))
+        CALL ConvertID_To_Index(ID,iLakeIDs,iLake)
+        IF (iLake .EQ. 0) THEN 
+            CALL SetLastMessage('Lake ID '//TRIM(IntToText(ID))//' listed for inital lake elevation is not recognized!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        
+        !Make sure lake data was not entered previously
+        IF (lProcessed(iLake)) THEN
+            CALL SetLastMessage('Initial elevation for lake '//TRIM(IntToText(ID))//' is entered more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iLake) = .TRUE.
+        
+        !Assign initial elevations
+        Lakes(iLake)%Elev   = DummyArray(2) * Fact
+        Lakes(iLake)%Elev_P = Lakes(iLake)%Elev
+        
+        !Make sure that initial elevations are not less than the lowest ground surface elevation
+        IF (Lakes(iLake)%Elev .LT. Lakes(iLake)%RatingTable%XPoint(1)) THEN
+            MessageArray(1) = 'Initial lake elevation for lake '//TRIM(IntToText(ID))//' is lower than the lowest ground surface elevation!'
+            WRITE(MessageArray(2),'(A,F8.4)') 'Lowest ground surface elevation = ',Lakes(iLake)%RatingTable%XPoint(1)
+            WRITE(MessageArray(3),'(A,F8.4)') 'Initial lake elevation          = ',Lakes(iLake)%Elev
+            CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        
+        !Compute initial storages
+        Lakes(iLake)%Storage   = Lakes(iLake)%RatingTable%Evaluate(Lakes(iLake)%Elev)
+        Lakes(iLake)%Storage_P = Lakes(iLake)%Storage
       
     END DO
 

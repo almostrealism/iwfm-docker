@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,6 +21,9 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_GWState
+  USE MessageLogger , ONLY: SetLastMessage , &
+                            MessageArray   , &
+                            f_iFatal 
   IMPLICIT NONE
   
   
@@ -47,13 +50,103 @@ MODULE Class_GWState
   ! --- GW STATE DATA TYPE
   ! -------------------------------------------------------------
   TYPE GWStateType
-      REAL(8) :: Head           = 0.0    !Groundwater head at current time step
-      REAL(8) :: Head_P         = 0.0    !Groundwater head at the previous time step
-      REAL(8) :: Vx             = 0.0    !Groundwater velocity in x-direction
-      REAL(8) :: Vy             = 0.0    !Groundwater velocity in y-direction
-      REAL(8) :: Vz             = 0.0    !Groundwater velocity in z-direction
-      REAL(8) :: Storativity_P  = 0.0    !Storage coefficient used at the previous time step
+      REAL(8),ALLOCATABLE :: Head(:,:)               !Groundwater head at current time step at each (node,layer)
+      REAL(8),ALLOCATABLE :: Head_P(:,:)             !Groundwater head at the previous time step at each (node,layer)
+      REAL(8),ALLOCATABLE :: Vx(:,:)                 !Groundwater velocity in x-direction at each (node,layer)
+      REAL(8),ALLOCATABLE :: Vy(:,:)                 !Groundwater velocity in y-direction at each (node,layer)
+      REAL(8),ALLOCATABLE :: Vz(:,:)                 !Groundwater velocity in z-direction at each (node,layer)
+      REAL(8),ALLOCATABLE :: Storativity_P(:,:)      !Storage coefficient used at the previous time step at each (node,layer)
+  CONTAINS
+      PROCEDURE,PASS :: New
+      PROCEDURE,PASS :: Kill
   END TYPE GWStateType
   
   
+  ! -------------------------------------------------------------
+  ! --- MISC. ENTITIES
+  ! -------------------------------------------------------------
+  INTEGER,PARAMETER                   :: ModNameLen = 15
+  CHARACTER(LEN=ModNameLen),PARAMETER :: ModName    = 'Class_GWState::'
+  
+  
+CONTAINS
+
+    
+    
+    
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+! ***
+! *** CONSTRUCTOR
+! ***
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+
+  ! -------------------------------------------------------------
+  ! --- INSTANTIATE GW STATE DATA
+  ! -------------------------------------------------------------
+  SUBROUTINE New(GWState,NNodes,NLayers,iStat)
+    CLASS(GWStateType)  :: GWState
+    INTEGER,INTENT(IN)  :: NNodes,NLayers
+    INTEGER,INTENT(OUT) :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+3),PARAMETER :: ThisProcedure = ModName // 'New'
+    INTEGER                               :: ErrorCode
+    CHARACTER                             :: cErrorMsg*250
+    
+    ALLOCATE(GWState%Head(NNodes,NLayers)            , &
+             GWState%Head_P(NNodes,NLayers)          , &
+             GWState%Vx(NNodes,NLayers)              , &
+             GWState%Vy(NNodes,NLayers)              , &
+             GWState%Vz(NNodes,NLayers)              , &
+             GWState%Storativity_P(NNodes,NLayers)   , &
+             STAT = ErrorCode                        , &
+             ERRMSG = cErrorMsg                      )
+    IF (ErrorCode .NE. 0) THEN
+        MessageArray(1) = 'Error in allocating memory for the groundwater component.'
+        MessageArray(2) = cErrorMsg
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
+        iStat = -1
+    ELSE
+        iStat = 0
+    END IF
+    
+  END SUBROUTINE New
+  
+  
+  
+  
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+! ***
+! *** DESTRUCTOR
+! ***
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+
+  ! -------------------------------------------------------------
+  ! --- KILL GW STATE DATA
+  ! -------------------------------------------------------------
+  SUBROUTINE Kill(GWState)
+    CLASS(GWStateType) :: GWState
+    
+    !Local variables
+    INTEGER :: ErrorCode
+    
+    !Deallocate allocatable arrays
+    DEALLOCATE (GWState%Head          , &
+                GWState%Head_P        , &
+                GWState%Vx            , &
+                GWState%Vy            , &
+                GWState%Vz            , &
+                GWState%Storativity_P , &
+                STAT=ErrorCode        )
+    
+    END SUBROUTINE Kill
+
 END MODULE

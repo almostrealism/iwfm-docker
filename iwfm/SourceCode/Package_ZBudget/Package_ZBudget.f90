@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -22,29 +22,29 @@
 !***********************************************************************
 MODULE Package_ZBudget
   USE Class_Version          , ONLY: VersionType
-  USE ZBudget_Parameters     , ONLY: iStorageType                , &
-                                     iVerticalFlowType           , &
-                                     iFaceFlowType               , &
-                                     iElemDataType               , &
-                                     iZoneHorizontal             , &
-                                     iZoneVertical               , &
-                                     iUndefinedZone              , &
-                                     MarkerChar                  , &
-                                     LengthUnitMarker            , &
-                                     AreaUnitMarker              , &
-                                     VolumeUnitMarker            , &
-                                     ColumnHeaderLen             , &
-                                     MaxLocationNameLen          , &
-                                     AR                          , &
-                                     VR                          , &
-                                     VR_lwu_PotCUAW              , &
-                                     VR_lwu_AgSupplyReq          , &
-                                     VR_lwu_AgPump               , &
-                                     VR_lwu_AgDiv                , &
-                                     VR_lwu_AgOthIn              , &
-                                     VR_lwu_AgShort              , &
-                                     VLB                         , &
-                                     VLE                         
+  USE ZBudget_Parameters     , ONLY: f_iStorageType              , &
+                                     f_iVerticalFlowType         , &
+                                     f_iFaceFlowType             , &
+                                     f_iElemDataType             , &
+                                     f_iZoneHorizontal           , &
+                                     f_iZoneVertical             , &
+                                     f_iUndefinedZone            , &
+                                     f_iColumnHeaderLen          , &
+                                     f_iMaxLocationNameLen       , &
+                                     f_cMarkerChar               , &
+                                     f_cLengthUnitMarker         , &
+                                     f_cAreaUnitMarker           , &
+                                     f_cVolumeUnitMarker         , &
+                                     f_iAR                       , &
+                                     f_iVR                       , &
+                                     f_iVR_lwu_PotCUAW           , &
+                                     f_iVR_lwu_AgSupplyReq       , &
+                                     f_iVR_lwu_AgPump            , &
+                                     f_iVR_lwu_AgDiv             , &
+                                     f_iVR_lwu_AgOthIn           , &
+                                     f_iVR_lwu_AgShort           , &
+                                     f_iVLB                      , &
+                                     f_iVLE                         
   USE Class_ZBudgetHeader    , ONLY: ZBudgetHeaderType           
   USE Class_SystemData       , ONLY: SystemDataType
   USE Class_ZBudget          , ONLY: ZBudgetType                 , &
@@ -68,29 +68,29 @@ MODULE Package_ZBudget
             ZoneListType                , &
             Package_ZBudget_GetVersion  , &
             IsZBudgetFile               , &
-            iStorageType                , &
-            iVerticalFlowType           , &
-            iFaceFlowType               , &
-            iElemDataType               , &
-            iZoneHorizontal             , &
-            iZoneVertical               , &
-            iUndefinedZone              , &
-            MarkerChar                  , &
-            LengthUnitMarker            , &
-            AreaUnitMarker              , &
-            VolumeUnitMarker            , &
-            ColumnHeaderLen             , &
-            MaxLocationNameLen          , &
-            AR                          , &
-            VR                          , &
-            VR_lwu_PotCUAW              , &
-            VR_lwu_AgSupplyReq          , &
-            VR_lwu_AgPump               , &
-            VR_lwu_AgDiv                , &
-            VR_lwu_AgOthIn              , &
-            VR_lwu_AgShort              , &
-            VLB                         , &
-            VLE                         , &
+            f_iStorageType              , &
+            f_iVerticalFlowType         , &
+            f_iFaceFlowType             , &
+            f_iElemDataType             , &
+            f_iZoneHorizontal           , &
+            f_iZoneVertical             , &
+            f_iUndefinedZone            , &
+            f_cMarkerChar               , &
+            f_cLengthUnitMarker         , &
+            f_cAreaUnitMarker           , &
+            f_cVolumeUnitMarker         , &
+            f_iColumnHeaderLen          , &
+            f_iMaxLocationNameLen       , &
+            f_iAR                       , &
+            f_iVR                       , &
+            f_iVR_lwu_PotCUAW           , &
+            f_iVR_lwu_AgSupplyReq       , &
+            f_iVR_lwu_AgPump            , &
+            f_iVR_lwu_AgDiv             , &
+            f_iVR_lwu_AgOthIn           , &
+            f_iVR_lwu_AgShort           , &
+            f_iVLB                      , &
+            f_iVLE                      , &
             Abstract_CallbackFun
  
   

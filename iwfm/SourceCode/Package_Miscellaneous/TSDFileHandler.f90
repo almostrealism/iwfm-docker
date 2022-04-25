@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,12 +21,22 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE TSDFileHandler
-  USE MessageLogger        , ONLY: SetLastMessage  , &
-                                   MessageArray    , &
-                                   iFatal
-  USE IOInterface
-  USE GeneralUtilities
-  USE TimeSeriesUtilities  
+  USE MessageLogger        , ONLY: SetLastMessage                 , &
+                                   MessageArray                   , &
+                                   f_iFatal                         
+  USE IOInterface          , ONLY: GenericFileType                , &
+                                   f_iTXT                         , &
+                                   f_iBIN                         , &
+                                   f_iDSS                         , &
+                                   f_iUNKNOWN                        
+  USE GeneralUtilities     , ONLY: StripTextUntilCharacter        , &
+                                   LowerCase                      , &
+                                   IntToText                      , &
+                                   FirstLocation                  , &
+                                   EstablishAbsolutePathFileName  , &
+                                   AllocArray                     , &
+                                   CleanSpecialCharacters
+  USE TimeSeriesUtilities  , ONLY: TimeStepType
   IMPLICIT NONE
 
 
@@ -154,9 +164,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW INTEGER TS DATA INPUT FILE
   ! -------------------------------------------------------------
-  SUBROUTINE IntTSDataInFile_New(TSFile,cFileName,cFileDescription,TrackTime,BlocksToSkip,iStat)
+  SUBROUTINE IntTSDataInFile_New(TSFile,cFileName,cWorkingDirectory,cFileDescription,TrackTime,BlocksToSkip,iStat)
     CLASS(IntTSDataInFileType)  :: TSFile
-    CHARACTER(LEN=*),INTENT(IN) :: cFileName,cFileDescription
+    CHARACTER(LEN=*),INTENT(IN) :: cFileName,cWorkingDirectory,cFileDescription
     LOGICAL,INTENT(IN)          :: TrackTime
     INTEGER,INTENT(IN)          :: BlocksToSkip
     INTEGER,INTENT(OUT)         :: iStat
@@ -164,8 +174,9 @@ CONTAINS
     !Local variables
     CHARACTER(LEN=ModNameLen+19) :: ThisProcedure = ModName // 'IntTSDataInFile_New'
     CHARACTER                    :: DSSFL*1000
-    INTEGER                      :: NCOL,NSP,NFQ,LenDSSFL,ErrorCode
+    INTEGER                      :: NCOL,NSP,NFQ,ErrorCode
     LOGICAL                      :: lDummyArray(1) = .FALSE.
+    CHARACTER(:),ALLOCATABLE     :: cAbsPathFileName
     
     !Initialize
     iStat = 0
@@ -179,15 +190,15 @@ CONTAINS
       CALL pFile%ReadData(NFQ,iStat)                                                                                        ;  IF (iStat .EQ. -1) RETURN 
       CALL pFile%ReadData(DSSFL,iStat)                                                                                      ;  IF (iStat .EQ. -1) RETURN 
       CALL CleanSpecialCharacters(DSSFL)
-      DSSFL    = ADJUSTL(StripTextUntilCharacter(DSSFL,'/'))
-      LenDSSFL = LEN_TRIM(DSSFL)
-      CALL PrepareTSDInputFile(pFile,TrackTime,TRIM(cFileDescription),NCOL,DSSFL(1:LenDSSFL),NSP,NFQ,BlocksToSkip,lDummyArray,iStat)
+      DSSFL = ADJUSTL(StripTextUntilCharacter(DSSFL,'/'))
+      CALL EstablishAbsolutePathFileName(TRIM(DSSFL),cWorkingDirectory,cAbsPathFileName)
+      CALL PrepareTSDInputFile(pFile,TrackTime,TRIM(cFileDescription),NCOL,cAbsPathFileName,NSP,NFQ,BlocksToSkip,lDummyArray,iStat)
       IF (iStat .EQ. -1) RETURN
     
       !Allocate memory for iValue
       ALLOCATE (TSFile%iValues(NCOL)  ,  STAT=ErrorCode)
       IF (ErrorCode .NE. 0) THEN
-          CALL SetLastMessage('Error in allocating memory for input data from ' // TRIM(cFileDescription) // '!',iFatal,ThisProcedure)
+          CALL SetLastMessage('Error in allocating memory for input data from ' // TRIM(cFileDescription) // '!',f_iFatal,ThisProcedure)
           iStat = -1
           RETURN
       END IF
@@ -203,9 +214,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW REAL TS DATA INPUT FILE
   ! -------------------------------------------------------------
-  SUBROUTINE RealTSDataInFile_New(TSFile,cFileName,cFileDescription,TrackTime,BlocksToSkip,lFactorDefined,Factor,RateTypeData,cOtherData,iStat)
+  SUBROUTINE RealTSDataInFile_New(TSFile,cFileName,cWorkingDirectory,cFileDescription,TrackTime,BlocksToSkip,lFactorDefined,Factor,RateTypeData,cOtherData,iStat)
     CLASS(RealTSDataInFileType)           :: TSFile
-    CHARACTER(LEN=*),INTENT(IN)           :: cFileName,cFileDescription
+    CHARACTER(LEN=*),INTENT(IN)           :: cFileName,cWorkingDirectory,cFileDescription
     LOGICAL,INTENT(IN)                    :: TrackTime
     INTEGER,INTENT(IN)                    :: BlocksToSkip
     LOGICAL,INTENT(IN)                    :: lFactorDefined
@@ -217,8 +228,9 @@ CONTAINS
     !Local variables
     CHARACTER(LEN=ModNameLen+20) :: ThisProcedure = ModName // 'RealTSDataInFile_New'
     CHARACTER                    :: DSSFL*1000
-    INTEGER                      :: NCOL,NSP,NFQ,LenDSSFL,ErrorCode,indx
+    INTEGER                      :: NCOL,NSP,NFQ,ErrorCode,indx
     LOGICAL                      :: lDummyArray(1) = .FALSE.
+    CHARACTER(:),ALLOCATABLE     :: cAbsPathFileName
     
     !Initialize 
     iStat = 0
@@ -247,19 +259,19 @@ CONTAINS
       
       !Process DSS file if specified
       CALL CleanSpecialCharacters(DSSFL)
-      DSSFL    = ADJUSTL(StripTextUntilCharacter(DSSFL,'/'))
-      LenDSSFL = LEN_TRIM(DSSFL)
+      DSSFL = ADJUSTL(StripTextUntilCharacter(DSSFL,'/'))
+      CALL EstablishAbsolutePathFileName(TRIM(DSSFL),cWorkingDirectory,cAbsPathFileName)
       IF (PRESENT(RateTypeData)) THEN
-          CALL PrepareTSDInputFile(pFile,TrackTime,TRIM(cFileDescription),NCOL,DSSFL(1:LenDSSFL),NSP,NFQ,BlocksToSkip,RateTypeData,iStat)
+          CALL PrepareTSDInputFile(pFile,TrackTime,TRIM(cFileDescription),NCOL,cAbsPathFileName,NSP,NFQ,BlocksToSkip,RateTypeData,iStat)
       ELSE
-          CALL PrepareTSDInputFile(pFile,TrackTime,TRIM(cFileDescription),NCOL,DSSFL(1:LenDSSFL),NSP,NFQ,BlocksToSkip,lDummyArray,iStat)
+          CALL PrepareTSDInputFile(pFile,TrackTime,TRIM(cFileDescription),NCOL,cAbsPathFileName,NSP,NFQ,BlocksToSkip,lDummyArray,iStat)
       END IF
       IF (iStat .EQ. -1) RETURN
       
       !Allocate memory for iValue
       ALLOCATE (TSFile%rValues(NCOL)  ,  STAT=ErrorCode)
       IF (ErrorCode .NE. 0) THEN
-          CALL SetLastMessage('Error in allocating memory for input data from ' // TRIM(cFileDescription) // '!',iFatal,ThisProcedure)
+          CALL SetLastMessage('Error in allocating memory for input data from ' // TRIM(cFileDescription) // '!',f_iFatal,ThisProcedure)
           iStat = -1
           RETURN
       END IF
@@ -298,7 +310,7 @@ CONTAINS
     !Allocate memory for iValue
     ALLOCATE (TSFile%rValues(nCol)  ,  STAT=ErrorCode)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for input data from ' // TRIM(cFileDescription) // '!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for input data from ' // TRIM(cFileDescription) // '!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -337,7 +349,7 @@ CONTAINS
     IF (.NOT. TrackTime) THEN
         MessageArray(1) = 'DSS input file is being used for ' // cFileDescription
         MessageArray(2) = 'when simulation time is not tracked!'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -362,7 +374,7 @@ CONTAINS
     !Allocate memory for rValue
     ALLOCATE (TSFile%rValues(nCol)  ,  STAT=ErrorCode)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for input data from ' // TRIM(cFileDescription) // '!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for input data from ' // TRIM(cFileDescription) // '!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -376,9 +388,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW 2D REAL TS DATA INPUT FILE INITIALLY DEFINED AS A TEXT FILE (MAY BE POINTING TO A DSS FILE FOR TS DATA)
   ! -------------------------------------------------------------
-  SUBROUTINE Real2DTSDataInFile_New(TSFile,cFileName,cFileDescription,TrackTime,BlocksToSkip,lFactorDefined,lReadDims,nRow,nCol,Factor,RateTypeData,cOtherData,iStat)
+  SUBROUTINE Real2DTSDataInFile_New(TSFile,cFileName,cWorkingDirectory,cFileDescription,TrackTime,BlocksToSkip,lFactorDefined,lReadDims,nRow,nCol,Factor,RateTypeData,cOtherData,iStat)
     CLASS(Real2DTSDataInFileType)         :: TSFile
-    CHARACTER(LEN=*),INTENT(IN)           :: cFileName,cFileDescription
+    CHARACTER(LEN=*),INTENT(IN)           :: cFileName,cWorkingDirectory,cFileDescription
     LOGICAL,INTENT(IN)                    :: TrackTime,lFactorDefined,lReadDims
     INTEGER,INTENT(IN)                    :: BlocksToSkip,nRow,nCol
     REAL(8),INTENT(OUT)                   :: Factor(:)
@@ -389,9 +401,10 @@ CONTAINS
     !Local variables
     CHARACTER(LEN=ModNameLen+22) :: ThisProcedure = ModName // 'Real2DTSDataInFile_New'
     CHARACTER                    :: DSSFL*1000
-    INTEGER                      :: nRowLocal,nColLocal,NSP,NFQ,LenDSSFL,ErrorCode,indx
+    INTEGER                      :: nRowLocal,nColLocal,NSP,NFQ,ErrorCode,indx
     LOGICAL                      :: lDummyArray(1) = .FALSE.
-    
+    CHARACTER(:),ALLOCATABLE     :: cAbsPathFileName
+
     !Initialize 
     iStat  = 0
     Factor = 1.0
@@ -432,19 +445,19 @@ CONTAINS
       
       !Process DSS file if specified
       CALL CleanSpecialCharacters(DSSFL)
-      DSSFL    = ADJUSTL(StripTextUntilCharacter(DSSFL,'/'))
-      LenDSSFL = LEN_TRIM(DSSFL)
+      DSSFL = ADJUSTL(StripTextUntilCharacter(DSSFL,'/'))
+      CALL EstablishAbsolutePathFileName(TRIM(DSSFL),cWorkingDirectory,cAbsPathFileName)
       IF (PRESENT(RateTypeData)) THEN
-          CALL PrepareTSDInputFile(pFile,TrackTime,TRIM(cFileDescription),nRowLocal*nColLocal,DSSFL(1:LenDSSFL),NSP,NFQ,BlocksToSkip,RateTypeData,iStat)
+          CALL PrepareTSDInputFile(pFile,TrackTime,TRIM(cFileDescription),nRowLocal*nColLocal,cAbsPathFileName,NSP,NFQ,BlocksToSkip,RateTypeData,iStat)
       ELSE
-          CALL PrepareTSDInputFile(pFile,TrackTime,TRIM(cFileDescription),nRowLocal*nColLocal,DSSFL(1:LenDSSFL),NSP,NFQ,BlocksToSkip,lDummyArray,iStat)
+          CALL PrepareTSDInputFile(pFile,TrackTime,TRIM(cFileDescription),nRowLocal*nColLocal,cAbsPathFileName,NSP,NFQ,BlocksToSkip,lDummyArray,iStat)
       END IF
       IF (iStat .EQ. -1) RETURN
       
       !Allocate memory for iValue
       ALLOCATE (TSFile%rValues(nRowLocal,nColLocal)  ,  STAT=ErrorCode)
       IF (ErrorCode .NE. 0) THEN
-          CALL SetLastMessage('Error in allocating memory for input data from ' // TRIM(cFileDescription) // '!',iFatal,ThisProcedure)
+          CALL SetLastMessage('Error in allocating memory for input data from ' // TRIM(cFileDescription) // '!',f_iFatal,ThisProcedure)
           iStat = -1
           RETURN
       END IF
@@ -483,7 +496,7 @@ CONTAINS
     !Allocate memory for iValue
     ALLOCATE (TSFile%rValues(nRow,nCol)  ,  STAT=ErrorCode)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for input data from ' // TRIM(cFileDescription) // '!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for input data from ' // TRIM(cFileDescription) // '!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -526,7 +539,7 @@ CONTAINS
     IF (.NOT. TrackTime) THEN
         MessageArray(1) = 'DSS input file is being used for ' // cFileDescription
         MessageArray(2) = 'when simulation time is not tracked!'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -550,7 +563,7 @@ CONTAINS
     !Allocate memory for iValue
     ALLOCATE (TSFile%rValues(nRow,nCol)  ,  STAT=ErrorCode)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for input data from ' // TRIM(cFileDescription) // '!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for input data from ' // TRIM(cFileDescription) // '!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -811,7 +824,7 @@ CONTAINS
     !Initialize
     iStat = 0
 
-    IF (ThisFile%iGetFileType() .EQ. UNKNOWN) THEN
+    IF (ThisFile%iGetFileType() .EQ. f_iUNKNOWN) THEN
         FileReadCode = -2  !File not found
         
     ELSE
@@ -856,7 +869,7 @@ CONTAINS
     !Initialize
     iStat = 0
 
-    IF (ThisFile%iGetFileType() .EQ. UNKNOWN) THEN
+    IF (ThisFile%iGetFileType() .EQ. f_iUNKNOWN) THEN
         FileReadCode = -2   !File not found
         
     ELSE 
@@ -923,7 +936,7 @@ CONTAINS
       MessageArray(1) = 'There are not enough data columns in '//TRIM(ADJUSTL(LowerCase(cFileDescriptor)))//'!'
       MessageArray(2) = 'Number of columns in file        = '//TRIM(IntToText(TSDataInFile%iSize))
       MessageArray(3) = 'Highest column number referenced = '//TRIM(IntToText(iMaxColPointed))
-      CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+      CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
       iStat = -1
       RETURN
     END IF
@@ -931,7 +944,7 @@ CONTAINS
     IF (lCheckMinColNum) THEN
       iMinColPointed = MINVAL(iColPointers)
       IF (iMinColPointed .LE. 0) THEN
-        CALL SetLastMessage('Data column number '//TRIM(IntToText(iMinColPointed))//' does not exist in '//TRIM(ADJUSTL(LowerCase(cFileDescriptor)))//'!',iFatal,ThisProcedure) 
+        CALL SetLastMessage('Data column number '//TRIM(IntToText(iMinColPointed))//' does not exist in '//TRIM(ADJUSTL(LowerCase(cFileDescriptor)))//'!',f_iFatal,ThisProcedure) 
         iStat = -1
         RETURN
       END IF
@@ -1005,6 +1018,7 @@ CONTAINS
                                   Layers                   , &
                                   Elements                 , &
                                   GWNodes                  , &
+                                  IDs                      , &
                                   MiscArray                , &
                                   iStat                    )
     TYPE(GenericFileType)                :: ThisFile
@@ -1014,7 +1028,7 @@ CONTAINS
     CHARACTER(LEN=*),INTENT(IN)          :: FormatSpec  ,Title(:)    ,Header(:,:)  ,HeaderFormat(:) , &
                                             DataUnit(:) ,DataType(:) ,CPart(:)     ,FPart(:)        , &
                                             UnitT        
-    INTEGER,OPTIONAL,INTENT(IN)          :: Subregions(:),StrmNodes(:),Layers(:),Elements(:),GWNodes(:)
+    INTEGER,OPTIONAL,INTENT(IN)          :: Subregions(:),StrmNodes(:),Layers(:),Elements(:),GWNodes(:),IDs(:)
     CHARACTER(LEN=*),OPTIONAL,INTENT(IN) :: MiscArray(:)
     INTEGER,INTENT(OUT)                  :: iStat
 
@@ -1030,11 +1044,11 @@ CONTAINS
     !Prepare time series data output files based on file type
     SELECT CASE (ThisFile%iGetFileType())
       !Undefined file
-      CASE (UNKNOWN)
+      CASE (f_iUNKNOWN)
         IF (OverwriteNColumnsOfData) NColumnsOfData=0 
 
       !ASCII file
-      CASE (TXT)
+      CASE (f_iTXT)
         !Set cache size
         CALL ThisFile%SetCacheSize(NColumnsOfData,NRowsOfData,iStat)  ;  IF (iStat .EQ. -1) RETURN
         !Set print format specification
@@ -1047,12 +1061,13 @@ CONTAINS
         END DO
 
       !DSS file
-      CASE (DSS)
+      CASE (f_iDSS)
         !Generate pathnames
         CALL AllocArray(BPart,NColumnsOfData*NRowsOfData,ThisProcedure,iStat)  ;  IF (iStat .EQ. -1) RETURN
         DO indx=1,NColumnsOfData*NRowsOfData
           Text=''
           IF (PrintColumnNo) Text=ADJUSTL(TRIM(IntToText(indx)))
+          IF (PRESENT(IDs)) Text=TRIM(Text)//':ID'//TRIM(IntToText(IDs(indx)))
           IF (PRESENT(Subregions)) Text=TRIM(Text)//':SR'//TRIM(IntToText(Subregions(indx)))
           IF (PRESENT(StrmNodes)) Text=TRIM(Text)//':R'//TRIM(IntToText(StrmNodes(indx)))
           IF (PRESENT(Layers)) Text=TRIM(Text)//':L'//TRIM(IntToText(Layers(indx)))
@@ -1077,8 +1092,8 @@ CONTAINS
         IF (iStat .EQ. -1) RETURN
 
       !Fortran binary file
-      CASE (BIN)
-        CALL SetLastMessage('Fortran binary files cannot be used for time series output!',iFatal,ThisProcedure)
+      CASE (f_iBIN)
+        CALL SetLastMessage('Fortran binary files cannot be used for time series output!',f_iFatal,ThisProcedure)
         iStat = -1
 
     END SELECT
@@ -1122,7 +1137,7 @@ CONTAINS
       IF (.NOT. TrackTime) THEN
           MessageArray(1)='DSS input file is being used for '//FileDefinition
           MessageArray(2)='when simulation time is not tracked!'
-          CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+          CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
           iStat = -1
           RETURN
       END IF
@@ -1134,7 +1149,7 @@ CONTAINS
         CALL CleanSpecialCharacters(DummyChar)
         StartLocation=FirstLocation('/',TRIM(DummyChar))
         IF (StartLocation.EQ.0) THEN
-            CALL SetLastMessage('Error in pathnames defined in '//TRIM(LowerCase(FileDefinition))//'!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Error in pathnames defined in '//TRIM(LowerCase(FileDefinition))//'!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -1169,7 +1184,7 @@ CONTAINS
     
     MessageArray(1) = TRIM(ADJUSTL(ThisDataFile)) // ' file is not properly time-stamped '
     MessageArray(2) = 'for a time tracking simulation.'
-    CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+    CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
 
   END SUBROUTINE GenerateTimeStampError
 
@@ -1185,7 +1200,7 @@ CONTAINS
     
     MessageArray(1) = TRIM(ADJUSTL(ThisDataFile)) // ' could not be retrieved from '
     MessageArray(2) = 'the DSS file.'
-    CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+    CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
 
   END SUBROUTINE GenerateDataRetrievalError
   

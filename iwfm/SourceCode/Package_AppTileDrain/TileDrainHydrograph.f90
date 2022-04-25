@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,14 +21,27 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE TileDrainHydrograph
-  USE MessageLogger        , ONLY: SetLastMessage  , &
-                                   LogMessage      , &
-                                   iFatal          , &
-                                   iWarn
-  USE GeneralUtilities
-  USE TimeSeriesUtilities
-  USE IOInterface
-  USE Package_Misc
+  USE MessageLogger           , ONLY: SetLastMessage                , &
+                                      LogMessage                    , &
+                                      f_iFatal                      , &
+                                      f_iWarn                         
+  USE GeneralUtilities        , ONLY: ConvertID_To_Index            , &
+                                      IntToText                     , &
+                                      StripTextUntilCharacter       , &
+                                      ArrangeText                   , &
+                                      PrepareTitle                  , &
+                                      EstablishAbsolutePathFileName , &
+                                      CleanSpecialCharacters
+  USE TimeSeriesUtilities     , ONLY: TimeStepType                  , &
+                                      IncrementTimeStamp
+  USE IOInterface             , ONLY: GenericFileType               , &
+                                      iGetFileType_FromName         , &
+                                      f_iDSS
+  USE Package_Misc            , ONLY: RealTSDataInFileType          , &
+                                      ReadTSData                    , &
+                                      PrepareTSDOutputFile
+  USE AppTileDrain_Parameters , ONLY: f_iTileDrain                  , &
+                                      f_iSubIrig
   IMPLICIT NONE
   
   
@@ -47,16 +60,9 @@ MODULE TileDrainHydrograph
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC :: TileDrainHydrographType       
+  PUBLIC :: TileDrainHydrographType  
 
 
-  ! -------------------------------------------------------------
-  ! --- TYPES OF HYDROGRAPHS
-  ! -------------------------------------------------------------
-  INTEGER,PARAMETER :: iHydTileDrain = 1 , &
-                       iHydSubIrig   = 2
-                       
-                       
   ! -------------------------------------------------------------
   ! --- TILE DRAIN HYDROGRAPH DATA TYPE
   ! -------------------------------------------------------------
@@ -68,7 +74,7 @@ MODULE TileDrainHydrograph
     REAL(8)                       :: FactFlow                  = 1.0
     CHARACTER(LEN=10)             :: UnitFlow                  = ''
     INTEGER                       :: NHyd                      = 0
-    INTEGER,ALLOCATABLE           :: iHydIDs(:)
+    INTEGER,ALLOCATABLE           :: iHydIndices(:)
     INTEGER,ALLOCATABLE           :: iHydTypes(:)
     CHARACTER(LEN=30),ALLOCATABLE :: cHydNames(:)
   CONTAINS
@@ -79,6 +85,8 @@ MODULE TileDrainHydrograph
     PROCEDURE,PASS :: IsOutFileDefined
     PROCEDURE,PASS :: GetOutFileName
     PROCEDURE,PASS :: GetNHydrographs
+    PROCEDURE,PASS :: GetHydrographIDs
+    PROCEDURE,PASS :: GetHydrographCoordinates
     PROCEDURE,PASS :: GetHydrographNames
     PROCEDURE,PASS :: Transfer_To_HDF
   END TYPE TileDrainHydrographType
@@ -110,18 +118,18 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ TILE DRAIN HYDROGRAPH PRINT DATA FROM FILE
   ! -------------------------------------------------------------
-  SUBROUTINE New(TDHyd,IsForInquiry,cWorkingDirectory,SubIrigNodes,DrainNodes,TimeStep,InFile,iStat)
+  SUBROUTINE New(TDHyd,IsForInquiry,cWorkingDirectory,NodeIDs,SubIrigIDs,DrainIDs,SubIrigNodes,DrainNodes,TimeStep,InFile,iStat)
     CLASS(TileDrainHydrographType),INTENT(OUT) :: TDHyd
     LOGICAL,INTENT(IN)                         :: IsForInquiry
     CHARACTER(LEN=*),INTENT(IN)                :: cWorkingDirectory
-    INTEGER,INTENT(IN)                         :: SubIrigNodes(:),DrainNodes(:)
+    INTEGER,INTENT(IN)                         :: NodeIDs(:),SubIrigIDs(:),DrainIDs(:),SubIrigNodes(:),DrainNodes(:)
     TYPE(TimeStepType),INTENT(IN)              :: TimeStep
     TYPE(GenericFileType)                      :: InFile
     INTEGER,INTENT(OUT)                        :: iStat
   
     !Local variables
     CHARACTER(LEN=ModNameLen+3) :: ThisProcedure = ModName // 'New'
-    INTEGER                     :: NHyd,indx,NDrain,NSubIrig,ErrorCode
+    INTEGER                     :: NHyd,indx,NDrain,NSubIrig,ErrorCode,ID
     CHARACTER                   :: cTDOutFile*1000,ALine*1000
     CHARACTER(:),ALLOCATABLE    :: cAbsPathFileName
     
@@ -140,54 +148,57 @@ CONTAINS
     !Output file name
     CALL InFile%ReadData(cTDOutFile,iStat)  ;  IF (iStat .EQ. -1) RETURN ; cTDOutFile = StripTextUntilCharacter(cTDOutFile,'/') ; CALL CleanSpecialCharacters(cTDOutFile)
     IF (cTDOutFile .EQ. '') THEN
-        CALL LogMessage('Tile drain hydrograph printing is suppressed because an output file name is not specified!',iWarn,ThisProcedure)
+        CALL LogMessage('Tile drain hydrograph printing is suppressed because an output file name is not specified!',f_iWarn,ThisProcedure)
         TDHyd%NHyd = 0
         RETURN
     END IF
      
     !Allocate memory
-    ALLOCATE (TDHyd%iHydIDs(NHyd) , TDHyd%iHydTypes(NHyd) , TDHyd%cHydNames(NHyd))
+    ALLOCATE (TDHyd%iHydIndices(NHyd) , TDHyd%iHydTypes(NHyd) , TDHyd%cHydNames(NHyd))
     TDHyd%cHydNames = ''
     
-    !Read the node numbers for hydrograph printing
+    !Read the hydrograph IDs for printing
     DO indx=1,NHyd
-      CALL InFile%ReadData(ALine,iStat)  ;  IF (iStat .EQ. -1) RETURN  ;  CALL CleanSpecialCharacters(ALine)  ;  ALine = StripTextUntilCharacter(ALine,'/')  ;  ALine = ADJUSTL(ALine)
-      READ (ALine,*,IOSTAT=ErrorCode) TDHyd%iHydIDs(indx) , TDHyd%iHydTypes(indx) , TDHyd%cHydNames(indx)
-      IF (ErrorCode .NE. 0) THEN
-          CALL SetLastMessage('Error in reading tile drain/subsurface irrigation hydrograph data for hydrograph ID '//TRIM(IntToText(indx))//'!',iFatal,ThisProcedure)
-          iStat = -1
-          RETURN
-      END IF
-      
-      !Make sure hydrograph type is recognized
-      IF (TDHyd%iHydTypes(indx).NE.iHydTileDrain  .AND.  TDHyd%iHydTypes(indx).NE.iHydSubIrig) THEN
-          CALL SetLastMessage('Hydrograph type for tile drain/subsurface irrigation hydrograph printing is not recognized!',iFatal,ThisProcedure)
-          iStat = -1
-          RETURN
-      END IF
-   
-      !Make sure ID number is modeled
-      IF (TDHyd%iHydTypes(indx) .EQ. iHydTileDrain) THEN
-          IF (TDHyd%iHydIDs(indx).LT.1  .OR.  TDHyd%iHydIDs(indx).GT.NDrain) THEN
-              CALL SetLastMessage('Tile drain ID '//TRIM(IntToText(TDHyd%iHydIDs(indx)))//' for hydrograph printing is not modeled.',iFatal,ThisProcedure)
-              iStat = -1
-              RETURN
-          END IF
-      ELSE
-          IF (TDHyd%iHydIDs(indx).LT.1  .OR.  TDHyd%iHydIDs(indx).GT.NSubIrig) THEN
-              CALL SetLastMessage('Subsurface irrigation ID '//TRIM(IntToText(TDHyd%iHydIDs(indx)))//' for hydrograph printing is not modeled.',iFatal,ThisProcedure)
-              iStat = -1
-              RETURN
-          END IF
-      END IF
+        CALL InFile%ReadData(ALine,iStat)  ;  IF (iStat .EQ. -1) RETURN  ;  CALL CleanSpecialCharacters(ALine)  ;  ALine = StripTextUntilCharacter(ALine,'/')  ;  ALine = ADJUSTL(ALine)
+        READ (ALine,*,IOSTAT=ErrorCode) ID , TDHyd%iHydTypes(indx) , TDHyd%cHydNames(indx)
+        IF (ErrorCode .NE. 0) THEN
+            CALL SetLastMessage('Error in reading tile drain/subsurface irrigation hydrograph data for hydrograph ID '//TRIM(IntToText(indx))//'!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        
+        !Make sure hydrograph type is recognized
+        IF (TDHyd%iHydTypes(indx).NE.f_iTileDrain  .AND.  TDHyd%iHydTypes(indx).NE.f_iSubIrig) THEN
+            CALL SetLastMessage('Hydrograph type for tile drain/subsurface irrigation hydrograph printing is not recognized!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        
+        !Convert hydrograph ID to index
+        IF (TDHyd%iHydTypes(indx) .EQ. f_iTileDrain) THEN
+            CALL ConvertID_To_Index(ID,DrainIDs,TDHyd%iHydIndices(indx))
+            IF (TDHyd%iHydIndices(indx) .EQ. 0) THEN
+                CALL SetLastMessage('Tile drain ID '//TRIM(IntToText(ID))//' listed for hydrograph printing is not simulated!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+        ELSE
+            CALL ConvertID_To_Index(ID,SubIrigIDs,TDHyd%iHydIndices(indx))
+            IF (TDHyd%iHydIndices(indx) .EQ. 0) THEN
+                CALL SetLastMessage('Subsurface irrigation ID '//TRIM(IntToText(ID))//' listed for hydrograph printing is not simulated!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+        END IF
+        
     END DO
     
     !Prepare output file
     CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(cTDOutFile)),cWorkingDirectory,cAbsPathFileName)
     IF (IsForInquiry) THEN
-        CALL PrepTileDrainHydInFile_ForInquiry(TimeStep,SubIrigNodes,DrainNodes,cAbsPathFileName,TDHyd,iStat)
+        CALL PrepTileDrainHydInFile_ForInquiry(TimeStep,NodeIDs,SubIrigNodes,DrainNodes,cAbsPathFileName,TDHyd,iStat)
     ELSE
-        CALL PrepTileDrainHydOutFile(TimeStep,SubIrigNodes,DrainNodes,cAbsPathFileName,TDHyd,iStat)
+        CALL PrepTileDrainHydOutFile(TimeStep,NodeIDs,SubIrigIDs,DrainIDs,SubIrigNodes,DrainNodes,cAbsPathFileName,TDHyd,iStat)
     END IF
     
   END SUBROUTINE New
@@ -212,17 +223,17 @@ CONTAINS
     CLASS(TileDrainHydrographType) :: TDHyd
     
     !Local variables
-    INTEGER :: ErrorCode
+    INTEGER                       :: ErrorCode
+    TYPE(TileDrainHydrographType) :: Dummy
     
     IF (TDHyd%OutFile_Defined) CALL TDHyd%OutFile%Kill() 
     IF (TDHyd%InFile_ForInquiry_Defined) CALL TDHyd%InFile_ForInquiry%Close()
-    DEALLOCATE (TDHyd%iHydIDs , TDHyd%iHydTypes , TDHyd%cHydNames , STAT=ErrorCode)
+    DEALLOCATE (TDHyd%iHydIndices , TDHyd%iHydTypes , TDHyd%cHydNames , STAT=ErrorCode)
     
-    TDHyd%OutFile_Defined           = .FALSE.
-    TDHyd%InFile_ForInquiry_Defined = .FALSE.
-    TDHyd%FactFlow                  = 1.0
-    TDHyd%UnitFlow                  = ''
-    TDHyd%NHyd                      = 0
+    SELECT TYPE (p => TDHyd)
+        TYPE IS (TileDrainHydrographType)
+            p = Dummy
+    END SELECT
        
   END SUBROUTINE Kill
   
@@ -260,6 +271,7 @@ CONTAINS
     
   END SUBROUTINE GetOutFileName
 
+  
   ! -------------------------------------------------------------
   ! --- GET NUMBER OF TILE DRAIN HYDROGRAPHS 
   ! -------------------------------------------------------------
@@ -275,15 +287,56 @@ CONTAINS
     END IF
     
     !Return number of tile drain/sub irrigtaion hydrographs
-    SELECT CASE (iHydType)
-        CASE (iHydTileDrain)
-            NHyd = COUNT(TDHyd%iHydTypes .EQ. iHydTileDrain)
-            
-        CASE (iHydSubIrig)
-            NHyd = COUNT(TDHyd%iHydTypes .EQ. iHydSubIrig)
-    END SELECT
+    NHyd = COUNT(TDHyd%iHydTypes .EQ. iHydType)
     
   END FUNCTION GetNHydrographs
+
+  
+  ! -------------------------------------------------------------
+  ! --- GET TILE DRAIN HYDROGRAPH IDS 
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetHydrographIDs(TDHyd,iHydType,iAllIDs,IDs)
+    CLASS(TileDrainHydrographType),INTENT(IN) :: TDHyd
+    INTEGER,INTENT(IN)                        :: iHydType,iAllIDs(:)
+    INTEGER,INTENT(OUT)                       :: IDs(:)
+    
+    !Local variables
+    INTEGER :: iCount,indx
+    
+    iCount = 0
+    DO indx=1,TDHyd%NHyd
+        IF (TDHyd%iHydTypes(indx) .EQ. iHydType) THEN
+            iCount      = iCount + 1
+            IDs(iCount) = iAllIDs(TDHyd%iHydIndices(indx))
+        END IF
+    END DO
+        
+  END SUBROUTINE GetHydrographIDs
+
+  
+  ! -------------------------------------------------------------
+  ! --- GET HYDROGRAPH COORDINATES 
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetHydrographCoordinates(TDHyd,iHydType,iNodes,GridX,GridY,XHyd,YHyd)
+    CLASS(TileDrainHydrographType),INTENT(IN) :: TDHyd
+    INTEGER,INTENT(IN)                        :: iHydType,iNodes(:)
+    REAL(8),INTENT(IN)                        :: GridX(:),GridY(:)
+    REAL(8),INTENT(OUT)                       :: XHyd(:),YHyd(:)
+    
+    !Local variables
+    INTEGER :: iCount,indx,iNode
+    
+    iCount = 0
+    DO indx=1,TDHyd%NHyd
+        IF (TDHyd%iHydTypes(indx) .EQ. iHydType) THEN
+            iCount       = iCount + 1
+            iNode        = iNodes(TDHyd%iHydIndices(indx))
+            XHyd(iCount) = GridX(iNode)
+            YHyd(iCount) = GridY(iNode)
+        END IF
+    END DO
+        
+  END SUBROUTINE GetHydrographCoordinates
 
   
   ! -------------------------------------------------------------
@@ -297,9 +350,9 @@ CONTAINS
     INTEGER :: indx,iCount
     
     !Get only tile drain hydrograph names
-    iCount =1
+    iCount = 1
     DO indx=1,TDHyd%NHyd
-        IF (TDHyd%iHydTypes(indx) .EQ. iHydTileDrain) THEN
+        IF (TDHyd%iHydTypes(indx) .EQ. f_iTileDrain) THEN
             cNamesList(iCount) = TDHyd%cHydNames(indx)
             iCount             = iCount + 1
         END IF
@@ -310,7 +363,7 @@ CONTAINS
   
   
   
-  ! ******************************************************************
+! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
 ! ***
@@ -324,9 +377,9 @@ CONTAINS
   ! --- READ SIMULATED TILE DRAIN/SUBSURFACE IRRIGATION AT A HYDROGRAPH LOCATION
   ! --- Note: Assumes InFile_ForInquiry file exists
   ! -------------------------------------------------------------
-  SUBROUTINE ReadTDHyd_AtHydrographLocation(TDHyd,iHydID,cOutputBeginDateAndTime,cOutputEndDateAndTime,rConversionFactor,nActualOutput,rOutputDates,rOutputValues,iStat)
+  SUBROUTINE ReadTDHyd_AtHydrographLocation(TDHyd,iHydIDs,iHydType,iHydID,cOutputBeginDateAndTime,cOutputEndDateAndTime,rConversionFactor,nActualOutput,rOutputDates,rOutputValues,iStat)
     CLASS(TileDrainHydrographType) :: TDHyd
-    INTEGER,INTENT(IN)             :: iHydID
+    INTEGER,INTENT(IN)             :: iHydIDs(:),iHydType,iHydID
     CHARACTER(LEN=*),INTENT(IN)    :: cOutputBeginDateAndTime,cOutputEndDateAndTime
     REAL(8),INTENT(IN)             :: rConversionFactor
     INTEGER,INTENT(OUT)            :: nActualOutput
@@ -334,11 +387,32 @@ CONTAINS
     INTEGER,INTENT(OUT)            :: iStat
     
     !Local variables
-    INTEGER :: ErrorCode
-    REAL(8) :: rEffectiveFactor
+    CHARACTER(LEN=ModNameLen+30),PARAMETER :: ThisProcedure = ModName // 'ReadTDHyd_AtHydrographLocation'
+    INTEGER                                :: ErrorCode,iHydIndex,iPointer,indx
+    REAL(8)                                :: rEffectiveFactor
+    
+    !Initialize
+    iStat = 0
+    
+    !Find the index of hydrograph
+    iHydIndex = 0
+    DO indx=1,TDHyd%NHyd
+        IF (iHydType .EQ. TDHyd%iHydTypes(indx)) THEN
+            iPointer = TDHyd%iHydIndices(indx)
+            IF (iHydID .EQ. iHydIDs(iPointer)) THEN
+                iHydIndex = indx
+                EXIT
+            END IF
+        END IF
+    END DO
+    IF (iHydIndex .EQ. 0) THEN
+        CALL SetLastMessage('Tile drain/subsurface irrigation hydrograph ID '//TRIM(IntToText(iHydID))//' for results retrieval is not in the model!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
     
     !Read data
-    CALL TDHyd%InFile_ForInquiry%ReadData(iHydID,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)
+    CALL TDHyd%InFile_ForInquiry%ReadData(iHydIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Convert unit
@@ -373,7 +447,7 @@ CONTAINS
     LOGICAL,INTENT(IN)             :: lEndOfSimulation
     
     !Local variables
-    INTEGER           :: indx,ID
+    INTEGER           :: indxHyd,indx
     REAL(8)           :: rFlows(TDHyd%NHyd),rFactor
     CHARACTER(LEN=21) :: SimulationTime
 
@@ -388,13 +462,13 @@ CONTAINS
     END IF
 
     !Compile flows
-    DO indx=1,TDHyd%NHyd
-      ID = TDHyd%iHydIDs(indx)
-      IF (TDHyd%iHydTypes(indx) .EQ. iHydTileDrain) THEN
-        rFlows(indx) = rDrainFlows(ID) * rFactor
-      ELSE
-        rFlows(indx) = rSubIrigFlows(ID) * rFactor
-      END IF
+    DO indxHyd=1,TDHyd%NHyd
+        indx = TDHyd%iHydIndices(indxHyd)
+        IF (TDHyd%iHydTypes(indxHyd) .EQ. f_iTileDrain) THEN
+            rFlows(indxHyd) = rDrainFlows(indx) * rFactor
+        ELSE
+            rFlows(indxHyd) = rSubIrigFlows(indx) * rFactor
+        END IF
     END DO
 
     !Print out the results
@@ -430,9 +504,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW TILE DRAIN HYDROGRAPH OUTPUT FILE
   ! -------------------------------------------------------------
-  SUBROUTINE PrepTileDrainHydOutFile(TimeStep,SubIrigNodes,DrainNodes,cOutFileName,TDHyd,iStat) 
+  SUBROUTINE PrepTileDrainHydOutFile(TimeStep,NodeIDs,SubIrigIDs,DrainIDs,SubIrigNodes,DrainNodes,cOutFileName,TDHyd,iStat) 
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
-    INTEGER,INTENT(IN)            :: SubIrigNodes(:),DrainNodes(:)
+    INTEGER,INTENT(IN)            :: NodeIDs(:),SubIrigIDs(:),DrainIDs(:),SubIrigNodes(:),DrainNodes(:)
     CHARACTER(LEN=*),INTENT(IN)   :: cOutFileName
     TYPE(TileDrainHydrographType) :: TDHyd
     INTEGER,INTENT(OUT)           :: iStat
@@ -462,7 +536,7 @@ CONTAINS
     DataType(1)             = 'PER-CUM'
     CPart(1)                = ADJUSTL('FLOW')
     DO indx=1,TDHyd%NHyd
-      IF (TDHyd%iHydTypes(indx) .EQ. iHydTileDrain) THEN
+      IF (TDHyd%iHydTypes(indx) .EQ. f_iTileDrain) THEN
         FPart(indx) = 'TILE_DRAIN_HYDROGRAPH'
       ELSE
         FPart(indx) = 'SUBSURFACE_IRIG_HYDROGRAPH'
@@ -480,13 +554,14 @@ CONTAINS
     WRITE (Header(2,1),'(A1,14X,A4)') '*','NODE'
     WRITE (Header(3,1),'(A1,8X,A4)') '*','TIME'
     DO indx=1,TDHyd%NHyd
-        WRITE (Header(1,indx+1),'(I10)') indx
-        IF (TDHyd%iHydTypes(indx) .EQ.  iHydSubIrig) THEN
-            WRITE (Header(2,indx+1),'(I10)') SubIrigNodes(TDHyd%iHydIDs(indx))
-            IOUTTD(indx) = SubIrigNodes(TDHyd%iHydIDs(indx))
+        IF (TDHyd%iHydTypes(indx) .EQ.  f_iSubIrig) THEN
+            WRITE (Header(1,indx+1),'(I10)') SubIrigIDs(TDHyd%iHydIndices(indx))
+            WRITE (Header(2,indx+1),'(I10)') NodeIDs(SubIrigNodes(TDHyd%iHydIndices(indx)))
+            IOUTTD(indx) = NodeIDs(SubIrigNodes(TDHyd%iHydIndices(indx)))
         ELSE
-            WRITE (Header(2,indx+1),'(I10)') DrainNodes(TDHyd%iHydIDs(indx))
-            IOUTTD(indx) = DrainNodes(TDHyd%iHydIDs(indx))
+            WRITE (Header(1,indx+1),'(I10)') DrainIDs(TDHyd%iHydIndices(indx))
+            WRITE (Header(2,indx+1),'(I10)') NodeIDs(DrainNodes(TDHyd%iHydIndices(indx)))
+            IOUTTD(indx) = NodeIDs(DrainNodes(TDHyd%iHydIndices(indx)))
         END IF  
     END DO
     HeaderFormat(1) = '(A19,2X,'//TRIM(Text)//'(2X,A10))'
@@ -521,9 +596,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW FILE FOR TILE DRAIN HYDROGRAPHS OPENED FOR INPUT FOR POST-PROCESSING
   ! -------------------------------------------------------------
-  SUBROUTINE PrepTileDrainHydInFile_ForInquiry(TimeStep,SubIrigNodes,DrainNodes,cFileName,TDHyd,iStat) 
+  SUBROUTINE PrepTileDrainHydInFile_ForInquiry(TimeStep,NodeIDs,SubIrigNodes,DrainNodes,cFileName,TDHyd,iStat) 
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
-    INTEGER,INTENT(IN)            :: SubIrigNodes(:),DrainNodes(:)
+    INTEGER,INTENT(IN)            :: NodeIDs(:),SubIrigNodes(:),DrainNodes(:)
     CHARACTER(LEN=*),INTENT(IN)   :: cFileName
     TYPE(TileDrainHydrographType) :: TDHyd
     INTEGER,INTENT(OUT)           :: iStat
@@ -537,15 +612,15 @@ CONTAINS
     iStat = 0
     
     !Instantiate file according to its type
-    IF (iGetFileType_FromName(cFileName) .EQ. DSS) THEN
+    IF (iGetFileType_FromName(cFileName) .EQ. f_iDSS) THEN
         EPart = TimeStep%Unit
         !Form pathnames
         DO indx=1,TDHyd%NHyd
-           IF (TDHyd%iHydTypes(indx) .EQ. iHydTileDrain) THEN
-               BPart = 'GW' // TRIM(IntToText(DrainNodes(TDHyd%iHydIDs(indx))))
+           IF (TDHyd%iHydTypes(indx) .EQ. f_iTileDrain) THEN
+               BPart = 'GW' // TRIM(IntToText(NodeIDS(DrainNodes(TDHyd%iHydIndices(indx)))))
                FPart = 'TILE_DRAIN_HYDROGRAPH'
            ELSE
-               BPart = 'GW' // TRIM(IntToText(SubIrigNodes(TDHyd%iHydIDs(indx))))
+               BPart = 'GW' // TRIM(IntToText(NodeIDs(SubIrigNodes(TDHyd%iHydIndices(indx)))))
                FPart = 'SUBSURFACE_IRIG_HYDROGRAPH'
            END IF
             cPathnames(indx) = '/IWFM/' // TRIM(BPart) // '/FLOW//' // TRIM(EPart) // '/' //TRIM(FPart) // '/'

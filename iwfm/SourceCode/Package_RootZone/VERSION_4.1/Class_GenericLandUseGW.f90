@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,7 +21,7 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_GenericLandUseGW
-  USE Class_GenericLandUse
+  USE Class_GenericLandUse  , ONLY: GenericLandUseType 
   IMPLICIT NONE
   
   
@@ -39,7 +39,8 @@ MODULE Class_GenericLandUseGW
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC :: GenericLandUseGWType  , &
+  PUBLIC :: GenericLandUseType    , &
+            GenericLandUseGWType  , &
             ComputeETFromGW_Max
                                 
 

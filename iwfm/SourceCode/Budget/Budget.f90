@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018 
+!  Copyright (C) 2005-2021 
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -25,9 +25,9 @@ PROGRAM BUDGET
                                LogMessage     , &
                                LogLastMessage , &
                                PrintRunTime   , &
-                               FILE           , &
                                MessageArray   , &
-                               iMessage
+                               f_iMessage     , &
+                               f_iFILE        
   USE IWFM_Core_Version
   USE BudgetControls
   USE GeneralUtilities
@@ -55,7 +55,7 @@ PROGRAM BUDGET
   MessageArray(1) = 'PROGRAM: IWFM Budget Post-Processor ' // TRIM(IWFM_Core%GetVersion())
   MessageArray(2) = 'This run is made on '//TRIM(GetDate())//' at '//TRIM(GetTime())
   MessageArray(3) = ''
-  CALL LogMessage(MessageArray(1:3),iMessage,'',Destination=FILE)
+  CALL LogMessage(MessageArray(1:3),f_iMessage,'',Destination=f_iFILE)
 
 
   !Print budget tables

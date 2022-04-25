@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018
+!  Copyright (C) 2005-2021
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -27,11 +27,11 @@ MODULE ZBudgetControls
                                      LogLastMessage                     , &
                                      PrintRunTime                       , &
                                      MessageArray                       , &
-                                     iMessage                           , &
-                                     iWarn                              , &  
-                                     iFatal                             , &
-                                     SCREEN_FILE                        , &
-                                     SCREEN
+                                     f_iMessage                         , &
+                                     f_iWarn                            , &  
+                                     f_iFatal                           , &
+                                     f_iSCREEN_FILE                     , &
+                                     f_iSCREEN
   USE ProgramTimer           , ONLY: StopTimer           
   USE GeneralUtilities       , ONLY: StripTextUntilCharacter            , &
                                      CleanSpecialCharacters             , &
@@ -39,16 +39,16 @@ MODULE ZBudgetControls
                                      ShellSort                          , &
                                      LowerCase                          , &
                                      LocateInList                       , &
-                                     LineFeed
+                                     f_cLineFeed
   USE TimeSeriesUtilities    , ONLY: TimeStepType                       , &
                                      StripTimeStamp                     , &
                                      IsTimeStampValid                   , &
                                      SetCacheLimit                      , &
-                                     TimeStampLength                    , &
-                                     OPERATOR(.TSGT.)
+                                     OPERATOR(.TSGT.)                   , &
+                                     f_iTimeStampLength                    
   USE IOInterface            , ONLY: GenericFileType                    , &
                                      iGetFileType_FromName              , &
-                                     HDF                                
+                                     f_iHDF                                
   USE Package_Discretization , ONLY: Package_Discretization_GetVersion
   USE Package_Misc           , ONLY: Get_Main_File                      , &
                                      Print_Screen                       , &
@@ -58,9 +58,9 @@ MODULE ZBudgetControls
                                      SystemDataType                     , &
                                      ZoneListType                       , &
                                      Package_ZBudget_GetVersion         , &
-                                     iZoneHorizontal                    , &
-                                     iZoneVertical                      , &
-                                     iUndefinedZone
+                                     f_iZoneHorizontal                  , &
+                                     f_iZoneVertical                    , &
+                                     f_iUndefinedZone
   IMPLICIT NONE
 
   
@@ -93,12 +93,12 @@ MODULE ZBudgetControls
   ! -------------------------------------------------------------
   ! --- OUTPUT RELATED DATA
   ! -------------------------------------------------------------  
-  REAL(8),SAVE                        :: Fact_AR                , &
-                                         Fact_VL               
-  CHARACTER(LEN=8),SAVE               :: cUnit_AR               , &
-                                         cUnit_VL
-  CHARACTER(LEN=TimeStampLength),SAVE :: cPrintBeginDateAndTime , &
-                                         cPrintEndDateAndTime
+  REAL(8),SAVE                           :: Fact_AR                , &
+                                            Fact_VL               
+  CHARACTER(LEN=8),SAVE                  :: cUnit_AR               , &
+                                            cUnit_VL
+  CHARACTER(LEN=f_iTimeStampLength),SAVE :: cPrintBeginDateAndTime , &
+                                            cPrintEndDateAndTime
   
   
   ! -------------------------------------------------------------
@@ -135,7 +135,7 @@ CONTAINS
         cMainFileName = cFileName
     ELSE
         CALL Print_screen('Program: Z-Budget',IWFM_Core)
-        CALL Get_Main_File(cMainFileName)
+        CALL Get_Main_File(' Enter the Name of the Main Input File >  ',cMainFileName)
         IF (TRIM(cMainFileName) .EQ. '-about') THEN
             CALL PrintVersionNumbers()
             STOP
@@ -161,7 +161,7 @@ CONTAINS
     IF (IsTimeStampValid(ALine)) cPrintBeginDateAndTime = StripTimeStamp(ALine)
     CALL MainControlFile%ReadData(ALine,iStat)  ;  IF (iStat .EQ. -1) RETURN  ;  ALine = ADJUSTL(StripTextUntilCharacter(ALine,'/',Back=.TRUE.)) 
     IF (IsTimeStampValid(ALine)) cPrintEndDateAndTime = StripTimeStamp(ALine)
-    IF (cPrintBeginDateAndTime .TSGT. cPrintEndDateAndTime) CALL LogMessage('Print-out end date and time cannot be less than the beginning date and time!',iFatal,ThisProcedure)
+    IF (cPrintBeginDateAndTime .TSGT. cPrintEndDateAndTime) CALL LogMessage('Print-out end date and time cannot be less than the beginning date and time!',f_iFatal,ThisProcedure)
 
     !Number of Z-Budgets to process
     CALL MainControlFile%ReadData(NZBudget,iStat)  ;  IF (iStat .EQ. -1) RETURN
@@ -216,7 +216,7 @@ CONTAINS
       IF (cOutFileName .EQ. '') RETURN
       
       !Check that Z-Budget input file is an HDF file and instantate the Z-Budget object
-      IF (iGetFileType_FromName(cHDFFileName) .NE. HDF) CALL LogMessage(TRIM(cHDFFileName)//' is not an HDF5 file!',iFatal,ThisProcedure)
+      IF (iGetFileType_FromName(cHDFFileName) .NE. f_iHDF) CALL LogMessage(TRIM(cHDFFileName)//' is not an HDF5 file!',f_iFatal,ThisProcedure)
       CALL ZBudget%New(cHDFFileName,iStat)
       IF (iStat .EQ. -1) RETURN
       
@@ -227,7 +227,7 @@ CONTAINS
       END IF
 
       !Let the user know
-      CALL LogMessage('Processing '//TRIM(LowerCase(ZBudget%Header%cDescriptor)),iMessage,'',Destination=SCREEN_FILE)
+      CALL LogMessage('Processing '//TRIM(LowerCase(ZBudget%Header%cDescriptor)),f_iMessage,'',Destination=f_iSCREEN_FILE)
       
       !Create the zone list
       CALL ZoneList%New(ZBudget%Header%iNData,ZBudget%Header%lFaceFlows_Defined,ZBudget%SystemData,TRIM(cZoneDefFileName),iStat)
@@ -240,7 +240,7 @@ CONTAINS
           IF (iZPrint .EQ. -1) THEN
               NZPrint = ZoneList%GetNNodes()
               CALL ZoneList%GetOrderedKeyList(iTempZonesToProcess)
-              iLoc = LocateInList(iUndefinedZone , iTempZonesToProcess)
+              iLoc = LocateInList(f_iUndefinedZone , iTempZonesToProcess)
               IF (iLoc .GT. 0) THEN
                   NZPrint = NZPrint - 1
                   ALLOCATE (iZonesToProcess(NZPrint))
@@ -262,9 +262,9 @@ CONTAINS
       CALL ShellSort(iZonesToProcess)
       
       !Make sure that undefined zones is not asked for processing
-      iLoc = LocateInList(iUndefinedZone,iZonesToProcess)
+      iLoc = LocateInList(f_iUndefinedZone,iZonesToProcess)
       IF (iLoc .GT. 0) THEN
-          CALL LogMessage('An undefined zone (-99) cannot be processed!',iWarn,ThisProcedure)
+          CALL LogMessage('An undefined zone (-99) cannot be processed!',f_iWarn,ThisProcedure)
           IF (SIZE(iZonesToProcess)-1 .EQ. 0) GOTO 100
           DEALLOCATE(iTempZonesToProcess,STAT=ErrorCode)
           ALLOCATE (iTempZonesToProcess(SIZE(iZonesToProcess)-1))
@@ -296,7 +296,7 @@ CONTAINS
     MessageArray(6) = '  Package_Budget.lib        : '//TRIM(Package_Budget_GetVersion())
     MessageArray(7) = '  Package_ZBudget.lib       : '//TRIM(Package_ZBudget_GetVersion())
 
-    CALL LogMessage(MessageArray(1:7),iMessage,'',Destination=SCREEN)
+    CALL LogMessage(MessageArray(1:7),f_iMessage,'',Destination=f_iSCREEN)
   
   END SUBROUTINE PrintVersionNumbers
   
@@ -311,7 +311,7 @@ CONTAINS
     IF (iStat .EQ. -1) THEN
         CALL LogLastMessage()
     ELSE
-        CALL LogMessage(LineFeed//'Program completed successfully.',iMessage,'')
+        CALL LogMessage(f_cLineFeed//'Program completed successfully.',f_iMessage,'')
     END IF
     
     CALL StopTimer()

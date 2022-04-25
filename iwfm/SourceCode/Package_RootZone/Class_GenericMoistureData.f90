@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -23,8 +23,8 @@
 MODULE Class_GenericMoistureData
   USE MessageLogger       , ONLY: SetLastMessage        , &
                                   EchoProgress          , &
-                                  iFatal
-  USE TimeSeriesUtilities
+                                  f_iFatal
+  USE TimeSeriesUtilities , ONLY: TimeStepType
   USE Package_Misc        , ONLY: RealTSDataInFileType  , &
                                   ReadTSData
   IMPLICIT NONE
@@ -89,9 +89,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW GENERIC MOISTURE DATA
   ! -------------------------------------------------------------
-  SUBROUTINE New(GenericMoistureData,cFileName,NSoils,NLocations,iColGenericMoisture,TrackTime,iStat) 
+  SUBROUTINE New(GenericMoistureData,cFileName,cWorkingDirectory,NSoils,NLocations,iColGenericMoisture,TrackTime,iStat) 
     CLASS(GenericMoistureDataType) :: GenericMoistureData
-    CHARACTER(LEN=*),INTENT(IN)    :: cFileName
+    CHARACTER(LEN=*),INTENT(IN)    :: cFileName,cWorkingDirectory
     INTEGER,INTENT(IN)             :: NSoils,NLocations,iColGenericMoisture(NSoils,NLocations)
     LOGICAL,INTENT(IN)             :: TrackTime
     INTEGER,INTENT(OUT)            :: iStat
@@ -107,7 +107,7 @@ CONTAINS
     !Allocate memory for rGenericMoisture no matter what
     ALLOCATE (GenericMoistureData%rGenericMoisture(NSoils,NLocations) , STAT=ErrorCode)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for generic moisture data!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for generic moisture data!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -119,7 +119,7 @@ CONTAINS
     IF (cFileName .EQ. '') RETURN
   
     !Open generic moisture data file
-    CALL GenericMoistureData%Init(ADJUSTL(cFileName),'generic moisture data file',TrackTime,BlocksToSkip=1,lFactorDefined=.TRUE.,Factor=Factor,RateTypeData=[.TRUE.],iStat=iStat)  
+    CALL GenericMoistureData%Init(ADJUSTL(cFileName),cWorkingDirectory,'generic moisture data file',TrackTime,BlocksToSkip=1,lFactorDefined=.TRUE.,Factor=Factor,RateTypeData=[.TRUE.],iStat=iStat)  
     IF (iStat .EQ. -1) RETURN
     GenericMoistureData%Fact                 = Factor(1)
     ALLOCATE (GenericMoistureData%iColGenericMoisture(NSoils,NLocations))

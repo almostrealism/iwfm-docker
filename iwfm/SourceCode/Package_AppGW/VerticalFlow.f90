@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,14 +21,20 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE VerticalFlow
-  USE IOInterface         
-  USE MessageLogger            , ONLY: LogMessage   , &
-                                       MessageArray , &
-                                       iWarn
-  USe GeneralUtilities
-  USE TimeSeriesUtilities    
-  USE Package_Misc           
-  USE Package_Discretization    
+  USE IOInterface              , ONLY: GenericFileType        
+  USE MessageLogger            , ONLY: LogMessage           , &
+                                       MessageArray         , &
+                                       f_iWarn                
+  USe GeneralUtilities         , ONLY: FEXP                 , &
+                                       IntToText            , &
+                                       ArrangeText          , &
+                                       PrepareTitle
+  USE TimeSeriesUtilities      , ONLY: TimeStepType
+  USE Package_Misc             , ONLY: PrepareTSDOutputFile , &
+                                       f_rSmoothStepP       , &
+                                       f_rSmoothMaxP        
+  USE Package_Discretization   , ONLY: AppGridType          , &
+                                       StratigraphyType
   IMPLICIT NONE
   
   
@@ -54,7 +60,8 @@ MODULE VerticalFlow
   
             !Entities related to vertical flow computation
             VerticalFlow_ComputeAtNodesLayer                   , &
-            VerticalFlow_ComputeElementsUpwardDownward_AtLayer
+            VerticalFlow_ComputeDerivativesAtNodesLayer        , &
+            VerticalFlow_ComputeElementsUpwardDownward_AtLayer 
   
   
   ! -------------------------------------------------------------
@@ -118,7 +125,7 @@ CONTAINS
     IF (NLayers .EQ. 1) THEN
         MessageArray(1) = 'Only one aquifer layer is modeled!'
         MessageArray(2) = 'Generation of vertical flow output file is supressed.'
-        CALL LogMessage(MessageArray(1:2),iWarn,ThisProcedure)
+        CALL LogMessage(MessageArray(1:2),f_iWarn,ThisProcedure)
         RETURN
     END IF
     
@@ -196,7 +203,7 @@ CONTAINS
                               CPart                                           , &
                               FPart                                           , &
                               TimeStep%Unit                                   , &
-                              Subregions=(/((I,J=1,NLayers-1),I=1,NRegions)/) , &
+                              Subregions=[((I,J=1,NLayers-1),I=1,NRegions)]   , &
                               MiscArray=DummyCharArray                        , &
                               iStat=iStat                                     )
     IF (iStat .EQ. -1) RETURN
@@ -246,10 +253,10 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- PRINT VERTICAL FLOWS
   ! -------------------------------------------------------------
-  SUBROUTINE VerticalFlowOutput_PrintResults(AppGrid,Stratigraphy,Head,Head_P,LeakageV,FactorVLOut,TimeStep,lEndOfSimulation,VertFlowOutput)
+  SUBROUTINE VerticalFlowOutput_PrintResults(AppGrid,Stratigraphy,Head,LeakageV,FactorVLOut,TimeStep,lEndOfSimulation,VertFlowOutput)
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
-    REAL(8),INTENT(IN)                :: Head(:,:),Head_P(:,:),LeakageV(:,:)
+    REAL(8),INTENT(IN)                :: Head(:,:),LeakageV(:,:)
     REAL(8),INTENT(IN)                :: FactorVLOut
     TYPE(TimeStepType),INTENT(IN)     :: TimeStep
     LOGICAL,INTENT(IN)                :: lEndOfSimulation
@@ -271,7 +278,7 @@ CONTAINS
        
     !Compute vertical flows
     DO indxLayer=1,NLayers-1
-        CALL VerticalFlow_ComputeAtNodesLayer(indxLayer,NNodes,Stratigraphy,Head,Head_P,LeakageV,rVertFlowNode)
+        CALL VerticalFlow_ComputeAtNodesLayer(indxLayer,NNodes,Stratigraphy,Head,LeakageV,rVertFlowNode)
         rVertFlow(indxLayer::NLayers-1) = AppGrid%AccumNodeValuesToSubregions(rVertFlowNode) * FactorVLOut
     END DO
     
@@ -302,15 +309,15 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- COMPUTE VERTICAL FLOWS AT NODES OF A LAYER BETWEEN THAT LAYER AND LAYER BELOW
   ! -------------------------------------------------------------
-  PURE SUBROUTINE VerticalFlow_ComputeAtNodesLayer(iLayer,NNodes,Stratigraphy,Head,Head_P,LeakageV,rVertFlow)
+  PURE SUBROUTINE VerticalFlow_ComputeAtNodesLayer(iLayer,NNodes,Stratigraphy,Head,LeakageV,rVertFlow)
     INTEGER,INTENT(IN)                :: iLayer,NNodes
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
-    REAL(8),INTENT(IN)                :: Head(:,:),Head_P(:,:),LeakageV(:,:)
+    REAL(8),INTENT(IN)                :: Head(:,:),LeakageV(:,:)
     REAL(8),INTENT(OUT)               :: rVertFlow(NNodes)
     
     !Local variables
     INTEGER :: indxNode,iActiveLayerBelow(NNodes),iLayerBelow
-    REAL(8) :: rBottomElev
+    REAL(8) :: rBottomElev,rDisconnectElev
     
     !If only one layer simulated or the layer is the last (deepest) layer, vertical flow is zero
     IF (Stratigraphy%NLayers .EQ. 1  .OR.  iLayer .EQ. Stratigraphy%NLayers) THEN
@@ -338,7 +345,8 @@ CONTAINS
         
         !Otherwise, compute the vertical flow
         rBottomElev         = Stratigraphy%BottomElev(indxNode,iLayer)
-        rVertFlow(indxNode) = ComputeVerticalFlow(Head(indxNode,iLayer),Head(indxNode,iLayerBelow),Head_P(indxNode,iLayer),Head_P(indxNode,iLayerBelow),LeakageV(indxNode,iLayerBelow),rBottomElev)
+        rDisconnectElev     = Stratigraphy%TopElev(indxNode,iLayerBelow)
+        rVertFlow(indxNode) = ComputeVerticalFlow(Head(indxNode,iLayer),Head(indxNode,iLayerBelow),LeakageV(indxNode,iLayerBelow),rBottomElev,rDisconnectElev)
 
     END DO
     
@@ -346,18 +354,88 @@ CONTAINS
   
     
   ! -------------------------------------------------------------
+  ! --- COMPUTE DERIVATIVES OF VERTICAL FLOWS AT NODES OF A LAYER BETWEEN THAT LAYER AND LAYER BELOW
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE VerticalFlow_ComputeDerivativesAtNodesLayer(iLayer,NNodes,Stratigraphy,rHead,rLeakageV,rVertFlow,rdVertFlow_dH,rdVertFlow_dHb)
+    INTEGER,INTENT(IN)                :: iLayer,NNodes
+    TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
+    REAL(8),INTENT(IN)                :: rHead(NNodes,Stratigraphy%NLayers),rLeakageV(NNodes,Stratigraphy%NLayers),rVertFlow(NNodes)
+    REAL(8),INTENT(OUT)               :: rdVertFlow_dH(NNodes),rdVertFlow_dHb(NNodes)
+    
+    !Local variables
+    INTEGER           :: indxNode,iActiveLayerBelow(NNodes),iLayerBelow
+    REAL(8)           :: rBottomElev,rDisconnectElev,rThisHead,rHeadBelow,rHeadDiff,rHeadDiffBelow,rThisLeakage,rFactor,rdFactor,  &
+                         rExp,rExpPlusOne
+    REAL(8),PARAMETER :: rHugeNumber = 1d100
+    
+    !If only one layer simulated or the layer is the last (deepest) layer, vertical flow derivatives are zero
+    IF (Stratigraphy%NLayers .EQ. 1  .OR.  iLayer .EQ. Stratigraphy%NLayers) THEN
+        rdVertFlow_dH  = 0.0
+        rdVertFlow_dHb = 0.0
+        RETURN
+    END IF
+    
+    !Get active layer below at each node
+    iActiveLayerBelow = Stratigraphy%GetAllActiveLayerBelow(iLayer)
+    
+    !Compute derivatives of vertical flow betweeen layer and active layer below
+    DO indxNode=1,NNodes
+        !If node is inactive, vertical flow derivatives are zero
+        IF (.NOT. Stratigraphy%ActiveNode(indxNode,iLayer)) THEN
+            rdVertFlow_dH(indxNode)  = 0.0
+            rdVertFlow_dHb(indxNode) = 0.0
+            CYCLE
+        END IF
+        
+        !Active layer below; cycle if no active layer below
+        iLayerBelow = iActiveLayerBelow(indxNode)
+        IF (iLayerBelow .LE. 0) THEN
+            rdVertFlow_dH(indxNode)  = 0.0
+            rdVertFlow_dHb(indxNode) = 0.0
+            CYCLE
+        END IF
+        
+        !Otherwise, compute the derivatives of vertical flow
+        rBottomElev     = Stratigraphy%BottomElev(indxNode,iLayer)
+        rDisconnectElev = Stratigraphy%TopElev(indxNode,iLayerBelow)
+        rThisHead       = rHead(indxNode,iLayer)
+        rHeadBelow      = rHead(indxNode,iLayerBelow)
+        rHeadDiff       = rThisHead - rBottomElev
+        rHeadDiffBelow  = rHeadBelow - rDisconnectElev
+        rThisLeakage    = rLeakageV(indxNode,iLayerBelow)
+        IF (rVertFlow(indxNode) .LT. 0.0) THEN
+            rExp = FEXP(-f_rSmoothStepP * rHeadDiff)
+            IF (rExp .LT. rHugeNumber) THEN
+                rExpPlusOne              = 1d0 + rExp
+                rFactor                  = 1d0 / rExpPlusOne
+                rdFactor                 = f_rSmoothStepP * rExp /(rExpPlusOne*rExpPlusOne)
+                rdVertFlow_dH(indxNode)  = rdFactor * rThisLeakage * (MAX(rHeadBelow,rDisconnectElev) - MAX(rThisHead,rBottomElev))  &
+                                         - rFactor * rThisLeakage * 0.5d0 * (1d0 + rHeadDiff/SQRT(rHeadDiff*rHeadDiff + f_rSmoothMaxP))
+                rdVertFlow_dHb(indxNode) = rFactor * rThisLeakage * 0.5d0 *(1d0 + rHeadDiffBelow / SQRT(rHeadDiffBelow*rHeadDiffBelow + f_rSmoothMaxP))
+            END IF
+        ELSE
+            rdVertFlow_dH(indxNode)  = -rThisLeakage * 0.5d0 * (1d0 + rHeadDiff/SQRT(rHeadDiff*rHeadDiff + f_rSmoothMaxP))
+            rdVertFlow_dHb(indxNode) = rThisLeakage * 0.5d0 *(1d0 + rHeadDiffBelow / SQRT(rHeadDiffBelow*rHeadDiffBelow + f_rSmoothMaxP))
+        END IF
+    END DO
+    
+  END SUBROUTINE VerticalFlow_ComputeDerivativesAtNodesLayer
+  
+    
+  ! -------------------------------------------------------------
   ! --- COMPUTE UPWARD AND DOWNWARD VERTICAL FLOWS AT ELEMENTS OF A LAYER BETWEEN THAT LAYER AND LAYER BELOW
   ! -------------------------------------------------------------
-  PURE SUBROUTINE VerticalFlow_ComputeElementsUpwardDownward_AtLayer(iLayer,AppGrid,Stratigraphy,Head,Head_P,LeakageV,rVertFlow_Downward,rVertFlow_Upward)
+  PURE SUBROUTINE VerticalFlow_ComputeElementsUpwardDownward_AtLayer(iLayer,AppGrid,Stratigraphy,Head,LeakageV,rVertFlow_Downward,rVertFlow_Upward)
     INTEGER,INTENT(IN)                :: iLayer
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
-    REAL(8),INTENT(IN)                :: Head(AppGrid%NNodes,Stratigraphy%NLayers),Head_P(AppGrid%NNodes,Stratigraphy%NLayers),LeakageV(AppGrid%NNodes,Stratigraphy%NLayers)
+    REAL(8),INTENT(IN)                :: Head(AppGrid%NNodes,Stratigraphy%NLayers),LeakageV(AppGrid%NNodes,Stratigraphy%NLayers)
     REAL(8),INTENT(OUT)               :: rVertFlow_Upward(AppGrid%NElements),rVertFlow_Downward(AppGrid%NElements)
     
     !Local variables
     INTEGER :: indxNode,iActiveLayerBelow(AppGrid%NNodes),iLayerBelow
-    REAL(8) :: rBottomElev,rVertFlow,rVertFlow_Upward_Node(AppGrid%NNodes),rVertFlow_Downward_Node(AppGrid%NNodes)
+    REAL(8) :: rBottomElev,rVertFlow,rVertFlow_Upward_Node(AppGrid%NNodes),rVertFlow_Downward_Node(AppGrid%NNodes), &
+               rDisconnectElev
     
     !If only one layer simulated or the layer is the last (deepest) layer, vertical flows are zero
     IF (Stratigraphy%NLayers .EQ. 1  .OR.  iLayer .EQ. Stratigraphy%NLayers) THEN
@@ -391,8 +469,9 @@ CONTAINS
         END IF
         
         !Otherwise, compute the vertical flow at node
-        rBottomElev = Stratigraphy%BottomElev(indxNode,iLayer)
-        rVertFlow   = ComputeVerticalFlow(Head(indxNode,iLayer),Head(indxNode,iLayerBelow),Head_P(indxNode,iLayer),Head_P(indxNode,iLayerBelow),LeakageV(indxNode,iLayerBelow),rBottomElev)
+        rBottomElev     = Stratigraphy%BottomElev(indxNode,iLayer)
+        rDisconnectElev = Stratigraphy%TopElev(indxNode,iLayerBelow)
+        rVertFlow       = ComputeVerticalFlow(Head(indxNode,iLayer),Head(indxNode,iLayerBelow),LeakageV(indxNode,iLayerBelow),rBottomElev,rDisconnectElev)
 
         !Seperate downward and upward flows 
         IF (rVertFlow .GT. 0.0) THEN
@@ -412,22 +491,19 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- COMPUTE VERTICAL FLOW
   ! -------------------------------------------------------------
-  PURE FUNCTION ComputeVerticalFlow(Head,HeadBelow,Head_P,HeadBelow_P,LeakageV,rBottomElev) RESULT(rVertFlow)
-    REAL(8),INTENT(IN) :: Head,HeadBelow,Head_P,HeadBelow_P,LeakageV,rBottomElev
+  PURE FUNCTION ComputeVerticalFlow(rHead,rHeadBelow,rLeakageV,rBottomElev,rDisconnectElev) RESULT(rVertFlow)
+    REAL(8),INTENT(IN) :: rHead,rHeadBelow,rLeakageV,rBottomElev,rDisconnectElev
     REAL(8)            :: rVertFlow
+    
+    !Local variables
+    REAL(8) :: rFactor
   
-    IF (HeadBelow_P .GE. rBottomElev) THEN
-        IF (Head_P .GE. rBottomElev) THEN
-            rVertFlow = LeakageV*(HeadBelow-Head)
-        ELSE
-            rVertFlow = LeakageV*(HeadBelow-rBottomElev)
-        END IF
-    ELSE
-        IF (Head_P .GE. rBottomElev) THEN
-            rVertFlow = LeakageV*(rBottomElev-Head)
-        ELSE
-            rVertFlow = 0.0
-        END IF
+    rVertFlow = rLeakageV * (MAX(rHeadBelow,rDisconnectElev)- MAX(rHead,rBottomElev))
+    
+    !Correct vertical flow if the flow is out of the node so that head doesn't fall below the layer bottom
+    IF (rVertFlow .LT. 0.0) THEN
+        rFactor   = 1d0 / (1d0 + FEXP(f_rSmoothStepP * (rBottomElev-rHead)))
+        rVertFlow = rFactor * rVertFlow
     END IF
 
   END FUNCTION ComputeVerticalFlow

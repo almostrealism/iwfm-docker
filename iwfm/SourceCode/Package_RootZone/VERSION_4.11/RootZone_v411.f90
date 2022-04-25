@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -24,64 +24,70 @@ MODULE RootZone_v411
   USE MessageLogger                  , ONLY: SetLastMessage                           , &
                                              EchoProgress                             , &
                                              MessageArray                             , &
-                                             iFatal                                   
+                                             f_iFatal                                   
   USE GeneralUtilities               , ONLY: StripTextUntilCharacter                  , &
                                              IntToText                                , &
                                              CleanSpecialCharacters                   , &
                                              EstablishAbsolutePathFileName            , &
-                                             LocateInList                             
+                                             LocateInList                             , &
+                                             ConvertID_To_Index 
   USE TimeSeriesUtilities            , ONLY: TimeStepType                             , &
                                              IncrementTimeStamp
   USE IOInterface                    , ONLY: GenericFileType
   USE Package_Discretization         , ONLY: AppGridType                              
   USE Package_PrecipitationET        , ONLY: PrecipitationType                        , &
                                              ETType                                   
-  USE Package_Misc                   , ONLY: FlowDest_Outside                         , &
-                                             FlowDest_StrmNode                        , &
-                                             FlowDest_Element                         , &
-                                             FlowDest_Lake                            , &
-                                             FlowDest_Subregion                       , &
-                                             FlowDest_GWElement                       , &
-                                             iLocationType_Subregion                  , &
-                                             iLocationType_Zone                       , &
-                                             iAllLocationIDsListed   
+  USE Package_Misc                   , ONLY: f_iFlowDest_Outside                      , &
+                                             f_iFlowDest_StrmNode                     , &
+                                             f_iFlowDest_Element                      , &
+                                             f_iFlowDest_Lake                         , &
+                                             f_iFlowDest_Subregion                    , &
+                                             f_iFlowDest_GWElement                    , &
+                                             f_iLocationType_Subregion                , &
+                                             f_iLocationType_Zone                     , &
+                                             f_iAllLocationIDsListed                  , &
+                                             f_iNonPondedAg                           , &
+                                             f_iRice                                  , &
+                                             f_iRefuge                                , &
+                                             f_iUrb                                   , &
+                                             f_iNVRV
   USE Package_ZBudget                , ONLY: ZBudgetType                              , &
                                              SystemDataType                           , &
                                              ZBudgetHeaderType                        , &
-                                             iElemDataType                            , &
                                              ZoneListType                             , &
-                                             MarkerChar                               , &
-                                             AreaUnitMarker                           , &
-                                             MaxLocationNameLen                       , &
-                                             AR                                       , &
-                                             VR                                       , &
-                                             VLB                                      , &
-                                             VLE                                      , &
-                                             VR_lwu_PotCUAW                           , &
-                                             VR_lwu_AgSupplyReq                       , &
-                                             VR_lwu_AgPump                            , &
-                                             VR_lwu_AgDiv                             , &
-                                             VR_lwu_AgOthIn                           , &
-                                             VR_lwu_AgShort         
-  USE Package_UnsatZone              , ONLY: KUnsatMethodList
+                                             f_iColumnHeaderLen                       , &
+                                             f_iElemDataType                          , &
+                                             f_iMaxLocationNameLen                    , &
+                                             f_cMarkerChar                            , &
+                                             f_cAreaUnitMarker                        , &
+                                             f_iAR                                    , &
+                                             f_iVR                                    , &
+                                             f_iVLB                                   , &
+                                             f_iVLE                                   , &
+                                             f_iVR_lwu_PotCUAW                        , &
+                                             f_iVR_lwu_AgSupplyReq                    , &
+                                             f_iVR_lwu_AgPump                         , &
+                                             f_iVR_lwu_AgDiv                          , &
+                                             f_iVR_lwu_AgOthIn                        , &
+                                             f_iVR_lwu_AgShort         
+  USE Package_UnsatZone              , ONLY: f_iKUnsatMethodList
+  USE Util_Package_RootZone          , ONLY: f_iZBudgetType_RootZone                  , &
+                                             f_iZBudgetType_LWU                       , &
+                                             f_cDescription_RootZoneZBudget           , &           
+                                             f_cDescription_LWUZBudget
   USE Util_RootZone_v41              , ONLY: LWUseBudRawFile_New                      , &
                                              RootZoneBudRawFile_New                   , &
-                                             cLWUseBudgetColumnTitles                 , &
-                                             cRootZoneBudgetColumnTitles              , &
-                                             NLWUseBudColumns                         , &
-                                             NRootZoneBudColumns
-  USE Class_NonPondedAgLandUseGW     , ONLY: NonPondedAgLandUse_New                  
-  USE Class_PondedAgLandUseGW        , ONLY: PondedAgLandUse_New                      , &
-                                             NPondedCrops                            
-  USE Class_UrbanLandUseGW           , ONLY: UrbanLandUse_New                         
-  USE Class_NativeRiparianLandUseGW  , ONLY: NativeRiparianLandUse_New                
+                                             f_cLWUseBudgetColumnTitles               , &
+                                             f_cRootZoneBudgetColumnTitles            , &
+                                             f_iNLWUseBudColumns                      , &
+                                             f_iNRootZoneBudColumns                   
+  USE Class_PondedAgLandUseGW        , ONLY: f_iNPondedCrops                            
   USE Class_BaseRootZone             , ONLY: FlagsType                                , &
                                              ElemSurfaceFlowToDestType                , &
                                              CompileElemSurfaceFlowToDestinationList
   USE RootZone_v41                   , ONLY: RootZone_v41_Type                        , &
-                                             Flags_v41_Type                           , &
                                              CheckTSDataPointers                      , &
-                                             NGroupLandUse
+                                             f_iNGroupLandUse
   IMPLICIT NONE
   
   
@@ -111,165 +117,156 @@ MODULE RootZone_v411
       TYPE(ZBudgetType) :: LWUZoneBudRawFile                  !Raw land and water use zone budget file
       TYPE(ZBudgetType) :: RootZoneZoneBudRawFile             !Raw root zone zone budget file
   CONTAINS
-      PROCEDURE,PASS :: New                         => RootZone_v411_New
-      PROCEDURE,PASS :: KillRZImplementation        => RootZone_v411_Kill
-      PROCEDURE,PASS :: PrintResults                => RootZone_v411_PrintResults
-      PROCEDURE,PASS :: GetVersion                  => RootZone_v411_GetVersion
-      PROCEDURE,PASS :: GetNDataList_AtLocationType => RootZone_v411_GetNDataList_AtLocationType
-      PROCEDURE,PASS :: GetDataList_AtLocationType  => RootZone_v411_GetDataList_AtLocationType
-      PROCEDURE,PASS :: GetLocationsWithData        => RootZone_v411_GetLocationsWithData
-      PROCEDURE,PASS :: GetSubDataList_AtLocation   => RootZone_v411_GetSubDataList_AtLocation 
-      PROCEDURE,PASS :: GetModelData_AtLocation     => RootZone_v411_GetModelData_AtLocation 
+      PROCEDURE,PASS   :: New                                   => RootZone_v411_New
+      PROCEDURE,PASS   :: KillRZImplementation                  => RootZone_v411_Kill
+      PROCEDURE,PASS   :: PrintResults                          => RootZone_v411_PrintResults
+      PROCEDURE,PASS   :: GetVersion                            => RootZone_v411_GetVersion
+      PROCEDURE,PASS   :: GetZBudget_List                       => RootZone_v411_GetZBudget_List
+      PROCEDURE,PASS   :: GetZBudget_NColumns                   => RootZone_v411_GetZBudget_NColumns
+      PROCEDURE,PASS   :: GetZBudget_ColumnTitles               => RootZone_v411_GetZBudget_ColumnTitles
+      PROCEDURE,PASS   :: GetZBudget_MonthlyFlows_GivenRootZone => RootZone_v411_GetZBudget_MonthlyFlows_GivenRootZone
+      PROCEDURE,NOPASS :: GetZBudget_MonthlyFlows_GivenFile     => RootZone_v411_GetZBudget_MonthlyFlows_GivenFile
+      PROCEDURE,PASS   :: GetZBudget_TSData                     => RootZone_v411_GetZBudget_TSData
   END TYPE RootZone_v411_Type
 
 
   ! -------------------------------------------------------------
   ! --- VERSION RELATED ENTITIES
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER                    :: iLenVersion          = 9
-  CHARACTER(LEN=iLenVersion),PARAMETER :: cVersion             = '4.11.0000'
+  INTEGER,PARAMETER                    :: iLenVersion = 9
+  CHARACTER(LEN=iLenVersion),PARAMETER :: cVersion    = '4.11.0000'
   INCLUDE 'RootZone_v411_Revision.fi'
   
 
   ! -------------------------------------------------------------
-  ! --- DATA TYPES FOR POST-PROCESSING
-  ! -------------------------------------------------------------
-  INTEGER,PARAMETER           :: nData_AtZone                   = 2 , &
-                                 iLWU_AtZone                    = 1 , &
-                                 iRootZone_AtZone               = 2 
-  CHARACTER(LEN=30),PARAMETER :: cDataList_AtZone(nData_AtZone) = ['Land and water use zone budget'  , &
-                                                                   'Root zone zone budget'           ]
-    
-
-  ! -------------------------------------------------------------
   ! --- Z-BUDGET OUTPUT RELATED ENTITIES
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER           :: NLWUseZBudColumns                                  = 39  , &
-                                 NRootZoneZBudColumns                               = 85   
-  CHARACTER(LEN=40),PARAMETER :: cLWUseZBudgetColumnTitles(NLWUseZBudColumns)       = ['Non-ponded Ag. Area'                           , &
-                                                                                       'Non-ponded Potential CUAW'                     , &
-                                                                                       'Non-ponded Ag. Supply Requirement'             , &
-                                                                                       'Non-ponded Ag. Pumping'                        , &
-                                                                                       'Non-ponded Ag. Deliveries'                     , &
-                                                                                       'Non-ponded Ag. Inflow as Surface Runoff'       , &
-                                                                                       'Non-ponded Ag. Shortage'                       , &
-                                                                                       'Non-ponded Ag. ETAW'                           , &
-                                                                                       'Non-ponded Ag. Effective Precipitation'        , &
-                                                                                       'Non-ponded Ag. ET from Groundwater'            , &
-                                                                                       'Non-ponded Ag. ET from Other Sources'          , &
-                                                                                       'Rice Area'                                     , &
-                                                                                       'Rice Potential CUAW'                           , &
-                                                                                       'Rice Supply Requirement'                       , &
-                                                                                       'Rice Pumping'                                  , &
-                                                                                       'Rice Deliveries'                               , &
-                                                                                       'Rice Inflow as Surface Runoff'                 , &
-                                                                                       'Rice Shortage'                                 , &
-                                                                                       'Rice ETAW'                                     , &
-                                                                                       'Rice Effective Precipitation'                  , &
-                                                                                       'Rice ET from Groundwater'                      , &
-                                                                                       'Rice ET from Other Sources'                    , &
-                                                                                       'Refuge Area'                                   , &
-                                                                                       'Refuge Potential CUAW'                         , &
-                                                                                       'Refuge Supply Requirement'                     , &
-                                                                                       'Refuge Pumping'                                , &
-                                                                                       'Refuge Deliveries'                             , &
-                                                                                       'Refuge Inflow as Surface Runoff'               , &
-                                                                                       'Refuge Shortage'                               , &
-                                                                                       'Refuge ETAW'                                   , &
-                                                                                       'Refuge Effective Precipitation'                , &
-                                                                                       'Refuge ET from Groundwater'                    , &
-                                                                                       'Refuge ET from Other Sources'                  , &
-                                                                                       'Urban Area'                                    , &
-                                                                                       'Urban Supply Requirement'                      , &
-                                                                                       'Urban Pumping'                                 , &
-                                                                                       'Urban Deliveries'                              , &
-                                                                                       'Urban Inflow as Surface Runoff'                , &
-                                                                                       'Urban Shortage'                                ]
-  CHARACTER(LEN=53),PARAMETER :: cRootZoneZBudgetColumnTitles(NRootZoneZBudColumns) = ['Non-ponded Ag. Area'                                    , &
-                                                                                       'Non-ponded Ag. Potential ET'                            , &
-                                                                                       'Non-ponded Ag. Precipitation'                           , &
-                                                                                       'Non-ponded Ag. Runoff'                                  , &
-                                                                                       'Non-ponded Ag. Prime Applied Water'                     , &
-                                                                                       'Non-ponded Ag. Inflow as Surface Runoff'                , &
-                                                                                       'Non-ponded Ag. Reused Water'                            , &
-                                                                                       'Non-ponded Ag. Net Return Flow'                         , &
-                                                                                       'Non-ponded Ag. Beginning Storage (+)'                   , &
-                                                                                       'Non-ponded Ag. Net Gain from Land Expansion (+)'        , &
-                                                                                       'Non-ponded Ag. Infiltration (+)'                        , &
-                                                                                       'Non-ponded Ag. Groundwater Inflow (+)'                  , &
-                                                                                       'Non-ponded Ag. Other Inflow (+)'                        , &
-                                                                                       'Non-ponded Ag. Actual ET (-)'                           , &
-                                                                                       'Non-ponded Ag. Percolation (-)'                         , &
-                                                                                       'Non-ponded Ag. Ending Storage (-)'                      , &
-                                                                                       'Non-ponded Ag. Discrepancy (=)'                         , &
-                                                                                       'Rice Area'                                              , &
-                                                                                       'Rice Potential ET'                                      , &
-                                                                                       'Rice Precipitation'                                     , &
-                                                                                       'Rice Runoff'                                            , &
-                                                                                       'Rice Prime Applied Water'                               , &
-                                                                                       'Rice Inflow as Surface Runoff'                          , &
-                                                                                       'Rice Reused Water'                                      , &
-                                                                                       'Rice Net Return Flow'                                   , &
-                                                                                       'Rice Beginning Storage (+)'                             , &
-                                                                                       'Rice Net Gain from Land Expansion (+)'                  , &
-                                                                                       'Rice Infiltration (+)'                                  , &
-                                                                                       'Rice Groundwater Inflow (+)'                            , &
-                                                                                       'Rice Other Inflow (+)'                                  , &
-                                                                                       'Rice Pond Drain (-)'                                    , &
-                                                                                       'Rice Actual ET (-)'                                     , &
-                                                                                       'Rice Percolation (-)'                                   , &
-                                                                                       'Rice Ending Storage (-)'                                , &
-                                                                                       'Rice Discrepancy (=)'                                   , &
-                                                                                       'Refuge Area'                                            , &
-                                                                                       'Refuge Potential ET'                                    , &
-                                                                                       'Refuge Precipitation'                                   , &
-                                                                                       'Refuge Runoff'                                          , &
-                                                                                       'Refuge Prime Applied Water'                             , &
-                                                                                       'Refuge Inflow as Surface Runoff'                        , &
-                                                                                       'Refuge Reused Water'                                    , &
-                                                                                       'Refuge Net Return Flow'                                 , &
-                                                                                       'Refuge Beginning Storage (+)'                           , &
-                                                                                       'Refuge Net Gain from Land Expansion (+)'                , &
-                                                                                       'Refuge Infiltration (+)'                                , &
-                                                                                       'Refuge Groundwater Inflow (+)'                          , &
-                                                                                       'Refuge Other Inflow (+)'                                , &
-                                                                                       'Refuge Pond Drain (-)'                                  , &
-                                                                                       'Refuge Actual ET (-)'                                   , &
-                                                                                       'Refuge Percolation (-)'                                 , &
-                                                                                       'Refuge Ending Storage (-)'                              , &
-                                                                                       'Refuge Discrepancy (=)'                                 , &
-                                                                                       'Urban Area'                                             , &
-                                                                                       'Urban Potential ET'                                     , &
-                                                                                       'Urban Precipitation'                                    , &
-                                                                                       'Urban Runoff'                                           , &
-                                                                                       'Urban Prime Applied Water'                              , &
-                                                                                       'Urban Inflow as Surface Runoff'                         , &
-                                                                                       'Urban Reused Water'                                     , &
-                                                                                       'Urban Net Return Flow'                                  , &
-                                                                                       'Urban Beginning Storage (+)'                            , &
-                                                                                       'Urban Net Gain from Land Expansion (+)'                 , &
-                                                                                       'Urban Infiltration (+)'                                 , &
-                                                                                       'Urban Groundwater Inflow (+)'                           , &
-                                                                                       'Urban Other Inflow (+)'                                 , &
-                                                                                       'Urban Actual ET (-)'                                    , &
-                                                                                       'Urban Percolation (-)'                                  , &
-                                                                                       'Urban Ending Storage (-)'                               , &
-                                                                                       'Urban Discrepancy (=)'                                  , &
-                                                                                       'Native&Riparian Veg. Area'                              , &
-                                                                                       'Native&Riparian Veg. Potential ET'                      , &
-                                                                                       'Native&Riparian Veg. Precipitation'                     , &
-                                                                                       'Native&Riparian Veg. Inflow as Surface Runoff'          , &
-                                                                                       'Native&Riparian Veg. Runoff'                            , &
-                                                                                       'Native&Riparian Veg. Beginning Storage (+)'             , &
-                                                                                       'Native&Riparian Veg. Net Gain from Land Expansion (+)'  , &
-                                                                                       'Native&Riparian Veg. Infiltration (+)'                  , &
-                                                                                       'Native&Riparian Veg. Groundwater Inflow (+)'            , &
-                                                                                       'Native&Riparian Veg. Other Inflow (+)'                  , &
-                                                                                       'Native&Riparian Veg. Stream Inflow for ET (+)'          , &
-                                                                                       'Native&Riparian Veg. Actual ET (-)'                     , &
-                                                                                       'Native&Riparian Veg. Percolation (-)'                   , &
-                                                                                       'Native&Riparian Veg. Ending Storage (-)'                , &
-                                                                                       'Native&Riparian Veg. Discrepancy (=)'                   ]
+  INTEGER,PARAMETER           :: f_iNLWUseZBudColumns                                    = 39  , &
+                                 f_iNRootZoneZBudColumns                                 = 85   
+  CHARACTER(LEN=40),PARAMETER :: f_cLWUseZBudgetColumnTitles(f_iNLWUseZBudColumns)       = ['Non-ponded Ag. Area'                           , &
+                                                                                            'Non-ponded Potential CUAW'                     , &
+                                                                                            'Non-ponded Ag. Supply Requirement'             , &
+                                                                                            'Non-ponded Ag. Pumping'                        , &
+                                                                                            'Non-ponded Ag. Deliveries'                     , &
+                                                                                            'Non-ponded Ag. Inflow as Surface Runoff'       , &
+                                                                                            'Non-ponded Ag. Shortage'                       , &
+                                                                                            'Non-ponded Ag. ETAW'                           , &
+                                                                                            'Non-ponded Ag. Effective Precipitation'        , &
+                                                                                            'Non-ponded Ag. ET from Groundwater'            , &
+                                                                                            'Non-ponded Ag. ET from Other Sources'          , &
+                                                                                            'Rice Area'                                     , &
+                                                                                            'Rice Potential CUAW'                           , &
+                                                                                            'Rice Supply Requirement'                       , &
+                                                                                            'Rice Pumping'                                  , &
+                                                                                            'Rice Deliveries'                               , &
+                                                                                            'Rice Inflow as Surface Runoff'                 , &
+                                                                                            'Rice Shortage'                                 , &
+                                                                                            'Rice ETAW'                                     , &
+                                                                                            'Rice Effective Precipitation'                  , &
+                                                                                            'Rice ET from Groundwater'                      , &
+                                                                                            'Rice ET from Other Sources'                    , &
+                                                                                            'Refuge Area'                                   , &
+                                                                                            'Refuge Potential CUAW'                         , &
+                                                                                            'Refuge Supply Requirement'                     , &
+                                                                                            'Refuge Pumping'                                , &
+                                                                                            'Refuge Deliveries'                             , &
+                                                                                            'Refuge Inflow as Surface Runoff'               , &
+                                                                                            'Refuge Shortage'                               , &
+                                                                                            'Refuge ETAW'                                   , &
+                                                                                            'Refuge Effective Precipitation'                , &
+                                                                                            'Refuge ET from Groundwater'                    , &
+                                                                                            'Refuge ET from Other Sources'                  , &
+                                                                                            'Urban Area'                                    , &
+                                                                                            'Urban Supply Requirement'                      , &
+                                                                                            'Urban Pumping'                                 , &
+                                                                                            'Urban Deliveries'                              , &
+                                                                                            'Urban Inflow as Surface Runoff'                , &
+                                                                                            'Urban Shortage'                                ]
+  CHARACTER(LEN=53),PARAMETER :: f_cRootZoneZBudgetColumnTitles(f_iNRootZoneZBudColumns) = ['Non-ponded Ag. Area'                                    , &
+                                                                                            'Non-ponded Ag. Potential ET'                            , &
+                                                                                            'Non-ponded Ag. Precipitation'                           , &
+                                                                                            'Non-ponded Ag. Runoff'                                  , &
+                                                                                            'Non-ponded Ag. Prime Applied Water'                     , &
+                                                                                            'Non-ponded Ag. Inflow as Surface Runoff'                , &
+                                                                                            'Non-ponded Ag. Reused Water'                            , &
+                                                                                            'Non-ponded Ag. Net Return Flow'                         , &
+                                                                                            'Non-ponded Ag. Beginning Storage (+)'                   , &
+                                                                                            'Non-ponded Ag. Net Gain from Land Expansion (+)'        , &
+                                                                                            'Non-ponded Ag. Infiltration (+)'                        , &
+                                                                                            'Non-ponded Ag. Groundwater Inflow (+)'                  , &
+                                                                                            'Non-ponded Ag. Other Inflow (+)'                        , &
+                                                                                            'Non-ponded Ag. Actual ET (-)'                           , &
+                                                                                            'Non-ponded Ag. Percolation (-)'                         , &
+                                                                                            'Non-ponded Ag. Ending Storage (-)'                      , &
+                                                                                            'Non-ponded Ag. Discrepancy (=)'                         , &
+                                                                                            'Rice Area'                                              , &
+                                                                                            'Rice Potential ET'                                      , &
+                                                                                            'Rice Precipitation'                                     , &
+                                                                                            'Rice Runoff'                                            , &
+                                                                                            'Rice Prime Applied Water'                               , &
+                                                                                            'Rice Inflow as Surface Runoff'                          , &
+                                                                                            'Rice Reused Water'                                      , &
+                                                                                            'Rice Net Return Flow'                                   , &
+                                                                                            'Rice Beginning Storage (+)'                             , &
+                                                                                            'Rice Net Gain from Land Expansion (+)'                  , &
+                                                                                            'Rice Infiltration (+)'                                  , &
+                                                                                            'Rice Groundwater Inflow (+)'                            , &
+                                                                                            'Rice Other Inflow (+)'                                  , &
+                                                                                            'Rice Pond Drain (-)'                                    , &
+                                                                                            'Rice Actual ET (-)'                                     , &
+                                                                                            'Rice Percolation (-)'                                   , &
+                                                                                            'Rice Ending Storage (-)'                                , &
+                                                                                            'Rice Discrepancy (=)'                                   , &
+                                                                                            'Refuge Area'                                            , &
+                                                                                            'Refuge Potential ET'                                    , &
+                                                                                            'Refuge Precipitation'                                   , &
+                                                                                            'Refuge Runoff'                                          , &
+                                                                                            'Refuge Prime Applied Water'                             , &
+                                                                                            'Refuge Inflow as Surface Runoff'                        , &
+                                                                                            'Refuge Reused Water'                                    , &
+                                                                                            'Refuge Net Return Flow'                                 , &
+                                                                                            'Refuge Beginning Storage (+)'                           , &
+                                                                                            'Refuge Net Gain from Land Expansion (+)'                , &
+                                                                                            'Refuge Infiltration (+)'                                , &
+                                                                                            'Refuge Groundwater Inflow (+)'                          , &
+                                                                                            'Refuge Other Inflow (+)'                                , &
+                                                                                            'Refuge Pond Drain (-)'                                  , &
+                                                                                            'Refuge Actual ET (-)'                                   , &
+                                                                                            'Refuge Percolation (-)'                                 , &
+                                                                                            'Refuge Ending Storage (-)'                              , &
+                                                                                            'Refuge Discrepancy (=)'                                 , &
+                                                                                            'Urban Area'                                             , &
+                                                                                            'Urban Potential ET'                                     , &
+                                                                                            'Urban Precipitation'                                    , &
+                                                                                            'Urban Runoff'                                           , &
+                                                                                            'Urban Prime Applied Water'                              , &
+                                                                                            'Urban Inflow as Surface Runoff'                         , &
+                                                                                            'Urban Reused Water'                                     , &
+                                                                                            'Urban Net Return Flow'                                  , &
+                                                                                            'Urban Beginning Storage (+)'                            , &
+                                                                                            'Urban Net Gain from Land Expansion (+)'                 , &
+                                                                                            'Urban Infiltration (+)'                                 , &
+                                                                                            'Urban Groundwater Inflow (+)'                           , &
+                                                                                            'Urban Other Inflow (+)'                                 , &
+                                                                                            'Urban Actual ET (-)'                                    , &
+                                                                                            'Urban Percolation (-)'                                  , &
+                                                                                            'Urban Ending Storage (-)'                               , &
+                                                                                            'Urban Discrepancy (=)'                                  , &
+                                                                                            'Native&Riparian Veg. Area'                              , &
+                                                                                            'Native&Riparian Veg. Potential ET'                      , &
+                                                                                            'Native&Riparian Veg. Precipitation'                     , &
+                                                                                            'Native&Riparian Veg. Inflow as Surface Runoff'          , &
+                                                                                            'Native&Riparian Veg. Runoff'                            , &
+                                                                                            'Native&Riparian Veg. Beginning Storage (+)'             , &
+                                                                                            'Native&Riparian Veg. Net Gain from Land Expansion (+)'  , &
+                                                                                            'Native&Riparian Veg. Infiltration (+)'                  , &
+                                                                                            'Native&Riparian Veg. Groundwater Inflow (+)'            , &
+                                                                                            'Native&Riparian Veg. Other Inflow (+)'                  , &
+                                                                                            'Native&Riparian Veg. Stream Inflow for ET (+)'          , &
+                                                                                            'Native&Riparian Veg. Actual ET (-)'                     , &
+                                                                                            'Native&Riparian Veg. Percolation (-)'                   , &
+                                                                                            'Native&Riparian Veg. Ending Storage (-)'                , &
+                                                                                            'Native&Riparian Veg. Discrepancy (=)'                   ]
 
 
   ! -------------------------------------------------------------
@@ -299,16 +296,17 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW ROOT ZONE DATA
   ! -------------------------------------------------------------
-  SUBROUTINE RootZone_v411_New(RootZone,IsForInquiry,cFileName,cWorkingDirectory,AppGrid,NStrmNodes,NLakes,TimeStep,NTIME,ET,Precip,iStat)
+  SUBROUTINE RootZone_v411_New(RootZone,IsForInquiry,cFileName,cWorkingDirectory,AppGrid,TimeStep,NTIME,ET,Precip,iStat,iStrmNodeIDs,iLakeIDs)
     CLASS(RootZone_v411_Type)          :: RootZone
     LOGICAL,INTENT(IN)                 :: IsForInquiry
     CHARACTER(LEN=*),INTENT(IN)        :: cFileName,cWorkingDirectory
     TYPE(AppGridType),INTENT(IN)       :: AppGrid
     TYPE(TimeStepType),INTENT(IN)      :: TimeStep
-    INTEGER,INTENT(IN)                 :: NStrmNodes,NLakes,NTIME
+    INTEGER,INTENT(IN)                 :: NTIME
     TYPE(ETType),INTENT(IN)            :: ET
     TYPE(PrecipitationType),INTENT(IN) :: Precip
     INTEGER,INTENT(OUT)                :: iStat
+    INTEGER,OPTIONAL,INTENT(IN)        :: iStrmNodeIDs(:),iLakeIDs(:)
     
     !Local variables
     CHARACTER(LEN=ModNameLen+17)                :: ThisProcedure = ModName // 'RootZone_v411_New'
@@ -316,10 +314,11 @@ CONTAINS
     CHARACTER                                   :: cVersionLocal*20
     REAL(8)                                     :: FACTK,FACTCN,RegionArea(AppGrid%NSubregions+1),DummyFactor(1),FACTEXDTH,rDummy(14)
     INTEGER                                     :: NElements,NRegion,ErrorCode,indxElem,iColGenericMoisture(AppGrid%NElements),iFlagETFromGW,          &
-                                                   SurfaceFlowDest(AppGrid%NElements),SurfaceFlowDestType(AppGrid%NElements),nDataCols
+                                                   SurfaceFlowDest(AppGrid%NElements),SurfaceFlowDestType(AppGrid%NElements),nDataCols,                &
+                                                   iElemIDs(AppGrid%NElements),iElemID,iElem,iFeatureIndex,iSubregionIDs(AppGrid%NSubregions)
     TYPE(GenericFileType)                       :: RootZoneParamFile
-    LOGICAL                                     :: TrackTime,lElemFlowToSubregions
-    CHARACTER(LEN=MaxLocationNameLen)           :: RegionNames(AppGrid%NSubregions+1)
+    LOGICAL                                     :: TrackTime,lElemFlowToSubregions,lProcessed(AppGrid%NElements)
+    CHARACTER(LEN=f_iMaxLocationNameLen)        :: RegionNames(AppGrid%NSubregions+1)
     REAL(8),ALLOCATABLE                         :: DummyRealArray(:,:)
     TYPE(ElemSurfaceFlowToDestType),ALLOCATABLE :: ElemFlowToOutside(:),ElemFlowToGW(:)
     CHARACTER(:),ALLOCATABLE                    :: cAbsPathFileName
@@ -338,6 +337,8 @@ CONTAINS
     cVersionLocal          = ADJUSTL('v' // TRIM(RootZone%Version%GetVersion()))
     NElements              = AppGrid%NElements
     NRegion                = AppGrid%NSubregions
+    iElemIDs               = AppGrid%AppElement%ID
+    iSubregionIDs          = AppGrid%AppSubregion%ID
     TrackTime              = TimeStep%TrackTime
     RegionArea(1:NRegion)  = AppGrid%GetSubregionAreaForAll()
     RegionArea(NRegion+1)  = SUM(RegionArea(1:NRegion))
@@ -352,12 +353,12 @@ CONTAINS
               RootZone%ElemDevelopedArea(NElements)                  , &
               RootZone%Ratio_ElemSupplyToRegionSupply_Ag(NElements)  , &
               RootZone%Ratio_ElemSupplyToRegionSupply_Urb(NElements) , &
-              RootZone%RSoilM_P(NRegion+1,NGroupLandUse)             , &
-              RootZone%RSoilM(NRegion+1,NGroupLandUse)               , &
+              RootZone%RSoilM_P(NRegion+1,f_iNGroupLandUse)          , &
+              RootZone%RSoilM(NRegion+1,f_iNGroupLandUse)            , &
               RootZone%Flags%lLakeElems(NElements)                   , &
               STAT=ErrorCode                                         )
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for root zone soils data!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for root zone soils data!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -386,7 +387,7 @@ CONTAINS
         CASE (1)
             RootZone%Flags%lComputeETFromGW = .TRUE.
         CASE DEFAULT
-            CALL SetLastMessage('Flag to simulate root water uptake from groundwater is not recognized!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Flag to simulate root water uptake from groundwater is not recognized!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
     END SELECT
@@ -395,11 +396,11 @@ CONTAINS
     !-------------------------
     
     !Non-ponded crops data file
-    CALL RootZoneParamFile%ReadData(NonPondedCropFile,iStat)  ;  IF (iStat .EQ. -1) RETURN  
+    CALL RootZoneParamFile%ReadData(NonPondedCropFile,iStat)  ;  IF (iStat .EQ. -1) RETURN 
     NonPondedCropFile = StripTextUntilCharacter(NonPondedCropFile,'/') 
     CALL CleanSpecialCharacters(NonPondedCropFile)
     CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(NonPondedCropFile)),cWorkingDirectory,cAbsPathFileName)
-    CALL NonPondedAgLandUse_New(IsForInquiry,cAbsPathFileName,cWorkingDirectory,FactCN,AppGrid,TimeStep,NTIME,cVersionLocal,RootZone%NonPondedAgRootZone,iStat)
+    CALL RootZone%NonPondedAgRootZone%New(IsForInquiry,cAbsPathFileName,cWorkingDirectory,FactCN,AppGrid,iElemIDs,TimeStep,NTIME,cVersionLocal,iStat)
     IF (iStat .EQ. -1) RETURN
        
     !Rice/refuge data file
@@ -407,15 +408,15 @@ CONTAINS
     RiceRefugeFile = StripTextUntilCharacter(RiceRefugeFile,'/') 
     CALL CleanSpecialCharacters(RiceRefugeFile)
     CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(RiceRefugeFile)),cWorkingDirectory,cAbsPathFileName)
-    CALL PondedAgLandUse_New(IsForInquiry,cAbsPathFileName,cWorkingDirectory,FactCN,AppGrid,TimeStep,NTIME,cVersionLocal,RootZone%PondedAgRootZone,iStat)
+    CALL RootZone%PondedAgRootZone%New(IsForInquiry,cAbsPathFileName,cWorkingDirectory,FactCN,AppGrid,iElemIDs,TimeStep,NTIME,cVersionLocal,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Urban data file
-    CALL RootZoneParamFile%ReadData(UrbanDataFile,iStat)  ;  IF (iStat .EQ. -1) RETURN 
+    CALL RootZoneParamFile%ReadData(UrbanDataFile,iStat)  ;  IF (iStat .EQ. -1) RETURN  
     UrbanDataFile = StripTextUntilCharacter(UrbanDataFile,'/') 
     CALL CleanSpecialCharacters(UrbanDataFile)
     CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(UrbanDataFile)),cWorkingDirectory,cAbsPathFileName)
-    CALL UrbanLandUse_New(cAbsPathFileName,cWorkingDirectory,FactCN,NElements,NRegion,TrackTime,RootZone%UrbanRootZone,iStat)
+    CALL RootZone%UrbanRootZone%New(cAbsPathFileName,cWorkingDirectory,FactCN,NElements,NRegion,iElemIDs,TrackTime,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Native/riparian veg. data file
@@ -423,7 +424,11 @@ CONTAINS
     NVRVFile = StripTextUntilCharacter(NVRVFile,'/') 
     CALL CleanSpecialCharacters(NVRVFile)
     CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(NVRVFile)),cWorkingDirectory,cAbsPathFileName)
-    CALL NativeRiparianLandUse_New(cAbsPathFileName,cWorkingDirectory,FactCN,NElements,NRegion,TrackTime,RootZone%NVRVRootZone,iStat)
+    IF (PRESENT(iStrmNodeIDs)) THEN
+        CALL RootZone%NVRVRootZone%New(cAbsPathFileName,cWorkingDirectory,FactCN,NElements,NRegion,iElemIDs,TrackTime,iStat,iStrmNodeIDs)
+    ELSE
+        CALL RootZone%NVRVRootZone%New(cAbsPathFileName,cWorkingDirectory,FactCN,NElements,NRegion,iElemIDs,TrackTime,iStat)
+    END IF
     IF (iStat .EQ. -1) RETURN
     
     !Check if at least one type of land use is specified
@@ -433,7 +438,7 @@ CONTAINS
          NVRVFile          .EQ. ''           )  THEN
         MessageArray(1) = 'At least one type of land use and related data should '
         MessageArray(2) = 'be specified for the simulation of root zone processes!' 
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -447,7 +452,7 @@ CONTAINS
     END ASSOCIATE
     
     !Total number of land uses
-    RootZone%NLands = RootZone%NonPondedAgRootZone%NCrops + NPondedCrops + 3
+    RootZone%NLands = RootZone%NonPondedAgRootZone%NCrops + f_iNPondedCrops + 3
     
     !Return flow data file
     CALL RootZoneParamFile%ReadData(ALine,iStat)  ;  IF (iStat .EQ. -1) RETURN  
@@ -455,13 +460,13 @@ CONTAINS
     CALL CleanSpecialCharacters(ALine)
     IF (ALine .EQ. '') THEN
         IF (RootZone%Flags%lNonpondedAg_Defined  .OR.  RootZone%Flags%lPondedAg_Defined  .OR.  RootZone%Flags%lUrban_Defined) THEN
-            CALL SetLastMessage('Missing return flow fractions data file!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Missing return flow fractions data file!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
     ELSE
         CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-        CALL RootZone%ReturnFracFile%Init(cAbsPathFileName,'Return flow fractions data file',TrackTime,1,.FALSE.,DummyFactor,iStat=iStat)  
+        CALL RootZone%ReturnFracFile%Init(cAbsPathFileName,cWorkingDirectory,'Return flow fractions data file',TrackTime,1,.FALSE.,DummyFactor,iStat=iStat)  
         IF (iStat .EQ. -1) RETURN
     END IF
     
@@ -471,13 +476,13 @@ CONTAINS
     CALL CleanSpecialCharacters(ALine)
     IF (ALine .EQ. '') THEN
         IF (RootZone%Flags%lNonpondedAg_Defined  .OR.  RootZone%Flags%lPondedAg_Defined  .OR.  RootZone%Flags%lUrban_Defined) THEN
-            CALL SetLastMessage('Missing irrigation water re-use factors data file!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Missing irrigation water re-use factors data file!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
     ELSE
         CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-        CALL RootZone%ReuseFracFile%Init(cAbsPathFileName,'Irrigation water re-use factors file',TrackTime,1,.FALSE.,DummyFactor,iStat=iStat)  
+        CALL RootZone%ReuseFracFile%Init(cAbsPathFileName,cWorkingDirectory,'Irrigation water re-use factors file',TrackTime,1,.FALSE.,DummyFactor,iStat=iStat)  
         IF (iStat .EQ. -1) RETURN
     END IF
     
@@ -487,13 +492,13 @@ CONTAINS
     CALL CleanSpecialCharacters(ALine)
     IF (ALine .EQ. '') THEN
         IF (RootZone%Flags%lNonpondedAg_Defined  .OR.  RootZone%Flags%lPondedAg_Defined) THEN
-            CALL SetLastMessage('Missing irrigation period data file!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Missing irrigation period data file!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
     ELSE
         CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-        CALL RootZone%IrigPeriodFile%Init(cAbsPathFileName,'Irrigation period data file',TrackTime,1,iStat=iStat)  
+        CALL RootZone%IrigPeriodFile%Init(cAbsPathFileName,cWorkingDirectory,'Irrigation period data file',TrackTime,1,iStat=iStat)  
         IF (iStat .EQ. -1) RETURN
     END IF
     
@@ -513,7 +518,7 @@ CONTAINS
     CALL CleanSpecialCharacters(AgWaterDemandFile)
     IF (AgWaterDemandFile .NE. '') THEN
         CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(AgWaterDemandFile)),cWorkingDirectory,cAbsPathFileName)
-        CALL RootZone%AgWaterDemandFile%Init(cAbsPathFileName,'Agricultural water supply requirement file',TrackTime,1,.TRUE.,DummyFactor,(/.TRUE./),iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL RootZone%AgWaterDemandFile%Init(cAbsPathFileName,cWorkingDirectory,'Agricultural water supply requirement file',TrackTime,1,.TRUE.,DummyFactor,(/.TRUE./),iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
         RootZone%AgWaterDemandFactor = DummyFactor(1)
     END IF  
 
@@ -606,162 +611,182 @@ CONTAINS
     CALL RootZoneParamFile%ReadData(DummyRealArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
     ASSOCIATE (pSoilsData  => RootZone%ElemSoilsData  , &
                pPrecipData => RootZone%ElemPrecipData )
-      pSoilsData%WiltingPoint   =     DummyRealArray(:,2)      
-      pSoilsData%FieldCapacity  =     DummyRealArray(:,3)
-      pSoilsData%TotalPorosity  =     DummyRealArray(:,4)
-      pSoilsData%Lambda         =     DummyRealArray(:,5)
-      pSoilsData%HydCond        =     DummyRealArray(:,6) * FACTK * TimeStep%DeltaT
-      pSoilsData%KunsatMethod   = INT(DummyRealArray(:,7))
-      pSoilsData%CapillaryRise  =     DummyRealArray(:,8) * FACTEXDTH
-      pPrecipData%iColPrecip    = INT(DummyRealArray(:,9))
-      pPrecipData%PrecipFactor  =     DummyRealArray(:,10)
-      iColGenericMoisture       = INT(DummyRealArray(:,11))
-      SurfaceFlowDestType       = INT(DummyRealArray(:,12))
-      SurfaceFlowDest           = INT(DummyRealArray(:,13))
-      IF (nDataCols .EQ. 13) THEN
-          RootZone%HydCondPonded = pSoilsData%HydCond
-      ELSE
-          DO indxElem=1,NElements
-              IF (DummyRealArray(indxElem,14) .EQ. -1.0) THEN
-                  RootZone%HydCondPonded(indxElem) = pSoilsData(indxElem)%HydCond
-              ELSE
-                  RootZone%HydCondPonded(indxElem) = DummyRealArray(indxElem,14) * FACTK * TimeStep%DeltaT
-              END IF
-          END DO
-      END IF
-      
-      !Instantiate generic moisture data
-      CALL RootZone%GenericMoistureData%New(GenericMoistureFile,1,NElements,iColGenericMoisture,TrackTime,iStat)
-      IF (iStat .EQ. -1) RETURN
-      
-      !Check for errors
-      DO indxElem=1,NElements
-        ASSOCIATE (pDestType => SurfaceFlowDestType(indxElem))
-          !Make sure that destination types are recognized
-          IF (pDestType .NE. FlowDest_Outside    .AND.   &
-              pDestType .NE. FlowDest_StrmNode   .AND.   &
-              pDestType .NE. FlowDest_Element    .AND.   &
-              pDestType .NE. FlowDest_Lake       .AND.   &
-              pDestType .NE. FlowDest_Subregion  .AND.   &
-              pDestType .NE. FlowDest_GWElement       )  THEN
-              CALL SetLastMessage ('Surface flow destination type for element ' // TRIM(IntToText(indxElem)) // ' is not recognized!',iFatal,ThisProcedure)
-              iStat = -1
-              RETURN
-          END IF
-          
-          !Make sure destination locations are modeled
-          SELECT CASE (pDestType)
-              CASE (FlowDest_StrmNode)
-                  IF (SurfaceFlowDest(indxElem) .GT. NStrmNodes  .OR.  SurfaceFlowDest(indxElem) .LT. 1) THEN
-                      CALL SetLastMessage('Surface flow from element '//TRIM(IntToText(indxElem))//' flows into a stream node ('//TRIM(IntToText(SurfaceFlowDest(indxElem)))//') that is not modeled!',iFatal,ThisProcedure)
-                      iStat = -1
-                      RETURN
-                  END IF
-             
-              CASE (FlowDest_Element)
-                  IF (SurfaceFlowDest(indxElem) .GT. NElements  .OR.  SurfaceFlowDest(indxElem) .LT. 1) THEN
-                      CALL SetLastMessage('Surface flow from element '//TRIM(IntToText(indxElem))//' goes to an element ('//TRIM(IntToText(SurfaceFlowDest(indxElem)))//') that is not modeled!',iFatal,ThisProcedure)
-                      iStat = -1
-                      RETURN
-                  END IF
-              
-              CASE (FlowDest_Lake)
-                  IF (SurfaceFlowDest(indxElem) .GT. NLakes  .OR.  SurfaceFlowDest(indxElem) .LT. 1) THEN
-                      CALL SetLastMessage('Surface flow from element '//TRIM(IntToText(indxElem))//' flows into a lake ('//TRIM(IntToText(SurfaceFlowDest(indxElem)))//') that is not modeled!',iFatal,ThisProcedure)
-                      iStat = -1
-                      RETURN
-                  END IF
-                  
-              CASE (FlowDest_Subregion)
-                  IF (SurfaceFlowDest(indxElem) .GT. NRegion  .OR.  SurfaceFlowDest(indxElem) .LT. 1) THEN
-                      CALL SetLastMessage('Surface flow from element '//TRIM(IntToText(indxElem))//' goes to a subregion ('//TRIM(IntToText(SurfaceFlowDest(indxElem)))//') that is not modeled!',iFatal,ThisProcedure)
-                      iStat = -1
-                      RETURN
-                  END IF
-             
-              CASE (FlowDest_GWElement)
-                  SurfaceFlowDest(indxElem) = indxElem
-                  
-              CASE (FlowDest_Outside)
-                  SurfaceFlowDest(indxElem) = 0
-                  
-          END SELECT
-              
-        END ASSOCIATE
-        
-        !Method to compute Kunsat must be recognized
-        IF (LocateInList(pSoilsData(indxElem)%KunsatMethod,KunsatMethodList) .LT. 1) THEN
-            CALL SetLastMessage('Method to compute unsaturated hydraulic conductivity at element '//TRIM(IntToText(indxElem))//' is not recognized!',iFatal,ThisProcedure)
-            iStat = -1
-            RETURN
-        END IF
-        
-        !Wilting point should be less than field capacity
-        IF (pSoilsData(indxElem)%WiltingPoint .GE. pSoilsData(indxElem)%FieldCapacity) THEN
-            CALL SetLastMessage('At element ' // TRIM(IntToText(indxElem)) // ' wilting point is greater than or equal to field capacity!',iFatal,ThisProcedure)
-            iStat = -1
-            RETURN
-        END IF
-        
-        !Field capacity should be less than or equal to total porosity
-        IF (pSoilsData(indxElem)%FieldCapacity .GT. pSoilsData(indxElem)%TotalPorosity) THEN
-            CALL SetLastMessage('At element ' // TRIM(IntToText(indxElem)) // ' field capacity is greater than total porosity!',iFatal,ThisProcedure)
-            iStat = -1
-            RETURN
-        END IF
+        lProcessed = .FALSE.
+        DO indxElem=1,NElements
+            iElemID = INT(DummyRealArray(indxElem,1))
+            
+            !Check if element is in the model
+            CALL ConvertID_To_Index(iElemID,iElemIDs,iElem)
+            IF (iElem .EQ. 0) THEN
+                CALL SetLastMessage('Element '//TRIM(IntToText(iElemID))//' listed for root zone parameter definitions is not in the model!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            
+            !Check if it was defined before
+            IF (lProcessed(iElem)) THEN
+                CALL SetLastMessage('Element '//TRIM(IntToText(iElemID))//' is listed more than once for root zone parameter definitions!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            
+            !Process data
+            lProcessed(iElem)               = .TRUE.
+            pSoilsData(iElem)%WiltingPoint  =     DummyRealArray(indxElem,2)      
+            pSoilsData(iElem)%FieldCapacity =     DummyRealArray(indxElem,3)
+            pSoilsData(iElem)%TotalPorosity =     DummyRealArray(indxElem,4)
+            pSoilsData(iElem)%Lambda        =     DummyRealArray(indxElem,5)
+            pSoilsData(iElem)%HydCond       =     DummyRealArray(indxElem,6) * FACTK * TimeStep%DeltaT
+            pSoilsData(iElem)%KunsatMethod  = INT(DummyRealArray(indxElem,7))
+            pSoilsData(iElem)%CapillaryRise =     DummyRealArray(indxElem,8) * FACTEXDTH
+            pPrecipData(iElem)%iColPrecip   = INT(DummyRealArray(indxElem,9))
+            pPrecipData(iElem)%PrecipFactor =     DummyRealArray(indxElem,10)
+            iColGenericMoisture(iElem)      = INT(DummyRealArray(indxElem,11))
+            SurfaceFlowDestType(iElem)      = INT(DummyRealArray(indxElem,12))
+            SurfaceFlowDest(iElem)          = INT(DummyRealArray(indxElem,13))
+            IF (nDataCols .EQ. 13) THEN
+                RootZone%HydCondPonded(iElem) = pSoilsData(iElem)%HydCond
+            ELSE
+                IF (DummyRealArray(indxElem,14) .EQ. -1.0) THEN
+                    RootZone%HydCondPonded(iElem) = pSoilsData(iElem)%HydCond
+                ELSE
+                    RootZone%HydCondPonded(iElem) = DummyRealArray(indxElem,14) * FACTK * TimeStep%DeltaT
+                END IF
+            END IF
+            
+            !Check for destination errors
+            ASSOCIATE (pDestType => SurfaceFlowDestType(iElem))
+                !Make sure that destination types are recognized
+                IF (pDestType .NE. f_iFlowDest_Outside    .AND.   &
+                    pDestType .NE. f_iFlowDest_StrmNode   .AND.   &
+                    pDestType .NE. f_iFlowDest_Lake       .AND.   &
+                    pDestType .NE. f_iFlowDest_GWElement       )  THEN
+                    CALL SetLastMessage ('Surface flow destination type for element ' // TRIM(IntToText(iElemID)) // ' is not recognized!',f_iFatal,ThisProcedure)
+                    iStat = -1
+                    RETURN
+                END IF
+                    
+                !Make sure destination locations are modeled
+                SELECT CASE (pDestType)
+                    CASE (f_iFlowDest_StrmNode)
+                        IF (PRESENT(iStrmNodeIDs)) THEN
+                            CALL ConvertID_To_Index(SurfaceFlowDest(iElem),iStrmNodeIDs,iFeatureIndex)
+                            IF (iFeatureIndex .EQ. 0) THEN
+                                CALL SetLastMessage('Surface flow from element '//TRIM(IntToText(iElemID))//' flows into a stream node ('//TRIM(IntToText(SurfaceFlowDest(iElem)))//') that is not in the model!',f_iFatal,ThisProcedure)
+                                iStat = -1
+                                RETURN
+                            END IF
+                            SurfaceFlowDest(iElem) = iFeatureIndex
+                        END IF
+                        
+                    CASE (f_iFlowDest_Element)
+                        CALL ConvertID_To_Index(SurfaceFlowDest(iElem),iElemIDs,iFeatureIndex)
+                        IF (iFeatureIndex .EQ. 0) THEN
+                            CALL SetLastMessage('Surface flow from element '//TRIM(IntToText(iElemID))//' goes to an element ('//TRIM(IntToText(SurfaceFlowDest(iElem)))//') that is not in the model!',f_iFatal,ThisProcedure)
+                            iStat = -1
+                            RETURN
+                        END IF
+                        SurfaceFlowDest(iElem) = iFeatureIndex
+                        
+                    CASE (f_iFlowDest_Lake)
+                        IF (PRESENT(iLakeIDs)) THEN
+                            CALL ConvertID_To_Index(SurfaceFlowDest(iElem),iLakeIDs,iFeatureIndex)
+                            IF (iFeatureIndex .EQ. 0) THEN
+                                CALL SetLastMessage('Surface flow from element '//TRIM(IntToText(iElemID))//' flows into a lake ('//TRIM(IntToText(SurfaceFlowDest(iElem)))//') that is not in the model!',f_iFatal,ThisProcedure)
+                                iStat = -1
+                                RETURN
+                            END IF
+                            SurfaceFlowDest(iElem) = iFeatureIndex
+                        END IF
 
-      END DO
-      
-      !Compile element-flow-to-outside connection list
-      CALL CompileElemSurfaceFlowToDestinationList(FlowDest_Outside,SurfaceFlowDest,SurfaceFlowDestType,ElemFlowToOutside,iStat)  ;  IF (iStat .EQ. -1) RETURN
-      ALLOCATE (RootZone%ElemFlowToOutside(SIZE(ElemFlowToOutside)))
-      RootZone%ElemFlowToOutside = ElemFlowToOutside%iElement
-      
-      !Compile element-flow-to-stream-node connection list
-      CALL CompileElemSurfaceFlowToDestinationList(FlowDest_StrmNode,SurfaceFlowDest,SurfaceFlowDestType,RootZone%ElemFlowToStreams,iStat)  
-      IF (iStat .EQ. -1) RETURN
-      
-      !Compile element-flow-to-lake connection list
-      CALL CompileElemSurfaceFlowToDestinationList(FlowDest_Lake,SurfaceFlowDest,SurfaceFlowDestType,RootZone%ElemFlowToLakes,iStat)  
-      IF (iStat .EQ. -1) RETURN
-      
-      !Compile element-flow-to-subregion connection list
-      CALL CompileElemSurfaceFlowToDestinationList(FlowDest_Subregion,SurfaceFlowDest,SurfaceFlowDestType,RootZone%ElemFlowToSubregions,iStat)  
-      IF (iStat .EQ. -1) RETURN
+                        
+                    CASE (f_iFlowDest_Subregion)
+                        CALL ConvertID_To_Index(SurfaceFlowDest(iElem),iSubregionIDs,iFeatureIndex)
+                        IF (iFeatureIndex .EQ. 0) THEN
+                            CALL SetLastMessage('Surface flow from element '//TRIM(IntToText(iElemID))//' goes to a subregion ('//TRIM(IntToText(SurfaceFlowDest(iElem)))//') that is not in the model!',f_iFatal,ThisProcedure)
+                            iStat = -1
+                            RETURN
+                        END IF
+                        SurfaceFlowDest(iElem) = iFeatureIndex
+                   
+                    CASE (f_iFlowDest_GWElement)
+                        SurfaceFlowDest(iElem) = iElem
+                        
+                    CASE (f_iFlowDest_Outside)
+                        SurfaceFlowDest(iElem) = 0                        
+                END SELECT
+            END ASSOCIATE
 
-      !Compile element-flow-to-groundwater connection list
-      CALL CompileElemSurfaceFlowToDestinationList(FlowDest_GWElement,SurfaceFlowDest,SurfaceFlowDestType,ElemFlowToGW,iStat)  ;  IF (iStat .EQ. -1) RETURN
-      ALLOCATE (RootZone%ElemFlowToGW(SIZE(ElemFlowToGW)))
-      RootZone%ElemFlowToGW = ElemFlowToGW%iElement
+            !Method to compute Kunsat must be recognized
+            IF (LocateInList(pSoilsData(iElem)%KunsatMethod,f_iKunsatMethodList) .LT. 1) THEN
+                CALL SetLastMessage('Method to compute unsaturated hydraulic conductivity at element '//TRIM(IntToText(iElemID))//' is not recognized!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
 
-      !Compile element-flow-to-another-element connection list
-      CALL CompileElemSurfaceFlowToDestinationList(FlowDest_Element,SurfaceFlowDest,SurfaceFlowDestType,RootZone%ElemFlowToElements,iStat)  
-      IF (iStat .EQ. -1) RETURN
+            !Wilting point should be less than field capacity
+            IF (pSoilsData(iElem)%WiltingPoint .GE. pSoilsData(iElem)%FieldCapacity) THEN
+                CALL SetLastMessage('At element ' // TRIM(IntToText(iElemID)) // ' wilting point is greater than or equal to field capacity!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+        
+            !Field capacity should be less than or equal to total porosity
+            IF (pSoilsData(iElem)%FieldCapacity .GT. pSoilsData(iElem)%TotalPorosity) THEN
+                CALL SetLastMessage('At element ' // TRIM(IntToText(iElemID)) // ' field capacity is greater than total porosity!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+        END DO
+      
+        !Instantiate generic moisture data
+        CALL RootZone%GenericMoistureData%New(GenericMoistureFile,cWorkingDirectory,1,NElements,iColGenericMoisture,TrackTime,iStat)
+        IF (iStat .EQ. -1) RETURN
+        
+        !Compile element-flow-to-outside connection list
+        CALL CompileElemSurfaceFlowToDestinationList(f_iFlowDest_Outside,SurfaceFlowDest,SurfaceFlowDestType,ElemFlowToOutside,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        ALLOCATE (RootZone%ElemFlowToOutside(SIZE(ElemFlowToOutside)))
+        RootZone%ElemFlowToOutside = ElemFlowToOutside%iElement
+        
+        !Compile element-flow-to-stream-node connection list
+        CALL CompileElemSurfaceFlowToDestinationList(f_iFlowDest_StrmNode,SurfaceFlowDest,SurfaceFlowDestType,RootZone%ElemFlowToStreams,iStat)  
+        IF (iStat .EQ. -1) RETURN
+        
+        !Compile element-flow-to-lake connection list
+        CALL CompileElemSurfaceFlowToDestinationList(f_iFlowDest_Lake,SurfaceFlowDest,SurfaceFlowDestType,RootZone%ElemFlowToLakes,iStat)  
+        IF (iStat .EQ. -1) RETURN
+        
+        !Compile element-flow-to-subregion connection list
+        CALL CompileElemSurfaceFlowToDestinationList(f_iFlowDest_Subregion,SurfaceFlowDest,SurfaceFlowDestType,RootZone%ElemFlowToSubregions,iStat)  
+        IF (iStat .EQ. -1) RETURN
+        
+        !Compile element-flow-to-groundwater connection list
+        CALL CompileElemSurfaceFlowToDestinationList(f_iFlowDest_GWElement,SurfaceFlowDest,SurfaceFlowDestType,ElemFlowToGW,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        ALLOCATE (RootZone%ElemFlowToGW(SIZE(ElemFlowToGW)))
+        RootZone%ElemFlowToGW = ElemFlowToGW%iElement
+        
+        !Compile element-flow-to-another-element connection list
+        CALL CompileElemSurfaceFlowToDestinationList(f_iFlowDest_Element,SurfaceFlowDest,SurfaceFlowDestType,RootZone%ElemFlowToElements,iStat)  
+        IF (iStat .EQ. -1) RETURN
 
     END ASSOCIATE
     
-    !Flag to see if ag water demand will be computed or not, check for inconsistencies as well
+    !Flag to see if ag water demand will be read or not, check for inconsistencies as well
     IF (RootZone%NonPondedAgRootZone%NCrops.GT.0  .OR.  RiceRefugeFile.NE.'') THEN
       !Check with non-ponded crops
-      IF (.NOT. ALLOCATED(RootZone%NonPondedAgRootZone%iColAgDemand)) THEN
-        RootZone%Flags%lComputeAgWaterDemand = .TRUE.
-      ELSE
-        IF (ANY(RootZone%NonPondedAgRootZone%iColAgDemand.EQ.0)) RootZone%Flags%lComputeAgWaterDemand       = .TRUE.
+      IF (ALLOCATED(RootZone%NonPondedAgRootZone%iColAgDemand)) THEN
         IF (ANY(RootZone%NonPondedAgRootZone%iColAgDemand.GT.0)) RootZone%Flags%lReadNonPondedAgWaterDemand = .TRUE.
       END IF
       
       !Then, check with ponded crops
-      IF (.NOT. ALLOCATED(RootZone%PondedAgRootZone%iColAgDemand)) THEN
-        RootZone%Flags%lComputeAgWaterDemand = .TRUE.
-      ELSE
-        IF (ANY(RootZone%PondedAgRootZone%iColAgDemand.EQ.0)) RootZone%Flags%lComputeAgWaterDemand    = .TRUE.
+      IF (ALLOCATED(RootZone%PondedAgRootZone%iColAgDemand)) THEN
         IF (ANY(RootZone%PondedAgRootZone%iColAgDemand.GT.0)) RootZone%Flags%lReadPondedAgWaterDemand = .TRUE.
       END IF
       
       !Are pointers defined without a defined ag water demand file?
       IF (AgWaterDemandFile .EQ. '' ) THEN
         IF (RootZone%Flags%lReadNonPondedAgWaterDemand  .OR. RootZone%Flags%lReadPondedAgWaterDemand) THEN 
-            CALL SetLastMessage('Data columns from agricultural water supply requirement file is referenced but this file is not specified!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Data columns from agricultural water supply requirement file is referenced but this file is not specified!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -770,7 +795,7 @@ CONTAINS
     END IF
     
     !Check if time series data column pointers are referring to existing data columns
-    CALL CheckTSDataPointers(RootZone,Precip,ET,iStat)
+    CALL CheckTSDataPointers(RootZone,iElemIDs,Precip,ET,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Close file
@@ -792,14 +817,14 @@ CONTAINS
     INTEGER,INTENT(IN)              :: NTIME
     CHARACTER(LEN=*),INTENT(IN)     :: cVersion
     LOGICAL,INTENT(IN)              :: lElemFlowToSubregions
-    TYPE(Flags_v41_Type),INTENT(IN) :: Flags
+    TYPE(FlagsType),INTENT(IN)      :: Flags
     TYPE(AppGridType),INTENT(IN)    :: AppGrid
     TYPE(ZBudgetType)               :: ZBudFile
     INTEGER,INTENT(OUT)             :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+26),PARAMETER :: ThisProcedure = ModName // 'RootZoneZoneBudRawFile_New'
-    CHARACTER(LEN=15),PARAMETER            :: cArea = MarkerChar // '          (' // AreaUnitMarker // ')' // MarkerChar
+    CHARACTER(LEN=15),PARAMETER            :: cArea = f_cMarkerChar // '          (' // f_cAreaUnitMarker // ')' // f_cMarkerChar
     INTEGER                                :: indxElem,indxVertex,ErrorCode,indxFace
     TYPE(TimeStepType)                     :: TimeStepLocal
     TYPE(ZBudgetHeaderType)                :: Header
@@ -824,7 +849,8 @@ CONTAINS
     SystemData%NElements = AppGrid%NElements
     SystemData%NLayers   = 1
     SystemData%NFaces    = AppGrid%NFaces
-    ALLOCATE (SystemData%iElementNNodes(AppGrid%NElements)                , &
+    ALLOCATE (SystemData%iElementIDs(AppGrid%NElements)                   , &
+              SystemData%iElementNNodes(AppGrid%NElements)                , &
               SystemData%iElementNodes(4,AppGrid%NElements)               , &
               SystemData%iFaceElems(2,AppGrid%NFaces)                     , &
               SystemData%lBoundaryFace(AppGrid%NFaces)                    , &
@@ -835,20 +861,21 @@ CONTAINS
               SystemData%rElementNodeAreaFractions(4,AppGrid%NElements)   )
     SystemData%rNodeAreas     = AppGrid%AppNode%Area
     SystemData%rElementAreas  = AppGrid%AppElement%Area
-    SystemData%iElementNNodes = AppGrid%Element%NVertex
+    SystemData%iElementNNodes = AppGrid%NVertex
     DO indxElem=1,AppGrid%NElements
-        SystemData%iElementNodes(:,indxElem) = AppGrid%Element(indxElem)%Vertex
-        DO indxVertex=1,AppGrid%Element(indxElem)%NVertex
+        SystemData%iElementIDs(indxElem)     = AppGrid%AppElement(indxElem)%ID
+        SystemData%iElementNodes(:,indxElem) = AppGrid%Vertex(:,indxElem)
+        DO indxVertex=1,AppGrid%NVertex(indxElem)
             SystemData%rElementNodeAreas(indxVertex,indxElem)         = AppGrid%AppElement(indxElem)%VertexArea(indxVertex)
             SystemData%rElementNodeAreaFractions(indxVertex,indxElem) = AppGrid%AppElement(indxElem)%VertexAreaFraction(indxVertex)
         END DO
-        IF (AppGrid%Element(indxElem)%NVertex .EQ. 3) THEN
+        IF (AppGrid%NVertex(indxElem) .EQ. 3) THEN
             SystemData%rElementNodeAreas(4,indxElem)         = 0.0
             SystemData%rElementNodeAreaFractions(4,indxElem) = 0.0
         END IF
     END DO
     DO indxFace=1,AppGrid%NFaces
-        SystemData%iFaceElems(:,indxFace) = AppGrid%AppFace(indxFace)%Element
+        SystemData%iFaceElems(:,indxFace) = AppGrid%AppFace%Element(:,indxFace)
     END DO
     SystemData%lBoundaryFace = AppGrid%AppFace%BoundaryFace
     SystemData%lActiveNode   = .TRUE.
@@ -859,114 +886,114 @@ CONTAINS
     Header%lFaceFlows_Defined = .FALSE.
     Header%lStorages_Defined  = .FALSE.
     Header%lComputeError      = .FALSE.
-    Header%iNData             = NRootZoneZBudColumns
-    ALLOCATE (Header%iDataTypes(NRootZoneZBudColumns)                           , &
-              Header%cFullDataNames(NRootZoneZBudColumns)                       , &
-              Header%cDataHDFPaths(NRootZoneZBudColumns)                        , &
-              Header%iNDataElems(NRootZoneZBudColumns,1)                        , &
-              Header%iElemDataColumns(AppGrid%NElements,NRootZoneZBudColumns,1) , &
-              !Header%iErrorInCols()                                            , &  ! Since mass balance error is not calcuated no need
-              !Header%iErrorOutCols()                                           , &  !  to allocate these arrays
-              Header%cDSSFParts(NRootZoneZBudColumns)                           , &
-              Header%ASCIIOutput%cColumnTitles(5)                               , &
-              STAT = ErrorCode                                                  )
+    Header%iNData             = f_iNRootZoneZBudColumns
+    ALLOCATE (Header%iDataTypes(f_iNRootZoneZBudColumns)                           , &
+              Header%cFullDataNames(f_iNRootZoneZBudColumns)                       , &
+              Header%cDataHDFPaths(f_iNRootZoneZBudColumns)                        , &
+              Header%iNDataElems(f_iNRootZoneZBudColumns,1)                        , &
+              Header%iElemDataColumns(AppGrid%NElements,f_iNRootZoneZBudColumns,1) , &
+              !Header%iErrorInCols()                                               , &  ! Since mass balance error is not calcuated no need
+              !Header%iErrorOutCols()                                              , &  !  to allocate these arrays
+              Header%cDSSFParts(f_iNRootZoneZBudColumns)                           , &
+              Header%ASCIIOutput%cColumnTitles(5)                                  , &
+              STAT = ErrorCode                                                     )
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error allocating memory for root zone Z-Budget file!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error allocating memory for root zone Z-Budget file!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
-    Header%iDataTypes = [AR ,&  !Non-ponded ag area                   1
-                         VR ,&  !Non-ponded ag potential ET           2
-                         VR ,&  !Non-ponded ag precipitation          3
-                         VR ,&  !Non-ponded ag runoff                 4
-                         VR ,&  !Non-ponded ag prime applied water    5
-                         VR ,&  !Non-ponded ag applied water from upstream element surface runoff   6
-                         VR ,&  !Non-ponded ag re-used water          7
-                         VR ,&  !Non-ponded ag return flow            8
-                         VLB,&  !Non-ponded ag beginning storage      9
-                         VR ,&  !Non-ponded ag net gain from land expansion 10
-                         VR ,&  !Non-ponded ag infiltration           11
-                         VR ,&  !Non-ponded ag groundwater inflow     12
-                         VR ,&  !Non-ponded ag generic inflow         13
-                         VR ,&  !Non-ponded ag actual ET              14
-                         VR ,&  !Non-ponded ag perc                   15
-                         VLE,&  !Non-ponded ag ending storage         16
-                         VR ,&  !Non-ponded ag discrepancy            17
-                         AR ,&  !Rice area                            18
-                         VR ,&  !Rice potential ET                    19
-                         VR ,&  !Rice precipitation                   20
-                         VR ,&  !Rice runoff                          21
-                         VR ,&  !Rice prime applied water             22
-                         VR ,&  !Rice applied water from upstream element surface runoff   23
-                         VR ,&  !Rice re-used water
-                         VR ,&  !Rice return flow
-                         VLB,&  !Rice beginning storage
-                         VR ,&  !Rice net gain from land expansion
-                         VR ,&  !Rice infiltration
-                         VR ,&  !Rice groundwater inflow          12
-                         VR ,&  !Rice generic inflow              13
-                         VR ,&  !Rice pond drain
-                         VR ,&  !Rice actual ET
-                         VR ,&  !Rice perc
-                         VLE,&  !Rice ending storage
-                         VR ,&  !Rice discrepancy           18
-                         AR ,&  !Rice area                   1
-                         VR ,&  !Refuge potential ET
-                         VR ,&  !Refuge precipitation
-                         VR ,&  !Refuge runoff
-                         VR ,&  !Refuge prime applied water
-                         VR ,&  !Refuge applied water from upstream element surface runoff   6
-                         VR ,&  !Refuge re-used water
-                         VR ,&  !Refuge return flow
-                         VLB,&  !Refuge beginning storage
-                         VR ,&  !Refuge net gain from land expansion
-                         VR ,&  !Refuge infiltration
-                         VR ,&  !Refuge groundwater inflow          12
-                         VR ,&  !Refuge generic inflow              13
-                         VR ,&  !Refuge pond drain
-                         VR ,&  !Refuge actual ET
-                         VR ,&  !Refuge perc
-                         VLE,&  !Refuge ending storage
-                         VR ,&  !Refuge discrepancy           18
-                         AR ,&  !Urban area               19
-                         VR ,&  !Urban potential ET
-                         VR ,&  !Urban precipitation
-                         VR ,&  !Urban runoff
-                         VR ,&  !Urban prime applied water
-                         VR ,&  !Urban applied water due to upstream element surface runoff  24
-                         VR ,&  !Urban re-used water
-                         VR ,&  !Urban return flow
-                         VLB,&  !Urban beginning storage
-                         VR ,&  !Urban net gain from land expansion
-                         VR ,&  !Urban infiltration
-                         VR ,&  !Urban groundwater inflow      30
-                         VR ,&  !Urban generic inflow          31
-                         VR ,&  !Urban actual ET
-                         VR ,&  !Urban perc
-                         VLE,&  !Urban ending storage
-                         VR ,&  !Urban discrepancy             35
-                         AR ,&  !NV&RV area                    36
-                         VR ,&  !NV&RV potential ET
-                         VR ,&  !NV&RV precipitation
-                         VR ,&  !NV&RV surface runoff from upstream elements/subregions  39
-                         VR ,&  !NV&RV runoff
-                         VLB,&  !NV&RV beginning storage
-                         VR ,&  !NV&RV net gain from land expansion
-                         VR ,&  !NV&RV infiltration
-                         VR ,&  !NV&RV groundwater inflow     44
-                         VR ,&  !NV&RV generic inflow         45
-                         VR ,&  !NV&RV stream inflow for RV ET
-                         VR ,&  !NV&RV actual ET
-                         VR ,&  !NV&RV perc
-                         VLE,&  !NV&RV ending storage
-                         VR ]   !NV&RV discrepancy            50
-    Header%cFullDataNames     = cRootZoneZBudgetColumnTitles
+    Header%iDataTypes = [f_iAR ,&  !Non-ponded ag area                   1
+                         f_iVR ,&  !Non-ponded ag potential ET           2
+                         f_iVR ,&  !Non-ponded ag precipitation          3
+                         f_iVR ,&  !Non-ponded ag runoff                 4
+                         f_iVR ,&  !Non-ponded ag prime applied water    5
+                         f_iVR ,&  !Non-ponded ag applied water from upstream element surface runoff   6
+                         f_iVR ,&  !Non-ponded ag re-used water          7
+                         f_iVR ,&  !Non-ponded ag return flow            8
+                         f_iVLB,&  !Non-ponded ag beginning storage      9
+                         f_iVR ,&  !Non-ponded ag net gain from land expansion 10
+                         f_iVR ,&  !Non-ponded ag infiltration           11
+                         f_iVR ,&  !Non-ponded ag groundwater inflow     12
+                         f_iVR ,&  !Non-ponded ag generic inflow         13
+                         f_iVR ,&  !Non-ponded ag actual ET              14
+                         f_iVR ,&  !Non-ponded ag perc                   15
+                         f_iVLE,&  !Non-ponded ag ending storage         16
+                         f_iVR ,&  !Non-ponded ag discrepancy            17
+                         f_iAR ,&  !Rice area                            18
+                         f_iVR ,&  !Rice potential ET                    19
+                         f_iVR ,&  !Rice precipitation                   20
+                         f_iVR ,&  !Rice runoff                          21
+                         f_iVR ,&  !Rice prime applied water             22
+                         f_iVR ,&  !Rice applied water from upstream element surface runoff   23
+                         f_iVR ,&  !Rice re-used water
+                         f_iVR ,&  !Rice return flow
+                         f_iVLB,&  !Rice beginning storage
+                         f_iVR ,&  !Rice net gain from land expansion
+                         f_iVR ,&  !Rice infiltration
+                         f_iVR ,&  !Rice groundwater inflow          12
+                         f_iVR ,&  !Rice generic inflow              13
+                         f_iVR ,&  !Rice pond drain
+                         f_iVR ,&  !Rice actual ET
+                         f_iVR ,&  !Rice perc
+                         f_iVLE,&  !Rice ending storage
+                         f_iVR ,&  !Rice discrepancy           18
+                         f_iAR ,&  !Rice area                   1
+                         f_iVR ,&  !Refuge potential ET
+                         f_iVR ,&  !Refuge precipitation
+                         f_iVR ,&  !Refuge runoff
+                         f_iVR ,&  !Refuge prime applied water
+                         f_iVR ,&  !Refuge applied water from upstream element surface runoff   6
+                         f_iVR ,&  !Refuge re-used water
+                         f_iVR ,&  !Refuge return flow
+                         f_iVLB,&  !Refuge beginning storage
+                         f_iVR ,&  !Refuge net gain from land expansion
+                         f_iVR ,&  !Refuge infiltration
+                         f_iVR ,&  !Refuge groundwater inflow          12
+                         f_iVR ,&  !Refuge generic inflow              13
+                         f_iVR ,&  !Refuge pond drain
+                         f_iVR ,&  !Refuge actual ET
+                         f_iVR ,&  !Refuge perc
+                         f_iVLE,&  !Refuge ending storage
+                         f_iVR ,&  !Refuge discrepancy           18
+                         f_iAR ,&  !Urban area               19
+                         f_iVR ,&  !Urban potential ET
+                         f_iVR ,&  !Urban precipitation
+                         f_iVR ,&  !Urban runoff
+                         f_iVR ,&  !Urban prime applied water
+                         f_iVR ,&  !Urban applied water due to upstream element surface runoff  24
+                         f_iVR ,&  !Urban re-used water
+                         f_iVR ,&  !Urban return flow
+                         f_iVLB,&  !Urban beginning storage
+                         f_iVR ,&  !Urban net gain from land expansion
+                         f_iVR ,&  !Urban infiltration
+                         f_iVR ,&  !Urban groundwater inflow      30
+                         f_iVR ,&  !Urban generic inflow          31
+                         f_iVR ,&  !Urban actual ET
+                         f_iVR ,&  !Urban perc
+                         f_iVLE,&  !Urban ending storage
+                         f_iVR ,&  !Urban discrepancy             35
+                         f_iAR ,&  !NV&RV area                    36
+                         f_iVR ,&  !NV&RV potential ET
+                         f_iVR ,&  !NV&RV precipitation
+                         f_iVR ,&  !NV&RV surface runoff from upstream elements/subregions  39
+                         f_iVR ,&  !NV&RV runoff
+                         f_iVLB,&  !NV&RV beginning storage
+                         f_iVR ,&  !NV&RV net gain from land expansion
+                         f_iVR ,&  !NV&RV infiltration
+                         f_iVR ,&  !NV&RV groundwater inflow     44
+                         f_iVR ,&  !NV&RV generic inflow         45
+                         f_iVR ,&  !NV&RV stream inflow for RV ET
+                         f_iVR ,&  !NV&RV actual ET
+                         f_iVR ,&  !NV&RV perc
+                         f_iVLE,&  !NV&RV ending storage
+                         f_iVR ]   !NV&RV discrepancy            50
+    Header%cFullDataNames     = f_cRootZoneZBudgetColumnTitles
     Header%cFullDataNames(1)  = TRIM(Header%cFullDataNames(1)) // cArea
     Header%cFullDataNames(18) = TRIM(Header%cFullDataNames(18)) // cArea
     Header%cFullDataNames(36) = TRIM(Header%cFullDataNames(36)) // cArea
     Header%cFullDataNames(54) = TRIM(Header%cFullDataNames(54)) // cArea
     Header%cFullDataNames(71) = TRIM(Header%cFullDataNames(71)) // cArea
-    Header%cDataHDFPaths      = cRootZoneZBudgetColumnTitles
+    Header%cDataHDFPaths      = f_cRootZoneZBudgetColumnTitles
     
     !Non-ponded ag data
     IF (Flags%lNonPondedAg_Defined) THEN
@@ -1192,14 +1219,14 @@ CONTAINS
     INTEGER,INTENT(IN)              :: NTIME
     CHARACTER(LEN=*),INTENT(IN)     :: cVersion
     LOGICAL,INTENT(IN)              :: lElemFlowToSubregions
-    TYPE(Flags_v41_Type),INTENT(IN) :: Flags
+    TYPE(FlagsType),INTENT(IN)      :: Flags
     TYPE(AppGridType),INTENT(IN)    :: AppGrid
     TYPE(ZBudgetType)               :: ZBudFile
     INTEGER,INTENT(OUT)             :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+23),PARAMETER :: ThisProcedure = ModName // 'LWUseZoneBudRawFile_New'
-    CHARACTER(LEN=13),PARAMETER            :: cArea = MarkerChar // '        (' // AreaUnitMarker // ')' // MarkerChar
+    CHARACTER(LEN=13),PARAMETER            :: cArea = f_cMarkerChar // '        (' // f_cAreaUnitMarker // ')' // f_cMarkerChar
     INTEGER                                :: indxElem,indxVertex,ErrorCode,indxFace
     TYPE(TimeStepType)                     :: TimeStepLocal
     TYPE(ZBudgetHeaderType)                :: Header
@@ -1224,7 +1251,8 @@ CONTAINS
     SystemData%NElements = AppGrid%NElements
     SystemData%NLayers   = 1
     SystemData%NFaces    = AppGrid%NFaces
-    ALLOCATE (SystemData%iElementNNodes(AppGrid%NElements)                , &
+    ALLOCATE (SystemData%iElementIDs(AppGrid%NElements)                   , &
+              SystemData%iElementNNodes(AppGrid%NElements)                , &
               SystemData%iElementNodes(4,AppGrid%NElements)               , &
               SystemData%iFaceElems(2,AppGrid%NFaces)                     , &
               SystemData%lBoundaryFace(AppGrid%NFaces)                    , &
@@ -1235,20 +1263,21 @@ CONTAINS
               SystemData%rElementNodeAreaFractions(4,AppGrid%NElements)   )
     SystemData%rNodeAreas     = AppGrid%AppNode%Area
     SystemData%rElementAreas  = AppGrid%AppElement%Area
-    SystemData%iElementNNodes = AppGrid%Element%NVertex
+    SystemData%iElementNNodes = AppGrid%NVertex
     DO indxElem=1,AppGrid%NElements
-        SystemData%iElementNodes(:,indxElem) = AppGrid%Element(indxElem)%Vertex
-        DO indxVertex=1,AppGrid%Element(indxElem)%NVertex
+        SystemData%iElementIDs(indxElem)     = AppGrid%AppElement(indxElem)%ID
+        SystemData%iElementNodes(:,indxElem) = AppGrid%Vertex(:,indxElem)
+        DO indxVertex=1,AppGrid%NVertex(indxElem)
             SystemData%rElementNodeAreas(indxVertex,indxElem)         = AppGrid%AppElement(indxElem)%VertexArea(indxVertex)
             SystemData%rElementNodeAreaFractions(indxVertex,indxElem) = AppGrid%AppElement(indxElem)%VertexAreaFraction(indxVertex)
         END DO
-        IF (AppGrid%Element(indxElem)%NVertex .EQ. 3) THEN
+        IF (AppGrid%NVertex(indxElem) .EQ. 3) THEN
             SystemData%rElementNodeAreas(4,indxElem)         = 0.0
             SystemData%rElementNodeAreaFractions(4,indxElem) = 0.0
         END IF
     END DO
     DO indxFace=1,AppGrid%NFaces
-        SystemData%iFaceElems(:,indxFace) = AppGrid%AppFace(indxFace)%Element
+        SystemData%iFaceElems(:,indxFace) = AppGrid%AppFace%Element(:,indxFace)
     END DO
     SystemData%lBoundaryFace = AppGrid%AppFace%BoundaryFace
     SystemData%lActiveNode   = .TRUE.
@@ -1259,67 +1288,67 @@ CONTAINS
     Header%lFaceFlows_Defined = .FALSE.
     Header%lStorages_Defined  = .FALSE.
     Header%lComputeError      = .FALSE.
-    Header%iNData             = NLWUseZBudColumns
-    ALLOCATE (Header%iDataTypes(NLWUseZBudColumns)                           , &
-              Header%cFullDataNames(NLWUseZBudColumns)                       , &
-              Header%cDataHDFPaths(NLWUseZBudColumns)                        , &
-              Header%iNDataElems(NLWUseZBudColumns,1)                        , &
-              Header%iElemDataColumns(AppGrid%NElements,NLWUseZBudColumns,1) , &
-              !Header%iErrorInCols()                                         , &  ! Since mass balance error is not calcuated no need
-              !Header%iErrorOutCols()                                        , &  !  to allocate these arrays
-              Header%cDSSFParts(NLWUseZBudColumns)                           , &
-              Header%ASCIIOutput%cColumnTitles(5)                            , &
-              STAT = ErrorCode                                               )
+    Header%iNData             = f_iNLWUseZBudColumns
+    ALLOCATE (Header%iDataTypes(f_iNLWUseZBudColumns)                           , &
+              Header%cFullDataNames(f_iNLWUseZBudColumns)                       , &
+              Header%cDataHDFPaths(f_iNLWUseZBudColumns)                        , &
+              Header%iNDataElems(f_iNLWUseZBudColumns,1)                        , &
+              Header%iElemDataColumns(AppGrid%NElements,f_iNLWUseZBudColumns,1) , &
+              !Header%iErrorInCols()                                            , &  ! Since mass balance error is not calcuated no need
+              !Header%iErrorOutCols()                                           , &  !  to allocate these arrays
+              Header%cDSSFParts(f_iNLWUseZBudColumns)                           , &
+              Header%ASCIIOutput%cColumnTitles(5)                               , &
+              STAT = ErrorCode                                                  )
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error allocating memory for land and water use Z-Budget file!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error allocating memory for land and water use Z-Budget file!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
-    Header%iDataTypes = [AR                 ,&  !Non-ponded ag area
-                         VR_lwu_PotCUAW     ,&  !Non-ponded potential CUAW
-                         VR_lwu_AgSupplyReq ,&  !Non-ponded ag supply req.
-                         VR_lwu_AgPump      ,&  !Non-ponded ag pumping 
-                         VR_lwu_AgDiv       ,&  !Non-ponded ag deliveries 
-                         VR_lwu_AgOthIn     ,&  !Non-ponded  ag inflow as surface runoff from upstream elements
-                         VR_lwu_AgShort     ,&  !Non-ponded ag supply shortage
-                         VR                 ,&  !Non-ponded ETAW
-                         VR                 ,&  !Non-ponded ETP
-                         VR                 ,&  !Non-ponded ETGW
-                         VR                 ,&  !Non-ponded ETOth
-                         AR                 ,&  !Rice area
-                         VR_lwu_PotCUAW     ,&  !Rice potential CUAW
-                         VR_lwu_AgSupplyReq ,&  !Rice supply req.
-                         VR_lwu_AgPump      ,&  !Rice pumping 
-                         VR_lwu_AgDiv       ,&  !Rice deliveries
-                         VR_lwu_AgOthIn     ,&  !Rice inflow as surface runoff from upstream elements
-                         VR_lwu_AgShort     ,&  !Rice supply shortage
-                         VR                 ,&  !Rice ETAW
-                         VR                 ,&  !Rice ETP
-                         VR                 ,&  !Rice ETGW
-                         VR                 ,&  !Rice ETOth
-                         AR                 ,&  !Refuge area
-                         VR_lwu_PotCUAW     ,&  !Refuge potential CUAW
-                         VR_lwu_AgSupplyReq ,&  !Refuge supply req.
-                         VR_lwu_AgPump      ,&  !Refuge pumping 
-                         VR_lwu_AgDiv       ,&  !Refuge deliveries
-                         VR_lwu_AgOthIn     ,&  !Refuge inflow as surface runoff from upstream elements
-                         VR_lwu_AgShort     ,&  !Refuge supply shortage
-                         VR                 ,&  !Refuge ETAW
-                         VR                 ,&  !Refuge ETP
-                         VR                 ,&  !Refuge ETGW
-                         VR                 ,&  !Refuge ETOth
-                         AR                 ,&  !Urban area
-                         VR                 ,&  !Urban supply req.
-                         VR                 ,&  !Pumping for urban
-                         VR                 ,&  !Deliveries for urban
-                         VR                 ,&  !Urban inflow as surface runoff from upstream elements
-                         VR                 ]   !Urban supply shortage
-    Header%cFullDataNames     = cLWUseZBudgetColumnTitles
+    Header%iDataTypes = [f_iAR                 ,&  !Non-ponded ag area
+                         f_iVR_lwu_PotCUAW     ,&  !Non-ponded potential CUAW
+                         f_iVR_lwu_AgSupplyReq ,&  !Non-ponded ag supply req.
+                         f_iVR_lwu_AgPump      ,&  !Non-ponded ag pumping 
+                         f_iVR_lwu_AgDiv       ,&  !Non-ponded ag deliveries 
+                         f_iVR_lwu_AgOthIn     ,&  !Non-ponded  ag inflow as surface runoff from upstream elements
+                         f_iVR_lwu_AgShort     ,&  !Non-ponded ag supply shortage
+                         f_iVR                 ,&  !Non-ponded ETAW
+                         f_iVR                 ,&  !Non-ponded ETP
+                         f_iVR                 ,&  !Non-ponded ETGW
+                         f_iVR                 ,&  !Non-ponded ETOth
+                         f_iAR                 ,&  !Rice area
+                         f_iVR_lwu_PotCUAW     ,&  !Rice potential CUAW
+                         f_iVR_lwu_AgSupplyReq ,&  !Rice supply req.
+                         f_iVR_lwu_AgPump      ,&  !Rice pumping 
+                         f_iVR_lwu_AgDiv       ,&  !Rice deliveries
+                         f_iVR_lwu_AgOthIn     ,&  !Rice inflow as surface runoff from upstream elements
+                         f_iVR_lwu_AgShort     ,&  !Rice supply shortage
+                         f_iVR                 ,&  !Rice ETAW
+                         f_iVR                 ,&  !Rice ETP
+                         f_iVR                 ,&  !Rice ETGW
+                         f_iVR                 ,&  !Rice ETOth
+                         f_iAR                 ,&  !Refuge area
+                         f_iVR_lwu_PotCUAW     ,&  !Refuge potential CUAW
+                         f_iVR_lwu_AgSupplyReq ,&  !Refuge supply req.
+                         f_iVR_lwu_AgPump      ,&  !Refuge pumping 
+                         f_iVR_lwu_AgDiv       ,&  !Refuge deliveries
+                         f_iVR_lwu_AgOthIn     ,&  !Refuge inflow as surface runoff from upstream elements
+                         f_iVR_lwu_AgShort     ,&  !Refuge supply shortage
+                         f_iVR                 ,&  !Refuge ETAW
+                         f_iVR                 ,&  !Refuge ETP
+                         f_iVR                 ,&  !Refuge ETGW
+                         f_iVR                 ,&  !Refuge ETOth
+                         f_iAR                 ,&  !Urban area
+                         f_iVR                 ,&  !Urban supply req.
+                         f_iVR                 ,&  !Pumping for urban
+                         f_iVR                 ,&  !Deliveries for urban
+                         f_iVR                 ,&  !Urban inflow as surface runoff from upstream elements
+                         f_iVR                 ]   !Urban supply shortage
+    Header%cFullDataNames     = f_cLWUseZBudgetColumnTitles
     Header%cFullDataNames(1)  = TRIM(Header%cFullDataNames(1))  // cArea 
     Header%cFullDataNames(12) = TRIM(Header%cFullDataNames(12)) // cArea  
     Header%cFullDataNames(23) = TRIM(Header%cFullDataNames(23)) // cArea  
     Header%cFullDataNames(34) = TRIM(Header%cFullDataNames(34)) // cArea  
-    Header%cDataHDFPaths      = cLWUseZBudgetColumnTitles
+    Header%cDataHDFPaths      = f_cLWUseZBudgetColumnTitles
     
     !Non-ponded ag data
     IF (Flags%lNonPondedAg_Defined) THEN
@@ -1513,225 +1542,415 @@ CONTAINS
 
 
   ! -------------------------------------------------------------
-  ! --- GET THE NUMBER OF DATA TYPES FOR POST-PROCESSING AT A LOCATION TYPE
+  ! --- GET Z-BUDGET LIST 
   ! -------------------------------------------------------------
-  FUNCTION RootZone_v411_GetNDataList_AtLocationType(RootZone,iLocationType) RESULT(NData)
-     CLASS(RootZone_v411_Type),INTENT(IN) :: RootZone
-     INTEGER,INTENT(IN)                   :: iLocationType
-     INTEGER                              :: NData
-     
-     !Initialize
-     NData = 0
-     
-     SELECT CASE (iLocationType)
-         CASE (iLocationType_Subregion)
-             NData = RootZone%RootZone_v41_Type%GetNDataList_AtLocationType(iLocationType)
-                          
-             
-         CASE (iLocationType_Zone)
-             !Land and water use zone budget
-             IF (RootZone%Flags%LWUseZoneBudRawFile_Defined) THEN
-                 NData = 1
-             END IF
-             
-             !Root zone zone budget
-             IF (RootZone%Flags%RootZoneZoneBudRawFile_Defined) THEN
-                 NData = NData + 1
-             END IF
-             
-    END SELECT
-     
-  END FUNCTION RootZone_v411_GetNDataList_AtLocationType
-
-
-  ! -------------------------------------------------------------
-  ! --- GET THE LIST OF DATA TYPES FOR POST-PROCESSING AT A LOCATION TYPE
-  ! -------------------------------------------------------------
-  SUBROUTINE RootZone_v411_GetDataList_AtLocationType(RootZone,iLocationType,cDataList,cFileList,lBudgetType)
-     CLASS(RootZone_v411_Type),INTENT(IN) :: RootZone
-     INTEGER,INTENT(IN)                   :: iLocationType
-     CHARACTER(LEN=*),ALLOCATABLE         :: cDataList(:),cFileList(:)
-     LOGICAL,ALLOCATABLE                  :: lBudgetType(:)
+  SUBROUTINE RootZone_v411_GetZBudget_List(RootZone,iZBudgetTypeList,cZBudgetDescriptions,cZBudgetFiles)
+     CLASS(RootZone_v411_Type),INTENT(IN)     :: RootZone
+     INTEGER,ALLOCATABLE,INTENT(OUT)          :: iZBudgetTypeList(:)          
+     CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cZBudgetDescriptions(:),cZBudgetFiles(:)
      
      !Local variables
-     INTEGER                  :: iCount,ErrorCode
-     LOGICAL                  :: lBudgetType_Local(10)
-     CHARACTER(LEN=500)       :: cFileList_Local(10),cDataList_Local(10)
+     INTEGER                  :: iCount,iErrorCode,iZBudgetTypeList_Local(2)
+     CHARACTER(LEN=500)       :: cFiles(2),cDescriptions(2)
      CHARACTER(:),ALLOCATABLE :: cFileName
      
      !Initialize
      iCount = 0
-     DEALLOCATE (cDataList , cFileList , lBudgetType , STAT=ErrorCode)
+     DEALLOCATE (iZBudgetTypeList , cZBudgetDescriptions , cZBudgetFiles , STAT=iErrorCode)
+          
+     !Land and water use budget
+     IF (RootZone%Flags%LWUseZoneBudRawFile_Defined) THEN
+         CALL RootZone%LWUZoneBudRawFile%GetFileName(cFileName)
+         iCount                         = iCount + 1
+         iZBudgetTypeList_Local(iCount) = f_iZBudgetType_LWU
+         cDescriptions(iCount)          = f_cDescription_LWUZBudget
+         cFiles(iCount)                 = cFileName
+     END IF
      
-     SELECT CASE (iLocationType)
-         CASE (iLocationType_Subregion)
-             CALL RootZone%RootZone_v41_Type%GetDataList_AtLocationType(iLocationType,cDataList,cFileList,lBudgetType)
-                          
-             
-         CASE (iLocationType_Zone)
-             !Land and water use budget
-             IF (RootZone%Flags%LWUseZoneBudRawFile_Defined) THEN
-                 CALL RootZone%LWUZoneBudRawFile%GetFileName(cFileName)
-                 iCount                    = iCount + 1
-                 cDataList_Local(iCount)   = cDataList_AtZone(iLWU_AtZone)
-                 cFileList_Local(iCount)   = cFileName
-                 lBudgetType_Local(iCount) = .TRUE.
-             END IF
-             
-             !Root zone budget
-             IF (RootZone%Flags%RootZoneZoneBudRawFile_Defined) THEN
-                 CALL RootZone%RootZoneZoneBudRawFile%GetFileName(cFileName)
-                 iCount                    = iCount + 1
-                 cDataList_Local(iCount)   = cDataList_AtZone(iRootZone_AtZone)
-                 cFileList_Local(iCount)   = cFileName
-                 lBudgetType_Local(iCount) = .TRUE.
-             END IF
-             
-             !Store data in return variables
-             ALLOCATE (cDataList(iCount) , cFileList(iCount) , lBudgetType(iCount))
-             cDataList   = ''
-             cDataList   = cDataList_Local(1:iCount)
-             cFileList   = ''
-             cFileList   = cFileList_Local(1:iCount)
-             lBudgetType = lBudgetType_Local(1:iCount)
-             
-    END SELECT
+     !Root zone budget
+     IF (RootZone%Flags%RootZoneZoneBudRawFile_Defined) THEN
+         CALL RootZone%RootZoneZoneBudRawFile%GetFileName(cFileName)
+         iCount                         = iCount + 1
+         iZBudgetTypeList_Local(iCount) = f_iZBudgetType_RootZone
+         cDescriptions(iCount)          = f_cDescription_RootZoneZBudget
+         cFiles(iCount)                 = cFileName
+     END IF
      
-  END SUBROUTINE RootZone_v411_GetDataList_AtLocationType
-
-
-  ! -------------------------------------------------------------
-  ! --- GET THE LIST OF LOCATIONS THAT HAVE A DATA TYPE FOR POST-PROCESSING
-  ! -------------------------------------------------------------
-  SUBROUTINE RootZone_v411_GetLocationsWithData(RootZone,iLocationType,cDataType,iLocations)
-     CLASS(RootZone_v411_Type),INTENT(IN) :: RootZone
-     INTEGER,INTENT(IN)                   :: iLocationType
-     CHARACTER(LEN=*),INTENT(IN)          :: cDataType    
-     INTEGER,ALLOCATABLE,INTENT(OUT)      :: iLocations(:)
+     !Store data in return variables
+     ALLOCATE (iZBudgetTypeList(iCount) , cZBudgetDescriptions(iCount) , cZBudgetFiles(iCount))
+     iZBudgetTypeList     = iZBudgetTypeList_Local(1:iCount)
+     cZBudgetDescriptions = ''
+     cZBudgetDescriptions = cDescriptions(1:iCount)
+     cZBudgetFiles        = ''
+     cZBudgetFiles        = cFiles(1:iCount)
      
-     SELECT CASE (iLocationType)
-     CASE (iLocationType_Subregion)
-         CALL RootZone%RootZone_v41_Type%GetLocationsWithData(iLocationType,cDataType,iLocations)
-                          
-             
-         CASE (iLocationType_Zone)
-             !Land and water use budget
-             IF (TRIM(cDataType) .EQ. TRIM(cDataList_AtZone(iLWU_AtZone))) THEN
-                 IF (RootZone%Flags%LWUseZoneBudRawFile_Defined) THEN
-                     ALLOCATE (iLocations(1))
-                     iLocations = iAllLocationIDsListed
-                 END IF
-                 
-             !Root zone budget                                                                                                                                               
-             ELSEIF (TRIM(cDataType) .EQ. TRIM(cDataList_AtZone(iRootZone_AtZone))) THEN                                                                           
-                 IF (RootZone%Flags%RootZoneZoneBudRawFile_Defined) THEN
-                     ALLOCATE (iLocations(1))
-                     iLocations = iAllLocationIDsListed
-                 END IF
-             END IF    
-             
-    END SELECT
-     
-  END SUBROUTINE RootZone_v411_GetLocationsWithData
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET LIST OF SUB-DATA TYPES FOR POST-PROCESSING AT A LOCATION TYPE
-  ! -------------------------------------------------------------
-  SUBROUTINE RootZone_v411_GetSubDataList_AtLocation(RootZone,iLocationType,cDataType,cSubDataList)
-    CLASS(RootZone_v411_Type),INTENT(IN)     :: RootZone
-    INTEGER,INTENT(IN)                       :: iLocationType
-    CHARACTER(LEN=*),INTENT(IN)              :: cDataType
-    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cSubDataList(:)
-    
-    SELECT CASE (iLocationType)
-        !Use the parent method if the location type is subregion
-        CASE (iLocationType_Subregion) 
-            CALL RootZone%RootZone_v41_Type%GetSubDataList_AtLocation(iLocationType,cDataType,cSubDataList)
-
-        !Otherwise, if the location type is zone
-        CASE (iLocationType_Zone)
-            !Land and water use z-budget
-            IF (TRIM(cDataType) .EQ. TRIM(cDataList_AtZone(iLWU_AtZone))) THEN
-                IF (RootZone%Flags%LWUseZoneBudRawFile_Defined) THEN
-                    ALLOCATE (cSubDataList(NLWUseZBudColumns))
-                    cSubDataList = cLWUseZBudgetColumnTitles
-                END IF
-                
-            !Root zone budget
-            ELSEIF (TRIM(cDataType) .EQ. TRIM(cDataList_AtZone(iRootZone_AtZone))) THEN
-                IF (RootZone%Flags%RootZoneZoneBudRawFile_Defined) THEN
-                    ALLOCATE (cSubDataList(NRootZoneZBudColumns))
-                    cSubDataList = cRootZoneZBudgetColumnTitles
-                END IF
-            END IF    
-            
-    END SELECT
-    
-  END SUBROUTINE RootZone_v411_GetSubDataList_AtLocation
+  END SUBROUTINE RootZone_v411_GetZBudget_List
 
 
   ! -------------------------------------------------------------
-  ! --- GET MODEL DATA AT A LOCATION FOR POST-PROCESSING
+  ! --- GET NUMBER OF COLUMNS FOR A ZONE BUDGET (EXCLUDING TIME COLUMN)
   ! -------------------------------------------------------------
-  SUBROUTINE RootZone_v411_GetModelData_AtLocation(RootZone,iZExtent,iElems,iLayers,iZones,iZonesWithNames,cZoneNames,iLocationType,iLocationID,cDataType,iCol,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-    CLASS(RootZone_v411_Type)   :: RootZone
-    INTEGER,INTENT(IN)          :: iZExtent,iElems(:),iLayers(:),iZones(:),iZonesWithNames(:),iLocationType,iLocationID,iCol
-    CHARACTER(LEN=*),INTENT(IN) :: cZoneNames(:),cDataType,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval
-    REAL(8),INTENT(IN)          :: rFact_LT,rFact_AR,rFact_VL
-    INTEGER,INTENT(OUT)         :: iDataUnitType,nActualOutput
-    REAL(8),INTENT(OUT)         :: rOutputDates(:),rOutputValues(:)
-    INTEGER,INTENT(OUT)         :: iStat
-    
-    !Local variables
-    INTEGER            :: iReadCols(1),iDataUnitTypeArray(1)
-    REAL(8)            :: rValues(2,SIZE(rOutputDates))
-    TYPE(ZoneListType) :: ZoneList
+  FUNCTION RootZone_v411_GetZBudget_NColumns(RootZone,iZBudgetType) RESULT(iNCols)
+    CLASS(RootZone_v411_Type),INTENT(IN) :: RootZone
+    INTEGER,INTENT(IN)                   :: iZBudgetType
+    INTEGER                              :: iNCols
     
     !Initialize
-    iStat         = 0
-    nActualOutput = 0
+    iNCols = 0
     
-    !Proceed based on location type
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_Subregion)
-            CALL RootZone%RootZone_v41_Type%GetModelData_AtLocation(iZExtent,iElems,iLayers,iZones,iZonesWithNames,cZoneNames,iLocationType,iLocationID,cDataType,iCol,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)   
-           
-           
-        CASE (iLocationType_Zone)
-            iReadCols = iCol
-            
-            !Land and water use zone budget
-            IF (TRIM(cDataType) .EQ. TRIM(cDataList_AtZone(iLWU_AtZone))) THEN
-                IF (RootZone%Flags%LWUseZoneBudRawFile_Defined) THEN
-                    !Generate zone list
-                    CALL ZoneList%New(RootZone%LWUZoneBudRawFile%Header%iNData,RootZone%LWUZoneBudRawFile%Header%lFaceFlows_Defined,RootZone%LWUZoneBudRawFile%SystemData,iZExtent,iElems,iLayers,iZones,iZonesWithNames,cZoneNames,iStat)  ;  IF (iStat .EQ. -1) RETURN
-                    !Read data
-                    CALL RootZone%LWUZoneBudRawFile%ReadData(ZoneList,iLocationID,iReadCols,cOutputInterval,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_AR,rFact_VL,iDataUnitTypeArray,nActualOutput,rValues,iStat)  ;  IF (iStat .EQ. -1) RETURN
-                    !Populate return variables
-                    rOutputDates(1:nActualOutput)  = rValues(1,1:nActualOutput)
-                    rOutputValues(1:nActualOutput) = rValues(2,1:nActualOutput)
-                    iDataUnitType                  = iDataUnitTypeArray(1)
-                END IF
-                
-            !Root zone zone budget
-            ELSEIF (TRIM(cDataType) .EQ. TRIM(cDataList_AtZone(iRootZone_AtZone))) THEN
-                IF (RootZone%Flags%RootZoneZoneBudRawFile_Defined) THEN
-                    !Generate zone list
-                    CALL ZoneList%New(RootZone%RootZoneZoneBudRawFile%Header%iNData,RootZone%RootZoneZoneBudRawFile%Header%lFaceFlows_Defined,RootZone%RootZoneZoneBudRawFile%SystemData,iZExtent,iElems,iLayers,iZones,iZonesWithNames,cZoneNames,iStat)  ;  IF (iStat .EQ. -1) RETURN
-                    !Read data
-                    CALL RootZone%RootZoneZoneBudRawFile%ReadData(ZoneList,iLocationID,iReadCols,cOutputInterval,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_AR,rFact_VL,iDataUnitTypeArray,nActualOutput,rValues,iStat)  ;  IF (iStat .EQ. -1) RETURN
-                    !Populate return variables
-                    rOutputDates(1:nActualOutput)  = rValues(1,1:nActualOutput)
-                    rOutputValues(1:nActualOutput) = rValues(2,1:nActualOutput)
-                    iDataUnitType                  = iDataUnitTypeArray(1)
-                END IF
-            END IF    
-                        
+    !Land and water use z-budget
+    IF (iZBudgetType .EQ. f_iZBudgetType_LWU) THEN
+        IF (RootZone%Flags%LWUseZoneBudRawFile_Defined) THEN
+            iNCols = f_iNLWUseZBudColumns
+        END IF
+        
+    !Root zone budget
+    ELSEIF (iZBudgetType .EQ. f_iZBudgetType_RootZone) THEN
+        IF (RootZone%Flags%RootZoneZoneBudRawFile_Defined) THEN
+            iNCols = f_iNRootZoneZBudColumns
+        END IF
+    END IF    
+        
+  END FUNCTION RootZone_v411_GetZBudget_NColumns
+     
+     
+  ! -------------------------------------------------------------
+  ! --- GET COLUMN TITLES FOR A ZONE BUDGET (EXCLUDING TIME COLUMN)
+  ! -------------------------------------------------------------
+  SUBROUTINE RootZone_v411_GetZBudget_ColumnTitles(RootZone,iZBudgetType,cUnitAR,cUnitVL,cColTitles,iStat)
+    CLASS(RootZone_v411_Type),INTENT(IN)     :: RootZone
+    INTEGER,INTENT(IN)                       :: iZBudgetType
+    CHARACTER(LEN=*),INTENT(IN)              :: cUnitAR,cUnitVL
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cColTitles(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=f_iColumnHeaderLen),ALLOCATABLE :: cColTitles_Local(:)
+    
+    !Land and water use z-budget
+    IF (iZBudgetType .EQ. f_iZBudgetType_LWU) THEN
+        IF (RootZone%Flags%LWUseZoneBudRawFile_Defined) THEN
+            CALL RootZone%LWUZoneBudRawFile%GetFullColumnHeaders(cUnitAR,cUnitVL,cColTitles_Local,iStat)
+            IF (iStat .NE. 0) RETURN
+            ALLOCATE(cColTitles(SIZE(cColTitles_Local)-1))
+            cColTitles = ''
+            cColTitles = cColTitles_Local(2:)
+            RETURN
+        END IF
+        
+    !Root zone budget
+    ELSEIF (iZBudgetType .EQ. f_iZBudgetType_RootZone) THEN
+        IF (RootZone%Flags%RootZoneZoneBudRawFile_Defined) THEN
+            CALL RootZone%RootZoneZoneBudRawFile%GetFullColumnHeaders(cUnitAR,cUnitVL,cColTitles_Local,iStat)
+            IF (iStat .NE. 0) RETURN
+            ALLOCATE(cColTitles(SIZE(cColTitles_Local)-1))
+            cColTitles = ''
+            cColTitles = cColTitles_Local(2:)
+            RETURN
+        END IF
+    END IF  
+    
+    !Otherwise, allocate zero array
+    iStat = 0
+    ALLOCATE(cColTitles(0))
+        
+  END SUBROUTINE RootZone_v411_GetZBudget_ColumnTitles
+     
+     
+  ! -------------------------------------------------------------
+  ! --- GET MONTHLY ZBUDGET FLOWS FROM RootZone OBJECT 
+  ! -------------------------------------------------------------
+  SUBROUTINE RootZone_v411_GetZBudget_MonthlyFlows_GivenRootZone(RootZone,iZBudgetType,iLUType,iZoneID,iZExtent,iElems,iLayers,iZoneIDs,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    CLASS(RootZone_v411_Type),TARGET,INTENT(IN) :: RootZone              
+    INTEGER,INTENT(IN)                          :: iZBudgetType,iZoneID,iLUType,iZExtent,iElems(:),iLayers(:),iZoneIDs(:)
+    CHARACTER(LEN=*),INTENT(IN)                 :: cBeginDate,cEndDate  
+    REAL(8),INTENT(IN)                          :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)             :: rFlows(:,:)          
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT)    :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                         :: iStat
+    
+    !Local variables
+    INTEGER                   :: iZonesWithNames(0)
+    CHARACTER                 :: cZoneNames(0)*1 
+    TYPE(ZBudgetType),POINTER :: pZBudget
+    TYPE(ZoneListType)        :: ZoneList
+    
+    !Initialize
+    NULLIFY(pZBudget)
+    
+    !Get a pointer to ZBudget file
+    SELECT CASE (iZBudgetType)
+        CASE (f_iZBudgetType_LWU)
+            IF (RootZone%Flags%LWUseZoneBudRawFile_Defined) pZBudget => RootZone%LWUZoneBudRawFile
+        CASE (f_iZBudgetType_RootZone)
+            IF (RootZone%Flags%RootZoneZoneBudRawFile_Defined) pZBudget => RootZone%RootZoneZoneBudRawFile
     END SELECT
-         
-  END SUBROUTINE RootZone_v411_GetModelData_AtLocation
+    
+    !Return if ZBudget file does not exist
+    IF (.NOT.ASSOCIATED(pZBudget)) THEN
+        iStat = 0
+        ALLOCATE (rFlows(0,0) , cFlowNames(0))
+        RETURN
+    END IF
+    
+    !Generate zone list
+    CALL ZoneList%New(pZBudget%Header%iNData,pZBudget%Header%lFaceFlows_Defined,pZBudget%SystemData,iZExtent,iElems,iLayers,iZoneIDs,iZonesWithNames,cZoneNames,iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Retrieve data
+    CALL RootZone_v411_GetZBudget_MonthlyFlows_GivenFile(pZBudget,iZBudgetType,ZoneList,iZoneID,iLUType,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+
+    !Clear memory
+    CALL ZoneList%Kill()
+    NULLIFY(pZBudget)
+    
+  END SUBROUTINE RootZone_v411_GetZBudget_MonthlyFlows_GivenRootZone
+     
+     
+  ! -------------------------------------------------------------
+  ! --- GET MONTHLY ZBUDGET FLOWS 
+  ! -------------------------------------------------------------
+  SUBROUTINE RootZone_v411_GetZBudget_MonthlyFlows_GivenFile(ZBudget,iZBudgetType,ZoneList,iZoneID,iLUType,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+     TYPE(ZBudgetType),INTENT(IN)             :: ZBudget              
+     TYPE(ZoneListType),INTENT(IN)            :: ZoneList
+     INTEGER,INTENT(IN)                       :: iZBudgetType,iZoneID,iLUType
+     CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate  
+     REAL(8),INTENT(IN)                       :: rFactVL
+     REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)          
+     CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+     INTEGER,INTENT(OUT)                      :: iStat
+     
+     !Local variables
+     CHARACTER(LEN=ModNameLen+47),PARAMETER :: ThisProcedure = ModName // 'RootZone_v411_GetZBudget_MonthlyFlows_GivenFile'
+     INTEGER                                :: iNTimeSteps,indx,ErrorCode,iNPopulatedValues,indxTime
+     TYPE(TimeStepType)                     :: TimeStep
+     INTEGER,ALLOCATABLE                    :: iColList(:),iDataUnitTypes(:)
+     REAL(8),ALLOCATABLE                    :: rValues(:,:)
+     
+    !Get number of time steps stored in the ZBudget file
+    CALL ZBudget%GetTimeStepRelatedData(iNTimeSteps,TimeStep)
+    
+    !Land and water use z-budget
+    IF (iZBudgetType .EQ. f_iZBudgetType_LWU) THEN
+        ALLOCATE (iColList(5) , iDataUnitTypes(5) , cFlowNames(5) , rValues(6,iNTimeSteps))
+        cFlowNames = ['Supply Requirement' , 'Pumping' , 'Deliveries' , 'Inflow as Surface Runoff' , 'Shortage']
+        SELECT CASE (iLUType)
+            CASE (f_iNonPondedAg)
+                iColList = [(indx,indx=3,7)]
+                
+            CASE (f_iRice)
+                iColList = [(indx,indx=14,18)]
+                
+            CASE (f_iRefuge)
+                iColList = [(indx,indx=25,29)]
+                
+            CASE (f_iUrb)
+                iColList = [(indx,indx=35,39)]
+                
+            CASE DEFAULT
+                CALL SetLastMessage('Land&Water Use ZBudget is not available for the selected land use type!',f_iFatal,ThisProcedure)
+                DEALLOCATE (rFlows , cFlowNames , STAT=ErrorCode)
+                ALLOCATE (rFlows(0,0) , cFlowNames(0))
+                iStat = -1
+                RETURN
+        END SELECT
+        
+        !Read data for the interval
+        CALL ZBudget%ReadData(ZoneList,iZoneID,iColList,'1MON',cBeginDate,cEndDate,1d0,rFactVL,iDataUnitTypes,iNPopulatedValues,rValues,iStat)
+        IF (iStat .NE. 0) RETURN
+        
+        !Calculate monthly averages
+        ALLOCATE (rFlows(5,iNPopulatedValues))
+        DO indxTime=1,iNPopulatedValues
+            rFlows(1,indxTime) = -rValues(2,indxTime)
+            rFlows(2,indxTime) =  rValues(3,indxTime) 
+            rFlows(3,indxTime) =  rValues(4,indxTime)
+            rFlows(4,indxTime) =  rValues(5,indxTime)
+            rFlows(5,indxTime) =  rValues(6,indxTime)
+        END DO
+    
+    
+    !Root zone budget
+    ELSEIF (iZBudgetType .EQ. f_iZBudgetType_RootZone) THEN
+        SELECT CASE (iLUType)
+            CASE (f_iNonPondedAg)
+                ALLOCATE (iColList(8) , iDataUnitTypes(8) , cFlowNames(7) , rValues(9,iNTimeSteps))
+                cFlowNames = ['Change in Storage' , 'Gain from Land Expansion' , 'Infiltration' , 'GW Inflow' , 'Other Inflow' , 'ET' , 'Percolation']
+                iColList   = [(indx,indx=9,16)]
+                    
+                !Read data for the interval
+                CALL ZBudget%ReadData(ZoneList,iZoneID,iColList,'1MON',cBeginDate,cEndDate,1d0,rFactVL,iDataUnitTypes,iNPopulatedValues,rValues,iStat)
+                IF (iStat .NE. 0) RETURN
+                
+                !Calculate monthly averages
+                ALLOCATE (rFlows(7,iNPopulatedValues))
+                DO indxTime=1,iNPopulatedValues
+                    rFlows(1,indxTime) =  rValues(2,indxTime) - rValues(9,indxTime)  !Change in storage
+                    rFlows(2,indxTime) =  rValues(3,indxTime)                        !Gain from land expansion
+                    rFlows(3,indxTime) =  rValues(4,indxTime)                        !Infiltration
+                    rFlows(4,indxTime) =  rValues(5,indxTime)                        !GW Inflow
+                    rFlows(5,indxTime) =  rValues(6,indxTime)                        !Other Inflow
+                    rFlows(6,indxTime) = -rValues(7,indxTime)                        !ET
+                    rFlows(7,indxTime) = -rValues(8,indxTime)                        !Percolation
+                END DO
+                
+            CASE (f_iRice)
+                ALLOCATE (iColList(9) , iDataUnitTypes(9) , cFlowNames(8) , rValues(10,iNTimeSteps))
+                cFlowNames = ['Change in Storage' , 'Gain from Land Expansion' , 'Infiltration' , 'GW Inflow' , 'Other Inflow' , 'Pond Drain' , 'ET' , 'Percolation']
+                iColList   = [(indx,indx=26,34)]
+                
+                !Read data for the interval
+                CALL ZBudget%ReadData(ZoneList,iZoneID,iColList,'1MON',cBeginDate,cEndDate,1d0,rFactVL,iDataUnitTypes,iNPopulatedValues,rValues,iStat)
+                IF (iStat .NE. 0) RETURN
+                
+                !Calculate monthly averages
+                ALLOCATE (rFlows(8,iNPopulatedValues))
+                DO indxTime=1,iNPopulatedValues
+                    rFlows(1,indxTime) =  rValues(2,indxTime) - rValues(10,indxTime) !Change in storage
+                    rFlows(2,indxTime) =  rValues(3,indxTime)                        !Gain from land expansion
+                    rFlows(3,indxTime) =  rValues(4,indxTime)                        !Infiltration
+                    rFlows(4,indxTime) =  rValues(5,indxTime)                        !GW Inflow
+                    rFlows(5,indxTime) =  rValues(6,indxTime)                        !Other Inflow
+                    rFlows(6,indxTime) = -rValues(7,indxTime)                        !Pond drain
+                    rFlows(7,indxTime) = -rValues(8,indxTime)                        !ET
+                    rFlows(8,indxTime) = -rValues(9,indxTime)                        !Percolation
+                END DO
+                
+            CASE (f_iRefuge)
+                ALLOCATE (iColList(9) , iDataUnitTypes(9) , cFlowNames(8) , rValues(10,iNTimeSteps))
+                cFlowNames = ['Change in Storage' , 'Gain from Land Expansion' , 'Infiltration' , 'GW Inflow' , 'Other Inflow' , 'Pond Drain' , 'ET' , 'Percolation']
+                iColList   = [(indx,indx=44,52)]
+                
+                !Read data for the interval
+                CALL ZBudget%ReadData(ZoneList,iZoneID,iColList,'1MON',cBeginDate,cEndDate,1d0,rFactVL,iDataUnitTypes,iNPopulatedValues,rValues,iStat)
+                IF (iStat .NE. 0) RETURN
+                
+                !Calculate monthly averages
+                ALLOCATE (rFlows(8,iNPopulatedValues))
+                DO indxTime=1,iNPopulatedValues
+                    rFlows(1,indxTime) =   rValues(2,indxTime) - rValues(10,indxTime) !Change in storage
+                    rFlows(2,indxTime) =   rValues(3,indxTime)                        !Gain from land expansion
+                    rFlows(3,indxTime) =   rValues(4,indxTime)                        !Infiltration
+                    rFlows(4,indxTime) =   rValues(5,indxTime)                        !GW Inflow
+                    rFlows(5,indxTime) =   rValues(6,indxTime)                        !Other Inflow
+                    rFlows(6,indxTime) =  -rValues(7,indxTime)                        !Pond drain
+                    rFlows(7,indxTime) =  -rValues(8,indxTime)                        !ET
+                    rFlows(8,indxTime) =  -rValues(9,indxTime)                        !Percolation
+                END DO
+                
+            CASE (f_iUrb)
+                ALLOCATE (iColList(8) , iDataUnitTypes(8) , cFlowNames(7) , rValues(9,iNTimeSteps))
+                cFlowNames = ['Change in Storage' , 'Gain from Land Expansion' , 'Infiltration' , 'GW Inflow' , 'Other Inflow' , 'ET' , 'Percolation']
+                iColList   = [(indx,indx=62,69)]
+                
+                !Read data for the interval
+                CALL ZBudget%ReadData(ZoneList,iZoneID,iColList,'1MON',cBeginDate,cEndDate,1d0,rFactVL,iDataUnitTypes,iNPopulatedValues,rValues,iStat)
+                IF (iStat .NE. 0) RETURN
+                
+                !Calculate monthly averages
+                ALLOCATE (rFlows(7,iNPopulatedValues))
+                DO indxTime=1,iNPopulatedValues
+                    rFlows(1,indxTime) =  rValues(2,indxTime) - rValues(9,indxTime)  !Change in storage
+                    rFlows(2,indxTime) =  rValues(3,indxTime)                        !Gain from land expansion
+                    rFlows(3,indxTime) =  rValues(4,indxTime)                        !Infiltration
+                    rFlows(4,indxTime) =  rValues(5,indxTime)                        !GW Inflow
+                    rFlows(5,indxTime) =  rValues(6,indxTime)                        !Other Inflow
+                    rFlows(6,indxTime) = -rValues(7,indxTime)                        !ET
+                    rFlows(7,indxTime) = -rValues(8,indxTime)                        !Percolation
+                END DO
+                
+            CASE (f_iNVRV)
+                ALLOCATE (iColList(9) , iDataUnitTypes(9) , cFlowNames(8) , rValues(10,iNTimeSteps))
+                cFlowNames = ['Change in Storage' , 'Gain from Land Expansion' , 'Infiltration' , 'GW Inflow' , 'Other Inflow' , 'Stream Inflow for ET' , 'ET' , 'Percolation']
+                iColList   = [(indx,indx=76,84)]
+                
+                !Read data for the interval
+                CALL ZBudget%ReadData(ZoneList,iZoneID,iColList,'1MON',cBeginDate,cEndDate,1d0,rFactVL,iDataUnitTypes,iNPopulatedValues,rValues,iStat)
+                IF (iStat .NE. 0) RETURN
+                
+                !Calculate monthly averages
+                ALLOCATE (rFlows(8,iNPopulatedValues))
+                DO indxTime=1,iNPopulatedValues
+                    rFlows(1,indxTime) =  rValues(2,indxTime) - rValues(10,indxTime) !Change in storage
+                    rFlows(2,indxTime) =  rValues(3,indxTime)                        !Gain from land expansion
+                    rFlows(3,indxTime) =  rValues(4,indxTime)                        !Infiltration
+                    rFlows(4,indxTime) =  rValues(5,indxTime)                        !GW Inflow
+                    rFlows(5,indxTime) =  rValues(6,indxTime)                        !Other Inflow
+                    rFlows(6,indxTime) =  rValues(7,indxTime)                        !Stream Inflow for ET
+                    rFlows(7,indxTime) = -rValues(8,indxTime)                        !ET
+                    rFlows(8,indxTime) = -rValues(9,indxTime)                        !Percolation
+                END DO
+                
+            CASE DEFAULT
+                CALL SetLastMessage('Root Zone ZBudget is not available for the selected land use type!',f_iFatal,ThisProcedure)
+                DEALLOCATE (rFlows , cFlowNames , STAT=ErrorCode)
+                ALLOCATE (rFlows(0,0) , cFlowNames(0))
+                iStat = -1
+                RETURN
+        END SELECT        
+    END IF  
+    
+  END SUBROUTINE RootZone_v411_GetZBudget_MonthlyFlows_GivenFile
+    
   
+  ! -------------------------------------------------------------
+  ! --- GET TIME SERIES DATA FROM ZBUDGET FILE FOR A SELECTED ZONE AND SELECTED COLUMNS
+  ! -------------------------------------------------------------
+  SUBROUTINE RootZone_v411_GetZBudget_TSData(RootZone,iZBudgetType,iZoneID,iCols,iZExtent,iElems,iLayers,iZoneIDs,cBeginDate,cEndDate,cInterval,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+    CLASS(RootZone_v411_Type),TARGET,INTENT(IN) :: RootZone
+    INTEGER,INTENT(IN)                          :: iZBudgetType,iZoneID,iCols(:),iZExtent,iElems(:),iLayers(:),iZoneIDs(:)
+    CHARACTER(LEN=*),INTENT(IN)                 :: cBeginDate,cEndDate,cInterval
+    REAL(8),INTENT(IN)                          :: rFactAR,rFactVL
+    REAL(8),INTENT(OUT)                         :: rOutputDates(:),rOutputValues(:,:)    !rOutputValues is in (timestep,column) format
+    INTEGER,INTENT(OUT)                         :: iDataTypes(:),inActualOutput,iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+31) :: ThisProcedure = ModName // 'RootZone_v411_GetZBudget_TSData'
+    INTEGER                      :: indx,iZonesWithNames(0)
+    REAL(8)                      :: rValues(SIZE(iCols)+1,SIZE(rOutputDates))
+    CHARACTER(LEN=0)             :: cZoneNames(0)
+    TYPE(ZoneListType)           :: ZoneList
+    TYPE(ZBudgetType),POINTER    :: pZBudget
+    
+    !Initialize
+    pZBudget => NULL()
+
+    SELECT CASE (iZBudgetType)
+        CASE (f_iZBudgetType_LWU)
+            IF (.NOT. RootZone%Flags%LWUseZoneBudRawFile_Defined) THEN
+                CALL SetLastMessage('Land and Water Use zone budget is not part of the model output to retrieve data!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            pZBudget => RootZone%LWUZoneBudRawFile
+            
+        CASE (f_iZBudgetType_RootZone)
+            IF (.NOT. RootZone%Flags%RootZoneZoneBudRawFile_Defined) THEN
+                CALL SetLastMessage('Root Zone zone budget is not part of the model output to retrieve data!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            pZBudget => RootZone%RootZoneZoneBudRawFile
+    END SELECT
+            
+    !Generate zone list
+    CALL ZoneList%New(pZBudget%Header%iNData,pZBudget%Header%lFaceFlows_Defined,pZBudget%SystemData,iZExtent,iElems,iLayers,iZoneIDs,iZonesWithNames,cZoneNames,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    
+    !Read data
+    CALL pZBudget%ReadData(ZoneList,iZoneID,iCols,cInterval,cBeginDate,cEndDate,rFactAR,rFactVL,iDataTypes,inActualOutput,rValues,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    DO indx=1,inActualOutput
+        rOutputDates(indx)    = rValues(1,indx)
+        rOutputValues(indx,:) = rValues(2:,indx)
+    END DO
+    
+    !Delete zone list
+    CALL ZoneList%Kill()
+    
+    !Clear pointer
+    pZBudget => NULL()
+    
+  END SUBROUTINE RootZone_v411_GetZBudget_TSData
+
   
 
   
@@ -1900,66 +2119,66 @@ CONTAINS
     
     !Print non-ponded ag data
     IF (RootZone%Flags%lNonPondedAg_Defined) THEN  
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,1,iLayer,rAgArea_NP)                  !Non-ponded ag area
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,2,iLayer,rCUAW_NP)                    !Non-ponded potential CUAW
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,3,iLayer,rAgSupReq_NP)                !Non-ponded ag supply requirement
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,4,iLayer,rAgPump_NP)                  !Non-ponded ag pumping
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,5,iLayer,rAgDeli_NP)                  !Non-ponded ag deliveries
-        IF (lFlowBetweenElements)  &                                                                          !Non-ponded ag inflow as surface runoff
-            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,6,iLayer,rAgSrfcInflow_NP)        
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,7,iLayer,rAgShort_NP)                 !Non-ponded ag shortage
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,8,iLayer,rETAW_NP)                    !Non-ponded ag ETAW
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,9,iLayer,rETP_NP)                     !Non-ponded ag effective precipitation
-        IF (RootZone%Flags%lComputeETFromGW)  &                                                               !Non-ponded ag ET from groundwater
-            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,10,iLayer,rAgETGW_NP)             
-        IF (RootZone%Flags%lGenericMoistureFile_Defined)  &                                                   !Non-ponded ag ET met from other sources
-            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,11,iLayer,rETOth_NP)             
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,1,iLayer,rAgArea_NP)                  !Non-ponded ag area
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,2,iLayer,rCUAW_NP)                    !Non-ponded potential CUAW
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,3,iLayer,rAgSupReq_NP)                !Non-ponded ag supply requirement
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,4,iLayer,rAgPump_NP)                  !Non-ponded ag pumping
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,5,iLayer,rAgDeli_NP)                  !Non-ponded ag deliveries
+        IF (lFlowBetweenElements)  &                                                                            !Non-ponded ag inflow as surface runoff
+            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,6,iLayer,rAgSrfcInflow_NP)        
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,7,iLayer,rAgShort_NP)                 !Non-ponded ag shortage
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,8,iLayer,rETAW_NP)                    !Non-ponded ag ETAW
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,9,iLayer,rETP_NP)                     !Non-ponded ag effective precipitation
+        IF (RootZone%Flags%lComputeETFromGW)  &                                                                 !Non-ponded ag ET from groundwater
+            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,10,iLayer,rAgETGW_NP)             
+        IF (RootZone%Flags%lGenericMoistureFile_Defined)  &                                                     !Non-ponded ag ET met from other sources
+            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,11,iLayer,rETOth_NP)             
     END IF
     
     !Print rice and refuge data
     IF (RootZone%Flags%lPondedAg_Defined) THEN 
         !Rice
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,12,iLayer,rAgArea_Rice)               !Rice area
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,13,iLayer,rCUAW_Rice)                 !Rice potential CUAW
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,14,iLayer,rAgSupReq_Rice)             !Rice supply requirement
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,15,iLayer,rAgPump_Rice)               !Rice pumping
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,16,iLayer,rAgDeli_Rice)               !Rice deliveries
-        IF (lFlowBetweenElements)  &                                                                          !Rice inflow as surface runoff
-            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,17,iLayer,rAgSrfcInflow_Rice)     
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,18,iLayer,rAgShort_Rice)              !Rice shortage
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,19,iLayer,rETAW_Rice)                 !Rice ETAW
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,20,iLayer,rETP_Rice)                  !Rice effective precipitation
-        IF (RootZone%Flags%lComputeETFromGW)  &                                                               !Rice ET from groundwater
-            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,21,iLayer,rAgETGW_Rice)           
-        IF (RootZone%Flags%lGenericMoistureFile_Defined)  &                                                   !Rice ET met from other sources
-            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,22,iLayer,rETOth_Rice)             
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,12,iLayer,rAgArea_Rice)               !Rice area
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,13,iLayer,rCUAW_Rice)                 !Rice potential CUAW
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,14,iLayer,rAgSupReq_Rice)             !Rice supply requirement
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,15,iLayer,rAgPump_Rice)               !Rice pumping
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,16,iLayer,rAgDeli_Rice)               !Rice deliveries
+        IF (lFlowBetweenElements)  &                                                                            !Rice inflow as surface runoff
+            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,17,iLayer,rAgSrfcInflow_Rice)     
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,18,iLayer,rAgShort_Rice)              !Rice shortage
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,19,iLayer,rETAW_Rice)                 !Rice ETAW
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,20,iLayer,rETP_Rice)                  !Rice effective precipitation
+        IF (RootZone%Flags%lComputeETFromGW)  &                                                                 !Rice ET from groundwater
+            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,21,iLayer,rAgETGW_Rice)           
+        IF (RootZone%Flags%lGenericMoistureFile_Defined)  &                                                     !Rice ET met from other sources
+            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,22,iLayer,rETOth_Rice)             
 
         !Refuge
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,23,iLayer,rAgArea_Refuge)             !Refuge area
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,24,iLayer,rCUAW_Refuge)               !Refuge potential CUAW
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,25,iLayer,rAgSupReq_Refuge)           !Refuge supply requirement
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,26,iLayer,rAgPump_Refuge)             !Refuge pumping
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,27,iLayer,rAgDeli_Refuge)             !Refuge deliveries
-        IF (lFlowBetweenElements)  &                                                                          !Refuge inflow as surface runoff
-            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,28,iLayer,rAgSrfcInflow_Refuge)   
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,29,iLayer,rAgShort_Refuge)            !Refuge shortage
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,30,iLayer,rETAW_Refuge)               !Refuge ETAW
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,31,iLayer,rETP_Refuge)                !Refuge effective precipitation
-        IF (RootZone%Flags%lComputeETFromGW)  &                                                               !Refuge ET from groundwater
-            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,32,iLayer,rAgETGW_Refuge)   
-        IF (RootZone%Flags%lGenericMoistureFile_Defined)  &                                                   !Refuge ET met from other sources
-            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,33,iLayer,rETOth_Refuge)             
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,23,iLayer,rAgArea_Refuge)             !Refuge area
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,24,iLayer,rCUAW_Refuge)               !Refuge potential CUAW
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,25,iLayer,rAgSupReq_Refuge)           !Refuge supply requirement
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,26,iLayer,rAgPump_Refuge)             !Refuge pumping
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,27,iLayer,rAgDeli_Refuge)             !Refuge deliveries
+        IF (lFlowBetweenElements)  &                                                                            !Refuge inflow as surface runoff
+            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,28,iLayer,rAgSrfcInflow_Refuge)   
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,29,iLayer,rAgShort_Refuge)            !Refuge shortage
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,30,iLayer,rETAW_Refuge)               !Refuge ETAW
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,31,iLayer,rETP_Refuge)                !Refuge effective precipitation
+        IF (RootZone%Flags%lComputeETFromGW)  &                                                                 !Refuge ET from groundwater
+            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,32,iLayer,rAgETGW_Refuge)   
+        IF (RootZone%Flags%lGenericMoistureFile_Defined)  &                                                     !Refuge ET met from other sources
+            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,33,iLayer,rETOth_Refuge)             
     END IF
     
     !Print urban data
     IF (RootZone%Flags%lUrban_Defined) THEN
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,34,iLayer,rUrbArea)                   !Urban area
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,35,iLayer,rUrbSupReq)                 !Urban supply requirement
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,36,iLayer,rUrbPump)                   !Urban pumping
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,37,iLayer,rUrbDeli)                   !Urban deliveries
-        IF (lFlowBetweenElements)  &                                                                          !Urban inflow as surface runoff
-            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,38,iLayer,rUrbSrfcInflow)               
-        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,iElemDataType,39,iLayer,rUrbShort)                  !Urban shortage
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,34,iLayer,rUrbArea)                   !Urban area
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,35,iLayer,rUrbSupReq)                 !Urban supply requirement
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,36,iLayer,rUrbPump)                   !Urban pumping
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,37,iLayer,rUrbDeli)                   !Urban deliveries
+        IF (lFlowBetweenElements)  &                                                                            !Urban inflow as surface runoff
+            CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,38,iLayer,rUrbSrfcInflow)               
+        CALL RootZone%LWUZoneBudRawFile%WriteData(NLayers,f_iElemDataType,39,iLayer,rUrbShort)                  !Urban shortage
     END IF
         
   END SUBROUTINE WriteLWUseFlowsToZoneBudRawFile
@@ -2013,7 +2232,8 @@ CONTAINS
         rAgEndStor_NP(:,1) = SUM((RootZone%NonPondedAgRootZone%Crops%SoilM_Precip  &                                                                                            !Non-ponded ag ending storage
                                  +RootZone%NonPondedAgRootZone%Crops%SoilM_AW      &                                                                      
                                  +RootZone%NonPondedAgRootZone%Crops%SoilM_Oth     ) * RootZone%NonPondedAgRootZone%Crops%Area , DIM=1)
-        rAgError_NP        = rAgBeginStor_NP + rAgSoilMCh_NP + rAgInfilt_NP + rAgETGW_NP - rAgETa_NP - rAgDP_NP - rAgEndStor_NP                                                 !Non-ponded ag error                                                              
+        rAgError_NP        = rAgBeginStor_NP + rAgSoilMCh_NP + rAgInfilt_NP - rAgETa_NP - rAgDP_NP - rAgEndStor_NP                                                              !Non-ponded ag error                                                              
+        IF (RootZone%Flags%lComputeETFromGW)             rAgError_NP = rAgError_NP + rAgETGW_NP
         IF (RootZone%Flags%lGenericMoistureFile_Defined) rAgError_NP = rAgError_NP + rAgOthIn_NP
     END IF
     
@@ -2021,7 +2241,7 @@ CONTAINS
     IF (RootZone%Flags%lPondedAg_Defined) THEN
         !Rice
         DO indxElem=1,AppGrid%NElements
-            rAgPotET_Rice(indxElem,1) = rAgPotET_Rice(indxElem,1) + SUM(ETData%GetValues(RootZone%PondedAgRootZone%Crops(1:3,indxElem)%iColETc) * RootZone%PondedAgRootZone%Crops(1:3,indxElem)%Area)       !Rice potential ET
+            rAgPotET_Rice(indxElem,1) = SUM(ETData%GetValues(RootZone%PondedAgRootZone%Crops(1:3,indxElem)%iColETc) * RootZone%PondedAgRootZone%Crops(1:3,indxElem)%Area)       !Rice potential ET
         END DO
         rAgPrecip_Rice(:,1)    = RootZone%ElemPrecipData%Precip * rAgArea_Rice(:,1)                                                                                                                         !Rice precip 
         rAgRunoff_Rice(:,1)    = SUM(RootZone%PondedAgRootZone%Crops(1:3,:)%Runoff , DIM=1)                                                                                                                 !Rice runoff
@@ -2047,12 +2267,13 @@ CONTAINS
         rAgEndStor_Rice(:,1) = SUM((RootZone%PondedAgRootZone%Crops(1:3,:)%SoilM_Precip  &                                                                                                                  !Rice ending storage
                                    +RootZone%PondedAgRootZone%Crops(1:3,:)%SoilM_AW      &                                                                      
                                    +RootZone%PondedAgRootZone%Crops(1:3,:)%SoilM_Oth     ) * RootZone%PondedAgRootZone%Crops(1:3,:)%Area , DIM=1)
-        rAgError_Rice        = rAgBeginStor_Rice + rAgSoilMCh_Rice + rAgInfilt_Rice + rAgETGW_Rice - rAgDrain_Rice - rAgETa_Rice - rAgDP_Rice - rAgEndStor_Rice                                             !Rice error                                                              
+        rAgError_Rice        = rAgBeginStor_Rice + rAgSoilMCh_Rice + rAgInfilt_Rice - rAgDrain_Rice - rAgETa_Rice - rAgDP_Rice - rAgEndStor_Rice                                                            !Rice error                                                              
+        IF (RootZone%Flags%lComputeETFromGW)             rAgError_Rice = rAgError_Rice + rAgETGW_Rice
         IF (RootZone%Flags%lGenericMoistureFile_Defined) rAgError_Rice = rAgError_Rice + rAgOthIn_Rice
 
         !Refuge
         DO indxElem=1,AppGrid%NElements
-            rAgPotET_Refuge(indxElem,1) = rAgPotET_Refuge(indxElem,1) + SUM(ETData%GetValues(RootZone%PondedAgRootZone%Crops(4:5,indxElem)%iColETc) * RootZone%PondedAgRootZone%Crops(4:5,indxElem)%Area)       !Refuge potential ET
+            rAgPotET_Refuge(indxElem,1) = SUM(ETData%GetValues(RootZone%PondedAgRootZone%Crops(4:5,indxElem)%iColETc) * RootZone%PondedAgRootZone%Crops(4:5,indxElem)%Area)       !Refuge potential ET
         END DO
         rAgPrecip_Refuge(:,1)    = RootZone%ElemPrecipData%Precip * rAgArea_Refuge(:,1)                                                                                                                         !Refuge precip 
         rAgRunoff_Refuge(:,1)    = SUM(RootZone%PondedAgRootZone%Crops(4:5,:)%Runoff , DIM=1)                                                                                                                   !Refuge runoff
@@ -2078,7 +2299,8 @@ CONTAINS
         rAgEndStor_Refuge(:,1) = SUM((RootZone%PondedAgRootZone%Crops(4:5,:)%SoilM_Precip  &                                                                                                                    !Refuge ending storage
                                    +RootZone%PondedAgRootZone%Crops(4:5,:)%SoilM_AW      &                                                                      
                                    +RootZone%PondedAgRootZone%Crops(4:5,:)%SoilM_Oth     ) * RootZone%PondedAgRootZone%Crops(4:5,:)%Area , DIM=1)
-        rAgError_Refuge        = rAgBeginStor_Refuge + rAgSoilMCh_Refuge + rAgInfilt_Refuge + rAgETGW_Refuge - rAgDrain_Refuge - rAgETa_Refuge - rAgDP_Refuge - rAgEndStor_Refuge                               !Refuge error                                                              
+        rAgError_Refuge        = rAgBeginStor_Refuge + rAgSoilMCh_Refuge + rAgInfilt_Refuge - rAgDrain_Refuge - rAgETa_Refuge - rAgDP_Refuge - rAgEndStor_Refuge                               !Refuge error                                                              
+        IF (RootZone%Flags%lComputeETFromGW)             rAgError_Refuge = rAgError_Refuge + rAgETGW_Refuge
         IF (RootZone%Flags%lGenericMoistureFile_Defined) rAgError_Refuge = rAgError_Refuge + rAgOthIn_Refuge    
     END IF
 
@@ -2155,121 +2377,121 @@ CONTAINS
     
     !Print non-ponded ag data
     IF (RootZone%Flags%lNonPondedAg_Defined) THEN
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,1,iLayer,rAgArea_NP)               !Non-ponded ag area
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,2,iLayer,rAgPotET_NP)              !Non-ponded ag potential ET
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,3,iLayer,rAgPrecip_NP)             !Non-ponded ag precip
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,4,iLayer,rAgRunoff_NP)             !Non-ponded ag runoff
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,5,iLayer,rAgAW_NP)                 !Non-ponded ag prime applied water
-        IF (lFlowBetweenElements)  &                                                                            !Non-ponded ag surface inflow from upstream
-            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,6,iLayer,rAgSrfcInflow_NP)      
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,7,iLayer,rAgReuse_NP)              !Non-ponded ag reuse
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,8,iLayer,rAgReturn_NP)             !Non-ponded ag return
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,9,iLayer,rAgBeginStor_NP)          !Non-ponded ag beginning storage
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,10,iLayer,rAgSoilMCh_NP)           !Non-ponded ag change in soil storage from land expansion
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,11,iLayer,rAgInfilt_NP)            !Non-ponded ag infiltration
-        IF (RootZone%Flags%lComputeETFromGW) &                                                                  !Non-ponded ag groundwater inflow for ET
-            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,12,iLayer,rAgETGW_NP)           
-        IF (RootZone%Flags%lGenericMoistureFile_Defined) &                                                      !Non-ponded ag other inflow
-            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,13,iLayer,rAgOthIn_NP)           
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,14,iLayer,rAgETa_NP)               !Non-ponded ag actual ET
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,15,iLayer,rAgDP_NP)                !Non-ponded ag perc
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,16,iLayer,rAgEndStor_NP)           !Non-ponded ag end storage
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,17,iLayer,rAgError_NP)             !Non-ponded ag error
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,1,iLayer,rAgArea_NP)               !Non-ponded ag area
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,2,iLayer,rAgPotET_NP)              !Non-ponded ag potential ET
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,3,iLayer,rAgPrecip_NP)             !Non-ponded ag precip
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,4,iLayer,rAgRunoff_NP)             !Non-ponded ag runoff
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,5,iLayer,rAgAW_NP)                 !Non-ponded ag prime applied water
+        IF (lFlowBetweenElements)  &                                                                              !Non-ponded ag surface inflow from upstream
+            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,6,iLayer,rAgSrfcInflow_NP)      
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,7,iLayer,rAgReuse_NP)              !Non-ponded ag reuse
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,8,iLayer,rAgReturn_NP)             !Non-ponded ag return
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,9,iLayer,rAgBeginStor_NP)          !Non-ponded ag beginning storage
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,10,iLayer,rAgSoilMCh_NP)           !Non-ponded ag change in soil storage from land expansion
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,11,iLayer,rAgInfilt_NP)            !Non-ponded ag infiltration
+        IF (RootZone%Flags%lComputeETFromGW) &                                                                    !Non-ponded ag groundwater inflow for ET
+            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,12,iLayer,rAgETGW_NP)           
+        IF (RootZone%Flags%lGenericMoistureFile_Defined) &                                                        !Non-ponded ag other inflow
+            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,13,iLayer,rAgOthIn_NP)           
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,14,iLayer,rAgETa_NP)               !Non-ponded ag actual ET
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,15,iLayer,rAgDP_NP)                !Non-ponded ag perc
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,16,iLayer,rAgEndStor_NP)           !Non-ponded ag end storage
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,17,iLayer,rAgError_NP)             !Non-ponded ag error
     END IF                                                                                                   
                                                                                                              
     !Print ponded ag data
     IF (RootZone%Flags%lPondedAg_Defined) THEN
         !Rice
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,18,iLayer,rAgArea_Rice)               !Rice area
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,19,iLayer,rAgPotET_Rice)              !Rice potential ET
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,20,iLayer,rAgPrecip_Rice)             !Rice precip
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,21,iLayer,rAgRunoff_Rice)             !Rice runoff
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,22,iLayer,rAgAW_Rice)                 !Rice prime applied water
-        IF (lFlowBetweenElements)  &                                                                               !Rice surface inflow from upstream
-            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,23,iLayer,rAgSrfcInflow_Rice)     
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,24,iLayer,rAgReuse_Rice)              !Rice reuse
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,25,iLayer,rAgReturn_Rice)             !Rice return
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,26,iLayer,rAgBeginStor_Rice)          !Rice beginning storage
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,27,iLayer,rAgSoilMCh_Rice)            !Rice change in soil storage from land expansion
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,28,iLayer,rAgInfilt_Rice)             !Rice infiltration
-        IF (RootZone%Flags%lComputeETFromGW) &                                                                     !Rice groundwater inflow for ET
-            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,29,iLayer,rAgETGW_Rice)              
-        IF (RootZone%Flags%lGenericMoistureFile_Defined) &                                                         !Rice other inflow
-            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,30,iLayer,rAgOthIn_Rice)              
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,31,iLayer,rAgDrain_Rice)              !Rice pond drain
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,32,iLayer,rAgETa_Rice)                !Rice actual ET
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,33,iLayer,rAgDP_Rice)                 !Rice perc
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,34,iLayer,rAgEndStor_Rice)            !Rice end storage
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,35,iLayer,rAgError_Rice)              !Rice error
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,18,iLayer,rAgArea_Rice)               !Rice area
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,19,iLayer,rAgPotET_Rice)              !Rice potential ET
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,20,iLayer,rAgPrecip_Rice)             !Rice precip
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,21,iLayer,rAgRunoff_Rice)             !Rice runoff
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,22,iLayer,rAgAW_Rice)                 !Rice prime applied water
+        IF (lFlowBetweenElements)  &                                                                                 !Rice surface inflow from upstream
+            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,23,iLayer,rAgSrfcInflow_Rice)     
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,24,iLayer,rAgReuse_Rice)              !Rice reuse
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,25,iLayer,rAgReturn_Rice)             !Rice return
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,26,iLayer,rAgBeginStor_Rice)          !Rice beginning storage
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,27,iLayer,rAgSoilMCh_Rice)            !Rice change in soil storage from land expansion
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,28,iLayer,rAgInfilt_Rice)             !Rice infiltration
+        IF (RootZone%Flags%lComputeETFromGW) &                                                                       !Rice groundwater inflow for ET
+            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,29,iLayer,rAgETGW_Rice)              
+        IF (RootZone%Flags%lGenericMoistureFile_Defined) &                                                           !Rice other inflow
+            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,30,iLayer,rAgOthIn_Rice)              
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,31,iLayer,rAgDrain_Rice)              !Rice pond drain
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,32,iLayer,rAgETa_Rice)                !Rice actual ET
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,33,iLayer,rAgDP_Rice)                 !Rice perc
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,34,iLayer,rAgEndStor_Rice)            !Rice end storage
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,35,iLayer,rAgError_Rice)              !Rice error
         
         !Refuge
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,36,iLayer,rAgArea_Refuge)               !Refuge area
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,37,iLayer,rAgPotET_Refuge)              !Refuge potential ET
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,38,iLayer,rAgPrecip_Refuge)             !Refuge precip
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,39,iLayer,rAgRunoff_Refuge)             !Refuge runoff
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,40,iLayer,rAgAW_Refuge)                 !Refuge prime applied water
-        IF (lFlowBetweenElements)  &                                                                                 !Refuge surface inflow from upstream
-            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,41,iLayer,rAgSrfcInflow_Refuge)     
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,42,iLayer,rAgReuse_Refuge)              !Refuge reuse
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,43,iLayer,rAgReturn_Refuge)             !Refuge return
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,44,iLayer,rAgBeginStor_Refuge)          !Refuge beginning storage
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,45,iLayer,rAgSoilMCh_Refuge)            !Refuge change in soil storage from land expansion
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,46,iLayer,rAgInfilt_Refuge)             !Refuge infiltration
-        IF (RootZone%Flags%lComputeETFromGW) &                                                                       !Refuge groundwater inflow for ET
-            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,47,iLayer,rAgETGW_Refuge)              
-        IF (RootZone%Flags%lGenericMoistureFile_Defined) &                                                           !Refuge other inflow
-            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,48,iLayer,rAgOthIn_Refuge)              
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,49,iLayer,rAgDrain_Refuge)              !Refuge pond drain
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,50,iLayer,rAgETa_Refuge)                !Refuge actual ET
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,51,iLayer,rAgDP_Refuge)                 !Refuge perc
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,52,iLayer,rAgEndStor_Refuge)            !Refuge end storage
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,53,iLayer,rAgError_Refuge)              !Refuge error
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,36,iLayer,rAgArea_Refuge)               !Refuge area
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,37,iLayer,rAgPotET_Refuge)              !Refuge potential ET
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,38,iLayer,rAgPrecip_Refuge)             !Refuge precip
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,39,iLayer,rAgRunoff_Refuge)             !Refuge runoff
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,40,iLayer,rAgAW_Refuge)                 !Refuge prime applied water
+        IF (lFlowBetweenElements)  &                                                                                   !Refuge surface inflow from upstream
+            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,41,iLayer,rAgSrfcInflow_Refuge)     
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,42,iLayer,rAgReuse_Refuge)              !Refuge reuse
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,43,iLayer,rAgReturn_Refuge)             !Refuge return
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,44,iLayer,rAgBeginStor_Refuge)          !Refuge beginning storage
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,45,iLayer,rAgSoilMCh_Refuge)            !Refuge change in soil storage from land expansion
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,46,iLayer,rAgInfilt_Refuge)             !Refuge infiltration
+        IF (RootZone%Flags%lComputeETFromGW) &                                                                         !Refuge groundwater inflow for ET
+            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,47,iLayer,rAgETGW_Refuge)              
+        IF (RootZone%Flags%lGenericMoistureFile_Defined) &                                                             !Refuge other inflow
+            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,48,iLayer,rAgOthIn_Refuge)              
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,49,iLayer,rAgDrain_Refuge)              !Refuge pond drain
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,50,iLayer,rAgETa_Refuge)                !Refuge actual ET
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,51,iLayer,rAgDP_Refuge)                 !Refuge perc
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,52,iLayer,rAgEndStor_Refuge)            !Refuge end storage
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,53,iLayer,rAgError_Refuge)              !Refuge error
     END IF                                                                                                   
                                                                                                              
     !Print urban data
     IF (RootZone%Flags%lUrban_Defined) THEN                                                                  
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,54,iLayer,rUrbArea)             !Urban area
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,55,iLayer,rUrbPotET)            !Urban potential ET
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,56,iLayer,rUrbPrecip)           !Urban precip
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,57,iLayer,rUrbRunoff)           !Urban runoff
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,58,iLayer,rUrbAW)               !Urban prime applied water
-        IF (lFlowBetweenElements)  &                                                                         !Urban surface inflow from upstream
-            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,59,iLayer,rUrbSrfcInflow)       
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,60,iLayer,rUrbReuse)            !Urban reuse
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,61,iLayer,rUrbReturn)           !Urban return
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,62,iLayer,rUrbBeginStor)        !Urban beginning storage
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,63,iLayer,rUrbSoilMCh)          !Urban change in soil storage from land expansion
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,64,iLayer,rUrbInfilt)           !Urban infiltration
-        IF (RootZone%Flags%lComputeETFromGW) &                                                               !Urban groundwater inflow for ET
-            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,65,iLayer,rUrbETGW)             
-        IF (RootZone%Flags%lGenericMoistureFile_Defined) &                                                   !Urban other inflow
-            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,66,iLayer,rUrbOthIn)             
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,67,iLayer,rUrbETa)              !Urban actual ET
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,68,iLayer,rUrbDP)               !Urban perc
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,69,iLayer,rUrbEndStor)          !Urban end storage
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,70,iLayer,rUrbError)            !Urban error
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,54,iLayer,rUrbArea)             !Urban area
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,55,iLayer,rUrbPotET)            !Urban potential ET
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,56,iLayer,rUrbPrecip)           !Urban precip
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,57,iLayer,rUrbRunoff)           !Urban runoff
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,58,iLayer,rUrbAW)               !Urban prime applied water
+        IF (lFlowBetweenElements)  &                                                                           !Urban surface inflow from upstream
+            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,59,iLayer,rUrbSrfcInflow)       
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,60,iLayer,rUrbReuse)            !Urban reuse
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,61,iLayer,rUrbReturn)           !Urban return
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,62,iLayer,rUrbBeginStor)        !Urban beginning storage
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,63,iLayer,rUrbSoilMCh)          !Urban change in soil storage from land expansion
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,64,iLayer,rUrbInfilt)           !Urban infiltration
+        IF (RootZone%Flags%lComputeETFromGW) &                                                                 !Urban groundwater inflow for ET
+            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,65,iLayer,rUrbETGW)             
+        IF (RootZone%Flags%lGenericMoistureFile_Defined) &                                                     !Urban other inflow
+            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,66,iLayer,rUrbOthIn)             
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,67,iLayer,rUrbETa)              !Urban actual ET
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,68,iLayer,rUrbDP)               !Urban perc
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,69,iLayer,rUrbEndStor)          !Urban end storage
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,70,iLayer,rUrbError)            !Urban error
     END IF                                                                                                   
                                                                                                              
     !Print native and riparian veg data
     IF (RootZone%Flags%lNVRV_Defined) THEN                                                                   
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,71,iLayer,rNVRVArea)            !NVRV area
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,72,iLayer,rNVRVPotET)           !NVRV potential ET
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,73,iLayer,rNVRVPrecip)          !NVRV precip
-        IF (lFlowBetweenElements)  &                                                                         !NVRV surface inflow from upstream elements
-            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,74,iLayer,rNVRVSrfcInflow)      
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,75,iLayer,rNVRVRunoff)          !NVRV runoff
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,76,iLayer,rNVRVBeginStor)       !NVRV beginning storage
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,77,iLayer,rNVRVSoilMCh)         !NVRV change in soil storage from land expansion
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,78,iLayer,rNVRVInfilt)          !NVRV infiltration
-        IF (RootZone%Flags%lComputeETFromGW) &                                                               !NVRV groundwater inflow for ET
-            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,79,iLayer,rNVRVETGW)             
-        IF (RootZone%Flags%lGenericMoistureFile_Defined) &                                                   !NVRV other inflow
-            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,80,iLayer,rNVRVOthIn)             
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,81,iLayer,rNVRVStrmInflow)      !NVRV stream inflow for riparian ET
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,82,iLayer,rNVRVETa)             !NVRV actual ET
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,83,iLayer,rNVRVDP)              !NVRV perc
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,84,iLayer,rNVRVEndStor)         !NVRV end storage
-        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,iElemDataType,85,iLayer,rNVRVError)           !NVRV error
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,71,iLayer,rNVRVArea)            !NVRV area
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,72,iLayer,rNVRVPotET)           !NVRV potential ET
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,73,iLayer,rNVRVPrecip)          !NVRV precip
+        IF (lFlowBetweenElements)  &                                                                           !NVRV surface inflow from upstream elements
+            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,74,iLayer,rNVRVSrfcInflow)      
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,75,iLayer,rNVRVRunoff)          !NVRV runoff
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,76,iLayer,rNVRVBeginStor)       !NVRV beginning storage
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,77,iLayer,rNVRVSoilMCh)         !NVRV change in soil storage from land expansion
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,78,iLayer,rNVRVInfilt)          !NVRV infiltration
+        IF (RootZone%Flags%lComputeETFromGW) &                                                                 !NVRV groundwater inflow for ET
+            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,79,iLayer,rNVRVETGW)             
+        IF (RootZone%Flags%lGenericMoistureFile_Defined) &                                                     !NVRV other inflow
+            CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,80,iLayer,rNVRVOthIn)             
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,81,iLayer,rNVRVStrmInflow)      !NVRV stream inflow for riparian ET
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,82,iLayer,rNVRVETa)             !NVRV actual ET
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,83,iLayer,rNVRVDP)              !NVRV perc
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,84,iLayer,rNVRVEndStor)         !NVRV end storage
+        CALL RootZone%RootZoneZoneBudRawFile%WriteData(NLayers,f_iElemDataType,85,iLayer,rNVRVError)           !NVRV error
     END IF
     
   END SUBROUTINE WriteRootZoneFlowsToZoneBudRawFile

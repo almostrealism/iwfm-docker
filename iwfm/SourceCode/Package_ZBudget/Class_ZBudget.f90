@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -27,10 +27,10 @@ MODULE Class_ZBudget
                                          SetLastMessage            , &
                                          EchoProgress              , &
                                          MessageArray              , &
-                                         iFatal                    , &
-                                         iWarn                     , &
-                                         iMessage                  , &
-                                         SCREEN_FILE               
+                                         f_iFatal                  , &
+                                         f_iWarn                   , &
+                                         f_iMessage                , &
+                                         f_iSCREEN_FILE               
   USE GeneralUtilities           , ONLY: IntToText                 , &
                                          LocateInList              , &
                                          ArrangeText               , &
@@ -39,7 +39,7 @@ MODULE Class_ZBudget
                                          ReplaceString             , &
                                          GetFileDirectory          , &
                                          StripFileNameFromPath     , &
-                                         LineFeed                  , &
+                                         f_cLineFeed               , &
                                          String_Copy_F_C
   USE TimeSeriesUtilities        , ONLY: TimeStepType              , &
                                          IncrementTimeStamp        , &
@@ -48,43 +48,43 @@ MODULE Class_ZBudget
                                          CTimeStep_To_RTimeStep    , &
                                          OPERATOR(.TSLT.)          , &
                                          OPERATOR(.TSGT.)          , &
-                                         TimeStampLength
+                                         f_iTimeStampLength
   USE IOInterface                , ONLY: GenericFileType           , &
                                          iGetFileType_FromName     , &
-                                         HDF                       , &
-                                         TXT                       , &
-                                         DSS                       , &
-                                         UNKNOWN                   , &
-                                         iMaxDatasetNameLen    
-  USE Package_Misc               , ONLY: iDataUnitType_Area        , &
-                                         iDataUnitType_Volume
+                                         f_iHDF                    , &
+                                         f_iTXT                    , &
+                                         f_iDSS                    , &
+                                         f_iUNKNOWN                , &
+                                         f_iMaxDatasetNameLen    
+  USE Package_Misc               , ONLY: f_iDataUnitType_Area      , &
+                                         f_iDataUnitType_Volume
   USE Class_SystemData           , ONLY: SystemDataType
   USE Class_ZBudgetHeader        , ONLY: ZBudgetHeaderType          
   USE Class_ZoneList             , ONLY: ZoneType                  , &
                                          AdjacentZoneType          , &
                                          ZoneListType
-  USE ZBudget_Parameters         , ONLY: iElemDataType             , &
-                                         iVerticalFlowType         , &
-                                         iFaceFlowType             , &
-                                         iStorageType              , &
-                                         iUndefinedZone            , &
-                                         cAttributesDir            , &
-                                         iZoneVertical             , &
-                                         MarkerChar                , &
-                                         AreaUnitMarker            , &
-                                         VolumeUnitMarker          , &
+  USE ZBudget_Parameters         , ONLY: f_iElemDataType           , &
+                                         f_iVerticalFlowType       , &
+                                         f_iFaceFlowType           , &
+                                         f_iStorageType            , &
+                                         f_iUndefinedZone          , &
+                                         f_iZoneVertical           , &
+                                         f_iColumnHeaderLen        , &
+                                         f_cMarkerChar             , &
+                                         f_cAreaUnitMarker         , &
+                                         f_cVolumeUnitMarker       , &
+                                         f_cAttributesDir          , &
                                          ModifiedAgSupplyReq       , &
-                                         AR                        , &
-                                         VR                        , &
-                                         VR_lwu_PotCUAW            , &
-                                         VR_lwu_AgSupplyReq        , &
-                                         VR_lwu_AgPump             , &
-                                         VR_lwu_AgDiv              , &
-                                         VR_lwu_AgOthIn            , &
-                                         VR_lwu_AgShort            , &
-                                         VLB                       , &
-                                         VLE                       , &
-                                         ColumnHeaderLen
+                                         f_iAR                     , &
+                                         f_iVR                     , &
+                                         f_iVR_lwu_PotCUAW         , &
+                                         f_iVR_lwu_AgSupplyReq     , &
+                                         f_iVR_lwu_AgPump          , &
+                                         f_iVR_lwu_AgDiv           , &
+                                         f_iVR_lwu_AgOthIn         , &
+                                         f_iVR_lwu_AgShort         , &
+                                         f_iVLB                    , &
+                                         f_iVLE                       
   IMPLICIT NONE
   
   
@@ -189,7 +189,7 @@ CONTAINS
     !Local variables
     CHARACTER(LEN=ModNameLen+14),PARAMETER :: ThisProcedure = ModName // 'Create_ZBudget'
     INTEGER                                :: indxLayer,indxData,iCount,nDataColumns((Header%iNData+3)*SystemData%NLayers),NNodes,NElements,NLayers,NFaces
-    CHARACTER(LEN=iMaxDatasetNameLen)      :: cDatasetNames((Header%iNData+3)*SystemData%NLayers)
+    CHARACTER(LEN=f_iMaxDatasetNameLen)    :: cDatasetNames((Header%iNData+3)*SystemData%NLayers)
     
     !Initialize
     iStat     = 0
@@ -200,7 +200,7 @@ CONTAINS
     
     !Make sure that there are at least 3 lines of ASCII column titles
     IF (ZBudget%Header%ASCIIOutput%iNTitles .LT. 3) THEN
-        CALL SetLastMessage('There has to be at least 3 lines for column titles for Z-Budget ASCII output!',iFatal,ThisProcedure)
+        CALL SetLastMessage('There has to be at least 3 lines for column titles for Z-Budget ASCII output!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -209,11 +209,11 @@ CONTAINS
     ZBudget%Header = Header
     
     !Return if a file name for Z-Budget is not defined
-     IF (cFileName .EQ. '') RETURN
+    IF (cFileName .EQ. '') RETURN
     
     !Make sure that file is an HDF5 file
-    IF (iGetFileType_FromName(cFileName) .NE. HDF) THEN
-        CALL SetLastMessage('File '//TRIM(ADJUSTL(cFileName))//' must be an HDF5 file for Z-Budget output!',iFatal,ThisProcedure)
+    IF (iGetFileType_FromName(cFileName) .NE. f_iHDF) THEN
+        CALL SetLastMessage('File '//TRIM(ADJUSTL(cFileName))//' must be an HDF5 file for Z-Budget output!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -296,8 +296,8 @@ CONTAINS
     iStat = 0
     
     !Make sure that file is an HDF5 file
-    IF (iGetFileType_FromName(cFileName) .NE. HDF) THEN
-        CALL SetLastMessage('File '//TRIM(ADJUSTL(cFileName))//' must be an HDF5 file for Z-Budget processing!',iFatal,ThisProcedure)
+    IF (iGetFileType_FromName(cFileName) .NE. f_iHDF) THEN
+        CALL SetLastMessage('File '//TRIM(ADJUSTL(cFileName))//' must be an HDF5 file for Z-Budget processing!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -371,7 +371,7 @@ CONTAINS
     DEALLOCATE (cFileName , STAT=ErrorCode)
     
     !Is the file available?
-    IF (ZBudget%File%iGetFileType() .EQ. UNKNOWN) RETURN
+    IF (ZBudget%File%iGetFileType() .EQ. f_iUNKNOWN) RETURN
     
     !Get the filename
     CALL ZBudget%File%GetName(cFileName)
@@ -405,14 +405,15 @@ CONTAINS
     INTEGER,INTENT(OUT)           :: iNCols,iStat
     
     !Local variables
-    CHARACTER(LEN=ColumnHeaderLen),ALLOCATABLE :: cColumnHeaders(:)
-    CHARACTER                                  :: cDummy*10
+    CHARACTER(LEN=f_iColumnHeaderLen),ALLOCATABLE :: cColumnHeaders(:)
+    CHARACTER                                     :: cDummy*10
+    INTEGER,ALLOCATABLE                           :: iColumnListDiversified(:)
     
     !Initialize
     iNCols = 0
 
     !Get the diversified column titles to figure out the number of diversified columns
-    CALL ZBudget%GetFullColumnHeaders(cDummy,cDummy,cColumnHeaders,iStat,ZoneList,iZone,iColumnList)
+    CALL ZBudget%GetFullColumnHeaders(cDummy,cDummy,cColumnHeaders,iStat,ZoneList,iZone,iColumnList,iColumnListDiversified)
     IF (iStat .EQ. -1) RETURN
     
     iNCols = SIZE(cColumnHeaders)
@@ -424,20 +425,20 @@ CONTAINS
   ! --- GET COLUMN HEADERS
   ! -------------------------------------------------------------
   SUBROUTINE GetFullColumnHeaders(ZBudget,cUnit_AR,cUnit_VL,cColumnHeaders,iStat,ZoneList,iZone,iColumnList,iColumnListDiversified)
-    CLASS(ZBudgetType),INTENT(IN)              :: ZBudget
-    CHARACTER(LEN=*),INTENT(IN)                :: cUnit_AR,cUnit_VL
-    CHARACTER(LEN=ColumnHeaderLen),ALLOCATABLE :: cColumnHeaders(:)
-    INTEGER,INTENT(OUT)                        :: iStat
-    TYPE(ZoneListType),OPTIONAL,INTENT(IN)     :: ZoneList                   !The other OPTIONAL parameter must be provided if one is provided
-    INTEGER,OPTIONAL,INTENT(IN)                :: iZone,iColumnList(:)       !iColumnList lists the indices of columns for which the column headers are required; used to diversify the headers for inflows/outflows between zones
-    INTEGER,ALLOCATABLE,OPTIONAL,INTENT(INOUT) :: iColumnListDiversified(:)  !This is the diversified list of column indices corresponding to iColumnList
+    CLASS(ZBudgetType),INTENT(IN)                 :: ZBudget
+    CHARACTER(LEN=*),INTENT(IN)                   :: cUnit_AR,cUnit_VL
+    CHARACTER(LEN=f_iColumnHeaderLen),ALLOCATABLE :: cColumnHeaders(:)
+    INTEGER,INTENT(OUT)                           :: iStat
+    TYPE(ZoneListType),OPTIONAL,INTENT(IN)        :: ZoneList                   !The other OPTIONAL parameter must be provided if one is provided
+    INTEGER,OPTIONAL,INTENT(IN)                   :: iZone,iColumnList(:)       !iColumnList lists the indices of columns for which the column headers are required; used to diversify the headers for inflows/outflows between zones
+    INTEGER,ALLOCATABLE,OPTIONAL,INTENT(INOUT)    :: iColumnListDiversified(:)  !This is the diversified list of column indices corresponding to iColumnList
     
     !Local variables
-    INTEGER                                    :: ErrorCode,iNColumns,iCount,indx,iLocE,iLocS,indxAdjZone,iAdjZone,iCol,iColumnListDivsfd_Local(500)
-    CHARACTER(LEN=ColumnHeaderLen)             :: cTemp_In(1),cTemp_Out(1),cDiversifiedColumnHeaders(500)
-    CHARACTER(LEN=ColumnHeaderLen),ALLOCATABLE :: cColumnHeaders_Work(:)
-    CLASS(*),POINTER                           :: pZone
-    LOGICAL                                    :: lAdjZoneInflow,lAdjZoneOutflow,lAdjZoneFlowsDefined
+    INTEGER                                       :: ErrorCode,iNColumns,iCount,indx,iLocE,iLocS,indxAdjZone,iAdjZone,iCol,iColumnListDivsfd_Local(500)
+    CHARACTER(LEN=f_iColumnHeaderLen)             :: cTemp_In(1),cTemp_Out(1),cDiversifiedColumnHeaders(500)
+    CHARACTER(LEN=f_iColumnHeaderLen),ALLOCATABLE :: cColumnHeaders_Work(:)
+    CLASS(*),POINTER                              :: pZone
+    LOGICAL                                       :: lAdjZoneInflow,lAdjZoneOutflow,lAdjZoneFlowsDefined
     
     !Initialize
     iStat           = 0
@@ -559,12 +560,12 @@ CONTAINS
     
     !Replace unit markers
     DO indx=1,iNColumns
-        iLocS = FirstLocation(MarkerChar,cColumnHeaders_Work(indx))
+        iLocS = FirstLocation(f_cMarkerChar,cColumnHeaders_Work(indx))
         IF (iLocS .EQ. 0) THEN
             cColumnHeaders(indx) = cColumnHeaders_Work(indx)
             CYCLE
         END IF
-        iLocE = FirstLocation(MarkerChar,cColumnHeaders_Work(indx)(iLocS+1:)) + iLocS
+        iLocE = FirstLocation(f_cMarkerChar,cColumnHeaders_Work(indx)(iLocS+1:)) + iLocS
         IF (iLocE-iLocS .LT. 1) THEN
             cTemp_Out(1) = ''
         ELSE
@@ -670,7 +671,7 @@ CONTAINS
     
     !Local variables
     CHARACTER(LEN=ModNameLen+52),PARAMETER :: ThisProcedure = ModName // 'ReadData_SelectedColumns_ForSomeZones_ForAnInterval'
-    INTEGER                                :: indxZone,NTimeSteps,iNOutputIntervals,NStorageCol,NErrorCol,iZone,iNZoneDataCols
+    INTEGER                                :: indxZone,NTimeSteps,iNOutputIntervals,NStorageCol,NErrorCol,iZone,iNZoneDataCols,iCol,indxCol
     REAL(8)                                :: rZoneFlows(200)  !Allows maximum 200 columns of zone data
     REAL(8)                                :: rJulian
     TYPE(TimeStepType)                     :: TimeStep
@@ -723,7 +724,11 @@ CONTAINS
         rValues(1,indxZone) = rJulian  
         
         !Other columns
-        rValues(2:,indxZone) = rZoneFlows(iReadCols(:,indxZone))  
+        DO indxCol=1,SIZE(iReadCols,DIM=1)
+            iCol = iReadCols(indxCol,indxZone)
+            IF (iCol.LT.1  .OR.  iCol.GT.iNZoneDataCols) EXIT
+            rValues(indxCol+1,indxZone) = rZoneFlows(iCol) 
+        END DO
     END DO
     
   END SUBROUTINE ReadData_SelectedColumns_ForSomeZones_ForAnInterval
@@ -748,8 +753,8 @@ CONTAINS
     CHARACTER(LEN=ModNameLen+33),PARAMETER :: ThisProcedure = ModName // 'ReadData_SelectedColumns_ForAZone'
     INTEGER                                :: NTimeSteps,iNOutputIntervals,NStorageCol,NErrorCol,iNZoneDataCols,iZoneArray(1),iCol,indx
     REAL(8),ALLOCATABLE                    :: rZoneFlows(:)
-    CHARACTER(LEN=TimeStampLength)         :: cAdjPrintBeginDateAndTime,cAdjPrintEndDateAndTime,cPrintDateAndTime,cCurrentDateAndTime
-    CHARACTER(C_CHAR)                      :: cPrintDateAndTime_C(TimeStampLength)
+    CHARACTER(LEN=f_iTimeStampLength)      :: cAdjPrintBeginDateAndTime,cAdjPrintEndDateAndTime,cPrintDateAndTime,cCurrentDateAndTime
+    CHARACTER(C_CHAR)                      :: cPrintDateAndTime_C(f_iTimeStampLength)
     LOGICAL                                :: lFinalTime
     TYPE(TimeStepType)                     :: TimeStep
     CLASS(*),POINTER                       :: pZone
@@ -760,8 +765,8 @@ CONTAINS
     iZoneArray       = iZone
     
     !If iZone equals -99 (undefined zone), generate an error and return
-    IF (iZone .EQ. iUndefinedZone) THEN
-        CALL SetLastMessage('It is not allowed to generate zone budget for zone -99 (undefined zone)!',iFatal,ThisProcedure)
+    IF (iZone .EQ. f_iUndefinedZone) THEN
+        CALL SetLastMessage('It is not allowed to generate zone budget for zone -99 (undefined zone)!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -794,13 +799,13 @@ CONTAINS
     IF (cPrintDateAndTime .TSGT. cAdjPrintEndDateAndTime) THEN
         MessageArray(1) = 'There are not enough print-out timesteps between specified time period.'
         MessageArray(2) = 'Printing of Z-Budget for '//TRIM(ZBudget%Header%cDescriptor)//' is supressed.'
-        CALL LogMessage(MessageArray(1:2),iWarn,ThisProcedure)
+        CALL LogMessage(MessageArray(1:2),f_iWarn,ThisProcedure)
     END IF
     
     !Allocate array to hold the packed zone flows
     pZone => ZoneList%GetPointerToNode(iZone)
     IF (.NOT. ASSOCIATED(pZone)) THEN
-        CALL SetLastMessage('Zone number '//TRIM(IntToText(iZone))//' cannot be located in the list of zones!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Zone number '//TRIM(IntToText(iZone))//' cannot be located in the list of zones!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -819,13 +824,13 @@ CONTAINS
         iCol = iReadCols(indx)
         IF (iCol .LE. ZBudget%Header%iNData) THEN
             SELECT CASE (ZBudget%Header%iDataTypes(iCol))
-                CASE (AR)
-                    iDataUnitTypes(indx) = iDataUnitType_Area
+                CASE (f_iAR)
+                    iDataUnitTypes(indx) = f_iDataUnitType_Area
                 CASE DEFAULT
-                    iDataUnitTypes(indx) = iDataUnitType_Volume
+                    iDataUnitTypes(indx) = f_iDataUnitType_Volume
             END SELECT
         ELSE
-            iDataUnitTypes(indx) = iDataUnitType_Volume
+            iDataUnitTypes(indx) = f_iDataUnitType_Volume
         END IF
     END DO
     
@@ -834,7 +839,7 @@ CONTAINS
         !If callback function provided call it
         IF (PRESENT(pCallbackFun)) THEN
             CALL String_Copy_F_C(cPrintDateAndTime,cPrintDateAndTime_C)
-            CALL pCallbackFun(INT(TimeStampLength,C_INT),cPrintDateAndTime_C)
+            CALL pCallbackFun(INT(f_iTimeStampLength,C_INT),cPrintDateAndTime_C)
         END IF
         
         !Compile zone flows
@@ -894,7 +899,7 @@ CONTAINS
                                               iNZoneDataCols(SIZE(iPrintZones))
     REAL(8),ALLOCATABLE                    :: rZoneFlows(:)
     CHARACTER                              :: cFile1*500,cFile2*500
-    CHARACTER(LEN=TimeStampLength)         :: cAdjPrintBeginDateAndTime,cAdjPrintEndDateAndTime,cCurrentDateAndTime,cPrintDateAndTime
+    CHARACTER(LEN=f_iTimeStampLength)      :: cAdjPrintBeginDateAndTime,cAdjPrintEndDateAndTime,cCurrentDateAndTime,cPrintDateAndTime
     CHARACTER(:),ALLOCATABLE               :: cOutDirectory,cPureOutFileName
     TYPE(TimeStepType)                     :: TimeStep
     TYPE(GenericFileType)                  :: TempZoneOutFiles(SIZE(iPrintZones)),DummyFile
@@ -933,13 +938,13 @@ CONTAINS
     IF (cPrintDateAndTime .TSGT. cAdjPrintEndDateAndTime) THEN
         MessageArray(1) = 'There are not enough print-out timesteps between specified time period.'
         MessageArray(2) = 'Printing of Z-Budget for '//TRIM(ZBudget%Header%cDescriptor)//' is supressed.'
-        CALL LogMessage(MessageArray(1:2),iWarn,ThisProcedure)
+        CALL LogMessage(MessageArray(1:2),f_iWarn,ThisProcedure)
     END IF
     
     !Prepare output file(s)
     SELECT CASE (iGetFileType_FromName(cOutputFileName))
         !If output is text, prepare temporary files for each zone which will be merged all together later
-        CASE (TXT)
+        CASE (f_iTXT)
             lPrintToTextFile = .TRUE.
             CALL GetFileDirectory(cOutputFileName,cOutDirectory)
             CALL StripFileNameFromPath(cOutputFileName,cPureOutFileName)
@@ -955,7 +960,7 @@ CONTAINS
             END DO
     
         !If output file is a DSS file    
-        CASE (DSS)
+        CASE (f_iDSS)
             lPrintToTextFile = .FALSE.
             DO indxPrint=1,iNPrintZones
                 iZPrint =  iPrintZones(indxPrint)
@@ -970,7 +975,7 @@ CONTAINS
             
         !Outwise, error message
         CASE DEFAULT
-            CALL SetLastMessage('File '//TRIM(cOutputFileName)//' is not a recognized filetype for Z-Budget output!',iFatal,ThisProcedure) 
+            CALL SetLastMessage('File '//TRIM(cOutputFileName)//' is not a recognized filetype for Z-Budget output!',f_iFatal,ThisProcedure) 
             iStat = -1
             RETURN
     END SELECT
@@ -995,7 +1000,7 @@ CONTAINS
     !Process zones through time
     DO
         !Inform user
-        CALL LogMessage(cPrintDateAndTime,iMessage,'',Destination=SCREEN_FILE)
+        CALL LogMessage(cPrintDateAndTime,f_iMessage,'',Destination=f_iSCREEN_FILE)
         
         !Compile zone flows
         CALL CompileZoneData(ZBudget,ZoneList,iPrintZones,cCurrentDateAndTime,iNOutputIntervals,rFact_AR,rFact_VL,iStat)
@@ -1052,8 +1057,8 @@ CONTAINS
 !DIR$ ELSE
         DO indxPrint=2,iNPrintZones
             cFile2 = 'Zone'// TRIM(IntToText(iPrintZones(indxPrint))) // '.dat'
-            CALL EXECUTE_COMMAND_LINE('echo. >> ' // TRIM(cFile1))
-            CALL EXECUTE_COMMAND_LINE('echo. >> ' // TRIM(cFile1))
+            CALL EXECUTE_COMMAND_LINE('echo >> ' // TRIM(cFile1))
+            CALL EXECUTE_COMMAND_LINE('echo >> ' // TRIM(cFile1))
             CALL EXECUTE_COMMAND_LINE('cat ' // TRIM(cFile2) // ' >> ' // TRIM(cFile1))
             CALL TempZoneOutFiles(indxPrint)%Kill('DELETE')
         END DO
@@ -1100,8 +1105,8 @@ CONTAINS
     
     
     !If the output file is already open for a previous zone, close it to re-open it to set the different column numbers
-    IF (iFileType .NE. UNKNOWN) THEN
-        IF (iFileType .EQ. TXT) CALL OutFile%WriteData(LineFeed)
+    IF (iFileType .NE. f_iUNKNOWN) THEN
+        IF (iFileType .EQ. f_iTXT) CALL OutFile%WriteData(f_cLineFeed)
         CALL OutFile%Kill()
         cAccessType = 'APPEND'
     !Oterwise, make sure that output file is either ASCII or DSS
@@ -1109,8 +1114,8 @@ CONTAINS
         cAccessType = 'SEQUENTIAL'
         !Make sure file is ASCII or DSS
         iFileType = iGetFileType_FromName(cOutFileName)
-        IF (iFileType.NE.TXT  .AND.  iFileType.NE.DSS) THEN
-            CALL SetLastMessage('Z-Budget output file ('//TRIM(cOutFileName)//') must be either an ASCII or DSS file!',iFatal,ThisProcedure)
+        IF (iFileType.NE.f_iTXT  .AND.  iFileType.NE.f_iDSS) THEN
+            CALL SetLastMessage('Z-Budget output file ('//TRIM(cOutFileName)//') must be either an ASCII or DSS file!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -1118,7 +1123,7 @@ CONTAINS
     
     
     !Open file
-    IF (iFileType .EQ. TXT) THEN
+    IF (iFileType .EQ. f_iTXT) THEN
         CALL OutFile%New(FileName=TRIM(cOutFileName),InputFile=.FALSE.,IsTSFile=.TRUE.,Descriptor='output file for '//TRIM(ZBudget%Header%cDescriptor),AccessType=cAccessType,iStat=iStat)
     ELSE
         CALL OutFile%New(FileName=TRIM(cOutFileName),InputFile=.FALSE.,IsTSFile=.TRUE.,Descriptor='output file for '//TRIM(ZBudget%Header%cDescriptor),iStat=iStat)
@@ -1133,7 +1138,7 @@ CONTAINS
     
     
     !Set parameters for ASCII output
-    IF (iFileType .EQ. TXT) THEN
+    IF (iFileType .EQ. f_iTXT) THEN
         !Cache size and print format
         CALL OutFile%SetCacheSize(NDataColumns,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
         cFormatSpec = ZBudget%Header%ASCIIOutput%cNumberFormat(1:LEN_TRIM(ZBudget%Header%ASCIIOutput%cNumberFormat)-1) // ',' // TRIM(IntTotext(2*NAdjZones)) // '(2X,F14.2)'
@@ -1147,25 +1152,25 @@ CONTAINS
         IF (iStat .EQ. -1) RETURN
         
     !... and for DSS output
-    ELSEIF (iFileType .EQ. DSS) THEN
+    ELSEIF (iFileType .EQ. f_iDSS) THEN
         !Data units
         DEALLOCATE (cDataUnits , STAT=ErrorCode)  ;  ALLOCATE (cDataUnits(NDataColumns))
-        WHERE (ZBudget%Header%iDataTypes .EQ. AR)
+        WHERE (ZBudget%Header%iDataTypes .EQ. f_iAR)
             cDataUnits(1:ZBudget%Header%iNData) = cUnit_AR
-        ELSE WHERE (ZBudget%Header%iDataTypes .EQ. VR  .OR.  &
-                    ZBudget%Header%iDataTypes .EQ. VLE .OR.  &
-                    ZBudget%Header%iDataTypes .EQ. VLB       )
+        ELSE WHERE (ZBudget%Header%iDataTypes .EQ. f_iVR  .OR.  &
+                    ZBudget%Header%iDataTypes .EQ. f_iVLE .OR.  &
+                    ZBudget%Header%iDataTypes .EQ. f_iVLB       )
             cDataUnits(1:ZBudget%Header%iNData) = cUnit_VL
         END WHERE
         IF (NDataColumns .GT. ZBudget%Header%iNData) cDataUnits(ZBudget%Header%iNData+1:) = cUnit_VL
         
         !Data types
         DEALLOCATE (cDataTypes , STAT=ErrorCode)  ;  ALLOCATE (cDataTypes(NDataColumns))
-        WHERE (ZBudget%Header%iDataTypes .EQ. AR  .OR. &
-               ZBudget%Header%iDataTypes .EQ. VLE .OR. &
-               ZBudget%Header%iDataTypes .EQ. VLB      )
+        WHERE (ZBudget%Header%iDataTypes .EQ. f_iAR  .OR. &
+               ZBudget%Header%iDataTypes .EQ. f_iVLE .OR. &
+               ZBudget%Header%iDataTypes .EQ. f_iVLB      )
             cDataTypes(1:ZBudget%Header%iNData) = 'INST-VAL'
-        ELSE WHERE (ZBudget%Header%iDataTypes .EQ. VR)
+        ELSE WHERE (ZBudget%Header%iDataTypes .EQ. f_iVR)
             cDataTypes(1:ZBudget%Header%iNData) = 'PER-CUM'
         END WHERE
         IF (ZBudget%Header%lStorages_Defined) THEN
@@ -1179,7 +1184,7 @@ CONTAINS
         DEALLOCATE (cDSSPathNames , STAT=ErrorCode)  ;  ALLOCATE (cDSSPathNames(NDataColumns))
         DO indxData=1,ZBudget%Header%iNData
             SELECT CASE (ZBudget%Header%iDataTypes(indxData))
-                CASE (AR)
+                CASE (f_iAR)
                     cDSSPathNames(indxData) = '/IWFM_ZBUD/ZONE:' // TRIM(IntToText(iZone)) // '/AREA//' // TRIM(cPrintInterval) // '/' // TRIM(ZBudget%Header%cDSSFParts(indxData)) // '/'
                 CASE DEFAULT
                     cDSSPathNames(indxData) = '/IWFM_ZBUD/ZONE:' // TRIM(IntToText(iZone)) // '/VOLUME//' // TRIM(cPrintInterval) // '/' // TRIM(ZBudget%Header%cDSSFParts(indxData)) // '/'
@@ -1223,8 +1228,8 @@ CONTAINS
       INTEGER,INTENT(OUT) :: iStat
     
       !Local variables
-      INTEGER                                                    :: iLoc,indxFlowID,iFlowID,indxAdjZone,iNDash,indxTitle
-      CHARACTER                                                  :: cText*2000
+      INTEGER                                                    :: iLoc,indxFlowID,iFlowID,indxAdjZone,iNDash,indxTitle,ErrorCode
+      CHARACTER(:),ALLOCATABLE                                   :: cText
       CHARACTER(LEN=ZBudget%Header%ASCIIOutput%iLenColumnTitles) :: cTempColumnTitles(ZBudget%Header%ASCIIOutput%iNTitles)
       CHARACTER(LEN=ZBudget%Header%ASCIIOutput%iLenTitles)       :: cPersistentTitles(3)
       
@@ -1252,8 +1257,10 @@ CONTAINS
       DO indxTitle=1,ZBudget%Header%ASCIIOutput%iNTitles-3
           CALL OutFile%WriteData(TRIM(cTempColumnTitles(indxTitle)))
       END DO          
+      ALLOCATE (CHARACTER(LEN=iNDash) :: cText)
       DO indxTitle=ZBudget%Header%ASCIIOutput%iNTitles-2,ZBudget%Header%ASCIIOutput%iNTitles
-          cText = cTempColumnTitles(indxTitle)
+          cText = REPEAT(" ",iNDash)
+          cText(1:LEN(cTempColumnTitles(indxTitle))) = cTempColumnTitles(indxTitle)
           IF (indxTitle .EQ. ZBudget%Header%ASCIIOutput%iNTitles-2) THEN
              iLoc = ZBudget%Header%ASCIIOutput%iLenColumnTitles + 2
               DO indxAdjZone=1,NAdjZones
@@ -1292,6 +1299,9 @@ CONTAINS
       
       !Final line with dashes under titles
       CALL OutFile%WriteData(REPEAT('-',iNDash))
+      
+      !Clear memory
+      DEALLOCATE (cText ,STAT=ErrorCode)
             
     END SUBROUTINE PrintASCIITitles
     
@@ -1358,11 +1368,11 @@ CONTAINS
     indxS = 1
     DO indxLWUGroup=1,SIZE(LWUGroup)
         ASSOCIATE (pLWUGroup => LWUGroup(indxLWUGroup))
-            pLWUGroup%iAgSupplyReqDataIndex   = LocateInList(VR_lwu_AgSupplyReq,ZBudget%Header%iDataTypes(indxS:)) + indxS - 1
-            pLWUGroup%iAgShortDataIndex       = LocateInList(VR_lwu_AgShort,ZBudget%Header%iDataTypes(indxS:)) + indxS - 1
-            pLWUGroup%iAgPumpDataIndex        = LocateInList(VR_lwu_AgPump,ZBudget%Header%iDataTypes(indxS:)) + indxS - 1
-            pLWUGroup%iAgDiverDataIndex       = LocateInList(VR_lwu_AgDiv,ZBudget%Header%iDataTypes(indxS:)) + indxS - 1
-            pLWUGroup%iAgOtherInflowDataIndex = LocateInList(VR_lwu_AgOthIn,ZBudget%Header%iDataTypes(indxS:)) + indxS - 1
+            pLWUGroup%iAgSupplyReqDataIndex   = LocateInList(f_iVR_lwu_AgSupplyReq,ZBudget%Header%iDataTypes(indxS:)) + indxS - 1
+            pLWUGroup%iAgShortDataIndex       = LocateInList(f_iVR_lwu_AgShort,ZBudget%Header%iDataTypes(indxS:)) + indxS - 1
+            pLWUGroup%iAgPumpDataIndex        = LocateInList(f_iVR_lwu_AgPump,ZBudget%Header%iDataTypes(indxS:)) + indxS - 1
+            pLWUGroup%iAgDiverDataIndex       = LocateInList(f_iVR_lwu_AgDiv,ZBudget%Header%iDataTypes(indxS:)) + indxS - 1
+            pLWUGroup%iAgOtherInflowDataIndex = LocateInList(f_iVR_lwu_AgOthIn,ZBudget%Header%iDataTypes(indxS:)) + indxS - 1
             IF (pLWUGroup%iAgSupplyReqDataIndex .EQ. 0) EXIT
             NLWUGroups          = NLWUGroups + 1
             pLWUGroup%iMaxIndex = MAX(pLWUGroup%iAgSupplyReqDataIndex  , &
@@ -1386,23 +1396,23 @@ CONTAINS
                           pLWUGroup%rAgOtherInflowRead(ZBudget%Header%iNDataElems(pLWUGroup%iAgOtherInflowDataIndex,indxLayer),iNOutputIntervals) )
 
                 !Ag supply requirement
-                iDataset = DatasetIndex(iElemDataType,NLayers,lFaceFlows_Defined,iNDataColumns,pLWUGroup%iAgSupplyReqDataIndex,indxLayer)
+                iDataset = DatasetIndex(f_iElemDataType,NLayers,lFaceFlows_Defined,iNDataColumns,pLWUGroup%iAgSupplyReqDataIndex,indxLayer)
                 CALL ZBudget%File%ReadData(cBeginDateAndTime,iDataset,pLWUGroup%rAgSupplyReqRead,ErrorCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
 
                 !Ag pumping
-                iDataset = DatasetIndex(iElemDataType,NLayers,lFaceFlows_Defined,iNDataColumns,pLWUGroup%iAgPumpDataIndex,indxLayer)
+                iDataset = DatasetIndex(f_iElemDataType,NLayers,lFaceFlows_Defined,iNDataColumns,pLWUGroup%iAgPumpDataIndex,indxLayer)
                 CALL ZBudget%File%ReadData(cBeginDateAndTime,iDataset,pLWUGroup%rAgPumpRead,ErrorCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
                 
                 !Ag diversion
-                iDataset = DatasetIndex(iElemDataType,NLayers,lFaceFlows_Defined,iNDataColumns,pLWUGroup%iAgDiverDataIndex,indxLayer)
+                iDataset = DatasetIndex(f_iElemDataType,NLayers,lFaceFlows_Defined,iNDataColumns,pLWUGroup%iAgDiverDataIndex,indxLayer)
                 CALL ZBudget%File%ReadData(cBeginDateAndTime,iDataset,pLWUGroup%rAgDiverRead,ErrorCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
                 
                 !Ag surface inflows from upstream elements
-                iDataset = DatasetIndex(iElemDataType,NLayers,lFaceFlows_Defined,iNDataColumns,pLWUGroup%iAgOtherInflowDataIndex,indxLayer)
+                iDataset = DatasetIndex(f_iElemDataType,NLayers,lFaceFlows_Defined,iNDataColumns,pLWUGroup%iAgOtherInflowDataIndex,indxLayer)
                 CALL ZBudget%File%ReadData(cBeginDateAndTime,iDataset,pLWUGroup%rAgOtherInflowRead,ErrorCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
                 
                 !Ag short
-                iDataset = DatasetIndex(iElemDataType,NLayers,lFaceFlows_Defined,iNDataColumns,pLWUGroup%iAgShortDataIndex,indxLayer)
+                iDataset = DatasetIndex(f_iElemDataType,NLayers,lFaceFlows_Defined,iNDataColumns,pLWUGroup%iAgShortDataIndex,indxLayer)
                 CALL ZBudget%File%ReadData(cBeginDateAndTime,iDataset,pLWUGroup%rAgShortRead,ErrorCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
             END ASSOCIATE
         END DO
@@ -1423,7 +1433,7 @@ CONTAINS
             ALLOCATE (FlowsRead(ZBudget%Header%iNDataElems(indxData,indxLayer),iNOutputIntervals))
             
             !Read data
-            iDataset = DatasetIndex(iElemDataType,NLayers,lFaceFlows_Defined,iNDataColumns,indxData,indxLayer)
+            iDataset = DatasetIndex(f_iElemDataType,NLayers,lFaceFlows_Defined,iNDataColumns,indxData,indxLayer)
             CALL ZBudget%File%ReadData(cBeginDateAndTime,iDataset,FlowsRead,ErrorCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
             
             !Aggregate
@@ -1444,7 +1454,7 @@ CONTAINS
         
         !If necessary read vertical flows and aggregate them as vertical flows between adjacent zones
         IF (NLayers .GT. 0) THEN                                     !Process vertical flows if there are more than 1 layer
-            IF (ZoneList%iZoneExtent .EQ. iZoneVertical) THEN        !                   ... if the zonation is different in vertical 
+            IF (ZoneList%iZoneExtent .EQ. f_iZoneVertical) THEN        !                   ... if the zonation is different in vertical 
                 IF (indxLayer .LT. NLayers) THEN                     !                   ... if we are not processing the last layer
                     IF (ZBudget%Header%lVertFlows_DefinedAtNode) THEN
                         CALL CompileVerticalFlows_DefinedAtNode(indxLayer,iStat)
@@ -1487,19 +1497,19 @@ CONTAINS
       REAL(8) :: rAgSupReq_Modified,rAgShortPrevious
       
       SELECT CASE (iDataType)
-          CASE (VR,VR_lwu_AgPump, VR_lwu_AgDiv, VR_lwu_AgOthIn)
+          CASE (f_iVR , f_iVR_lwu_AgPump , f_iVR_lwu_AgDiv , f_iVR_lwu_AgOthIn)
               AccumulatedData = AccumulatedData + SUM(rData) * rFact_VL
               
-          CASE (AR)
+          CASE (f_iAR)
               AccumulatedData = AccumulatedData + rData(iNOutputIntervals) * rFact_AR
               
-          CASE (VLB)
+          CASE (f_iVLB)
               AccumulatedData = AccumulatedData + rData(1) * rFact_VL
               
-          CASE (VLE)
+          CASE (f_iVLE)
               AccumulatedData = AccumulatedData + rData(iNOutputIntervals) * rFact_VL
               
-          CASE (VR_lwu_PotCUAW)
+          CASE (f_iVR_lwu_PotCUAW)
               IF (iNOutputIntervals .EQ. 1) THEN
                   AccumulatedData = AccumulatedData + rData(iNOutputIntervals) * rFact_VL
               ELSE
@@ -1515,7 +1525,7 @@ CONTAINS
                   END DO
               END IF
 
-          CASE (VR_lwu_AgSupplyReq)
+          CASE (f_iVR_lwu_AgSupplyReq)
               IF (iNOutputIntervals .EQ. 1) THEN
                   AccumulatedData = AccumulatedData + rData(iNOutputIntervals) * rFact_VL
               ELSE
@@ -1530,7 +1540,7 @@ CONTAINS
                   END DO
               END IF
               
-          CASE (VR_lwu_AgShort)
+          CASE (f_iVR_lwu_AgShort)
               IF (iNOutputIntervals .EQ. 1) THEN
                   AccumulatedData = AccumulatedData + rData(iNOutputIntervals) * rFact_VL
               ELSE
@@ -1569,7 +1579,7 @@ CONTAINS
       CLASS(*),POINTER :: pZone,pAdjZone
       
       !Read vertical flows
-      iDataset = DatasetIndex(iVerticalFlowType,NLayers,lFaceFlows_Defined,iNDataColumns,iDummyDataIndex,iLayer)
+      iDataset = DatasetIndex(f_iVerticalFlowType,NLayers,lFaceFlows_Defined,iNDataColumns,iDummyDataIndex,iLayer)
       CALL ZBudget%File%ReadData(cBeginDateAndTime,iDataset,VertFlowsRead,ErrorCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
       
       !Process vertical flows
@@ -1631,7 +1641,7 @@ CONTAINS
       REAL(8) :: VertFlowsRead(ZBudget%SystemData%NElements,iNOutputIntervals),rVertFlowSum_UP,rVertFlowSum_DOWN
       
       !Read vertical flows
-      iDataset = DatasetIndex(iVerticalFlowType,NLayers,lFaceFlows_Defined,iNDataColumns,iDummyDataIndex,iLayer)
+      iDataset = DatasetIndex(f_iVerticalFlowType,NLayers,lFaceFlows_Defined,iNDataColumns,iDummyDataIndex,iLayer)
       CALL ZBudget%File%ReadData(cBeginDateAndTime,iDataset,VertFlowsRead,ErrorCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
       
       !Process vertical flows
@@ -1693,7 +1703,7 @@ CONTAINS
       CLASS(*),POINTER    :: pAdjZone
       
       !Read face flows
-      iDataset = DatasetIndex(iFaceFlowType,NLayers,lFaceFlows_Defined,iNDataColumns,iDummyDataIndex,iLayer)
+      iDataset = DatasetIndex(f_iFaceFlowType,NLayers,lFaceFlows_Defined,iNDataColumns,iDummyDataIndex,iLayer)
       CALL ZBudget%File%ReadData(cBeginDateAndTime,iDataset,FaceFlowsRead,ErrorCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
       
       !Aggregate face flows
@@ -1712,21 +1722,29 @@ CONTAINS
                               IF (.NOT. ASSOCIATED(pAdjZone%iFaceNumberList)) CYCLE
                               CALL pAdjZone%iFaceNumberList%GetOrderedKeyList(iFaceList)
                               DO indxFace=1,SIZE(iFaceList)
-                                  iFace                = iFaceList(indxFace)
-                                  iElem1               = ZBudget%SystemData%iFaceElems(1,iFace)
-                                  iElem2               = ZBudget%SystemData%iFaceElems(2,iFace)
-                                  FaceFlowSum_PLUS     = SUM(FaceFlowsRead(iFace,:) , MASK=FaceFlowsRead(iFace,:).GT.0.0) * rFact_VL
-                                  FaceFlowSum_NEGATIVE = SUM(FaceFlowsRead(iFace,:) , MASK=FaceFlowsRead(iFace,:).LT.0.0) * rFact_VL
+                                  iFace  = iFaceList(indxFace)
+                                  iElem1 = ZBudget%SystemData%iFaceElems(1,iFace)
+                                  iElem2 = ZBudget%SystemData%iFaceElems(2,iFace)
                                   !Determine the direction of flow based on elements and sign of the flow
                                   !First element is in zone being considered (then second element is in adjacent zone)
-                                  IF (LocateInList(iElem1,pZone%LayerZoneElements(iLayer)%Elements) .GT. 0) THEN
-                                      CALL pZone%AddAdjacentZoneFlow(iAdjZone,FaceFlowSum_PLUS)
-                                      CALL pZone%AddAdjacentZoneFlow(iAdjZone,FaceFlowSum_NEGATIVE)
+                                  IF (ZoneList%ElemZones(iElem1,iLayer) .EQ. iZone) THEN 
+                                      !Is the second element in adjacent zone?
+                                      IF (ZoneList%ElemZones(iElem2,iLayer) .EQ. iAdjZone) THEN
+                                          FaceFlowSum_PLUS     = SUM(FaceFlowsRead(iFace,:) , MASK=FaceFlowsRead(iFace,:).GT.0.0) * rFact_VL
+                                          FaceFlowSum_NEGATIVE = SUM(FaceFlowsRead(iFace,:) , MASK=FaceFlowsRead(iFace,:).LT.0.0) * rFact_VL
+                                          CALL pZone%AddAdjacentZoneFlow(iAdjZone,FaceFlowSum_PLUS)
+                                          CALL pZone%AddAdjacentZoneFlow(iAdjZone,FaceFlowSum_NEGATIVE)
+                                      END IF
                                       
                                   !Second element is in zone being considered (then first element is in adjacent zone)
                                   ELSE
-                                      CALL pZone%AddAdjacentZoneFlow(iAdjZone,-FaceFlowSum_PLUS)
-                                      CALL pZone%AddAdjacentZoneFlow(iAdjZone,-FaceFlowSum_NEGATIVE)
+                                      !Is the first element in adjacent zone?
+                                      IF (ZoneList%ElemZones(iElem1,iLayer) .EQ. iAdjZone) THEN
+                                          FaceFlowSum_PLUS     = SUM(FaceFlowsRead(iFace,:) , MASK=FaceFlowsRead(iFace,:).GT.0.0) * rFact_VL
+                                          FaceFlowSum_NEGATIVE = SUM(FaceFlowsRead(iFace,:) , MASK=FaceFlowsRead(iFace,:).LT.0.0) * rFact_VL
+                                          CALL pZone%AddAdjacentZoneFlow(iAdjZone,-FaceFlowSum_PLUS)
+                                          CALL pZone%AddAdjacentZoneFlow(iAdjZone,-FaceFlowSum_NEGATIVE)
+                                      END IF
                                   END IF
                               END DO
                       END SELECT
@@ -1747,7 +1765,7 @@ CONTAINS
       !Local variables
       INTEGER            :: iDataset,ErrorCode,NTimeSteps,iZone,indxZone
       REAL(8)            :: StorageRead(ZBudget%SystemData%NElements,1)
-      CHARACTER          :: cStorageDateAndTime*TimeStampLength
+      CHARACTER          :: cStorageDateAndTime*f_iTimeStampLength
       TYPE(TimeStepType) :: TimeStep
       
       !Go to the last time of the interval
@@ -1755,7 +1773,7 @@ CONTAINS
       cStorageDateAndTime = IncrementTimeStamp(cBeginDateAndTime,TimeStep%DeltaT_InMinutes,iNOutputIntervals-1)
       
       !Read storages at the end of period
-      iDataset = DatasetIndex(iStorageType,NLayers,lFaceFlows_Defined,iNDataColumns,iDummyDataIndex,iLayer)
+      iDataset = DatasetIndex(f_iStorageType,NLayers,lFaceFlows_Defined,iNDataColumns,iDummyDataIndex,iLayer)
       CALL ZBudget%File%ReadData(cStorageDateAndTime,iDataset,StorageRead,ErrorCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
       
       !Accumulate storages for the zone
@@ -1782,18 +1800,18 @@ CONTAINS
     INTEGER            :: iDataset
     
     SELECT CASE (iFlowType)
-        CASE (iElemDataType)
+        CASE (f_iElemDataType)
             iDataset = (iLayer-1) * iNDataColumns + iData
             
-        CASE (iVerticalFlowType)
+        CASE (f_iVerticalFlowType)
             iDataset = NLayers * iNDataColumns + iLayer 
 
-        CASE (iFaceFlowType)
+        CASE (f_iFaceFlowType)
             iDataset = NLayers * iNDataColumns                     !Element data
             IF (NLayers .GT. 0) iDataset = iDataset + NLayers - 1  !Vertical flows
             iDataset = iDataset + iLayer
             
-        CASE (iStorageType)
+        CASE (f_iStorageType)
             iDataset = NLayers * iNDataColumns                     !Element data
             IF (NLayers .GT. 0) iDataset = iDataset + NLayers - 1  !Vertical flows
             IF (lFaceFlows_Defined) iDataset = iDataset + NLayers  !Face flows
@@ -1836,7 +1854,7 @@ CONTAINS
     CHARACTER(LEN=ModNameLen+15),PARAMETER :: ThisProcedure = ModName // 'OutputIntervals'
     INTEGER                                :: iPrintDeltaT_InMinutes
     REAL(8)                                :: rDummy
-    CHARACTER(LEN=TimeStampLength)         :: cEndDateTime,cDateZero
+    CHARACTER(LEN=f_iTimeStampLength)      :: cEndDateTime,cDateZero
     
     
     IF (cPrintInterval .EQ. '') THEN
@@ -1846,7 +1864,7 @@ CONTAINS
         IF (iPrintDeltaT_InMinutes .LT. DeltaT_InMinutes) THEN
             MessageArray(1) = 'Z-Budget output interval cannot be less than the simulation timestep!'
             MessageArray(2) = 'Adjusting the output interval to be equal to the simulation timestep for '//TRIM(cDescriptor)//'.'
-            CALL LogMessage(MessageArray(1:2),iWarn,ThisProcedure)
+            CALL LogMessage(MessageArray(1:2),f_iWarn,ThisProcedure)
             iPrintDeltaT_InMinutes = DeltaT_InMinutes
         END IF
         cDateZero    = IncrementTimeStamp(cCurrentDateAndTime,DeltaT_InMinutes,-1)  ! This method of calculation includes the cCurrentDateandTime in
@@ -1877,37 +1895,37 @@ CONTAINS
     DO indxTitle=1,SIZE(cColumnTitles)
         iLen = LEN_TRIM(cColumnTitles(indxTitle))
         DO
-            iLocS = FirstLocation(MarkerChar,cModColumnTitles(indxTitle))
+            iLocS = FirstLocation(f_cMarkerChar,cModColumnTitles(indxTitle))
             IF (iLocS .EQ. 0) EXIT
-            iLocE    = FirstLocation(MarkerChar,cModColumnTitles(indxTitle)(iLocS+1:iLen)) + iLocS
+            iLocE    = FirstLocation(f_cMarkerChar,cModColumnTitles(indxTitle)(iLocS+1:iLen)) + iLocS
             iLenWork = iLocE - iLocS - 1
             IF (iLenWork .LT. 1) CYCLE
             DEALLOCATE (cWorkText , cWorkText1 , STAT=ErrorCode)
             ALLOCATE (CHARACTER(LEN=iLenWork) :: cWorkText , cWorkText1)
             cWorkText = cModColumnTitles(indxTitle)(iLocS+1:iLocE-1)  
             !Replace area unit marker
-            IF (FirstLocation(AreaUnitMarker,cWorkText) .GT. 0) THEN
+            IF (FirstLocation(f_cAreaUnitMarker,cWorkText) .GT. 0) THEN
                 iLenUnit                                     = LEN_TRIM(cUnit_AR)
-                iLocMarker                                   = FirstLocation(AreaUnitMarker,cWorkText)
+                iLocMarker                                   = FirstLocation(f_cAreaUnitMarker,cWorkText)
                 indx                                         = iLocMarker - iLenUnit
                 cWorkText1(1:indx)                           = cWorkText(iLenUnit:iLocMarker-1)
                 cWorkText1(indx+1:indx+iLenUnit)             = TRIM(cUnit_AR)
                 indx                                         = indx + iLenUnit
                 cWorkText1(indx+1:iLenWork)                  = cWorkText(iLocMarker+1:iLenWork)
                 cModColumnTitles(indxTitle)(iLocS+1:iLocE-1) = cWorkText1
-                CALL ReplaceString(cModColumnTitles(indxTitle)(iLocS:iLocE),MarkerChar,' ',iStat)  
+                CALL ReplaceString(cModColumnTitles(indxTitle)(iLocS:iLocE),f_cMarkerChar,' ',iStat)  
                 IF (iStat .EQ. -1) RETURN
             !Replace volume unit marker
-            ELSE IF (FirstLocation(VolumeUnitMarker,cWorkText) .GT. 0) THEN
+            ELSE IF (FirstLocation(f_cVolumeUnitMarker,cWorkText) .GT. 0) THEN
                 iLenUnit                                     = LEN_TRIM(cUnit_VL)
-                iLocMarker                                   = FirstLocation(VolumeUnitMarker,cWorkText)
+                iLocMarker                                   = FirstLocation(f_cVolumeUnitMarker,cWorkText)
                 indx                                         = iLocMarker - iLenUnit
                 cWorkText1(1:indx)                           = cWorkText(iLenUnit:iLocMarker-1)
                 cWorkText1(indx+1:indx+iLenUnit)             = TRIM(cUnit_VL)
                 indx                                         = indx + iLenUnit
                 cWorkText1(indx+1:iLenWork)                  = cWorkText(iLocMarker+1:iLenWork)
                 cModColumnTitles(indxTitle)(iLocS+1:iLocE-1) = cWorkText1
-                CALL ReplaceString(cModColumnTitles(indxTitle)(iLocS:iLocE),MarkerChar,' ',iStat)  
+                CALL ReplaceString(cModColumnTitles(indxTitle)(iLocS:iLocE),f_cMarkerChar,' ',iStat)  
                 IF (iStat .EQ. -1) RETURN
             END IF
         END DO
@@ -1915,5 +1933,5 @@ CONTAINS
     
   END SUBROUTINE ReplaceMarkers
   
-  
+
 END MODULE

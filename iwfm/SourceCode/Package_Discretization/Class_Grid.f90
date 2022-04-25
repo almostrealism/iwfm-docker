@@ -1,7 +1,7 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018 
-!  State of California, Department of Water Resources 
+!  Copyright (C) 2005-2021
+!  State of California, Department of Water Resources
 !
 !  This program is free software; you can redistribute it and/or
 !  modify it under the terms of the GNU General Public License
@@ -18,13 +18,13 @@
 !  along with this program; if not, write to the Free Software
 !  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 !
-!  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
+!  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov
 !***********************************************************************
 MODULE Class_Grid
   !$ USE OMP_LIB
   USE MessageLogger      , ONLY: SetLastMessage           , &
                                  MessageArray             , &
-                                 iFatal                   
+                                 f_iFatal
   USE GeneralUtilities   , ONLY: GetUniqueArrayComponents , &
                                  IntTotext                , &
                                  LocateInList             , &
@@ -48,59 +48,40 @@ MODULE Class_Grid
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC::NodeType                    , &
-          ElementType                 , &
-          GridType                    , &
-          IntegerLinkedListType       , &      
-          NewNode                     , &
-          NewElement                  , &
-          NodeArea                    , &
-          ElementArea                 , &
-          ElementVertexArea           , &
-          ElementVertexAreaFraction   , &
-          CheckElementConvexity       , &
-          CountTriElements            , &
-          CountQuadElements           , &
-          ListConnectedNodes          , &
-          ListSurroundingElems        , &
-          Compute_DELShpI_DELShpJ     , &
-          Compute_Rot_DELShpI_DELShpJ 
-
-
-
-  ! -------------------------------------------------------------
-  ! --- NODE DATA TYPE
-  ! -------------------------------------------------------------
-  TYPE NodeType
-    REAL(8) :: X,Y    = 0.0       !x- and y-coordinates
-  END TYPE NodeType
-
-
-  ! -------------------------------------------------------------
-  ! --- ELEMENT DATA TYPE
-  ! -------------------------------------------------------------
-  TYPE ElementType
-    INTEGER :: NVertex           =  0         !Number of vertices
-    INTEGER :: Vertex(4)         =  0         !Vertices
-  END TYPE ElementType
+  PUBLIC :: GridType                    , &
+            IntegerLinkedListType       , &
+            NodeArea                    , &
+            ElementArea                 , &
+            ElementVertexArea           , &
+            ElementVertexAreaFraction   , &
+            CheckElementConvexity       , &
+            CountTriElements            , &
+            CountQuadElements           , &
+            ListConnectedNodes          , &
+            ListSurroundingElems        , &
+            Compute_DELShpI_DELShpJ     , &
+            Compute_Rot_DELShpI_DELShpJ
 
 
   ! -------------------------------------------------------------
   ! --- GRID DATA TYPE
   ! -------------------------------------------------------------
   TYPE GridType
-    TYPE(NodeType),ALLOCATABLE    :: Node(:)                     
-    TYPE(ElementType),ALLOCATABLE :: Element(:) 
+      REAL(8),ALLOCATABLE           :: X(:)        !Nodal X coordinates for each (node)
+      REAL(8),ALLOCATABLE           :: Y(:)        !Nodal Y coordinates for each (node)
+      INTEGER,ALLOCATABLE           :: NVertex(:)  !Number of vertices for each (element)
+      INTEGER,ALLOCATABLE           :: Vertex(:,:) !Vertex numbers in counter-clockwise direction given as (4,element) combination
   CONTAINS
-    PROCEDURE,PASS :: Init      => New
-    PROCEDURE,PASS :: KillGrid
-    PROCEDURE,PASS :: Centroid
-    PROCEDURE,PASS :: FEInterpolate
-    PROCEDURE,PASS :: FEInterpolate_AtCell
-    PROCEDURE,PASS :: GetElementListViolatingMaxAngleConstraint
+      PROCEDURE,PASS :: Init      => New
+      PROCEDURE,PASS :: KillGrid
+      PROCEDURE,PASS :: Centroid
+      PROCEDURE,PASS :: FEInterpolate
+      PROCEDURE,PASS :: FEInterpolate_AtCell
+      PROCEDURE,PASS :: GetElementListViolatingMaxAngleConstraint
+      PROCEDURE,PASS :: IsPointInElement
   END TYPE GridType
-  
-  
+
+
   ! -------------------------------------------------------------
   ! --- INTEGER LINKED LIST TYPE
   ! -------------------------------------------------------------
@@ -115,14 +96,14 @@ MODULE Class_Grid
      MODULE PROCEDURE ElementArea_ForArrayList
      MODULE PROCEDURE ElementArea_WithBeginEndIndex
   END INTERFACE ElementArea
-  
+
   INTERFACE NodeArea
      MODULE PROCEDURE NodeArea_ForArrayList
      MODULE PROCEDURE NodeArea_WithBeginEndIndex
   END INTERFACE NodeArea
 
 
-  
+
   ! -------------------------------------------------------------
   ! --- MISC. ENTITIES
   ! -------------------------------------------------------------
@@ -142,65 +123,64 @@ CONTAINS
 ! ******************************************************************
 ! ******************************************************************
 ! ***
-! *** METHODS RELATED TO GRID  
+! *** METHODS RELATED TO GRID
 ! ***
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
 
   ! -------------------------------------------------------------
-  ! --- CONSTRUCTOR 
+  ! --- CONSTRUCTOR
   ! -------------------------------------------------------------
-  SUBROUTINE New(Grid,Node,Element,iStat) 
-    CLASS(GridType),INTENT(OUT)  :: Grid
-    TYPE(NodeType),INTENT(IN)    :: Node(:)
-    TYPE(ElementType),INTENT(IN) :: Element(:)
-    INTEGER,INTENT(OUT)          :: iStat
+  SUBROUTINE New(Grid,X,Y,NVertex,Vertex,iStat)
+    CLASS(GridType),INTENT(OUT) :: Grid
+    REAL(8),INTENT(IN)          :: X(:),Y(:)
+    INTEGER,INTENT(IN)          :: NVertex(:),Vertex(:,:)
+    INTEGER,INTENT(OUT)         :: iStat
 
     !Local variables
-    CHARACTER(LEN=ModNameLen+3)::ThisProcedure=ModName//'New'
-    INTEGER::ErrorCode
-    
+    CHARACTER(LEN=ModNameLen+3) :: ThisProcedure=ModName // 'New'
+    INTEGER                     :: ErrorCode
+
     !Initialize
     iStat = 0
 
     !Allocate memory for nodes
-    ALLOCATE(Grid%Node(SIZE(Node)),STAT=ErrorCode)
-    IF (ErrorCode.NE.0) THEN
-        CALL SetLastMessage('Error in allocating memory for nodes of a grid!',iFatal,ThisProcedure)
+    ALLOCATE(Grid%X(SIZE(X)) , Grid%Y(SIZE(Y)) , STAT=ErrorCode)
+    IF (ErrorCode .NE. 0) THEN
+        CALL SetLastMessage('Error in allocating memory for nodal coordinates of a grid!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
 
     !Allocate memory for elements
-    ALLOCATE(Grid%Element(SIZE(Element)),STAT=ErrorCode)
-    IF (ErrorCode.NE.0) THEN
-        CALL SetLastMessage('Error in allocating memory for elements of a grid!',iFatal,ThisProcedure)
+    ALLOCATE(Grid%NVertex(SIZE(NVertex)) , Grid%Vertex(4,SIZE(NVertex)) , STAT=ErrorCode)
+    IF (ErrorCode .NE. 0) THEN
+        CALL SetLastMessage('Error in allocating memory for elements of a grid!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
 
     !Populate nodes and elements of the grid
-    Grid%Node    = Node
-    Grid%Element = Element
+    Grid%X       = X
+    Grid%Y       = Y
+    Grid%NVertex = NVertex
+    Grid%Vertex  = Vertex
 
   END SUBROUTINE New
 
 
   ! -------------------------------------------------------------
-  ! --- DESTRUCTOR 
+  ! --- DESTRUCTOR
   ! -------------------------------------------------------------
   SUBROUTINE KillGrid(Grid)
     CLASS(GridType)::Grid
 
     !Local varibales
     INTEGER :: ErrorCode
-    
-    !Deallocate memory for nodes
-    DEALLOCATE(Grid%Node , STAT=ErrorCode)    
 
-    !Deallocate memory for elements
-    DEALLOCATE(Grid%Element , STAT=ErrorCode)    
+    !Deallocate memory for nodal coordinates
+    DEALLOCATE(Grid%X , Grid%Y , Grid%NVertex , Grid%Vertex , STAT=ErrorCode)
 
   END SUBROUTINE KillGrid
 
@@ -217,52 +197,40 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
-  ! --- CONSTRUCTOR
-  ! -------------------------------------------------------------
-  FUNCTION NewNode(X,Y) RESULT(Node)
-    REAL(8),INTENT(IN)::X,Y
-    TYPE(NodeType)::Node
-
-    Node%X = X
-    Node%Y = Y
-
-  END FUNCTION NewNode
-
-
-  ! -------------------------------------------------------------
   ! --- COMPUTE NODAL AREA FOR A LIST OF NODES GIVEN AS ARRAY
   ! -------------------------------------------------------------
-  SUBROUTINE NodeArea_ForArrayList(Grid,NodeList,Area,iStat)
+  SUBROUTINE NodeArea_ForArrayList(Grid,NodeList,iNodeIDs,Area,iStat)
     TYPE(GridType),INTENT(IN) :: Grid
-    INTEGER,INTENT(IN)        :: NodeList(:)
+    INTEGER,INTENT(IN)        :: NodeList(:),iNodeIDs(:)
     REAL(8),INTENT(OUT)       :: Area(:)
     INTEGER,INTENT(OUT)       :: iStat
 
     !Local variables
     CHARACTER(LEN=ModNameLen+21) :: ThisProcedure=ModName // 'NodeArea_ForArrayList'
-    INTEGER                      :: indx,indxElem,indxVertex,indxList,NodeNumber
+    INTEGER                      :: indx,indxElem,indxVertex,indxList,NodeNumber,ID
     REAL(8)                      :: DummyReal(1)
-    
+
     !Initailize
     iStat = 0
     Area  = 0.0
 
     !Compute
-    DO indxElem=1,SIZE(Grid%Element)
-      DO indxVertex=1,Grid%Element(indxElem)%NVertex
-        NodeNumber = Grid%Element(indxElem)%Vertex(indxVertex)
+    DO indxElem=1,SIZE(Grid%NVertex)
+      DO indxVertex=1,Grid%NVertex(indxElem)
+        NodeNumber = Grid%Vertex(indxVertex,indxElem)
         indxList   = LocateInList(NodeNumber,NodeList)
         IF (indxList .LT. 1) CYCLE
         CALL ElementVertexArea(Grid,indxElem,[indxVertex],DummyReal,iStat)  ;  IF (iStat .EQ. -1) RETURN
         Area(indxList) = Area(indxList) + DummyReal(1)
-      END DO      
+      END DO
     END DO
 
     !Check all node areas are greater than zero
     DO indx=1,SIZE(NodeList)
         NodeNumber = NodeList(indx)
         IF (Area(indx) .LE. 0.0) THEN
-            CALL SetLastMessage('Nodal area at node '//TRIM(IntToText(NodeNumber))//' is zero!',iFatal,ThisProcedure)
+            ID = iNodeIDs(NodeNumber)
+            CALL SetLastMessage('Nodal area at node '//TRIM(IntToText(ID))//' is zero!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -274,71 +242,72 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- COMPUTE NODAL AREA FOR A LIST OF NODES GIVEN AS BEGINNING AND END INDICIES
   ! -------------------------------------------------------------
-  SUBROUTINE NodeArea_WithBeginEndIndex(Grid,iBeginIndex,iEndIndex,Area,iStat)
+  SUBROUTINE NodeArea_WithBeginEndIndex(Grid,iNodeIDs,iBeginIndex,iEndIndex,Area,iStat)
     TYPE(GridType),INTENT(IN) :: Grid
-    INTEGER,INTENT(IN)        :: iBeginIndex,iEndIndex
+    INTEGER,INTENT(IN)        :: iNodeIDs(:),iBeginIndex,iEndIndex
     REAL(8),INTENT(OUT)       :: Area(:)
     INTEGER,INTENT(OUT)       :: iStat
-    
+
     !Local variables
     CHARACTER(LEN=ModNameLen+26) :: ThisProcedure=ModName // 'NodeArea_WithBeginEndIndex'
-    INTEGER                      :: indx,indxElem,indxVertex,indxList,NodeNumber
-    REAL(8)                      :: DummyReal(1) 
-    
+    INTEGER                      :: indx,indxElem,indxVertex,indxList,NodeNumber,ID
+    REAL(8)                      :: DummyReal(1)
+
     !Initialize
     iStat         = 0
     Area          = 0.0
-    
+
     !Compute
-    DO indxElem=1,SIZE(Grid%Element)
-      DO indxVertex=1,Grid%Element(indxElem)%NVertex
-        NodeNumber = Grid%Element(indxElem)%Vertex(indxVertex)
+    DO indxElem=1,SIZE(Grid%NVertex)
+      DO indxVertex=1,Grid%NVertex(indxElem)
+        NodeNumber = Grid%Vertex(indxVertex,indxElem)
         IF (NodeNumber .LT. iBeginIndex) CYCLE
         IF (NodeNumber .GT. iEndIndex) CYCLE
         indxList       = NodeNumber - iBeginIndex + 1
-        CALL ElementVertexArea(Grid,indxElem,[indxVertex],DummyReal,iStat)  
+        CALL ElementVertexArea(Grid,indxElem,[indxVertex],DummyReal,iStat)
         IF (iStat .EQ. -1) RETURN
         Area(indxList) = Area(indxList) + DummyReal(1)
-      END DO      
+      END DO
     END DO
 
     !Check all node areas are greater than zero
     DO indx=1,iEndIndex-iBeginIndex+1
         NodeNumber = iBeginIndex + indx - 1
         IF (Area(indx) .LE. 0.0) THEN
-            CALL SetLastMessage('Nodal area at node '//TRIM(IntToText(NodeNumber))//' is zero!',iFatal,ThisProcedure)
+            ID = iNodeIDs(NodeNumber)
+            CALL SetLastMessage('Nodal area at node '//TRIM(IntToText(ID))//' is zero!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
     END DO
-    
+
   END SUBROUTINE NodeArea_WithBeginEndIndex
-  
-  
+
+
   ! -------------------------------------------------------------
   ! --- CONSTRUCT THE LIST OF CONNECTED NODES FOR A NODE
   ! -------------------------------------------------------------
-  SUBROUTINE ListConnectedNodes(Grid,NodeNo,TheList,iStat)
+  SUBROUTINE ListConnectedNodes(Grid,iNodeIndex,TheList,iStat)
     TYPE(GridType),INTENT(IN)       :: Grid
-    INTEGER,INTENT(IN)              :: NodeNo
+    INTEGER,INTENT(IN)              :: iNodeIndex
     INTEGER,ALLOCATABLE,INTENT(OUT) :: TheList(:)
     INTEGER,INTENT(OUT)             :: iStat
 
     !Local variables
-    INTEGER                     :: indx,indxElem,NodeI,ErrorCode 
+    INTEGER                     :: indx,indxElem,NodeI,ErrorCode
     INTEGER,ALLOCATABLE         :: iWorkArray(:)
     TYPE(IntegerLinkedListType) :: NodeList
-    
+
     !Initialize
     iStat = 0
 
     !Find the nodes connected to node
-    DO indxElem=1,SIZE(Grid%Element)
-      IF (LocateInList(NodeNo,Grid%Element(indxElem)%Vertex) .LT. 1) CYCLE
-      
-      DO indx=1,Grid%Element(indxElem)%NVertex
-        NodeI = Grid%Element(indxElem)%Vertex(indx)
-        IF (NodeI .EQ. NodeNo) CYCLE
+    DO indxElem=1,SIZE(Grid%NVertex)
+      IF (LocateInList(iNodeIndex,Grid%Vertex(:,indxElem)) .LT. 1) CYCLE
+
+      DO indx=1,Grid%NVertex(indxElem)
+        NodeI = Grid%Vertex(indx,indxElem)
+        IF (NodeI .EQ. iNodeIndex) CYCLE
         CALL NodeList%AddNode(NodeI,iStat)
         IF (iStat .EQ. -1) RETURN
       END DO
@@ -348,7 +317,7 @@ CONTAINS
     CALL NodeList%GetArray(iWorkArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
     CALL GetUniqueArrayComponents(iWorkArray,TheList)
     CALL ShellSort(TheList)
-    
+
     !Free memory from the linked-list
     CALL NodeList%Delete()
     DEALLOCATE (iWorkArray , STAT=ErrorCode)
@@ -359,22 +328,22 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GATHER THE LIST OF SURROUNDING ELEMENTS FOR EACH NODE
   ! -------------------------------------------------------------
-  SUBROUTINE ListSurroundingElems(Grid,NodeNo,TheList,iStat)
+  SUBROUTINE ListSurroundingElems(Grid,iNodeIndex,TheList,iStat)
     TYPE(GridType),TARGET,INTENT(IN) :: Grid
-    INTEGER,INTENT(IN)               :: NodeNo
+    INTEGER,INTENT(IN)               :: iNodeIndex
     INTEGER,ALLOCATABLE,INTENT(OUT)  :: TheList(:)
     INTEGER,INTENT(OUT)              :: iStat
 
     !Local variables
     INTEGER                     :: indxElem
     TYPE(IntegerLinkedListType) :: SurElemList
-    
+
     !Initialize
     iStat = 0
 
     !Find the elements surrounding a node
-    DO indxElem=1,SIZE(Grid%Element)
-      IF (LocateInList(NodeNo,Grid%Element(indxElem)%Vertex) .LT. 1) CYCLE
+    DO indxElem=1,SIZE(Grid%NVertex)
+      IF (LocateInList(iNodeIndex,Grid%Vertex(:,indxElem)) .LT. 1) CYCLE
       CALL SurElemList%AddNode(indxElem,iStat)
       IF (iStat .EQ. -1) RETURN
     END DO
@@ -400,129 +369,114 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
-  ! --- CONSTRUCTOR
+  ! --- COMPUTE ELEMENT AREA FOR A LIST OF ELEMENTS GIVEN WITH BEGINING AND ENDING INDEX
   ! -------------------------------------------------------------
-  FUNCTION NewElement(NVertex,Vertex) RESULT(Element)
-    INTEGER,INTENT(IN)::NVertex,Vertex(4)
-    TYPE(ElementType)::Element
-
-    Element%NVertex = NVertex 
-    Element%Vertex  = Vertex
-
-  END FUNCTION NewElement
-
-
-  ! -------------------------------------------------------------
-  ! --- COMPUTE ELEMENT AREA FOR A LIST OF ELEMENTS GIVEN WITH BEGINING AND ENDING INDEX 
-  ! -------------------------------------------------------------
-  SUBROUTINE ElementArea_WithBeginEndIndex(Grid,iBeginIndex,iEndIndex,Area,iStat) 
+  SUBROUTINE ElementArea_WithBeginEndIndex(Grid,iElemIDs,iBeginIndex,iEndIndex,Area,iStat)
     TYPE(GridType),INTENT(IN) :: Grid
-    INTEGER,INTENT(IN)        :: iBeginIndex,iEndIndex
+    INTEGER,INTENT(IN)        :: iElemIDs(:),iBeginIndex,iEndIndex
     REAL(8),INTENT(OUT)       :: Area(:)
     INTEGER,INTENT(OUT)       :: iStat
 
     !Local variables
     CHARACTER(LEN=ModNameLen+29) :: ThisProcedure = ModName // 'ElementArea_WithBeginEndIndex'
-    INTEGER                      :: ElemNo,NVertex,indxNode
+    INTEGER                      :: ElemNo,NVertex,indxNode,Vertex(4),ID
     REAL(8)                      :: XP(4),YP(4)
-    
+
     !Initialize
     iStat = 0
 
-    ASSOCIATE (pNodes    => Grid%Node   , &
-               pElements => Grid%Element)
-        DO ElemNo=iBeginIndex,iEndIndex
+    DO ElemNo=iBeginIndex,iEndIndex
 
-          NVertex = pElements(ElemNo)%NVertex
+      NVertex = Grid%NVertex(ElemNo)
+      Vertex  = Grid%Vertex(:,ElemNo)
 
-          !Vertex coordinates
-          XP(1:NVertex) = pNodes(pElements(ElemNo)%Vertex(1:NVertex))%X
-          YP(1:NVertex) = pNodes(pElements(ElemNo)%Vertex(1:NVertex))%Y
+      !Vertex coordinates
+      XP(1:NVertex) = Grid%X(Vertex(1:NVertex))
+      YP(1:NVertex) = Grid%Y(Vertex(1:NVertex))
 
-          !Triangular element
-          IF (NVertex .EQ. 3) THEN 
-            Area(ElemNo) = TRI_AREA(XP(1:3),YP(1:3))
+      !Triangular element
+      IF (NVertex .EQ. 3) THEN
+        Area(ElemNo) = TRI_AREA(XP(1:3),YP(1:3))
 
-          !Quadrilateral element
-          ELSE
-            Area(ElemNo) = 0.0
-            DO indxNode=1,4
-              Area(ElemNo) = Area(ElemNo)+QUAD_INTGRL(indxNode,0,XP,YP,NPGAUSS,QUAD_FUNC_AREA)
-            END DO
-          END IF 
-            
-          !Check if area is greater than zero
-          IF (Area(ElemNo) .LE. 0.0) THEN  !Problem with node coordinates
-            MessageArray(1) = 'The area for element '//TRIM(IntToText(ElemNo))//' is less than or equal to zero!'
-            MessageArray(2) = 'Check the nodal coordinates for this element.'
-            CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)  
-            iStat = -1
-            RETURN
-          END IF
-           
+      !Quadrilateral element
+      ELSE
+        Area(ElemNo) = 0.0
+        DO indxNode=1,4
+          Area(ElemNo) = Area(ElemNo)+QUAD_INTGRL(indxNode,0,XP,YP,NPGAUSS,QUAD_FUNC_AREA)
         END DO
-    END ASSOCIATE
+      END IF
+
+      !Check if area is greater than zero
+      IF (Area(ElemNo) .LE. 0.0) THEN  !Problem with node coordinates
+          ID = iElemIDs(ElemNo)
+          MessageArray(1) = 'The area for element '//TRIM(IntToText(ID))//' is less than or equal to zero!'
+          MessageArray(2) = 'Check the nodal coordinates for this element.'
+          CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
+          iStat = -1
+          RETURN
+      END IF
+
+    END DO
 
   END SUBROUTINE ElementArea_WithBeginEndIndex
 
 
   ! -------------------------------------------------------------
-  ! --- COMPUTE ELEMENT AREA FOR A LIST OF ELEMENTS GIVEN IN ARRAY FORM 
+  ! --- COMPUTE ELEMENT AREA FOR A LIST OF ELEMENTS GIVEN IN ARRAY FORM
   ! -------------------------------------------------------------
-  SUBROUTINE ElementArea_ForArrayList(Grid,ElemList,Area,iStat) 
+  SUBROUTINE ElementArea_ForArrayList(Grid,ElemList,iElemIDs,Area,iStat)
     TYPE(GridType),INTENT(IN) :: Grid
-    INTEGER,INTENT(IN)        :: ElemList(:)
+    INTEGER,INTENT(IN)        :: ElemList(:),iElemIDs(:)
     REAL(8),INTENT(OUT)       :: Area(:)
     INTEGER,INTENT(OUT)       :: iStat
 
     !Local variables
     CHARACTER(LEN=ModNameLen+24) :: ThisProcedure = ModName // 'ElementArea_ForArrayList'
-    INTEGER                      :: indx,ElemNo,NVertex,indxNode
+    INTEGER                      :: indx,ElemNo,NVertex,Vertex(4),indxNode,ID
     REAL(8)                      :: XP(4),YP(4)
-    
+
     !Initialize
     iStat = 0
 
-    ASSOCIATE (pNodes    => Grid%Node   , &
-               pElements => Grid%Element)
-        DO indx=1,SIZE(ElemList)
+    DO indx=1,SIZE(ElemList)
 
-          ElemNo  = ElemList(indx)
-          NVertex = pElements(ElemNo)%NVertex
+      ElemNo  = ElemList(indx)
+      NVertex = Grid%NVertex(ElemNo)
+      Vertex  = Grid%Vertex(:,ElemNo)
 
-          !Vertex coordinates
-          XP(1:NVertex) = pNodes(pElements(ElemNo)%Vertex(1:NVertex))%X
-          YP(1:NVertex) = pNodes(pElements(ElemNo)%Vertex(1:NVertex))%Y
+      !Vertex coordinates
+      XP(1:NVertex) = Grid%X(Vertex(1:NVertex))
+      YP(1:NVertex) = Grid%Y(Vertex(1:NVertex))
 
-          !Triangular element
-          IF (NVertex .EQ. 3) THEN 
-            Area(indx) = TRI_AREA(XP(1:3),YP(1:3))
+      !Triangular element
+      IF (NVertex .EQ. 3) THEN
+        Area(indx) = TRI_AREA(XP(1:3),YP(1:3))
 
-          !Quadrilateral element
-          ELSE
-            Area(indx) = 0.0
-            DO indxNode=1,4
-              Area(indx) = Area(indx) + QUAD_INTGRL(indxNode,0,XP,YP,NPGAUSS,QUAD_FUNC_AREA)
-            END DO
-          END IF 
-            
-          !Check if area is greater than zero
-          IF (Area(indx) .LE. 0.0) THEN  !Problem with node coordinates
-            MessageArray(1)='The area for element '//TRIM(IntToText(ElemNo))//' is less than or equal to zero!'
-            MessageArray(2)='Check the nodal coordinates for this element.'
-            CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure) 
-            iStat = -1
-            RETURN
-          END IF
-           
+      !Quadrilateral element
+      ELSE
+        Area(indx) = 0.0
+        DO indxNode=1,4
+          Area(indx) = Area(indx) + QUAD_INTGRL(indxNode,0,XP,YP,NPGAUSS,QUAD_FUNC_AREA)
         END DO
-    END ASSOCIATE
+      END IF
+
+      !Check if area is greater than zero
+      IF (Area(indx) .LE. 0.0) THEN  !Problem with node coordinates
+          ID = iElemIDs(ElemNo)
+          MessageArray(1)='The area for element '//TRIM(IntToText(ID))//' is less than or equal to zero!'
+          MessageArray(2)='Check the nodal coordinates for this element.'
+          CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
+          iStat = -1
+          RETURN
+      END IF
+
+    END DO
 
   END SUBROUTINE ElementArea_ForArrayList
 
 
   ! -------------------------------------------------------------
-  ! --- COMPUTE ELEMENT VERTEX AREA 
+  ! --- COMPUTE ELEMENT VERTEX AREA
   ! -------------------------------------------------------------
   SUBROUTINE ElementVertexArea(Grid,indxElem,VertexList,Area,iStat)
     TYPE(GridType),INTENT(IN) :: Grid
@@ -532,53 +486,52 @@ CONTAINS
 
     !Local variables
     CHARACTER(LEN=ModNameLen+17) :: ThisProcedure = ModName // 'ElementVertexArea'
-    INTEGER                      :: NVertex,indxVertex
+    INTEGER                      :: NVertex,Vertex(4),indxVertex
     REAL(8)                      :: XP(4),YP(4)
-    TYPE(ElementType)            :: Element
 
     !Initialize
     iStat   = 0
-    Element = Grid%Element(indxElem)
-    NVertex = Element%NVertex
+    NVertex = Grid%NVertex(indxElem)
+    Vertex  = Grid%Vertex(:,indxElem)
 
     !Vertex coordinates
-    XP(1:NVertex) = Grid%Node(Element%Vertex(1:NVertex))%X
-    YP(1:NVertex) = Grid%Node(Element%Vertex(1:NVertex))%Y
+    XP(1:NVertex) = Grid%X(Vertex(1:NVertex))
+    YP(1:NVertex) = Grid%Y(Vertex(1:NVertex))
 
     !Triangular element
-    IF (NVertex .EQ. 3) THEN 
+    IF (NVertex .EQ. 3) THEN
       Area = TRI_AREA(XP(1:3),YP(1:3))/3.0
       IF (Area(1) .LE. 0.0) THEN  !Problem with node coordinates
-        MessageArray(1)='The area for element '//TRIM(IntToText(indxElem))//' at node '//TRIM(IntToText(Element%Vertex(1)))//' is less than or equal to zero!'
+        MessageArray(1)='The area for element '//TRIM(IntToText(indxElem))//' at node '//TRIM(IntToText(Vertex(1)))//' is less than or equal to zero!'
         MessageArray(2)='Check the nodal coordinates for this element.'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure) 
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
-      END IF  
+      END IF
 
     !Quadrilateral element
     ELSE
       DO indxVertex=1,SIZE(VertexList)
         Area(indxVertex) = QUAD_INTGRL(VertexList(indxVertex),0,XP,YP,NPGAUSS,QUAD_FUNC_AREA)
         IF (Area(indxVertex) .LE. 0.0) THEN  !Problem with node coordinates
-          MessageArray(1)='The area for element '//TRIM(IntToText(indxElem))//' at node '//TRIM(IntToText(Element%Vertex(indxVertex)))//' is less than or equal to zero!'
+          MessageArray(1)='The area for element '//TRIM(IntToText(indxElem))//' at node '//TRIM(IntToText(Vertex(indxVertex)))//' is less than or equal to zero!'
           MessageArray(2)='Check the nodal coordinates for this element.'
-          CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure) 
+          CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
           iStat = -1
           RETURN
-        END IF  
+        END IF
       END DO
-    END IF 
-       
+    END IF
+
   END SUBROUTINE ElementVertexArea
 
 
   ! -------------------------------------------------------------
-  ! --- COMPUTE ELEMENT VERTEX AREA FRACTION 
+  ! --- COMPUTE ELEMENT VERTEX AREA FRACTION
   ! -------------------------------------------------------------
-  SUBROUTINE ElementVertexAreaFraction(Grid,indxElem,VertexList,Fract,iStat)
+  SUBROUTINE ElementVertexAreaFraction(Grid,indxElem,iElemIDs,VertexList,Fract,iStat)
     TYPE(GridType),INTENT(IN) :: Grid
-    INTEGER,INTENT(IN)        :: indxElem,VertexList(:)
+    INTEGER,INTENT(IN)        :: indxElem,iElemIDs(:),VertexList(:)
     REAL(8),INTENT(OUT)       :: Fract(SIZE(VertexList))
     INTEGER,INTENT(OUT)       :: iStat
 
@@ -587,13 +540,13 @@ CONTAINS
     REAL(8)                                :: Area(1)
 
     !Triangular element
-    IF (Grid%Element(indxElem)%NVertex .EQ. 3) THEN
+    IF (Grid%NVertex(indxElem) .EQ. 3) THEN
       Fract = 1d0/3d0
       iStat = 0
-      
+
     !Quadrilateral element
     ELSE
-      CALL ElementArea(Grid,[indxElem],Area,iStat)  ;  IF (iStat .EQ. -1) RETURN
+      CALL ElementArea(Grid,[indxElem],iElemIDs,Area,iStat)  ;  IF (iStat .EQ. -1) RETURN
       CALL ElementVertexArea(Grid,indxElem,VertexList,Fract,iStat)  ;  IF (iStat .EQ. -1) RETURN
       Fract = Fract / Area(1)
     END IF
@@ -604,46 +557,43 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- CHECK IF AN ELEMENT IS CONVEX
   ! -------------------------------------------------------------
-  PURE SUBROUTINE CheckElementConvexity(Element,NodeXY,ConvexNode) 
-    TYPE(ElementType),INTENT(IN) :: Element
-    TYPE(NodeType),INTENT(IN)    :: NodeXY(:)  
+  PURE SUBROUTINE CheckElementConvexity(NVertex,Vertex,X,Y,ConvexNode)
+    INTEGER,INTENT(IN)           :: NVertex,Vertex(:)
+    REAL(8),INTENT(IN)           :: X(:),Y(:)
     INTEGER,INTENT(OUT)          :: ConvexNode
 
     !Local variables
-    INTEGER                   :: indx,IFF,IBB,NVertex
-    REAL(8)                   :: XP(4),YP(4),CrossProduct
-    
+    INTEGER :: indx,IFF,IBB
+    REAL(8) :: CrossProduct
+
     !Initialize
-    NVertex    =  Element%NVertex
     ConvexNode =  0
 
     !If element is triangular it cannot be convex
     IF (NVertex .EQ. 3) RETURN
 
     !Check if element is convex
-    !Walking along the cell faces in the counter-clockwise direction and generating vectors between vertices, 
-    !if cross product of two vectors joining at a vertex is negative we are turning right (internal angle greater than 180), 
+    !Walking along the cell faces in the counter-clockwise direction and generating vectors between vertices,
+    !if cross product of two vectors joining at a vertex is negative we are turning right (internal angle greater than 180),
     !otherwise we are turning left (what we want)
-    XP = NodeXY%X
-    YP = NodeXY%Y
     DO indx=1,4
       IFF=indx+1  ;  IF (IFF.GT.4) IFF=1
       IBB=indx-1  ;  IF (IBB.LT.1) IBB=4
-      CrossProduct =  (XP(indx)-XP(IBB))*(YP(IFF)-YP(indx)) &
-                    + (YP(IBB)-YP(indx))*(XP(IFF)-XP(indx))  
+      CrossProduct =  (X(indx)-X(IBB))*(Y(IFF)-Y(indx)) &
+                    + (Y(IBB)-Y(indx))*(X(IFF)-X(indx))
       IF (CrossProduct .LE. 0.0) THEN
-        ConvexNode = Element%Vertex(indx)
+        ConvexNode = Vertex(indx)
         EXIT
       END IF
    END DO
-      
+
   END SUBROUTINE CheckElementConvexity
-  
-   
+
+
   ! -------------------------------------------------------------
   ! --- GET THE LIST OF ELEMENTS WITH ONE OR MORE ANGLES GREATER THAN USER DEFINED ANGLE GIVEN IN DEGREES
   ! -------------------------------------------------------------
-  SUBROUTINE GetElementListViolatingMaxAngleConstraint(Grid,MaxAngle,ElemList,NodeList,iStat) 
+  SUBROUTINE GetElementListViolatingMaxAngleConstraint(Grid,MaxAngle,ElemList,NodeList,iStat)
     CLASS(GridType),INTENT(IN)      :: Grid
     REAL(8),INTENT(IN)              :: MaxAngle
     INTEGER,ALLOCATABLE,INTENT(OUT) :: ElemList(:),NodeList(:)
@@ -652,7 +602,7 @@ CONTAINS
     !Local data type - elements violating maximum angle constraint in a linked list
     TYPE,EXTENDS(GenericLinkedListType) :: ElemNodeListType
     END TYPE ElemNodeListType
-    
+
     !Local data type - element-vertex combination violating maximum angle constraint
     TYPE ElemNodeType
         INTEGER :: Elem = 0
@@ -660,32 +610,33 @@ CONTAINS
     END TYPE ElemNodeType
 
     !Local variables
-    INTEGER                :: IFF,IBB,NVertex,indxElem,indxVertex,NData,indx
+    INTEGER                :: IFF,IBB,NVertex,indxElem,indxVertex,NData,indx,Vertex(4)
     REAL(8)                :: XP(4),YP(4),CrossProduct,DotProduct,MaxAngleRadian,LenA,LenB,Angle
     TYPE(ElemNodeListType) :: ElemNodeLinkedList
     TYPE(ElemNodeType)     :: ElemNodeData
     CLASS(*),POINTER       :: pCurrent
     REAL(8),PARAMETER      :: PI = ACOS(-1d0)
-    
+
     !Initialize
     iStat = 0
-    
+
     !Convert degree angle to radian angle
     MaxAngleRadian = MaxAngle * PI / 180d0
-    
+
     !Loop over elements
-    DO indxElem=1,SIZE(Grid%Element)
+    DO indxElem=1,SIZE(Grid%NVertex)
         !Element vertex info
-        NVertex       = Grid%Element(indxElem)%NVertex
-        XP(1:NVertex) = Grid%Node(Grid%Element(indxElem)%Vertex(1:NVertex))%X
-        YP(1:NVertex) = Grid%Node(Grid%Element(indxElem)%Vertex(1:NVertex))%Y
-        
+        NVertex       = Grid%NVertex(indxElem)
+        Vertex        = Grid%Vertex(:,indxElem)
+        XP(1:NVertex) = Grid%X(Vertex(1:NVertex))
+        YP(1:NVertex) = Grid%Y(Vertex(1:NVertex))
+
         !Loop over vertices of the element
         DO indxVertex=1,NVertex
             IFF          = indxVertex + 1  ;  IF (IFF .GT. NVertex) IFF = 1
             IBB          = indxVertex - 1  ;  IF (IBB .LT. 1)       IBB = NVertex
             CrossProduct =  (XP(indxVertex)-XP(IBB)) * (YP(IFF)-YP(indxVertex))  &
-                          + (YP(IBB)-YP(indxVertex)) * (XP(IFF)-XP(indxVertex)) 
+                          + (YP(IBB)-YP(indxVertex)) * (XP(IFF)-XP(indxVertex))
             DotProduct   = DOT_PRODUCT([XP(indxVertex)-XP(IBB),YP(indxVertex)-YP(IBB)] , [XP(IFF)-XP(indxVertex),YP(IFF)-YP(indxVertex)])
             LenA         = SQRT((YP(IBB) - YP(indxVertex)) * (YP(IBB) - YP(indxVertex)) + (XP(IBB) - XP(indxVertex)) * (XP(IBB) - XP(indxVertex)))
             LenB         = SQRT((YP(IFF) - YP(indxVertex)) * (YP(IFF) - YP(indxVertex)) + (XP(IFF) - XP(indxVertex)) * (XP(IFF) - XP(indxVertex)))
@@ -699,19 +650,19 @@ CONTAINS
             !Add element and node to list if in viloation of the max angle
             IF (Angle .GE. MaxAngleRadian) THEN
                 ElemNodeData%Elem = indxElem
-                ElemNodeData%Node = Grid%Element(indxElem)%Vertex(indxVertex)
+                ElemNodeData%Node = Vertex(indxVertex)
                 CALL ElemNodeLinkedList%AddNode(ElemNodeData,iStat)
                 IF (iStat .EQ. -1) RETURN
             END IF
         END DO
     END DO
-    
+
     !Number of element-node combinations in violation of max angle constraint
     NData = ElemNodeLinkedList%GetNNodes()
-    
+
     !Allocate memory for return arguments
     ALLOCATE (ElemList(NData) , NodeList(NData))
-    
+
     !Store data in return arguments
     CALL ElemNodeLinkedList%Reset()
     DO indx=1,NData
@@ -726,18 +677,18 @@ CONTAINS
 
     !Clear memory from linked list
     CALL ElemNodeLinkedList%Delete()
-          
+
   END SUBROUTINE GetElementListViolatingMaxAngleConstraint
-  
-   
+
+
   ! -------------------------------------------------------------
   ! --- COUNT THE NUMBER OF TRIANGULAR ELEMENTS
   ! -------------------------------------------------------------
   FUNCTION CountTriElements(Grid) RESULT(NTriangular)
-    TYPE(GridType),INTENT(IN)::Grid
-        INTEGER::NTriangular
+    TYPE(GridType),INTENT(IN) :: Grid
+    INTEGER                   :: NTriangular
 
-        NTriangular=COUNT(Grid%Element(:)%NVertex.EQ.3)
+    NTriangular = COUNT(Grid%NVertex .EQ. 3)
 
   END FUNCTION CountTriElements
 
@@ -746,10 +697,10 @@ CONTAINS
   ! --- COUNT THE NUMBER OF QUADRILATERAL ELEMENTS
   ! -------------------------------------------------------------
   FUNCTION CountQuadElements(Grid) RESULT(NQuad)
-    TYPE(GridType),INTENT(IN)::Grid
-        INTEGER::NQuad
+    TYPE(GridType),INTENT(IN) :: Grid
+    INTEGER                   :: NQuad
 
-        NQuad=COUNT(Grid%Element(:)%NVertex.EQ.4)
+    NQuad = COUNT(Grid%NVertex .EQ. 4)
 
   END FUNCTION CountQuadElements
 
@@ -757,9 +708,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- COMPUTE del_wi * delwj INTEGRAL
   ! -------------------------------------------------------------
-  SUBROUTINE Compute_DELShpI_DELShpJ(Grid,ElemNo,Integral,ElemArea,iStat)
+  SUBROUTINE Compute_DELShpI_DELShpJ(Grid,ElemNo,iElemIDs,Integral,ElemArea,iStat)
     TYPE(GridType),INTENT(IN)       :: Grid
-    INTEGER,INTENT(IN)              :: ElemNo
+    INTEGER,INTENT(IN)              :: ElemNo,iElemIDs(:)
     REAL(8),ALLOCATABLE,INTENT(OUT) :: Integral(:)
     REAL(8),OPTIONAL,INTENT(IN)     :: ElemArea
     INTEGER,INTENT(OUT)             :: iStat
@@ -771,25 +722,25 @@ CONTAINS
 
     !Initiliaze
     iStat     = 0
-    NVertex   = Grid%Element(ElemNo)%NVertex
-    Vertex    = Grid%Element(ElemNo)%Vertex
+    NVertex   = Grid%NVertex(ElemNo)
+    Vertex    = Grid%Vertex(:,ElemNo)
     NIntegral = SUM((/(indx,indx=1,NVertex-1)/))      !Number of integrals to be computed for the element
     CALL AllocArray(Integral,NIntegral,ThisProcedure,iStat)  ;  IF (iStat .EQ. -1) RETURN
     IF (PRESENT(ElemArea)) THEN
       LocalElemArea = ElemArea
     ELSE
-      CALL ElementArea(Grid,[ElemNo],Area,iStat)
+      CALL ElementArea(Grid,[ElemNo],iElemIDs,Area,iStat)
       IF (iStat .EQ. -1) RETURN
       LocalElemArea = Area(1)
     END IF
     indx = 0
 
     !Nodal coordinates
-    XP(1:NVertex) = Grid%Node(Vertex(1:NVertex))%X
-    YP(1:NVertex) = Grid%Node(Vertex(1:NVertex))%Y
-      
+    XP(1:NVertex) = Grid%X(Vertex(1:NVertex))
+    YP(1:NVertex) = Grid%Y(Vertex(1:NVertex))
+
     !Triangular element
-    IF (NVertex .EQ. 3) THEN 
+    IF (NVertex .EQ. 3) THEN
       DO I=1,3
         DO J=I+1,3
           indx = indx+1
@@ -799,7 +750,7 @@ CONTAINS
       END DO
 
     !Quadrilateral element
-    ELSE                       
+    ELSE
       DO I=1,4
         DO J=I+1,4
           indx = indx+1
@@ -815,9 +766,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- COMPUTE rot_del_wi * delwj INTEGRAL
   ! -------------------------------------------------------------
-  SUBROUTINE Compute_Rot_DELShpI_DELShpJ(Grid,ElemNo,Integral,ElemArea,iStat)
+  SUBROUTINE Compute_Rot_DELShpI_DELShpJ(Grid,iElemIndex,iElemIDs,Integral,ElemArea,iStat)
     TYPE(GridType),INTENT(IN)       :: Grid
-    INTEGER,INTENT(IN)              :: ElemNo
+    INTEGER,INTENT(IN)              :: iElemIndex,iElemIDs(:)
     REAL(8),ALLOCATABLE,INTENT(OUT) :: Integral(:)
     REAL(8),OPTIONAL,INTENT(IN)     :: ElemArea
     INTEGER,INTENT(OUT)             :: iStat
@@ -829,25 +780,25 @@ CONTAINS
 
     !Initiliaze
     iStat     = 0
-    NVertex   = Grid%Element(ElemNo)%NVertex
-    Vertex    = Grid%Element(ElemNo)%Vertex
+    NVertex   = Grid%NVertex(iElemIndex)
+    Vertex    = Grid%Vertex(:,iElemIndex)
     NIntegral = SUM((/(indx,indx=1,NVertex-1)/))      !Number of integrals to be computed for the element
     CALL AllocArray(Integral,NIntegral,ThisProcedure,iStat)  ;  IF (iStat .EQ. -1) RETURN
     IF (PRESENT(ElemArea)) THEN
       LocalElemArea = ElemArea
     ELSE
-      CALL ElementArea(Grid,[ElemNo],Area,iStat)
+      CALL ElementArea(Grid,[iElemIndex],iElemIDs,Area,iStat)
       IF (iStat .EQ. -1) RETURN
       LocalElemArea = Area(1)
     END IF
     indx = 0
-      
+
     !Nodal coordinates
-    XP(1:NVertex) = Grid%Node(Vertex(1:NVertex))%X
-    YP(1:NVertex) = Grid%Node(Vertex(1:NVertex))%Y
-      
+    XP(1:NVertex) = Grid%X(Vertex(1:NVertex))
+    YP(1:NVertex) = Grid%Y(Vertex(1:NVertex))
+
     !Triangular element
-    IF (NVertex .EQ. 3) THEN 
+    IF (NVertex .EQ. 3) THEN
       DO I=1,3
         DO J=I+1,3
           indx = indx+1
@@ -857,7 +808,7 @@ CONTAINS
       END DO
 
     !Quadrilateral element
-    ELSE                       
+    ELSE
       DO I=1,4
         DO J=I+1,4
           indx = indx+1
@@ -873,22 +824,20 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- FIND THE CENTROID OF AN ELEMENT
   ! -------------------------------------------------------------
-  SUBROUTINE Centroid(Grid,ElemID,XC,YC)
+  SUBROUTINE Centroid(Grid,iElemIndex,XC,YC)
     CLASS(GridType),INTENT(IN) :: Grid
-    INTEGER,INTENT(IN)         :: ElemID
+    INTEGER,INTENT(IN)         :: iElemIndex
     REAL(8),INTENT(OUT)        :: XC,YC
 
     !Local variables
-    INTEGER           :: NVertex
-    REAL(8)           :: X(Grid%Element(ElemID)%NVertex)  ,&
-                         Y(Grid%Element(ElemID)%NVertex)
-    TYPE(ElementType) :: Element
+    INTEGER :: NVertex
+    REAL(8) :: X(Grid%NVertex(iElemIndex))  , &
+               Y(Grid%NVertex(iElemIndex))
 
     !Initialize
-    Element      = Grid%Element(ElemID)
-    NVertex      = Element%NVertex
-    X(1:NVertex) = Grid%Node(Element%Vertex(1:NVertex))%X
-    Y(1:NVertex) = Grid%Node(Element%Vertex(1:NVertex))%Y
+    NVertex = Grid%NVertex(iElemIndex)
+    X       = Grid%X(Grid%Vertex(1:NVertex,iElemIndex))
+    Y       = Grid%Y(Grid%Vertex(1:NVertex,iElemIndex))
 
     !Compute
     XC = SUM(X)/REAL(NVertex,8)
@@ -947,7 +896,7 @@ CONTAINS
 
     !Check I and J are not equal
     IF (I .EQ. J) THEN
-        CALL SetLastMessage('Node I and Node J are equal in integration of diffusion term!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Node I and Node J are equal in integration of diffusion term!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -960,7 +909,7 @@ CONTAINS
     !Compute integral
     Integral= (YP(I)-YP(K))*(YP(K)-YP(J)) + (XP(K)-XP(I))*(XP(J)-XP(K))
     Integral= Integral/(4.0*AREA)
-      
+
   END SUBROUTINE TRI_INTGRL
 
 
@@ -976,13 +925,13 @@ CONTAINS
     !Local variables
     CHARACTER(LEN=ModNameLen+7) :: ThisProcedure=ModName//'TRI_ROT'
     INTEGER                     :: K
-    
+
     !Initialize
     iStat = 0
 
     !Check I and J are not equal
     IF (I .EQ. J) THEN
-        CALL SetLastMessage('Node I and Node J are equal in integration of rotation term!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Node I and Node J are equal in integration of rotation term!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -991,11 +940,11 @@ CONTAINS
     DO K=1,3
       IF (.NOT.(K.EQ.I.OR.K.EQ.J)) EXIT
     END DO
-    
+
     !Compute integral
     Rot = (XP(K)-XP(J))*(YP(K)-YP(I)) - (YP(J)-YP(K))*(XP(I)-XP(K))
     Rot = Rot/(4D0*AREA)
-      
+
   END SUBROUTINE TRI_ROT
 
 
@@ -1040,7 +989,7 @@ CONTAINS
     ELSEIF (NSHP.EQ.4) THEN
       DXI_QUAD_SHAPE=-0.25*(ETA+1.0)
     END IF
-    
+
   END FUNCTION DXI_QUAD_SHAPE
 
   ! -------------------------------------------------------------
@@ -1048,8 +997,8 @@ CONTAINS
   ! -------------------------------------------------------------
   REAL(8) FUNCTION DETA_QUAD_SHAPE(XI,NSHP)
     REAL(8),INTENT(IN)::XI
-    INTEGER,INTENT(IN)::NSHP          
-    
+    INTEGER,INTENT(IN)::NSHP
+
     IF (NSHP.EQ.1) THEN
       DETA_QUAD_SHAPE=0.25*(XI-1.0)
     ELSEIF (NSHP.EQ.2) THEN
@@ -1059,7 +1008,7 @@ CONTAINS
     ELSEIF (NSHP.EQ.4) THEN
       DETA_QUAD_SHAPE=0.25*(1.0-XI)
     END IF
-    
+
   END FUNCTION DETA_QUAD_SHAPE
 
   ! -------------------------------------------------------------
@@ -1073,7 +1022,7 @@ CONTAINS
                   ( D_DETA(XI,YP)*DXI_QUAD_SHAPE(ETA,NSHP)    &
                    -D_DXI(ETA,YP)*DETA_QUAD_SHAPE(XI,NSHP))
 
-  END FUNCTION DX_QUAD_SHAPE 
+  END FUNCTION DX_QUAD_SHAPE
 
   ! -------------------------------------------------------------
   ! --- DERIVATIVE OF SHAPE FUNCTIONS W.R.T. Y
@@ -1084,11 +1033,11 @@ CONTAINS
 
     DY_QUAD_SHAPE = 1.0/DET_JACOB(XI,ETA,XP,YP) *              &
                   (-D_DETA(XI,XP)*DXI_QUAD_SHAPE(ETA,NSHP)     &
-                   +D_DXI(ETA,XP)*DETA_QUAD_SHAPE(XI,NSHP)) 
-                     
-  END FUNCTION DY_QUAD_SHAPE 
-   
-   
+                   +D_DXI(ETA,XP)*DETA_QUAD_SHAPE(XI,NSHP))
+
+  END FUNCTION DY_QUAD_SHAPE
+
+
   ! -------------------------------------------------------------
   ! -------------------------------------------------------------
   ! --- COORDINATE TRANSFORMATION FUNCTIONS
@@ -1106,8 +1055,8 @@ CONTAINS
     D_DXI=0.0
     DO INDX=1,4
       D_DXI=D_DXI+P(INDX)*DXI_QUAD_SHAPE(ETA,INDX)
-    END DO 
-    
+    END DO
+
   END FUNCTION D_DXI
 
   ! -------------------------------------------------------------
@@ -1152,7 +1101,7 @@ CONTAINS
     QUAD_FUNC_ROT =  DY_QUAD_SHAPE(XI,ETA,XP,YP,I) * DX_QUAD_SHAPE(XI,ETA,XP,YP,J)    &
                     -DX_QUAD_SHAPE(XI,ETA,XP,YP,I) * DY_QUAD_SHAPE(XI,ETA,XP,YP,J)
     QUAD_FUNC_ROT = QUAD_FUNC_ROT * DET_JACOB(XI,ETA,XP,YP)
-                      
+
   END FUNCTION QUAD_FUNC_ROT
 
   ! -------------------------------------------------------------
@@ -1164,7 +1113,7 @@ CONTAINS
 
     QUAD_FUNC_DIFF =  DX_QUAD_SHAPE(XI,ETA,XP,YP,I) * DX_QUAD_SHAPE(XI,ETA,XP,YP,J)  &
                      +DY_QUAD_SHAPE(XI,ETA,XP,YP,I) * DY_QUAD_SHAPE(XI,ETA,XP,YP,J)
-    QUAD_FUNC_DIFF = QUAD_FUNC_DIFF * DET_JACOB(XI,ETA,XP,YP)                   
+    QUAD_FUNC_DIFF = QUAD_FUNC_DIFF * DET_JACOB(XI,ETA,XP,YP)
 
   END FUNCTION QUAD_FUNC_DIFF
 
@@ -1189,7 +1138,7 @@ CONTAINS
     REAL(8),INTENT(IN)::XP(4),YP(4)
     REAL(8),EXTERNAL::FUNC
     INTEGER,INTENT(IN)::I,J,NPOINT
-         
+
     !Local variables
     REAL(8)::VPOINT,VPOINT1,VPOINT2,W1,W2
 
@@ -1240,8 +1189,8 @@ CONTAINS
                    + W2*W2*FUNC(I,J,-VPOINT2,VPOINT2,XP,YP)  &
                    + W2*W2*FUNC(I,J,-VPOINT2,-VPOINT2,XP,YP)
 
-    END IF 
-           
+    END IF
+
   END FUNCTION QUAD_INTGRL
 
 
@@ -1265,28 +1214,28 @@ CONTAINS
     INTEGER,INTENT(IN)         :: iElem
     REAL(8),INTENT(IN)         :: XP,YP
     REAL(8),INTENT(OUT)        :: Coeff(:)
-    
+
     !Local variables
     INTEGER :: NVertex
     REAL(8) :: X(4),Y(4)
-    
+
     !Get vertex coordinates
-    NVertex      = Grid%Element(iElem)%NVertex
-    X(1:NVertex) = Grid%Node(Grid%Element(iElem)%Vertex(1:NVertex))%X
-    Y(1:NVertex) = Grid%Node(Grid%Element(iElem)%Vertex(1:NVertex))%Y
-    
+    NVertex      = Grid%NVertex(iElem)
+    X(1:NVertex) = Grid%X(Grid%Vertex(1:NVertex,iElem))
+    Y(1:NVertex) = Grid%Y(Grid%Vertex(1:NVertex,iElem))
+
     Coeff = InterpolationCoeffs(SIZE(Coeff),XP,YP,X,Y)
-    
+
   END SUBROUTINE FEInterpolate_AtCell
-  
-  
+
+
   ! -------------------------------------------------------------
   ! --- INTERPOLATION COEEFICIENTS AT A GIVEN LOCATION
   ! -------------------------------------------------------------
-  SUBROUTINE FEInterpolate(Grid,XP,YP,ElemID,Nodes,Coeff)
+  SUBROUTINE FEInterpolate(Grid,XP,YP,iElemIndex,Nodes,Coeff)
     CLASS(GridType),INTENT(IN)      :: Grid
     REAL(8),INTENT(IN)              :: XP,YP
-    INTEGER,INTENT(OUT)             :: ElemID
+    INTEGER,INTENT(OUT)             :: iElemIndex
     INTEGER,ALLOCATABLE,INTENT(OUT) :: Nodes(:)
     REAL(8),ALLOCATABLE,INTENT(OUT) :: Coeff(:)
 
@@ -1295,30 +1244,30 @@ CONTAINS
     REAL(8) :: X(4),Y(4)
 
     !Find the element the point belongs to
-    ElemID = ContainedInElement(Grid,XP,YP)
-    
+    iElemIndex = ContainedInElement(Grid,XP,YP)
+
     !Return if point was not located within the grid
-    IF (ElemID .EQ. 0) RETURN
-        
+    IF (iElemIndex .EQ. 0) RETURN
+
     !Identify nodes and interpolation coefficients
-    NVertex      = Grid%Element(ElemID)%NVertex
+    NVertex      = Grid%NVertex(iElemIndex)
     ALLOCATE (Nodes(NVertex) , Coeff(NVertex))
-    Nodes        = Grid%Element(ElemID)%Vertex(1:NVertex)
-    X(1:NVertex) = Grid%Node(Nodes)%X
-    Y(1:NVertex) = Grid%Node(Nodes)%Y
+    Nodes        = Grid%Vertex(1:NVertex,iElemIndex)
+    X(1:NVertex) = Grid%X(Nodes)
+    Y(1:NVertex) = Grid%Y(Nodes)
     Coeff        = InterpolationCoeffs(NVertex,XP,YP,X,Y)
-                
+
   END SUBROUTINE FEInterpolate
-  
-  
+
+
   ! -------------------------------------------------------------
-  ! --- COMPUTE FINITE ELEMENT INTERPOLATION COEFFICIENTS  
+  ! --- COMPUTE FINITE ELEMENT INTERPOLATION COEFFICIENTS
   ! -------------------------------------------------------------
   FUNCTION InterpolationCoeffs(NVertex,XP,YP,X,Y) RESULT(Coeff)
     INTEGER,INTENT(IN) :: NVertex
     REAL(8),INTENT(IN) :: XP,YP,X(4),Y(4)
         REAL(8)            :: Coeff(NVertex)
-            
+
     !Local variables
         REAL(8) :: XIJ,XJK,XKI,YIJ,YJK,YKI,XT,YT,A,B,BO,BX,BY,CO,CX,CY,C
 
@@ -1326,7 +1275,7 @@ CONTAINS
         Coeff = -1.0
 
     !Triangular element
-    IF (NVertex .EQ. 3) THEN    
+    IF (NVertex .EQ. 3) THEN
       XIJ=X(1)-X(2)
       XJK=X(2)-X(3)
       XKI=X(3)-X(1)
@@ -1389,24 +1338,74 @@ CONTAINS
 
 
   ! -------------------------------------------------------------
-  ! --- SUBROUTINE THAT CHECKS IF POINT (XP,YP) LIES IN AN ELEMENT - GATEWAY
+  ! --- CHECK IF A POINT (XP,YP) LIES IN A GIVEN ELEMENT
+  ! -------------------------------------------------------------
+  PURE FUNCTION IsPointInElement(Grid,XP,YP,iElem) RESULT(lIsIn)
+    CLASS(GridType),INTENT(IN) :: Grid
+    REAL(8),INTENT(IN)         :: XP,YP
+    INTEGER,INTENT(IN)         :: iElem
+    LOGICAL                    :: lIsIn
+    
+    !Local variables
+    INTEGER :: NVertex,indxVertex,Vertex(4)
+    REAL(8) :: X(4),Y(4),X1,Y1,X2,Y2,XX,YX,DotProduct
+    
+    !Initialize
+    lIsIn = .TRUE.
+    
+    !Element vertices
+    NVertex      = Grid%NVertex(iElem)
+    Vertex       = Grid%Vertex(:,iElem)
+    X(1:NVertex) = Grid%X(Vertex(1:NVertex))
+    Y(1:NVertex) = Grid%Y(Vertex(1:NVertex))
+    
+    !Check
+    DO indxVertex=1,NVertex
+        IF (XP .EQ. X(indxVertex)) THEN
+            IF (YP .EQ. Y(indxVertex)) EXIT
+        END IF
+        X1 = X(indxVertex)
+        Y1 = Y(indxVertex)
+        IF (indxVertex .LT. NVertex) THEN
+            X2 = X(indxVertex+1)
+            Y2 = Y(indxVertex+1)
+            IF (XP .EQ. X2) THEN
+                IF (YP .EQ. Y2) EXIT
+            END IF        
+        ELSE
+            X2 = X(1)
+            Y2 = Y(1)
+        END IF
+        CALL XPoint(X1,Y1,X2,Y2,XP,YP,XX,YX)
+        DotProduct = DOT_PRODUCT([(XP-XX),(YP-YX)] , [(Y1-Y2),(X2-X1)])
+        IF (DotProduct .LT. 0.0) THEN
+            lIsIn = .FALSE.
+            EXIT
+        END IF
+    END DO
+    
+  END FUNCTION IsPointInElement
+  
+  
+  ! -------------------------------------------------------------
+  ! --- FIND THE FIRST ELEMENT THAT A POINT (XP,YP) LIES IN - GATEWAY
   ! -------------------------------------------------------------
   FUNCTION ContainedInElement(Grid,XP,YP) RESULT(iElem)
     TYPE(GridType),INTENT(IN) :: Grid
     REAL(8),INTENT(IN)        :: XP,YP
     INTEGER                   :: iElem
-    
-!DIR$ IF (_OPENMP .NE. 0) 
+
+!DIR$ IF (_OPENMP .NE. 0)
     !$ iElem = ContainedInElement_OMP(Grid,XP,YP)
 !DIR$ ELSE
     iElem = ContainedInElement_Sequential(Grid,XP,YP)
 !DIR$ END IF
 
   END FUNCTION ContainedInElement
-  
+
 
   ! -------------------------------------------------------------
-  ! --- SUBROUTINE THAT CHECKS IF POINT (XP,YP) LIES IN AN ELEMENT - OPENMP VERSION
+  ! --- FIND THE FIRST ELEMENT THAT A POINT (XP,YP) LIES IN - OPENMP VERSION
   ! -------------------------------------------------------------
   FUNCTION ContainedInElement_OMP(Grid,XP,YP) RESULT(iElem)
     TYPE(GridType),INTENT(IN) :: Grid
@@ -1414,28 +1413,29 @@ CONTAINS
     INTEGER                   :: iElem
 
     !Local variables
-    INTEGER           :: NVertex,indxElem,indxVertex,NElements,iEndElem,iBeginElem
+    INTEGER           :: NVertex,indxElem,indxVertex,NElements,iEndElem,iBeginElem,Vertex(4)
     REAL(8)           :: DotProduct,X1,Y1,X2,Y2,XX,YX,X(4),Y(4)
     LOGICAL           :: lInThisElem
     INTEGER,PARAMETER :: iChunkSize = 5000
 
     !Initialize
     iElem      = 0
-    NElements  = SIZE(Grid%Element)
+    NElements  = SIZE(Grid%NVertex)
     iBeginElem = 0
-    
+
     DO
         iEndElem = iBeginElem + iChunkSize
         IF (iEndElem .GT. NElements) iEndElem = NElements
         iBeginElem = iBeginElem + 1
-    
+
         !Iterate over elements
-        !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(indxElem,NVertex,X,Y,lInThisElem,indxVertex,X1,Y1,X2,Y2,XX,YX,DotProduct) IF(NElements > iChunkSize)
+        !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(indxElem,NVertex,Vertex,X,Y,lInThisElem,indxVertex,X1,Y1,X2,Y2,XX,YX,DotProduct) IF(NElements > iChunkSize)
         DO indxElem=iBeginElem,iEndElem
             IF (iElem .GT. 0) CYCLE
-            NVertex      = Grid%Element(indxElem)%NVertex
-            X(1:NVertex) = Grid%Node(Grid%Element(indxElem)%Vertex(1:NVertex))%X
-            Y(1:NVertex) = Grid%Node(Grid%Element(indxElem)%Vertex(1:NVertex))%Y
+            NVertex      = Grid%NVertex(indxElem)
+            Vertex       = Grid%Vertex(:,indxElem)
+            X(1:NVertex) = Grid%X(Vertex(1:NVertex))
+            Y(1:NVertex) = Grid%Y(Vertex(1:NVertex))
             lInThisElem  = .TRUE.
             DO indxVertex=1,NVertex
                 IF (XP .EQ. X(indxVertex)) THEN
@@ -1455,50 +1455,25 @@ CONTAINS
                 IF (DotProduct .LT. 0.0) THEN
                     lInThisElem = .FALSE.
                     EXIT
-                END IF 
+                END IF
             END DO
-            IF (lInThisElem) iElem = indxElem
+            IF (lInThisElem) THEN
+                iElem = indxElem
+                !$OMP FLUSH(iElem)
+            END IF
         END DO
         !$OMP END PARALLEL DO
-        
+
         IF (iElem .GT. 0) EXIT
         iBeginElem = iEndElem
-    
+
     END DO
-    
-  CONTAINS
-
-    ! ############################################
-    ! --- SUBROUTINE THAT FINDS INTERSECTION BETWEEN ELEMENT FACE  
-    ! ---  LINE AND LINE PERPENDICULAR TO IT AND CROSSES (XP,YP)
-    ! ############################################
-    SUBROUTINE XPoint(X1,Y1,X2,Y2,XP,YP,XX,YX)
-      REAL(8),INTENT(IN)  :: X1,Y1,X2,Y2,XP,YP
-      REAL(8),INTENT(OUT) :: XX,YX
-
-      !Local variables
-      REAL(8)::SLOPEL,SLOPEG
-
-      IF (X1.NE.X2 .AND. Y1.NE.Y2) THEN
-        SLOPEL = (Y2-Y1)/(X2-X1)
-        SLOPEG = -1D0/SLOPEL
-        XX     = (SLOPEL*X1-SLOPEG*XP+YP-Y1)/(SLOPEL-SLOPEG)
-        YX     = SLOPEG*XX - SLOPEG*XP + YP
-      ELSEIF (X1 .EQ. X2) THEN
-        XX=X1
-        YX=YP
-      ELSEIF (Y1 .EQ. Y2) THEN
-        XX=XP
-        YX=Y1
-      END IF
-
-    END SUBROUTINE XPoint
 
   END FUNCTION ContainedInElement_OMP
 
 
   ! -------------------------------------------------------------
-  ! --- SUBROUTINE THAT CHECKS IF POINT (XP,YP) LIES IN AN ELEMENT - SEQUENTIAL VERSION
+  ! --- FIND THE FIRST ELEMENT THAT A POINT (XP,YP) LIES IN - SEQUENTIAL VERSION
   ! -------------------------------------------------------------
   FUNCTION ContainedInElement_Sequential(Grid,XP,YP) RESULT(iElem)
     TYPE(GridType),INTENT(IN) :: Grid
@@ -1506,18 +1481,19 @@ CONTAINS
     INTEGER                   :: iElem
 
     !Local variables
-    INTEGER :: NVertex,indxElem,indxVertex
+    INTEGER :: NVertex,indxElem,indxVertex,Vertex(4)
     REAL(8) :: DotProduct,X1,Y1,X2,Y2,XX,YX,X(4),Y(4)
     LOGICAL :: lInThisElem
 
     !Initialize
     iElem = 0
-    
+
     !Iterate over elements
-    DO indxElem=1,SIZE(Grid%Element)
-        NVertex      = Grid%Element(indxElem)%NVertex
-        X(1:NVertex) = Grid%Node(Grid%Element(indxElem)%Vertex(1:NVertex))%X
-        Y(1:NVertex) = Grid%Node(Grid%Element(indxElem)%Vertex(1:NVertex))%Y
+    DO indxElem=1,SIZE(Grid%NVertex)
+        NVertex      = Grid%NVertex(indxElem)
+        Vertex       = Grid%Vertex(:,indxElem)
+        X(1:NVertex) = Grid%X(Vertex(1:NVertex))
+        Y(1:NVertex) = Grid%Y(Vertex(1:NVertex))
         lInThisElem  = .TRUE.
         DO indxVertex=1,NVertex
             IF (XP .EQ. X(indxVertex)) THEN
@@ -1528,6 +1504,9 @@ CONTAINS
             IF (indxVertex .LT. NVertex) THEN
                 X2 = X(indxVertex+1)
                 Y2 = Y(indxVertex+1)
+                IF (XP .EQ. X2) THEN
+                    IF (YP .EQ. Y2) EXIT
+                END IF        
             ELSE
                 X2 = X(1)
                 Y2 = Y(1)
@@ -1537,42 +1516,42 @@ CONTAINS
             IF (DotProduct .LT. 0.0) THEN
                 lInThisElem = .FALSE.
                 EXIT
-            END IF 
+            END IF
         END DO
         IF (lInThisElem) THEN
             iElem = indxElem
             RETURN
         END IF
     END DO
-    
-  CONTAINS
 
-    ! ############################################
-    ! --- SUBROUTINE THAT FINDS INTERSECTION BETWEEN ELEMENT FACE  
-    ! ---  LINE AND LINE PERPENDICULAR TO IT AND CROSSES (XP,YP)
-    ! ############################################
-    SUBROUTINE XPoint(X1,Y1,X2,Y2,XP,YP,XX,YX)
-      REAL(8),INTENT(IN)  :: X1,Y1,X2,Y2,XP,YP
-      REAL(8),INTENT(OUT) :: XX,YX
+  END FUNCTION ContainedInElement_Sequential
+  
+  
+  ! -------------------------------------------------------------
+  ! --- SUBROUTINE THAT FINDS INTERSECTION BETWEEN A LINE GIVEN BY [(X1,Y1),(X2,Y2)]
+  ! ---  AND A LINE PERPENDICULAR TO IT WHICH ALSO CROSSES (XP,YP)
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE XPoint(X1,Y1,X2,Y2,XP,YP,XX,YX)
+    REAL(8),INTENT(IN)  :: X1,Y1,X2,Y2,XP,YP
+    REAL(8),INTENT(OUT) :: XX,YX
 
-      !Local variables
-      REAL(8)::SLOPEL,SLOPEG
+    !Local variables
+    REAL(8)::SLOPEL,SLOPEG
 
-      IF (X1.NE.X2 .AND. Y1.NE.Y2) THEN
+    IF (X1.NE.X2 .AND. Y1.NE.Y2) THEN
         SLOPEL = (Y2-Y1)/(X2-X1)
         SLOPEG = -1D0/SLOPEL
         XX     = (SLOPEL*X1-SLOPEG*XP+YP-Y1)/(SLOPEL-SLOPEG)
         YX     = SLOPEG*XX - SLOPEG*XP + YP
-      ELSEIF (X1 .EQ. X2) THEN
-        XX=X1
-        YX=YP
-      ELSEIF (Y1 .EQ. Y2) THEN
-        XX=XP
-        YX=Y1
-      END IF
+    ELSEIF (X1 .EQ. X2) THEN
+        XX = X1
+        YX = YP
+    ELSEIF (Y1 .EQ. Y2) THEN
+        XX = XP
+        YX = Y1
+    END IF
 
-    END SUBROUTINE XPoint
+  END SUBROUTINE XPoint
 
-  END FUNCTION ContainedInElement_Sequential
-    
+
 END MODULE

@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -26,28 +26,53 @@ MODULE Package_AppPumping
                                           LogMessage                               , &
                                           EchoProgress                             , &
                                           MessageArray                             , &
-                                          iFatal                                   , &
-                                          iMessage        
-  USE TimeSeriesUtilities
-  USE GeneralUtilities
-  USE IOInterface
+                                          f_iFatal                                 , &
+                                          f_iMessage        
+  USE TimeSeriesUtilities         , ONLY: TimeStepType
+  USE GeneralUtilities            , ONLY: StripTextUntilCharacter                  , &
+                                          CleanSpecialCharacters                   , &
+                                          EstablishAbsolutePathFileName            , &
+                                          IntToText                                , &
+                                          PrepareTitle                             , &
+                                          ArrangeText                              , &
+                                          f_cLineFeed
+  USE IOInterface                 , ONLY: GenericFileType                          , & 
+                                          iGetFileType_FromName                    , &
+                                          f_iTXT                                   , &
+                                          f_iDSS                                   , & 
+                                          f_iUNKNOWN
   USE Package_Misc                , ONLY: RealTSDataInFileType                     , &
+                                          FlowDestinationType                      , &
                                           ReadTSData                               , &
-                                          iGWComp                                  , &
-                                          iSupply_Well                             , &
-                                          iSupply_ElemPump
-  USE Package_Discretization
-  USE Package_ComponentConnectors , ONLY: SupplyToDestinationType                  , &
+                                          PrepareTSDOutputFile                     , &
+                                          f_rSmoothMaxP                            , &
+                                          f_iGWComp                                , &
+                                          f_iFlowDest_Outside                      , &
+                                          f_iSupply_Well                           , &
+                                          f_iSupply_ElemPump
+  USE Package_Discretization      , ONLY: AppGridType                              , &
+                                          StratigraphyType
+  USE Package_ComponentConnectors , ONLY: SupplyType                               , &
+                                          SupplyDestinationConnectorType           , &
+                                          SupplyToDestinationType                  , &
                                           Supply_GetSupply                         , &
                                           Supply_GetDestination                    , &
                                           Supply_SetIrigFracsRead                  , &
                                           Supply_SetSupplySpecs                    , &
                                           Supply_ResetIrigFracs                    , &
                                           Supply_CheckSupplyDestinationConnection  
-  USE Class_Pumping
-  USE Class_Well
-  USE Class_ElementPumping
-  USE Class_PumpsAtElem
+  USE Class_Pumping               , ONLY: PumpingType                              , &
+                                          GetPumpPurpose                           , &
+                                          UpdatePumpValues                         , &
+                                          ComputePumpActual                        , &
+                                          DistributePumpToNodes                    , &
+                                          ComputerFPumpCol               
+  USE Class_Well                  , ONLY: WellType                                 , &
+                                          Well_New
+  USE Class_ElementPumping        , ONLY: ElemPumpType                             , &
+                                          ElemPump_New
+  USE Class_PumpsAtElem           , ONLY: PumpsAtElemType                          , &
+                                          PumpsAtElem_New
   USE Package_Matrix              , ONLY: MatrixType
   IMPLICIT NONE
   
@@ -68,15 +93,15 @@ MODULE Package_AppPumping
   ! -------------------------------------------------------------
   PRIVATE
   PUBLIC :: AppPumpingType                          , &
-            iPump_Well                              , &
-            iPump_ElemPump                          
+            f_iPump_Well                            , &
+            f_iPump_ElemPump                          
 
 
   ! -------------------------------------------------------------
   ! --- PUMPING TYPES
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER :: iPump_Well     = iSupply_Well     , &
-                       iPump_ElemPump = iSupply_ElemPump
+  INTEGER,PARAMETER :: f_iPump_Well     = f_iSupply_Well     , &
+                       f_iPump_ElemPump = f_iSupply_ElemPump
                        
                        
   ! -------------------------------------------------------------
@@ -84,27 +109,32 @@ MODULE Package_AppPumping
   ! -------------------------------------------------------------
   TYPE AppPumpingType
       PRIVATE
-      LOGICAL                           :: lThereIsPumping  = .FALSE.       !Flag to check if there is at least one pumping (negative value) is specified
-      INTEGER                           :: NWells           = 0             !Number of wells simulated
-      INTEGER                           :: NElemPumps       = 0             !Number of element pumping simulated
-      TYPE(WellType),ALLOCATABLE        :: Wells(:)                         !Well data
-      TYPE(ElemPumpType),ALLOCATABLE    :: ElemPumps(:)                     !Element pumping data
-      TYPE(PumpsAtElemType),ALLOCATABLE :: WellsAtElems(:)                  !Well IDs at (element)
-      TYPE(PumpsAtElemType),ALLOCATABLE :: ElemPumpsAtElems(:)              !Element pumping IDs at (element)
-      REAL(8),ALLOCATABLE               :: NodalPumpRequired(:,:)           !Required pumping at (node,layer) combination
-      REAL(8),ALLOCATABLE               :: NodalPumpActual(:,:)             !Actual pumping at (node,layer) combination
-      REAL(8)                           :: rPumpFactor      = 1.0           !Pumping conversion factor
-      TYPE(RealTSDataInFileType)        :: TSPumpFile                       !Relevant data for time series pumping data
+      LOGICAL                           :: lThereIsPumping  = .FALSE.                !Flag to check if there is at least one pumping (negative value) is specified
+      INTEGER                           :: NWells           = 0                      !Number of wells simulated
+      INTEGER                           :: NElemPumps       = 0                      !Number of element pumping simulated
+      TYPE(WellType),ALLOCATABLE        :: Wells(:)                                  !Well data
+      TYPE(ElemPumpType),ALLOCATABLE    :: ElemPumps(:)                              !Element pumping data
+      TYPE(PumpsAtElemType),ALLOCATABLE :: WellsAtElems(:)                           !Well IDs at (element)
+      TYPE(PumpsAtElemType),ALLOCATABLE :: ElemPumpsAtElems(:)                       !Element pumping IDs at (element)
+      REAL(8),ALLOCATABLE               :: NodalPumpRequired(:,:)                    !Required pumping at (node,layer) combination
+      REAL(8),ALLOCATABLE               :: NodalPumpActual(:,:)                      !Actual pumping at (node,layer) combination
+      REAL(8)                           :: rPumpFactor      = 1.0                    !Pumping conversion factor
+      TYPE(RealTSDataInFileType)        :: TSPumpFile                                !Relevant data for time series pumping data
+      LOGICAL                           :: lElemWellPumpingOutFile_Defined = .FALSE. !Flag to check if element and well pumping output file is defined
+      TYPE(GenericFileType)             :: ElemWellPumpingOutFile                    !Output file for element and well pumping
   CONTAINS
       PROCEDURE,PASS :: New                          
       PROCEDURE,PASS :: Kill                         
       PROCEDURE,PASS :: GetNWells                    
-      PROCEDURE,PASS :: GetNElemPumps                
+      PROCEDURE,PASS :: GetNElemPumps 
+      PROCEDURE,PASS :: GetElemPumpIDs
+      PROCEDURE,PASS :: GetWellIDs
       PROCEDURE,PASS :: GetElement                   
       PROCEDURE,PASS :: GetLayerFactors
-      PROCEDURE,PASS :: GetNodeLayerFactors
+      PROCEDURE,PASS :: GetActualNodeLayerPump_ForAPump
+      PROCEDURE,PASS :: GetPumpingPurpose
       PROCEDURE,PASS :: GetPumpDestination
-      PROCEDURE,PASS :: GetPumpingAtElementLayerNode 
+      PROCEDURE,PASS :: GetActualPumpingAtElementLayerNode 
       PROCEDURE,PASS :: GetSupply    
       PROCEDURE,PASS :: GetSupplySpecs
       PROCEDURE,PASS :: GetPumpActual                
@@ -113,19 +143,19 @@ MODULE Package_AppPumping
       PROCEDURE,PASS :: GetSubregionalRecharge       
       PROCEDURE,PASS :: GetNodalPumpActual
       PROCEDURE,PASS :: GetNodalPumpRequired
-      PROCEDURE,PASS :: GetElementalPumpActual       
+      PROCEDURE,PASS :: GetElementPumpActual       !Includes both element and well pumping at each element
       PROCEDURE,PASS :: GetiColAdjust                
       PROCEDURE,PASS :: IsDestinationToModelDomain   
-      PROCEDURE,PASS :: SetNodalPumpActual           
       PROCEDURE,PASS :: SetIrigFracsRead             
       PROCEDURE,PASS :: SetSupplySpecs               
       PROCEDURE,PASS :: ReadTSData                    => AppPumping_ReadTSData        
       PROCEDURE,PASS :: UpdatePumpDistFactors        
-      PROCEDURE,PASS :: ComputeNodalPumpActual       
       PROCEDURE,PASS :: ResetIrigFracs               
       PROCEDURE,PASS :: CheckSupplyDestinationConnection 
       PROCEDURE,PASS :: Simulate
       PROCEDURE,PASS :: ResetActualPumping
+      PROCEDURE,PASS :: RestorePumpingToReadValues
+      PROCEDURE,PASS :: PrintResults                  => PrintElemWellPumping
   END TYPE AppPumpingType 
   
 
@@ -154,8 +184,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INSTANTIATE PUMPING COMPONENT
   ! -------------------------------------------------------------
-  SUBROUTINE New(AppPumping,cFileName,cWorkingDirectory,AppGrid,Stratigraphy,TimeStep,iStat) 
+  SUBROUTINE New(AppPumping,lIsForInquiry,cFileName,cWorkingDirectory,AppGrid,Stratigraphy,TimeStep,iStat) 
     CLASS(AppPumpingType),INTENT(OUT) :: AppPumping
+    LOGICAL,INTENT(IN)                :: lIsForInquiry
     CHARACTER(LEN=*),INTENT(IN)       :: cFileName,cWorkingDirectory
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
@@ -227,17 +258,26 @@ CONTAINS
     CALL CleanSpecialCharacters(ALine)
     IF (ALine .NE. '') THEN
         CALL EstablishAbsolutePathFileName(TRIM(ALine),cWorkingDirectory,cAbsPathFileName)
-        CALL AppPumping%TSPumpFile%Init(cAbsPathFileName,'Time series pumping data file',TimeStep%TrackTime,1,.TRUE.,Factor,DummyArray,iStat=iStat)
+        CALL AppPumping%TSPumpFile%Init(cAbsPathFileName,cWorkingDirectory,'Time series pumping data file',TimeStep%TrackTime,1,.TRUE.,Factor,DummyArray,iStat=iStat)
         IF (iStat .EQ. -1) RETURN
         AppPumping%rPumpFactor = Factor(1)
+        
+        !Make sure that pumping factor is greater than or equal to zero
+        IF (AppPumping%rPumpFactor .LT. 0.0) THEN
+            MessageArray(1) = 'To avoid confusion, conversion factor in the timeseries pumping rate file cannot be less than zero!'
+            MessageArray(2) = 'Pumping must be specified as a negative value in the data columns, and recharge as a positive value.'
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
     END IF
     
     !Make sure that time series pumping data is defined if any well or element pumping is pointing a column in it
-    IF (AppPumping%TSPumpFile%File%iGetFileType() .EQ. UNKNOWN) THEN
+    IF (AppPumping%TSPumpFile%File%iGetFileType() .EQ. f_iUNKNOWN) THEN
         !Check with element pumping
         IF (AppPumping%NElemPumps .GT. 0) THEN
             IF (ANY(AppPumping%ElemPumps%iColPump.GT.0)) THEN
-                CALL SetLastMessage('Time series pumping data must be specified when element pumping refers to a column in this file!',iFatal,ThisProcedure)
+                CALL SetLastMessage('Time series pumping data must be specified when element pumping refers to a column in this file!',f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
@@ -245,7 +285,7 @@ CONTAINS
         !Check with wells
         IF (AppPumping%NWells .GT. 0) THEN
             IF (ANY(AppPumping%Wells%iColPump.GT.0)) THEN
-                CALL SetLastMessage('Time series pumping data must be specified when well pumping refers to a column in this file!',iFatal,ThisProcedure)
+                CALL SetLastMessage('Time series pumping data must be specified when well pumping refers to a column in this file!',f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
@@ -261,7 +301,7 @@ CONTAINS
               AppPumping%NodalPumpActual(NNodes,NLayers)   , &
               STAT=ErrorCode                               )
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for nodal pumping!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for nodal pumping!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -277,13 +317,140 @@ CONTAINS
     CALL AppPumping%TSPumpFile%CheckColNum('time series pumping data file',AppPumping%ElemPumps%iColPump,lCheckMinColNum=.FALSE.,iStat=iStat)     ;  IF (iStat .EQ. -1) RETURN
     CALL AppPumping%TSPumpFile%CheckColNum('time series pumping data file',AppPumping%ElemPumps%iColPumpMax,lCheckMinColNum=.FALSE.,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
     
+    !Read pumping output file name (BACKWARD COMPATIBILITY: CHECK IF ENTRY IS PROVIDED)
+    CALL PumpDataFile%ReadData(ALine,iStat)
+    IF (iStat .EQ. 0) THEN
+        ALine = ADJUSTL(StripTextUntilCharacter(ALine,'/'))
+        CALL CleanSpecialCharacters(ALine)
+        IF (ALine .NE. '') THEN
+            CALL EstablishAbsolutePathFileName(TRIM(ALine),cWorkingDirectory,cAbsPathFileName)
+            CALL InitElemWellPumpingOutFile(lIsForInquiry,cAbsPathFileName,TimeStep%Unit,AppPumping%rPumpFactor,AppGrid%AppElement%ID,AppPumping%Wells%ID,AppPumping%ElemWellPumpingOutFile,iStat)
+            IF (iStat .EQ. -1) RETURN
+            AppPumping%lElemWellPumpingOutFile_Defined = .TRUE.
+        END IF
+    ELSE
+        iStat = 0
+    END IF
+    
     !Close file
     CALL PumpDataFile%Kill()
-  
+      
   END SUBROUTINE New
   
   
+  ! -------------------------------------------------------------
+  ! ---INSTANTIATE PUMPING OUTPUT FILE
+  ! -------------------------------------------------------------
+  SUBROUTINE InitElemWellPumpingOutFile(lIsForInquiry,cFileName,cUnitT,rPumpFactor,iElemIDs,iWellIDs,OutFile,iStat)
+    LOGICAL,INTENT(IN)           :: lIsForInquiry
+    CHARACTER(LEN=*),INTENT(IN)  :: cFileName,cUnitT
+    REAL(8),INTENT(IN)           :: rPumpFactor
+    INTEGER,INTENT(IN)           :: iElemIDs(:),iWellIDs(:)
+    TYPE(GenericFileType)        :: OutFile
+    INTEGER,INTENT(OUT)          :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+26),PARAMETER :: ThisProcedure = ModName // 'InitElemWellPumpingOutFile'
+    INTEGER                                :: iNCol,indxS,indxL,indxSO,indxLO,indx,iNElements,iNWells
+    CHARACTER                              :: cFormatSpec*30,cTitleLines(1)*800,cHeaderFormat(5)*75,FPart(1)*32,   &
+                                              cDataUnit(1)*10,cDataType(1)*10
+    CHARACTER,ALLOCATABLE                  :: cHeaders(:,:)*50,CPart(:)*32,BPart(:)*32 
+    
+    !Initialize
+    iStat      = 0
+    iNElements = SIZE(iElemIDS)
+    iNWells    = SIZE(iWellIDs)
+    iNCol      = 2*(iNElements+iNWells)
+    
+    !Make sure that file is either text or DSS file
+    IF (iGetFileType_FromName(cFileName) .NE. f_iTXT) THEN
+        CALL SetLastMessage('Element/well pumping output file must be a text file!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
+    
+    !Open file
+    IF (lIsForInquiry) THEN
+        CALL OutFile%New(FileName=cFileName,InputFile=.TRUE.,IsTSFile=.TRUE.,Descriptor='ag. and urban element/well pumping output',iStat=iStat)
+        RETURN
+    ELSE
+        CALL OutFile%New(FileName=cFileName,InputFile=.FALSE.,IsTSFile=.TRUE.,Descriptor='ag. and urban element/well pumping output',iStat=iStat)
+        IF (iStat .EQ. -1) RETURN
+    END IF
+    
+    !Print-out format
+    cFormatSpec = '(A16,'//TRIM(IntToText(iNCol))//'F14.3)'
+    
+    !Title lines
+    cTitleLines(1) = 'C' // REPEAT('-',100)
+    cTitleLines(1) = TRIM(cTitleLines(1)) // f_cLineFeed // 'C                    AGRICULTURAL AND URBAN PUMPING AT ELEMENTS AND WELLS'
+    cTitleLines(1) = TRIM(cTitleLines(1)) // f_cLineFeed // 'C                         (UNIT=Same as in Input Pumping Rate File)'
+    cTitleLines(1) = TRIM(cTitleLines(1)) // f_cLineFeed // 'C' // REPEAT('-',100)
+    WRITE (cTitleLines(1),'(A,I14,A)')   TRIM(cTitleLines(1))//f_cLineFeed,iNCol      ,'      / NCOLPUMP' 
+    WRITE (cTitleLines(1),'(A,F14.2,A)') TRIM(cTitleLines(1))//f_cLineFeed,rPumpFactor,'      / FACTPUMP' 
+    WRITE (cTitleLines(1),'(A,I14,A)')   TRIM(cTitleLines(1))//f_cLineFeed,1          ,'      / NSPPUMP' 
+    WRITE (cTitleLines(1),'(A,I14,A)')   TRIM(cTitleLines(1))//f_cLineFeed,0          ,'      / NFQPUMP'
+    WRITE (cTitleLines(1),'(A,14X,A)')   TRIM(cTitleLines(1))//f_cLineFeed            ,'      / DSSFL' 
+    cTitleLines(1) = TRIM(cTitleLines(1)) // f_cLineFeed // 'C' // REPEAT('-',100)
+    
+    !Column headers and format
+    ALLOCATE (cHeaders(5,1+2*(iNElements+iNWells)))
+    cHeaders(1,1) = 'C   TYPE'  
+      indxS = 2          ;  indxL = indxS + iNElements - 1  ;  cHeaders(1,indxS:indxL) = 'Elem_Ag'  
+      indxS = indxL + 1  ;  indxL = indxS + iNElements - 1  ;  cHeaders(1,indxS:indxL) = 'Elem_Urb'
+      indxS = indxL + 1  ;  indxL = indxS + iNWells - 1     ;  cHeaders(1,indxS:indxL) = 'Well_Ag'
+      indxS = indxL + 1  ;  indxL = indxS + iNWells - 1     ;  cHeaders(1,indxS:indxL) = 'Well_Urb'
+    cHeaders(2,1) = 'C   ELEMENT/WELL'
+      indxS = 2          ;  indxL = indxS + iNElements - 1  ;  cHeaders(2,indxS:indxL) = [(TRIM(IntToText(iElemIDs(indx))),indx=1,iNElements)]  ;  indxSO = indxS  ;  indxLO = indxL
+      indxS = indxL + 1  ;  indxL = indxS + iNElements - 1  ;  cHeaders(2,indxS:indxL) = cHeaders(2,indxSO:indxLO)  
+      indxS = indxL + 1  ;  indxL = indxS + iNWells - 1     ;  cHeaders(2,indxS:indxL) = [(TRIM(IntToText(iWellIDs(indx))),indx=1,iNWells)]  ;  indxSO = indxS  ;  indxLO = indxL 
+      indxS = indxL + 1  ;  indxL = indxS + iNWells - 1     ;  cHeaders(2,indxS:indxL) = cHeaders(2,indxSO:indxLO)
+    cHeaders(3,1) = 'C   COLUMN'
+      cHeaders(3,2:) = [(TRIM(IntTotext(indx)),indx=1,iNCol)]
+    cHeaders(4,1) = 'C      TIME'
+      cHeaders(4,2:) = ''
+    cHeaders(5,1) = 'C' // REPEAT('-',15)
+      cHeaders(5,2:) = REPEAT('-',50)
+    cHeaderFormat(1) = '(A8,8X,' // TRIM(IntToText(iNCol)) // 'A14)' 
+    cHeaderFormat(2) = '(A16,' // TRIM(IntTotext(iNCol)) // 'A14)'
+    cHeaderFormat(3) = '(A10,6X,' // TRIM(INTToText(iNCol)) // 'A14)'
+    cHeaderFormat(4) = '(' // TRIM(IntToText(iNCol+1)) // 'A)'
+    cHeaderFormat(5) = '(A16,' // TRIM(IntToText(iNCol)) // 'A14)'
+    
+    !Data unit and type for DSS files
+    cDataUnit = ''
+    cDataType = 'INST-VAL'
+     
+    !B, C and F parts for DSS files
+    ALLOCATE (BPart(iNCol) , CPart(iNCol))
+    indxS = 1          ;  indxL = indxS + iNElements - 1  ;  BPart(indxS:indxL) = [('E:'//TRIM(IntToText(iElemIDs(indx))),indx=1,iNElements)]  ;  CPart(indxS:indxL) = 'PUMPING_AG'  ;  indxSO = indxS  ; indxLO = indxL  
+    indxS = indxL + 1  ;  indxL = indxS + iNElements - 1  ;  BPart(indxS:indxL) = BPart(indxSO:indxLO)  ;  CPart(indxS:indxL) = 'PUMPING_URB'
+    indxS = indxL + 1  ;  indxL = indxS + iNWells - 1     ;  BPart(indxS:indxL) = [('WELL:'//TRIM(IntToText(iWellIDs(indx))),indx=1,iNWells)]  ;  CPart(indxS:indxL) = 'PUMPING_AG'  ;  indxSO = indxS  ; indxLO = indxL 
+    indxS = indxL + 1  ;  indxL = indxS + iNWells - 1     ;  BPart(indxS:indxL) = BPart(indxSO:indxLO)  ;  CPart(indxS:indxL) = 'PUMPING_URB'
+    FPart = 'ELEM_WELL_PUMPING'
+    
+    !Prepare the time series output file
+    CALL PrepareTSDOutputFile(OutFile                                           , &
+                              NColumnsOfData          = iNCol                   , &
+                              NRowsOfData             = 1                       , &
+                              OverwriteNColumnsOfData = .FALSE.                 , &
+                              FormatSpec              = TRIM(cFormatSpec)       , &
+                              Title                   = cTitleLines             , &
+                              Header                  = cHeaders                , &
+                              HeaderFormat            = cHeaderFormat           , &
+                              PrintColumnNo           = .FALSE.                 , &
+                              DataUnit                = cDataUnit               , &
+                              DataType                = cDataType               , &
+                              CPart                   = CPart                   , &
+                              FPart                   = FPart                   , &
+                              UnitT                   = cUnitT                  , &
+                              MiscArray               = BPart                   , &
+                              iStat                   = iStat                   )
 
+  END SUBROUTINE InitElemWellPumpingOutFile
+  
+  
+  
 
 ! ******************************************************************
 ! ******************************************************************
@@ -302,7 +469,8 @@ CONTAINS
     CLASS(AppPumpingType) :: AppPumping
     
     !Local variables
-    INTEGER :: ErrorCode
+    INTEGER              :: ErrorCode
+    TYPE(AppPumpingType) :: Dummy
     
     DEALLOCATE (AppPumping%Wells                 , &
                 AppPumping%ElemPumps             , &
@@ -313,12 +481,15 @@ CONTAINS
                 STAT=ErrorCode                   ) 
     CALL AppPumping%TSPumpFile%Close()
     
-    !Set the attributes to their default values
-    AppPumping%lThereIsPumping = .FALSE.
-    AppPumping%NWells          = 0
-    AppPumping%NElemPumps      = 0
-    AppPumping%rPumpFactor     = 1.0    
+    !Close element/well pumping output file
+    CALL AppPumping%ElemWellPumpingOutFile%Kill()
   
+    !Set the attributes to their default values
+    SELECT TYPE (p => AppPumping)
+        TYPE IS (AppPumpingType)
+            p = Dummy
+    END SELECT
+        
   END SUBROUTINE Kill
   
   
@@ -335,6 +506,25 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
+  ! --- GET THE PURPOSE OF PUMPING (IF IT SERVES AG, URBAN OR BOTH) BEFORE SUPPLY ADJUSTMENT
+  ! -------------------------------------------------------------
+  SUBROUTINE GetPumpingPurpose(AppPumping,iPumpType,iPumps,iAgOrUrban,iStat)
+    CLASS(AppPumpingType),INTENT(IN) :: AppPumping
+    INTEGER,INTENT(IN)               :: iPumpType,iPumps(:)
+    INTEGER,INTENT(OUT)              :: iAgOrUrban(:),iStat
+    
+    SELECT CASE (iPumpType)
+        CASE (f_iPump_Well)
+            CALL GetPumpPurpose(AppPumping%Wells(iPumps),iAgOrUrban,iStat)
+            
+        CASE (f_iPump_ElemPump)
+            CALL GetPumpPurpose(AppPumping%ElemPumps(iPumps),iAgOrUrban,iStat)
+    END SELECT
+    
+  END SUBROUTINE GetPumpingPurpose
+  
+  
+  ! -------------------------------------------------------------
   ! --- GET SUPPLY DESTINATIONS
   ! -------------------------------------------------------------
   SUBROUTINE GetPumpDestination(AppPumping,iPumpType,Destination)
@@ -343,10 +533,10 @@ CONTAINS
     TYPE(FlowDestinationType),ALLOCATABLE :: Destination(:)
     
     SELECT CASE (iPumpType)
-        CASE (iPump_Well)
+        CASE (f_iPump_Well)
             CALL Supply_GetDestination(AppPumping%Wells , Destination)
             
-        CASE (iPump_ElemPump)
+        CASE (f_iPump_ElemPump)
             CALL Supply_GetDestination(AppPumping%ElemPumps , Destination)
             
         END SELECT
@@ -363,11 +553,11 @@ CONTAINS
     TYPE(SupplyType),ALLOCATABLE,INTENT(OUT) :: SupplySpecs(:)
     
     SELECT CASE (iPumpType)
-        CASE (iPump_Well)
+        CASE (f_iPump_Well)
             ALLOCATE (SupplySpecs(AppPumping%NWells))
             SupplySpecs = AppPumping%Wells%SupplyType
         
-        CASE (iPump_ElemPump)
+        CASE (f_iPump_ElemPump)
             ALLOCATE (SupplySpecs(AppPumping%NElemPumps))
             SupplySpecs = AppPumping%ElemPumps%SupplyType
     END SELECT
@@ -376,9 +566,9 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
-  ! --- GET ACTUAL PUMPING AT ALL ELEMENTS
+  ! --- GET ACTUAL PUMPING AT ALL ELEMENTS (INCLUDES ELEMENT AND WELL PUMPING)
   ! -------------------------------------------------------------
-  FUNCTION GetElementalPumpActual(AppPumping,NElems) RESULT(ElemPumpActual)
+  FUNCTION GetElementPumpActual(AppPumping,NElems) RESULT(ElemPumpActual)
     CLASS(AppPumpingType),INTENT(IN) :: AppPumping
     INTEGER,INTENT(IN)               :: NElems
     REAL(8)                          :: ElemPumpActual(NElems)
@@ -413,7 +603,7 @@ CONTAINS
       
     END SUBROUTINE Compute    
     
-  END FUNCTION GetElementalPumpActual
+  END FUNCTION GetElementPumpActual
   
   
   ! -------------------------------------------------------------
@@ -533,10 +723,10 @@ CONTAINS
     INTEGER,INTENT(OUT)              :: iColAdjust(:)
     
     SELECT CASE (iPumpType)
-      CASE (iPump_Well)
+      CASE (f_iPump_Well)
         iColAdjust = AppPumping%Wells%SupplyType%iColAdjust
         
-      CASE (iPump_ElemPump)
+      CASE (f_iPump_ElemPump)
         iColAdjust = AppPumping%ElemPumps%SupplyType%iColAdjust 
     END SELECT
     
@@ -553,22 +743,25 @@ CONTAINS
     REAL(8),INTENT(OUT)                     :: PumpRequired(:),PumpMax(:),PumpActual(:),IrigFracs(:)
     
     !Local variables
+    INTEGER                    :: indx  
     CLASS(PumpingType),POINTER :: pPumping(:)
     
     !Initialize
     SELECT CASE (iPumpType)
-        CASE (iPump_Well)
+        CASE (f_iPump_Well)
             pPumping => AppPumping%Wells
-        CASE (iPump_ElemPump)
+        CASE (f_iPump_ElemPump)
             pPumping => AppPumping%ElemPumps
     END SELECT
     
     !Assign values to return variables
-    iColAdjust   = pPumping%iColAdjust
-    PumpRequired = pPumping%SupplyRequired
-    PumpMax      = -pPumping%PumpMax
-    PumpActual   = pPumping%SupplyActual
-    IrigFracs    = pPumping%IrigFrac
+    DO indx=1,SIZE(pPumping)
+        iColAdjust(indx)   = pPumping(indx)%iColAdjust
+        PumpRequired(indx) = pPumping(indx)%SupplyRequired
+        PumpMax(indx)      = -pPumping(indx)%PumpMax
+        PumpActual(indx)   = pPumping(indx)%SupplyActual
+        IrigFracs(indx)    = pPumping(indx)%IrigFrac
+    END DO
     
     !Clear pointer
     NULLIFY(pPumping)
@@ -601,6 +794,30 @@ CONTAINS
   
    
   ! -------------------------------------------------------------
+  ! --- GET WELL IDs
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetWellIDs(AppPumping,IDs)
+    CLASS(AppPumpingType),INTENT(IN) :: AppPumping
+    INTEGER,INTENT(OUT)              :: IDs(:)
+    
+    IDs = AppPumping%Wells%ID
+    
+  END SUBROUTINE GetWellIDs
+  
+   
+  ! -------------------------------------------------------------
+  ! --- GET ELEMENT PUMPING IDs
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetElemPumpIDs(AppPumping,IDs)
+    CLASS(AppPumpingType),INTENT(IN) :: AppPumping
+    INTEGER,INTENT(OUT)              :: IDs(:)
+    
+    IDs = AppPumping%ElemPumps%ID
+    
+  END SUBROUTINE GetElemPumpIDs
+  
+   
+  ! -------------------------------------------------------------
   ! --- GET ELEMENT NUMBER WHERE PUMPING OCCURS 
   ! -------------------------------------------------------------
   PURE FUNCTION GetElement(AppPumping,indxPump,iPumpType) RESULT(iElem)
@@ -609,10 +826,10 @@ CONTAINS
     INTEGER                          :: iElem
     
     SELECT CASE (iPumpType)
-      CASE (iPump_Well)
+      CASE (f_iPump_Well)
         iElem = AppPumping%Wells(indxPump)%Element
         
-      CASE (iPump_ElemPump)
+      CASE (f_iPump_ElemPump)
         iElem = AppPumping%ElemPumps(indxPump)%Element
       
     END SELECT
@@ -629,10 +846,10 @@ CONTAINS
     REAL(8),INTENT(OUT)              :: Factors(:)
     
     SELECT CASE (iPumpType)
-      CASE (iPump_Well)
+      CASE (f_iPump_Well)
         Factors = AppPumping%Wells(indxPump)%rLayerFactor
         
-      CASE (iPump_ElemPump)
+      CASE (f_iPump_ElemPump)
         Factors = AppPumping%ElemPumps(indxPump)%rLayerFactor
       
     END SELECT
@@ -641,29 +858,37 @@ CONTAINS
 
 
   ! -------------------------------------------------------------
-  ! --- GET PUMPING NODE-LAYER FACTORS 
+  ! --- GET ACTUAL PUMPING AT NODES AND LAYERS FOR A PUMP 
   ! -------------------------------------------------------------
-  PURE SUBROUTINE GetNodeLayerFactors(AppPumping,indxPump,iPumpType,Factors)
+  PURE SUBROUTINE GetActualNodeLayerPump_ForAPump(AppPumping,indxPump,iPumpType,rPump)
     CLASS(AppPumpingType),INTENT(IN) :: AppPumping
     INTEGER,INTENT(IN)               :: indxPump,iPumpType
-    REAL(8),INTENT(OUT)              :: Factors(:,:)
+    REAL(8),INTENT(OUT)              :: rPump(:,:)
     
     SELECT CASE (iPumpType)
-      CASE (iPump_Well)
-        Factors = AppPumping%Wells(indxPump)%rNodePumpFactor
-        
-      CASE (iPump_ElemPump)
-        Factors = AppPumping%ElemPumps(indxPump)%rNodePumpFactor
+        CASE (f_iPump_Well)
+            IF (AppPumping%Wells(indxPump)%SupplyActual .EQ. 0.0) THEN
+                rPump = 0.0
+            ELSE
+                rPump = AppPumping%Wells(indxPump)%rNodePumpActual / AppPumping%Wells(indxPump)%SupplyActual
+            END IF
+          
+        CASE (f_iPump_ElemPump)
+            IF (AppPumping%ElemPumps(indxPump)%SupplyActual .EQ. 0.0) THEN
+                rPump = 0.0
+            ELSE
+                rPump = AppPumping%ElemPumps(indxPump)%rNodePumpActual / AppPumping%ElemPumps(indxPump)%SupplyActual
+            END IF
       
     END SELECT
     
-  END SUBROUTINE GetNodeLayerFactors
+  END SUBROUTINE GetActualNodeLayerPump_ForAPump
   
   
   ! -------------------------------------------------------------
-  ! --- GET PUMPING AT (ELEMENT,LAYER) 
+  ! --- GET ACTUAL PUMPING AT (ELEMENT,LAYER) 
   ! -------------------------------------------------------------
-  FUNCTION GetPumpingAtElementLayerNode(AppPumping,iElem,iLayer,indxNode,iPumpType) RESULT(Pumping)
+  FUNCTION GetActualPumpingAtElementLayerNode(AppPumping,iElem,iLayer,indxNode,iPumpType) RESULT(Pumping)
     CLASS(AppPumpingType),TARGET,INTENT(IN) :: AppPumping
     INTEGER,INTENT(IN)                      :: iElem,iLayer,indxNode,iPumpType
     REAL(8)                                 :: Pumping
@@ -677,29 +902,25 @@ CONTAINS
     Pumping = 0.0
     
     SELECT CASE (iPumpType)
-      CASE (iPump_ElemPump)
-        PumpsAtElem =  AppPumping%ElemPumpsAtElems(iElem)
-        pPumps      => AppPumping%ElemPumps%PumpingType
-    
-      CASE (iPump_Well)
-        PumpsAtElem =  AppPumping%WellsAtElems(iElem)
-        pPumps      => AppPumping%Wells%PumpingType
+        CASE (f_iPump_ElemPump)
+            PumpsAtElem =  AppPumping%ElemPumpsAtElems(iElem)
+            pPumps      => AppPumping%ElemPumps%PumpingType
+        
+        CASE (f_iPump_Well)
+            PumpsAtElem =  AppPumping%WellsAtElems(iElem)
+            pPumps      => AppPumping%Wells%PumpingType
 
     END SELECT
     
     DO indxPump=1,PumpsAtElem%nPumps
-      iPump   = PumpsAtElem%iPumpIDs(indxPump)
-      IF (pPumps(iPump)%PumpRead .GT. 0.0) THEN
-          Pumping = Pumping + pPumps(iPump)%PumpRead * pPumps(iPump)%rNodePumpFactor(indxNode,iLayer)
-      ELSE
-          Pumping = Pumping - pPumps(iPump)%SupplyActual * pPumps(iPump)%rNodePumpFactor(indxNode,iLayer)
-      END IF
+        iPump   = PumpsAtElem%iPumpIDs(indxPump)
+        Pumping = Pumping + pPumps(iPump)%rNodePumpActual(indxNode,iLayer)
     END DO
     
     !Release memory
     NULLIFY(pPumps)
 
-  END FUNCTION GetPumpingAtElementLayerNode
+  END FUNCTION GetActualPumpingAtElementLayerNode
   
   
   ! -------------------------------------------------------------
@@ -742,7 +963,7 @@ CONTAINS
     DEALLOCATE (PumpActual , STAT=ErrorCode)
     
     SELECT CASE (iPumpType)
-      CASE (iPump_Well)
+      CASE (f_iPump_Well)
         ALLOCATE (PumpActual(AppPumping%NWells))
         DO indxPump=1,AppPumping%NWells
             IF (AppPumping%Wells(indxPump)%PumpRead .GT. 0.0) THEN
@@ -752,7 +973,7 @@ CONTAINS
             END IF
         END DO
         
-      CASE (iPump_ElemPump)
+      CASE (f_iPump_ElemPump)
         ALLOCATE (PumpActual(AppPumping%NElemPumps))
         DO indxPump=1,AppPumping%NElemPumps
             IF (AppPumping%ElemPumps(indxPump)%PumpRead .GT. 0.0) THEN
@@ -787,51 +1008,30 @@ CONTAINS
     
     !Wells
     IF (AppPumping%NWells .GT. 0)   &
-      CALL Supply_SetIrigFracsRead(AppPumping%Wells,IrigFrac) 
+        CALL Supply_SetIrigFracsRead(AppPumping%Wells,IrigFrac) 
       
     !Element pumps
     IF (AppPumping%NElemPumps .GT. 0)   &
-      CALL Supply_SetIrigFracsRead(AppPumping%ElemPumps,IrigFrac) !AppPumping%ElemPumps,IrigFrac)
+        CALL Supply_SetIrigFracsRead(AppPumping%ElemPumps,IrigFrac) 
     
   END SUBROUTINE SetIrigFracsRead
   
   
   ! -------------------------------------------------------------
-  ! --- SET ACTUAL NODAL PUMPING
-  ! -------------------------------------------------------------
-  SUBROUTINE SetNodalPumpActual(AppPumping,AppGrid,NodalPumpActual)
-    CLASS(AppPumpingType)         :: AppPumping
-    CLASS(AppGridType),INTENT(IN) :: AppGrid
-    REAL(8),INTENT(IN)            :: NodalPumpActual(:,:)
-    
-    AppPumping%NodalPumpActual = NodalPumpActual
-    
-    IF (AppPumping%NWells .GT. 0)   &
-      CALL AccumulateNodePump(AppPumping%Wells,AppPumping%NodalPumpActual,AppPumping%NodalPumpRequired,AppGrid)
-
-    IF (AppPumping%NElemPumps .GT. 0)   &
-      CALL AccumulateNodePump(AppPumping%ElemPumps,AppPumping%NodalPumpActual,AppPumping%NodalPumpRequired,AppGrid)
-
-  END SUBROUTINE SetNodalPumpActual
-  
-  
-  ! -------------------------------------------------------------
   ! --- SET SUPPLY SPECS
   ! -------------------------------------------------------------
-  SUBROUTINE SetSupplySpecs(AppPumping,SupplyDestConnector,iPumpType,AppGrid,Stratigraphy,HHydCond,HeadGW,PumpRequired,IrigFracs,SupplyToDest)
+  SUBROUTINE SetSupplySpecs(AppPumping,SupplyDestConnector,iPumpType,PumpRequired,IrigFracs,SupplyToDest)
     CLASS(AppPumpingType)                    :: AppPumping
     TYPE(SupplyDestinationConnectorType)     :: SupplyDestConnector
     INTEGER,INTENT(IN)                       :: iPumpType
-    TYPE(AppGridType),INTENT(IN)             :: AppGrid
-    TYPE(StratigraphyType),INTENT(IN)        :: Stratigraphy
-    REAL(8),INTENT(IN)                       :: HHydCond(:,:),HeadGW(:,:),PumpRequired(:),IrigFracs(:)
+    REAL(8),INTENT(IN)                       :: PumpRequired(:),IrigFracs(:)
     TYPE(SupplyToDestinationType),INTENT(IN) :: SupplyToDest(:)
     
     SELECT CASE (iPumpType)
-        CASE (iPump_Well)
+        CASE (f_iPump_Well)
             CALL Supply_SetSupplySpecs(AppPumping%Wells,SupplyDestConnector,PumpRequired,IrigFracs,SupplyToDest)
         
-        CASE (iPump_ElemPump)
+        CASE (f_iPump_ElemPump)
             CALL Supply_SetSupplySpecs(AppPumping%ElemPumps,SupplyDestConnector,PumpRequired,IrigFracs,SupplyToDest)
         
     END SELECT
@@ -872,7 +1072,7 @@ CONTAINS
     iStat = 0
     
     !Return if time-series pumping file is not defined; but calculate the nodal pumping distribution in case pumping was defined outside IWFM by an external program
-    IF (AppPumping%TSPumpFile%File%iGetFileType() .EQ. UNKNOWN) THEN
+    IF (AppPumping%TSPumpFile%File%iGetFileType() .EQ. f_iUNKNOWN) THEN
         CALL DistPumpToNodes(AppGrid,Stratigraphy,HHydCond,HeadGW,AppPumping)
         RETURN
     END IF
@@ -887,26 +1087,12 @@ CONTAINS
       CASE (-1)
         !If pumping was adjusted, re-define required and actual pumping as previously read values
         IF (lPumpAdjusted) THEN
-            !Element pumps
-            DO indxPump=1,AppPumping%NElemPumps
-                IF (AppPumping%ElemPumps(indxPump)%PumpRead .LE. 0.0) THEN
-                    AppPumping%ElemPumps(indxPump)%SupplyRequired = -AppPumping%ElemPumps(indxPump)%PumpRead
-                    AppPumping%ElemPumps(indxPump)%SupplyActual   = AppPumping%ElemPumps(indxPump)%SupplyRequired
-                END IF
-            END DO
-            !Wells
-            DO indxPump=1,AppPumping%NWells
-                IF (AppPumping%Wells(indxPump)%PumpRead .LE. 0.0) THEN
-                    AppPumping%Wells(indxPump)%SupplyRequired = -AppPumping%Wells(indxPump)%PumpRead
-                    AppPumping%Wells(indxPump)%SupplyActual   = AppPumping%Wells(indxPump)%SupplyRequired
-                END IF
-            END DO
-            CALL DistPumpToNodes(AppGrid,Stratigraphy,HHydCond,HeadGW,AppPumping)
+            CALL AppPumping%RestorePumpingToReadValues(AppGrid,Stratigraphy,HHydCond,HeadGW)
         !In case actual pumping was different than required, equate actual to required
         ELSE
-          AppPumping%ElemPumps%SupplyActual = AppPumping%ElemPumps%SupplyRequired
-          AppPumping%Wells%SupplyActual     = AppPumping%Wells%SupplyRequired
-          CALL DistPumpToNodes(AppGrid,Stratigraphy,HHydCond,HeadGW,AppPumping)
+            AppPumping%ElemPumps%SupplyActual = AppPumping%ElemPumps%SupplyRequired
+            AppPumping%Wells%SupplyActual     = AppPumping%Wells%SupplyRequired
+            CALL DistPumpToNodes(AppGrid,Stratigraphy,HHydCond,HeadGW,AppPumping)
         END IF
         
       !Data was read with no problem
@@ -921,22 +1107,81 @@ CONTAINS
     !Set the flag to check if there is pumping (i.e. supply is positive) defined
     AppPumping%lThereIsPumping = .FALSE.
     DO indxPump=1,AppPumping%NWells
-      IF (AppPumping%Wells(indxPump)%SupplyRequired .GT. 0.0) THEN
-        AppPumping%lThereIsPumping = .TRUE.
-        EXIT
-      END IF 
+        IF (AppPumping%Wells(indxPump)%SupplyRequired .GT. 0.0) THEN
+            AppPumping%lThereIsPumping = .TRUE.
+            EXIT
+        END IF 
     END DO
     IF (.NOT. AppPumping%lThereIsPumping) THEN
-      DO indxPump=1,AppPumping%NElemPumps
-        IF (AppPumping%ElemPumps(indxPump)%SupplyRequired .GT. 0.0) THEN
-          AppPumping%lThereIsPumping = .TRUE.
-          EXIT
-        END IF 
-      END DO
+        DO indxPump=1,AppPumping%NElemPumps
+            IF (AppPumping%ElemPumps(indxPump)%SupplyRequired .GT. 0.0) THEN
+                AppPumping%lThereIsPumping = .TRUE.
+                EXIT
+            END IF 
+        END DO
     END IF
       
   END SUBROUTINE AppPumping_ReadTSData
   
+  
+  
+  
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+! ***
+! *** DATA WRITERS
+! ***
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+
+  ! -------------------------------------------------------------
+  ! --- PRINT ELEMENT AND WELL LEVEL PUMPING 
+  ! -------------------------------------------------------------
+  SUBROUTINE PrintElemWellPumping(AppPumping,iNElements,lEndOfSimulation,TimeStep)
+    CLASS(AppPumpingType)         :: AppPumping
+    INTEGER,INTENT(IN)            :: iNElements
+    LOGICAL,INTENT(IN)            :: lEndOfSimulation
+    TYPE(TimeStepType),INTENT(IN) :: TimeStep
+     
+    !Local variables
+    INTEGER   :: indxPump,iElem,iNWells
+    REAL(8)   :: rDummyArray(2*(iNElements+AppPumping%NWells)),rPumpFactor
+    CHARACTER :: cSimulationTime*21
+    
+    IF (.NOT. AppPumping%lElemWellPumpingOutFile_Defined) RETURN
+    
+    !Initailize
+    iNWells                     = AppPumping%NWells
+    rDummyArray(1:2*iNElements) = 0.0
+    rPumpFactor                 = 1D0 / AppPumping%rPumpFactor
+    
+    !Process ag and urban element pumping
+    DO indxPump=1,AppPumping%NElemPumps
+        iElem                         = AppPumping%ElemPumps(indxPump)%Element
+        rDummyArray(iElem)            = rDummyArray(iElem) - AppPumping%ElemPumps(indxPump)%SupplyActual * AppPumping%ElemPumps(indxPump)%IrigFrac * rPumpFactor
+        rDummyArray(iNElements+iElem) = rDummyArray(iNElements+iElem) - AppPumping%ElemPumps(indxPump)%SupplyActual * (1D0 - AppPumping%ElemPumps(indxPump)%IrigFrac) * rPumpFactor
+    END DO
+    
+    !Process ag and urban well pumping
+    DO indxPump=1,AppPumping%NWells
+        rDummyArray(2*iNElements+indxPump)         = -AppPumping%Wells(indxPump)%SupplyActual * AppPumping%Wells(indxPump)%IrigFrac * rPumpFactor
+        rDummyArray(2*iNElements+iNWells+indxPump) = -AppPumping%Wells(indxPump)%SupplyActual * (1D0 - AppPumping%Wells(indxPump)%IrigFrac) * rPumpFactor
+    END DO
+    
+    !Create the simulation time
+    IF (TimeStep%TrackTime) THEN
+        cSimulationTime = ADJUSTL(TimeStep%CurrentDateAndTime)
+    ELSE
+        WRITE(cSimulationTime,'(F10.2,1X,A10)') TimeStep%CurrentTime,ADJUSTL(TimeStep%Unit)
+    END IF
+
+    !Print out the results
+    CALL AppPumping%ElemWellPumpingOutFile%WriteData(cSimulationTime,rDummyArray,FinalPrint=lEndOfSimulation)
+    
+
+  END SUBROUTINE PrintElemWellPumping
   
   
   
@@ -950,6 +1195,40 @@ CONTAINS
 ! ******************************************************************
 ! ******************************************************************
 
+  ! -------------------------------------------------------------
+  ! --- RESTORE PUMPING TO READ VALUES
+  ! -------------------------------------------------------------
+  SUBROUTINE RestorePumpingToReadValues(AppPumping,AppGrid,Stratigraphy,HHydCond,HeadGW)
+    CLASS(AppPumpingType)             :: AppPumping
+    TYPE(AppGridType),INTENT(IN)      :: AppGrid
+    TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
+    REAL(8),INTENT(IN)                :: HHydCond(:,:),HeadGW(:,:)
+    
+    !Local variables
+    INTEGER :: indxPump
+    
+    !Element pumps
+    DO indxPump=1,AppPumping%NElemPumps
+        IF (AppPumping%ElemPumps(indxPump)%PumpRead .LE. 0.0) THEN
+            AppPumping%ElemPumps(indxPump)%SupplyRequired = -AppPumping%ElemPumps(indxPump)%PumpRead
+            AppPumping%ElemPumps(indxPump)%SupplyActual   = AppPumping%ElemPumps(indxPump)%SupplyRequired
+        END IF
+    END DO
+    
+    !Wells
+    DO indxPump=1,AppPumping%NWells
+        IF (AppPumping%Wells(indxPump)%PumpRead .LE. 0.0) THEN
+            AppPumping%Wells(indxPump)%SupplyRequired = -AppPumping%Wells(indxPump)%PumpRead
+            AppPumping%Wells(indxPump)%SupplyActual   = AppPumping%Wells(indxPump)%SupplyRequired
+        END IF
+    END DO
+    
+    !Distribute pumping to nodes
+    CALL DistPumpToNodes(AppGrid,Stratigraphy,HHydCond,HeadGW,AppPumping)
+    
+  END SUBROUTINE RestorePumpingToReadValues
+  
+  
   ! -------------------------------------------------------------
   ! --- SET ACTUAL PUMPING TO REQUIRED PUMPING AND DISTRIBUTE PUMPING TO NODES
   ! -------------------------------------------------------------
@@ -984,7 +1263,7 @@ CONTAINS
     
     !Check wells
     DO indxPump=1,AppPumping%NWells
-      IF (AppPumping%Wells(indxPump)%Destination%iDestType .NE. FlowDest_Outside) THEN
+      IF (AppPumping%Wells(indxPump)%Destination%iDestType .NE. f_iFlowDest_Outside) THEN
         lDest = .TRUE.
         RETURN
       END IF
@@ -992,7 +1271,7 @@ CONTAINS
     
     !Check element pumping
     DO indxPump=1,AppPumping%NElemPumps
-      IF (AppPumping%ElemPumps(indxPump)%Destination%iDestType .NE. FlowDest_Outside) THEN
+      IF (AppPumping%ElemPumps(indxPump)%Destination%iDestType .NE. f_iFlowDest_Outside) THEN
         lDest = .TRUE.
         RETURN
       END IF
@@ -1034,7 +1313,7 @@ CONTAINS
     
     !Local variables
     CHARACTER(LEN=ModNameLen+13),PARAMETER :: ThisProcedure = ModName // 'CheckActiveLayers'
-    INTEGER                                :: indx,indxElem,ErrorCode,NVertex,Vertex(4)
+    INTEGER                                :: indx,indxElem,ErrorCode,NVertex,Vertex(4),iElemID,iWellID
     
     !Initialize
     iStat     = 0
@@ -1043,11 +1322,13 @@ CONTAINS
     !Check wells
     DO indx=1,AppPumping%NWells
         indxElem = AppPumping%Wells(indx)%Element
-        NVertex  = AppGrid%Element(indxElem)%NVertex
-        Vertex   = AppGrid%Element(indxElem)%Vertex
+        NVertex  = AppGrid%NVertex(indxElem)
+        Vertex   = AppGrid%Vertex(:,indxElem)
         IF (ALL(Stratigraphy%ActiveNode(Vertex(1:NVertex),:) .EQ. .FALSE.)) THEN
-            WRITE (MessageArray(1),'(A10,i6,A12,i8)') 'Well ID = ',indx,' at element ',indxElem
-            CALL LogMessage(MessageArray(1),iMessage,ThisProcedure)
+            iWellID = AppPumping%Wells(indx)%ID
+            iElemID = AppGrid%AppElement(indxElem)%ID
+            WRITE (MessageArray(1),'(A10,i6,A12,i8)') 'Well ID = ',iWellID,' at element ',iElemID
+            CALL LogMessage(MessageArray(1),f_iMessage,ThisProcedure)
             ErrorCode = 1
         END IF
     END DO
@@ -1055,11 +1336,12 @@ CONTAINS
     !Check element pumping
     DO indx=1,AppPumping%NElemPumps
         indxElem = AppPumping%ElemPumps(indx)%Element
-        NVertex  = AppGrid%Element(indxElem)%NVertex
-        Vertex   = AppGrid%Element(indxElem)%Vertex
+        NVertex  = AppGrid%NVertex(indxElem)
+        Vertex   = AppGrid%Vertex(:,indxElem)
         IF (ALL(Stratigraphy%ActiveNode(Vertex(1:NVertex),:) .EQ. .FALSE.)) THEN
-            WRITE (MessageArray(1),'(A28,i8)') 'Elem. Pump       at element ',indxElem
-            CALL LogMessage(MessageArray(1),iMessage,ThisProcedure)
+            iElemID = AppGrid%AppElement(indxElem)%ID
+            WRITE (MessageArray(1),'(A28,i8)') 'Elem. Pump at element ',iElemID
+            CALL LogMessage(MessageArray(1),f_iMessage,ThisProcedure)
             ErrorCode = 1
         END IF
     END DO
@@ -1068,7 +1350,7 @@ CONTAINS
     IF (ErrorCode .GT. 0) THEN
         MessageArray(1) = 'Above elements for pumping have all their surrounding nodes inactive!'
         MessageArray(2) = 'Pumping at these elements are redundent.'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -1121,83 +1403,84 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- SIMULATE PUMPING BY MODIFYING THE RHS VECTOR
   ! -------------------------------------------------------------
-  SUBROUTINE Simulate(AppPumping,Matrix)
-    CLASS(AppPumpingType),INTENT(IN) :: AppPumping
-    TYPE(MatrixType)                 :: Matrix
-    
-    !Local variables
-    REAL(8) :: rUpdateValues(SIZE(AppPumping%NodalPumpActual))
-    
-    !Initialize
-    rUpdateValues = - PACK(AppPumping%NodalPumpActual , MASK=.TRUE.)
-    
-    !Update RHS vector
-    CALL Matrix%UpdateRHS(iGWComp,1,rUpdateValues)
-    
-  END SUBROUTINE Simulate
-  
-  
-  ! -------------------------------------------------------------
-  ! --- COMPUTE ACTUAL PUMPING IN CASE AQUIFER DRIES
-  ! -------------------------------------------------------------
-  SUBROUTINE ComputeNodalPumpActual(AppPumping,AppGrid,Stratigraphy,TimeStep,STOPC,HN,HP,AS_P)
+  SUBROUTINE Simulate(AppPumping,AppGrid,Stratigraphy,rStorage,rdStorage,Matrix)
     CLASS(AppPumpingType)             :: AppPumping
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
-    TYPE(TimeStepType),INTENT(IN)     :: TimeStep
-    REAL(8),INTENT(IN)                :: STOPC,HN(:,:),HP(:,:),AS_P(:,:)
+    REAL(8),INTENT(IN)                :: rStorage(:,:),rdStorage(:,:)
+    TYPE(MatrixType)                  :: Matrix
     
     !Local variables
-    INTEGER :: indxLayer,indxNode,NLayers,DeltaT
-    REAL(8) :: BottomElev,NodalPumpActual_Old(AppGrid%NNodes,Stratigraphy%NLayers), &
-               rNodalPumpActual_Old,NodalPumpRequired,rPumpNew
-    LOGICAL :: lPumpModified
-    
-    !If no pumping is defined return
-    IF (.NOT. AppPumping%lThereIsPumping) RETURN
+    INTEGER                                                      :: indxNode,indxLayer,iGWNode(1),NLayers,indx
+    REAL(8)                                                      :: rUpdateCOEFF(1),rDiffQ,rDiffQSQRT,rPumpRequired, &
+                                                                    rUpdateRHS(AppGrid%NNodes*Stratigraphy%NLayers), &
+                                                                    rStoragePos,rStor,rStorSQRT
+    REAL(8),DIMENSION(SIZE(rStorage,DIM=1),SIZE(rStorage,DIM=2)) :: rNodalPumpActual_New,rNodalPumpActual_Old
+    INTEGER,PARAMETER                                            :: iCompIDs(1) = [f_iGWComp]
     
     !Initialize
-    NLayers             = Stratigraphy%NLayers
-    DeltaT              = TimeStep%DeltaT
-    NodalPumpActual_Old = AppPumping%NodalPumpActual
-    lPumpModified       = .FALSE.
+    NLayers = Stratigraphy%NLayers
     
-    !Recompute pumping values in case a node is dried due to pumping
+    !Keep the original actual pumping
+    rNodalPumpActual_Old = AppPumping%NodalPumpActual
+    
+    !Loop through nodes and layers
+    indx = 0
     DO indxLayer=1,NLayers
-      DO indxNode=1,AppGrid%NNodes
-        rNodalPumpActual_Old = NodalPumpActual_Old(indxNode,indxLayer)
-        IF (rNodalPumpActual_Old .GE. 0.0) CYCLE
-        BottomElev        = Stratigraphy%BottomElev(indxNode,indxLayer)
-        IF (HN(indxNode,indxLayer) .EQ. HP(indxNode,indxLayer)) CYCLE
-        NodalPumpRequired = AppPumping%NodalPumpRequired(indxNode,indxLayer)
-        IF (HN(indxNode,indxLayer) .LT. BottomElev-STOPC) THEN
-          rPumpNew = MIN(-(-rNodalPumpActual_Old*DeltaT-(BottomElev-HN(indxNode,indxLayer))*AS_P(indxNode,indxLayer))/DeltaT , 0.0)
-        ELSE 
-          rPumpNew = rNodalPumpActual_Old
-          IF (NodalPumpRequired .LT. rNodalPumpActual_Old) & 
-            rPumpNew = MIN(-MIN((HN(indxNode,indxLayer)-BottomElev)*AS_P(indxNode,indxLayer) , -NodalPumpRequired*DeltaT)/DeltaT , 0.0)
-        END IF
-        rPumpNew = (rPumpNew + rNodalPumpActual_Old)/2.0
-        IF (ABS((rPumpNew - rNodalPumpActual_Old)/rNodalPumpActual_Old) .LT. STOPC) rPumpNew = rNodalPumpActual_Old
-        IF (rPumpNew .NE. rNodalPumpActual_Old) THEN
-          AppPumping%NodalPumpActual(indxNode,indxLayer) = rPumpNew 
-          lPumpModified                                  = .TRUE.
-        END IF     
-      END DO
+        DO indxNode=1,AppGrid%NNodes
+            indx = indx + 1
+            
+            !Convert the sign of required pumping to be compared to storage and applied to RHS
+            rPumpRequired = -AppPumping%NodalPumpRequired(indxNode,indxLayer)
+            
+            !If pumping is zero, cycle
+            IF (rPumpRequired .EQ. 0.0) THEN
+                rNodalPumpActual_New(indxNode,indxLayer) = 0.0
+                rUpdateRHS(indx)                         = 0.0
+                CYCLE
+            END IF
+            
+            !If this is recharge, cycle (negative sign means recharge)
+            IF (rPumpRequired .LT. 0.0) THEN
+                rNodalPumpActual_New(indxNode,indxLayer) = -rPumpRequired
+                rUpdateRHS(indx)                         = rPumpRequired
+                CYCLE
+            END IF
+            
+            !Actual pumping, limited by available storage
+            rStor                                    = rStorage(indxNode,indxLayer)
+            rStoragePos                              = MAX(rStor , 0.0)
+            rNodalPumpActual_New(indxNode,indxLayer) = rPumpRequired - MAX(rPumpRequired-rStoragePos , 0.0)
+            rUpdateRHS(indx)                         = rNodalPumpActual_New(indxNode,indxLayer)
+            
+            !Update Jacobian; use Jacobian smoothing
+            rDiffQ          = rPumpRequired - rStoragePos
+            rDiffQSQRT      = SQRT(rDiffQ*rDiffQ + f_rSmoothMaxP)
+            rStorSQRT       = SQRT(rStor*rStor + f_rSmoothMaxP)  
+            rUpdateCOEFF(1) = 0.25d0 * (1d0+rDiffQ/rDiffQSQRT) * (1d0+rStor/rStorSQRT) * rdStorage(indxNode,indxLayer)
+            iGWNode(1)      = indx
+            CALL Matrix%UpdateCOEFF(f_iGWComp,iGWNode(1),1,iCompIDs,iGWNode,rUpdateCOEFF)
+
+            !Convert sign of actual pumping back to what it is supposed to be
+            rNodalPumpActual_New(indxNode,indxLayer) = -rNodalPumpActual_New(indxNode,indxLayer)
+
+            !Store the newly computed actual pumping
+            AppPumping%NodalPumpActual(indxNode,indxLayer) = rNodalPumpActual_New(indxNode,indxLayer)
+        END DO
     END DO
     
-    !If none of the pumping is modified, return
-    IF (.NOT. lPumpModified) RETURN
-    
-    !Update element pumping and corresponding node-layer distribution factors
+    !Update RHS vector
+    CALL Matrix%UpdateRHS(f_iGWComp,1,rUpdateRHS)
+       
+    !Update element pumping and corresponding node-layer distribution factors based on new actual nodal pumping
     IF (AppPumping%NElemPumps .GT. 0) &
-      CALL UpdatePumpActualAndNodeFactors(AppPumping%ElemPumps,AppGrid,NLayers,AppPumping%NodalPumpActual,NodalPumpActual_Old)
+        CALL ComputePumpActual(AppPumping%ElemPumps,AppGrid,NLayers,rNodalPumpActual_New,AppPumping%NodalPumpRequired)
     
-    !Update well pumping and corresponding node-layer distribution factors
+    !Update well pumping and corresponding node-layer distribution factors based on new actual nodal pumping
     IF (AppPumping%NWells .GT. 0) &
-      CALL UpdatePumpActualAndNodeFactors(AppPumping%Wells,AppGrid,NLayers,AppPumping%NodalPumpActual,NodalPumpActual_Old)
+        CALL ComputePumpActual(AppPumping%Wells,AppGrid,NLayers,rNodalPumpActual_New,AppPumping%NodalPumpRequired)
     
-  END SUBROUTINE ComputeNodalPumpActual
+  END SUBROUTINE Simulate
   
   
   ! -------------------------------------------------------------

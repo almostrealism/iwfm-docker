@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,9 +21,10 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE UnsatZoneOps
+  USE GeneralUtilities   , ONLY: FEXP
   USE RainfallRunoff     , ONLY: SCSMethod_HELP
-  USE Class_Soil         , ONLY: Campbell        , &
-                                 vanGenuchten
+  USE Class_Soil         , ONLY: f_iCampbell        , &
+                                 f_ivanGenuchten
   IMPLICIT NONE
 
 
@@ -41,17 +42,17 @@ MODULE UnsatZoneOps
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC::NonPondedLUMoistureRouter  , &
-          PondedLUMoistureRouter     , &
-          VadoseZoneMoistureRouter   , &
-          NonPondedCropDemand        , &
-          PondedCropDemand           
+  PUBLIC :: NonPondedLUMoistureRouter  , &
+            PondedLUMoistureRouter     , &
+            VadoseZoneMoistureRouter   , &
+            NonPondedCropDemand        , &
+            PondedCropDemand           
 
 
   ! -------------------------------------------------------------
   ! --- FRCATION OF TOLERANCE TO START MODIFYING van Genucten CURVE NEAR SATURATION
   ! -------------------------------------------------------------
-  REAL(8),PARAMETER :: TolerFrac  = 1d-1
+  REAL(8),PARAMETER :: f_rTolerFrac  = 1d-1
 
 
 
@@ -317,7 +318,7 @@ CONTAINS
     
     !If leaching requirement is not met, solve for demand that meets it
     Iter     = 0
-    SM       = TN-TolerFrac*Tolerance   !Initial estimate is the total porosity less some tolerence; moisture should end up being larger than field capacity anyways
+    SM       = TN-f_rTolerFrac*Tolerance   !Initial estimate is the total porosity less some tolerence; moisture should end up being larger than field capacity anyways
     DO
       F      = SM - SMI - FILTRN - Inflow + calcET(ETc,WP,FC,SM) + (1d0-1d0/LF)*Kunsat(SM,TN,PSDI,K,Tolerance,KunsatMethod) 
       dF     = 1d0 + dET(ETc,WP,FC,SM) + (1d0-1d0/LF)*dKunsat(SM,TN,PSDI,K,Tolerance,KunsatMethod)
@@ -409,11 +410,11 @@ CONTAINS
     SELECT CASE(KunsatMethod)
 
       !Campbell's approach
-      CASE (Campbell)
+      CASE (f_iCampbell)
         Ku = Kunsat_Campbell(SM,TN,PSDI,Ksat)
 
       !van Genuchten approach
-      CASE (vanGenuchten)
+      CASE (f_ivanGenuchten)
         Ku = Kunsat_vanGenuchten(SM,TN,PSDI,Ksat,Toler)
 
     END SELECT
@@ -432,11 +433,11 @@ CONTAINS
     SELECT CASE(KunsatMethod)
 
       !Campbell's approach
-      CASE (Campbell)
+      CASE (f_iCampbell)
         dKu = dKunsat_Campbell(SM,TN,PSDI,Ksat)
 
       !van Genuchten approach
-      CASE (vanGenuchten)
+      CASE (f_ivanGenuchten)
         dKu = dKunsat_vanGenuchten(SM,TN,PSDI,Ksat,Toler)
 
     END SELECT
@@ -455,13 +456,13 @@ CONTAINS
     REAL(8) :: A
 
     !Unsaturated hydraulic conductivity
-    IF (SM .LT. 0.0) THEN
+    IF (SM .LE. 0.0) THEN
       Kunsat = 0.0
     ELSEIF (SM .GT. TN) THEN
       Kunsat = Ksat
     ELSE
       A      = 3d0 + 2d0/PSDI
-      Kunsat = Ksat * EXP(A*LOG(SM/TN))  ! = Ksat*(SM/TN)**A
+      Kunsat = Ksat * FEXP(A*LOG(SM/TN))  ! = Ksat*(SM/TN)**A
     END IF
 
   END FUNCTION Kunsat_Campbell
@@ -478,13 +479,13 @@ CONTAINS
     REAL(8) :: A
 
     !Derivative of unsaturated hydraulic conductivity w.r.t. soil moisture
-    IF (SM .LT. 0.0) THEN
+    IF (SM .LE. 0.0) THEN
       dKunsat = 0.0
     ELSEIF (SM .GT. TN) THEN
       dKunsat = 0.0
     ELSE
       A       = 3d0 + 2d0/PSDI
-      dKunsat = Ksat * A/TN * EXP((A-1d0)*LOG(SM/TN))  ! = Ksat*A/TN*(SM/TN)**(A-1d0)
+      dKunsat = Ksat * A/TN * FEXP((A-1d0)*LOG(SM/TN))  ! = Ksat*A/TN*(SM/TN)**(A-1d0)
     END IF
 
   END FUNCTION dKunsat_Campbell
@@ -511,7 +512,7 @@ CONTAINS
     !If moisture is below TN and above zero, proceed normally 
     ELSE
       m        = PSDI/(PSDI+1d0)
-      SM_Check = TN - TolerFrac*Toler
+      SM_Check = TN - f_rTolerFrac*Toler
       IF (SM .LT. SM_Check) THEN
         Kunsat = KunsatFunc(SM,TN,Ksat,m)
       ELSE
@@ -532,8 +533,8 @@ CONTAINS
       REAL(8) :: ratio,F1,F2
       
       ratio = SM/TN
-      F2    = 1d0 - EXP((1d0/m)*LOG(ratio))  ! = 1d0 - ratio**(1d0/m) 
-      F1    = 1d0 - EXP(m*LOG(F2))           ! = 1d0 - F2**m
+      F2    = 1d0 - FEXP((1d0/m)*LOG(ratio))  ! = 1d0 - ratio**(1d0/m) 
+      F1    = 1d0 - FEXP(m*LOG(F2))           ! = 1d0 - F2**m
       Ret   = Ksat * SQRT(ratio) * F1*F1
 
     END FUNCTION KunsatFunc              
@@ -562,17 +563,17 @@ CONTAINS
     !otherwise
     ELSE
       m        = PSDI/(PSDI+1d0)
-      SM_Check = TN - TolerFrac*Toler
+      SM_Check = TN - f_rTolerFrac*Toler
       IF (SM .LT. SM_Check) THEN
         ratio   = SM/TN
-        rValue  = EXP((1d0/m)*LOG(ratio))  ! = ratio**(1d0/m)
+        rValue  = FEXP((1d0/m)*LOG(ratio))  ! = ratio**(1d0/m)
         F2      = 1d0 - rValue  ;  dF2 = -1d0/(TN*m) * (rValue/ratio)
-        rPowF2  = EXP(m*LOG(F2))           ! = F2**m
+        rPowF2  = FEXP(m*LOG(F2))           ! = F2**m
         F1      = 1d0 - rPowF2  ;  dF1 = -m * (rPowF2/F2) * dF2
         dKunsat =  Ksat * 1d0/SQRT(ratio) * F1*F1 / (2d0 * TN)  &
                  + 2d0 * Ksat * SQRT(ratio) * F1 * dF1
       ELSE
-        Kunsat_Check = Kunsat(SM,TN,PSDI,Ksat,Toler,vanGenuchten)
+        Kunsat_Check = Kunsat(SM,TN,PSDI,Ksat,Toler,f_ivanGenuchten)
         dKunsat      = (Kunsat_Check - Ksat) / (SM_Check - TN)
       END IF
     END IF
@@ -657,11 +658,11 @@ CONTAINS
     
     !Set SM_test_Check based on the method used to compute Kunsat 
     SELECT CASE (KunsatMethod)
-      CASE (Campbell)
+      CASE (f_iCampbell)
         SM_test_Check = 0.0
       
-      CASE (vanGenuchten)
-        SM_test_Check = TolerFrac * Toler
+      CASE (f_ivanGenuchten)
+        SM_test_Check = f_rTolerFrac * Toler
     END SELECT
     
     !Check if high-end or low-end value of SM satisfies function

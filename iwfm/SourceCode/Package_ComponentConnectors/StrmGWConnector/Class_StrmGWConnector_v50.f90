@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -29,17 +29,25 @@
 !***********************************************************************
 MODULE Class_StrmGWConnector_v50
   USE MessageLogger              , ONLY: SetLastMessage          , &
+                                         LogMessage              , &
                                          MessageArray            , &
-                                         iFatal
-  USE GeneralUtilities
-  USE IOInterface
-  USE PAckage_Discretization
+                                         f_iWarn                 , &
+                                         f_iFatal
+  USE GeneralUtilities           , ONLY: IntToText               , &
+                                         StripTextUntilCharacter , &
+                                         CleanSpecialCharacters  , &
+                                         ConvertID_To_Index
+  USE IOInterface                , ONLY: GenericFileType 
+  USE Package_Discretization     , ONLY: AppGridType             , &
+                                         StratigraphyType
   USE Package_Misc               , ONLY: AbstractFunctionType    , &
-                                         iStrmComp               , &
-                                         iGWComp
-  USE Class_BaseStrmGWConnector  , ONLY: BaseStrmGWConnectorType 
-  USE Package_Matrix             , ONLY: MatrixType              , &
-                                         ConnectivityListType
+                                         f_iStrmComp             , &
+                                         f_iGWComp               , &
+                                         f_rSmoothMaxP
+  USE Class_BaseStrmGWConnector  , ONLY: BaseStrmGWConnectorType , &
+                                         iDisconnectAtTopOfBed   , &
+                                         iDisconnectAtBottomOfBed
+  USE Package_Matrix             , ONLY: MatrixType              
   IMPLICIT NONE
   
   
@@ -58,10 +66,7 @@ MODULE Class_StrmGWConnector_v50
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC :: StrmGWConnector_v50_Type                   , &
-            StrmGWConnector_v50_UpdateMatrix_ForBypass , &
-            StrmGWConnector_v50_RegisterWithMatrix
-
+  PUBLIC :: StrmGWConnector_v50_Type    
   
   
   ! -------------------------------------------------------------
@@ -70,9 +75,10 @@ MODULE Class_StrmGWConnector_v50
   TYPE,EXTENDS(BaseStrmGWConnectorType) :: StrmGWConnector_v50_Type
       PRIVATE
   CONTAINS
-      PROCEDURE,PASS :: ComputeStrmGWFlow_AtMinHead   => StrmGWConnector_v50_ComputeStrmGWFlow_AtMinHead
-      PROCEDURE,PASS :: Simulate                      => StrmGWConnector_v50_Simulate
-      PROCEDURE,PASS :: CompileConductance            => StrmGWConnector_v50_CompileConductance
+      PROCEDURE,PASS :: SetDisconnectElevations
+      PROCEDURE,PASS :: ComputeStrmGWFlow_AtMinHead 
+      PROCEDURE,PASS :: Simulate                    => StrmGWConnector_v50_Simulate
+      PROCEDURE,PASS :: CompileConductance          => StrmGWConnector_v50_CompileConductance
   END TYPE StrmGWConnector_v50_Type
   
   
@@ -85,10 +91,11 @@ MODULE Class_StrmGWConnector_v50
   
   
   
-    CONTAINS
+CONTAINS
 
 
 
+    
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
@@ -100,186 +107,117 @@ MODULE Class_StrmGWConnector_v50
 ! ******************************************************************
 
   ! -------------------------------------------------------------
-  ! --- ADD CONNECTIVITY TO MATRIX
-  ! -------------------------------------------------------------
-  SUBROUTINE StrmGWConnector_v50_RegisterWithMatrix(Connector,lUpstrmNode,AppGrid,Matrix,iStat)
-    CLASS(StrmGWConnector_v50_Type),INTENT(IN) :: Connector
-    LOGICAL,INTENT(IN)                         :: lUpstrmNode(:)
-    TYPE(AppGridTYpe),INTENT(IN)               :: AppGrid
-    TYPE(MatrixType)                           :: Matrix
-    INTEGER,INTENT(OUT)                        :: iStat
-    
-    !Local varaibles
-    INTEGER :: indxNode,GWNode(2),StrmNode(1),NNodes,GWNode_Prev
-    
-    !Initialize
-    iStat  = 0
-    NNodes = AppGrid%NNodes
-    
-    !Add connectivity
-    DO indxNode=1,SIZE(Connector%iGWNode)
-        StrmNode(1) = indxNode
-        GWNode(1)   = (Connector%iLayer(indxNode)-1)*NNodes + Connector%iGWNode(indxNode)
-        IF (lUpstrmNode(indxNode)) THEN
-            CALL Matrix%AddConnectivity(iStrmComp,indxNode,iGWComp,GWNode(1:1),iStat)
-        ELSE
-            GwNode(2) = GWNode_Prev
-            CALL Matrix%AddConnectivity(iStrmComp,indxNode,iGWComp,GWNode,iStat)
-        END IF 
-        IF (iStat .EQ. -1) RETURN
-        CALL Matrix%AddConnectivity(iGWComp,GWNode(1),iStrmComp,StrmNode,iStat)
-        IF (iStat .EQ. -1) RETURN
-        GWNode_Prev = GWNode(1)
-    END DO
-    
-  END SUBROUTINE StrmGWConnector_v50_RegisterWithMatrix
-
-  
-  ! -------------------------------------------------------------
-  ! --- COMPUTE DERIVATES
-  ! -------------------------------------------------------------
-  SUBROUTINE ComputeDerivatives_AtStrmNode(iNode,UnitConductance,StrmHead,GWHead,DeltaX,StrmBottomElev,MaxElev,WetPerimeterFunction,dFlow_dStrmHead,dFlow_dGWHead)
-    INTEGER,INTENT(IN)                        :: iNode
-    REAL(8),INTENT(IN)                        :: UnitConductance,StrmHead,GWHead,DeltaX,StrmBottomElev,MaxElev
-    CLASS(AbstractFunctionType),INTENT(IN)    :: WetPerimeterFunction                    !In this case, this is the wetted perimeter function defined using Manning's formula 
-    REAL(8),INTENT(OUT)                       :: dFlow_dStrmHead,dFlow_dGWHead
-    
-    !Local variables
-    REAL(8) :: rGWHead,HeadDiff,dHeadDiff_dHs,dHeadDiff_dHg,WetPerimeter,dWetPerimeter_dHs,dWetPerimeter_dHg,Coeff
-    
-    IF (StrmHead .GE. StrmBottomElev) THEN
-        IF (GWHead .GE. StrmBottomElev) THEN
-            rGWHead       = MIN(GWHead , MaxElev)
-            HeadDiff      = StrmHead - rGWHead
-            dHeadDiff_dHs = 1.0
-            dHeadDiff_dHg = -1.0
-            IF (rGWHead .GE. StrmHead) THEN
-                CALL WetPerimeterFunction%EvaluateAndDerivative(rGWHead,WetPerimeter,dWetPerimeter_dHg)
-                dWetPerimeter_dHs = 0.0
-            ELSE
-                CALL WetPerimeterFunction%EvaluateAndDerivative(StrmHead,WetPerimeter,dWetPerimeter_dHs)
-                dWetPerimeter_dHg = 0.0
-            END IF
-        ELSE   
-            HeadDiff      = StrmHead - StrmBottomElev
-            dHeadDiff_dHs = 1.0
-            dHeadDiff_dHg = 0.0
-            CALL  WetPerimeterFunction%EvaluateAndDerivative(StrmHead,WetPerimeter,dWetPerimeter_dHs) 
-            dWetPerimeter_dHg = 0.0
-        END IF
-    ELSE
-        IF (GWHead .GE. StrmBottomElev) THEN
-            rGWHead       = MIN(GWHead , MaxElev)
-            HeadDiff      = StrmBottomElev - rGWHead
-            dHeadDiff_dHs = 0.0
-            dHeadDiff_dHg = -1.0
-            CALL  WetPerimeterFunction%EvaluateAndDerivative(rGWHead,WetPerimeter,dWetPerimeter_dHg) 
-            dWetPerimeter_dHs = 0.0
-        ELSE
-            HeadDiff          = 0.0
-            dHeadDiff_dHs     = 0.0
-            dHeadDiff_dHg     = 0.0
-            WetPerimeter      = 0.0
-            dWetPerimeter_dHs = 0.0
-            dWetPerimeter_dHg = 0.0
-        END IF
-    END IF
-    
-    !Compute derivatives
-    Coeff           = 0.5D0 * UnitConductance * DeltaX
-    dFlow_dStrmHead = Coeff * (dWetPerimeter_dHs * HeadDiff + WetPerimeter * dHeadDiff_dHs)
-    dFlow_dGWHead   = Coeff * (dWetPerimeter_dHg * HeadDiff - WetPerimeter * dHeadDiff_dHg)
-
-  END SUBROUTINE ComputeDerivatives_AtStrmNode
-  
-  
-  ! -------------------------------------------------------------
-  ! --- UPDATE MATRIX FOR BYPASS NODES
-  ! -------------------------------------------------------------
-  SUBROUTINE StrmGWConnector_v50_UpdateMatrix_ForBypass(Connector,iStrmNode,StrmHead,GWHead,DeltaX,StrmBottomElev,MaxElev,dBypass_dFlow,WetPerimeterFunction,Matrix)
-    TYPE(StrmGWConnector_v50_Type),INTENT(IN) :: Connector
-    INTEGER,INTENT(IN)                        :: iStrmNode
-    REAL(8),INTENT(IN)                        :: StrmHead(:),GWHead(:),DeltaX(:),StrmBottomElev(:),MaxElev(:),dBypass_dFlow
-    CLASS(AbstractFunctionType),INTENT(IN)    :: WetPerimeterFunction(:)                    !In this case, this is the wetted perimeter function defined using Manning's formula 
-    TYPE(MatrixType)                          :: Matrix
-    
-    !Local variables
-    INTEGER :: iCompIDs_Connect(2),iNodeIDs_Connect(2),iGWNode_Prev
-    REAL(8) :: rUpdateValues(2),dFlow_dStrmHead_Prev,dFlow_dGWHead_Prev
-    
-    !Get the associated gw node
-    iGWNode_Prev = Connector%iGWNode(iStrmNode-1)
-    
-    !Compute the derivatives
-    CALL ComputeDerivatives_AtStrmNode(iStrmNode-1,Connector%Conductance(iStrmNode-1),StrmHead(iStrmNode-1),GWHead(iStrmNode-1),DeltaX(iStrmNode),StrmBottomElev(iStrmNode-1),MaxElev(iStrmNode-1),WetPerimeterFunction(iStrmNode-1),dFlow_dStrmHead_Prev,dFlow_dGWHead_Prev)
-    
-    !Update COEFF matrix for row iStrmNode
-    iCompIDs_Connect(1) = iStrmComp
-    iCompIDs_Connect(2) = iGWComp
-    iNodeIDs_Connect(1) = iStrmNode - 1
-    iNodeIDs_Connect(2) = iGWNode_Prev
-    rUpdateValues(1)    = -dBypass_dFlow * dFlow_dStrmHead_Prev
-    rUpdateValues(2)    = -dBypass_dFlow * dFlow_dGWHead_Prev
-    CALL Matrix%UpdateCOEFF(iStrmComp,iStrmNode,iCompIDs_Connect,iNodeIDs_Connect,rUpdateValues)
-        
-  END SUBROUTINE StrmGWConnector_v50_UpdateMatrix_ForBypass
-
-  
-  ! -------------------------------------------------------------
   ! --- COMPILE STREAM-GW CONNECTOR
   ! -------------------------------------------------------------
-  SUBROUTINE StrmGWConnector_v50_CompileConductance(Connector,InFile,AppGrid,NStrmNodes,UpstrmNodes,DownstrmNodes,iStat)
-    CLASS(StrmGWConnector_v50_Type) :: Connector
-    TYPE(GenericFileType)           :: InFile
-    TYPE(AppGridType),INTENT(IN)    :: AppGrid                                     !Not used in this version
-    INTEGER,INTENT(IN)              :: NStrmNodes,UpstrmNodes(:),DownstrmNodes(:)  !UpstrmNodes and DownstrmNodes are not used in this version
-    INTEGER,INTENT(OUT)             :: iStat
+  SUBROUTINE StrmGWConnector_v50_CompileConductance(Connector,InFile,AppGrid,Stratigraphy,NStrmNodes,iStrmNodeIDs,UpstrmNodes,DownstrmNodes,BottomElevs,iStat)
+    CLASS(StrmGWConnector_v50_Type)   :: Connector
+    TYPE(GenericFileType)             :: InFile
+    TYPE(AppGridType),INTENT(IN)      :: AppGrid                                     !Not used in this version
+    TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
+    INTEGER,INTENT(IN)                :: NStrmNodes,iStrmNodeIDs(NStrmNodes),UpstrmNodes(:),DownstrmNodes(:)  !UpstrmNodes and DownstrmNodes are not used in this version
+    REAL(8),INTENT(IN)                :: BottomElevs(:)
+    INTEGER,INTENT(OUT)               :: iStat
     
     !Local variables
-    CHARACTER(LEN=ModNameLen+38)  :: ThisProcedure = ModName // 'StrmGWConnector_v50_CompileConductance'
-    INTEGER                       :: indxNode,iNode,ErrorCode
-    REAL(8)                       :: FACTK,FACTL,DummyArray(NStrmNodes,3)
-    REAL(8),DIMENSION(NStrmNodes) :: Conductivity,BedThick
-    CHARACTER                     :: ALine*500,TimeUnitConductance*6
-    INTEGER,ALLOCATABLE           :: iGWNodes(:)
+    CHARACTER(LEN=ModNameLen+38)   :: ThisProcedure = ModName // 'StrmGWConnector_v50_CompileConductance'
+    INTEGER                        :: indxNode,iNode,ErrorCode,iGWNode,iLayer,iStrmNodeID,iGWNodeID,iInteractionType,indxReach, &
+                                      iUpstrmNode,iDownstrmNode,iGWUpstrmNode
+    REAL(8)                        :: FACTK,FACTL,DummyArray(NStrmNodes,3),B_DISTANCE,F_DISTANCE,CA,CB
+    REAL(8),DIMENSION(NStrmNodes)  :: Conductivity,BedThick
+    CHARACTER                      :: ALine*500,TimeUnitConductance*6
+    LOGICAL                        :: lProcessed(NStrmNodes)
+    INTEGER,ALLOCATABLE            :: iGWNodes(:)
+    CHARACTER(LEN=100),ALLOCATABLE :: cWorkArray(:)
     
     !Initialize
-    iStat = 0
+    iStat      = 0
+    lProcessed = .FALSE.
     CALL Connector%GetAllGWNodes(iGWNodes)
     
     !Read data
-    CALL InFile%ReadData(FACTK,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL InFile%ReadData(ALine,iStat)  ;  IF (iStat .EQ. -1) RETURN 
-    CALL CleanSpecialCharacters(ALine)
-    TimeUnitConductance = ADJUSTL(StripTextUntilCharacter(ALine,'/'))
-    CALL InFile%ReadData(FACTL,iStat)       ;  IF (iStat .EQ. -1) RETURN
-    CALL InFile%ReadData(DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    
-    DO indxNode=1,NStrmNodes
-      iNode = INT(DummyArray(indxNode,1))
-      IF (iNode .NE. indxNode) THEN 
-        MessageArray(1)='Parameters for stream nodes should be entered sequentialy.'
-        MessageArray(2)='Expected stream node='//TRIM(IntToText(indxNode))
-        MessageArray(3)='Entered stream node ='//TRIM(IntToText(iNode))
-        CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+    !BACKWARD COMPATIBILITY: Check if there are 3 or 4 lines of entry
+    CALL InFile%ReadData(cWorkArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    IF (SIZE(cWorkArray) .EQ. 3) THEN
+        READ (cWorkArray(1),*) FACTK
+        ALine = cWorkArray(2)
+        CALL CleanSpecialCharacters(ALine)
+        TimeUnitConductance = ADJUSTL(StripTextUntilCharacter(ALine,'/'))
+        READ(cWorkArray(3),*) FACTL
+    ELSEIF (SIZE(cWorkArray) .EQ. 4) THEN
+        READ (cWorkArray(1),*) FACTK
+        ALine = cWorkArray(2)
+        CALL CleanSpecialCharacters(ALine)
+        TimeUnitConductance = ADJUSTL(StripTextUntilCharacter(ALine,'/'))
+        READ(cWorkArray(3),*) FACTL
+        READ(cWorkArray(4),*) iInteractionType
+        CALL Connector%SetInteractionType(iInteractionType,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    ELSE
+        CALL SetLastMessage('An error occured reading conversion factors for stream bed data!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
-      END IF
-      Conductivity(indxNode) = DummyArray(indxNode,2)*FACTK
-      BedThick(indxNode)     = DummyArray(indxNode,3)*FACTL
-      Conductivity(indxNode) = Conductivity(indxNode) / BedThick(indxNode)
+    END IF
+    CALL InFile%ReadData(DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    
+    !Initialize conductance
+    DO indxNode=1,NStrmNodes
+        iStrmNodeID = INT(DummyArray(indxNode,1))
+        CALL ConvertID_To_Index(iStrmNodeID,iStrmNodeIDs,iNode)
+        IF (iNode .EQ. 0) THEN 
+            CALL SetLastMessage('Stream node '//TRIM(IntToText(iStrmNodeID))//' listed for stream bed parameters is not in the model!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        IF (lProcessed(iNode)) THEN
+            CALL SetLastMessage('Stream bed parameters for stream node '//TRIM(IntToText(iStrmNodeID))//' are defined more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iNode)   = .TRUE.
+        iGWNode             = iGWNodes(iNode)
+        iLayer              = Connector%iLayer(iNode)
+        Conductivity(iNode) = DummyArray(indxNode,2)*FACTK
+        BedThick(iNode)     = DummyArray(indxNode,3)*FACTL
+        IF (Connector%iInteractionType .EQ. iDisconnectAtBottomOfBed) THEN
+            IF (BottomElevs(iNode)-BedThick(iNode) .LT. Stratigraphy%BottomElev(iGWNode,iLayer)) THEN
+                iGWNodeID       = AppGrid%AppNode(iGWNode)%ID
+                BedThick(iNode) = BottomElevs(iNode) - Stratigraphy%BottomElev(iGWNode,iLayer)
+                MessageArray(1) = 'Stream bed thickness at stream node ' // TRIM(IntToText(iStrmNodeID)) // ' and GW node '// TRIM(IntToText(iGWNodeID)) // ' penetrates into second active aquifer layer!'
+                MessageArray(2) = 'It is adjusted to penetrate only into the top active layer.'
+                CALL LogMessage(MessageArray(1:2),f_iWarn,ThisProcedure) 
+            END IF
+        END IF
+        Conductivity(iNode) = Conductivity(iNode) / BedThick(iNode)
     END DO
-
+    
+    !Compute conductance by multiplying it with the length associated with the stream node (does not include wetted perimeter since it changes with stage dynamically)
+    DO indxReach=1,SIZE(UpstrmNodes)
+        iUpstrmNode   = UpstrmNodes(indxReach)
+        iDownstrmNode = DownstrmNodes(indxReach)
+        B_DISTANCE    = 0.0
+        DO indxNode=iUpstrmNode+1,iDownstrmNode
+            iGWUpstrmNode = iGWNodes(indxNode-1)
+            iGWNode       = iGWNodes(indxNode)
+            iLayer        = Connector%iLayer(indxNode)
+            CA                        = AppGrid%X(iGWUpstrmNode) - AppGrid%X(iGWNode)
+            CB                        = AppGrid%Y(iGWUpstrmNode) - AppGrid%Y(iGWNode)
+            F_DISTANCE                = SQRT(CA*CA + CB*CB)/2d0
+            Conductivity(indxNode-1)  = Conductivity(indxNode-1)*(F_DISTANCE+B_DISTANCE)
+            B_DISTANCE                = F_DISTANCE
+        END DO
+        Conductivity(iDownstrmNode) = Conductivity(iDownstrmNode)*B_DISTANCE
+    END DO
+    
     !Allocate memory
-    ALLOCATE (Connector%Conductance(NStrmNodes) , Connector%StrmGWFlow(NStrmNodes) , STAT=ErrorCode)
+    ALLOCATE (Connector%Conductance(NStrmNodes) , Connector%StrmGWFlow(NStrmNodes) , Connector%rBedThickness(NStrmNodes) , Connector%rDisconnectElev(NStrmNodes) , STAT=ErrorCode)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error allocating memory for stream-gw connection data!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error allocating memory for stream-gw connection data!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
     
     !Store information
     Connector%Conductance         = Conductivity
+    Connector%rBedThickness       = BedThick
     Connector%TimeUnitConductance = TimeUnitConductance
     Connector%StrmGWFlow          = 0.0
     
@@ -290,152 +228,110 @@ MODULE Class_StrmGWConnector_v50
   
   
   ! -------------------------------------------------------------
-  ! --- COMPUTE STREAM-GW INTERACTION
-  ! --- *** Note: + flow means loosing stream
+  ! --- SET DISCONNECT ELEVATIONS
   ! -------------------------------------------------------------
-  SUBROUTINE StrmGWConnector_v50_Simulate(Connector,NNodes,GWHead,StrmHead,StrmBottomElev,WetPerimeterFunction,Matrix,DeltaX,MaxElev)
-    CLASS(StrmGWConnector_v50_Type)        :: Connector
-    INTEGER,INTENT(IN)                     :: NNodes
-    REAL(8),INTENT(IN)                     :: GWHead(:),StrmHead(:),StrmBottomElev(:)
-    CLASS(AbstractFunctionType),INTENT(IN) :: WetPerimeterFunction(:)   !In this case, this is the wetted perimeter function defined using Manning's formula 
-    TYPE(MatrixType)                       :: Matrix
-    REAL(8),OPTIONAL,INTENT(IN)            :: DeltaX(:),MaxElev(:)
+  SUBROUTINE SetDisconnectElevations(Connector,rBottomElevs)
+    CLASS(StrmGWConnector_v50_Type) :: Connector
+    REAL(8),INTENT(IN)              :: rBottomElevs(:)
+    
+    IF (Connector%iInteractionType .EQ. iDisconnectAtBottomOfBed) THEN
+        Connector%rDisconnectElev = rBottomElevs - Connector%rBedThickness
+    ELSE
+        Connector%rDisconnectElev = rBottomElevs
+    END IF
+    
+  END SUBROUTINE SetDisconnectElevations
+  
+  
+  ! -------------------------------------------------------------
+  ! --- SIMULATE STREAM-GW INTERACTION
+  ! -------------------------------------------------------------
+  SUBROUTINE StrmGWConnector_v50_Simulate(Connector,iNNodes,rGWHeads,rStrmHeads,rAvailableFlows,Matrix,WetPerimeterFunction,rMaxElevs)
+    CLASS(StrmGWConnector_v50_Type)                 :: Connector
+    INTEGER,INTENT(IN)                              :: iNNodes
+    REAL(8),INTENT(IN)                              :: rGWHeads(:),rStrmHeads(:),rAvailableFlows(:) 
+    TYPE(MatrixType)                                :: Matrix
+    CLASS(AbstractFunctionType),OPTIONAL,INTENT(IN) :: WetPerimeterFunction(:)                   
+    REAL(8),OPTIONAL,INTENT(IN)                     :: rMaxElevs(:)     
     
     !Local variables
-    INTEGER :: indxStrm,NStrmNodes,iGWNode,iCompIDs(3),iNodeIDs(3),iCompIDs_Connect(4),iGWNode_Prev, &
-               iNodeIDs_Connect(4)
-    REAL(8) :: HeadDiff,UnitConductance,rInteraction,WetPerimeter,rUpdateValues(4),rInteraction_Prev,       &
-               dWetPerimeter_dHs,dWetPerimeter_dHg,dHeadDiff_dHs,HeadDiff_Prev,WetPerimeter_Prev,Coeff,     &
-               dWetPerimeter_dHs_Prev,dWetPerimeter_dHg_Prev,dHeadDiff_dHg,dHeadDiff_dHs_Prev,Coeff_Prev,   &
-               dHeadDiff_dHg_Prev,rUpdateRHS(3),UnitConductance_Prev,rGWHead
+    INTEGER           :: indxStrm,iGWNode,iNodes_Connect(2)
+    REAL(8)           :: rUnitConductance,rFractionForGW,rGWHead,rDiff_GW,rDiffGWSQRT,rWetPerimeter,rdWetPerimeter,   &
+                         rConductance,rNodeAvailableFlow,rHeadDiff,rStrmGWFlow,rUpdateCOEFF_Keep(2),rUpdateCOEFF(2),  &
+                         rUpdateRHS(2),rStrmGWFlowAdj,rStrmGWFlowAdjSQRT,rDStrmGWFlowAdj
+    INTEGER,PARAMETER :: iCompIDs(2) = [f_iStrmComp , f_iGWComp]
     
     !Initialize
-    NStrmNodes           = SIZE(StrmHead)
     Connector%StrmGWFlow = 0.0
     
     !Compute stream-gw interaction at each stream node; also update the matrix equation
-    DO indxStrm=1,NStrmNodes
-        
+    DO indxStrm=1,SIZE(rStrmHeads)
         !Corresponding GW node
-        iGWNode = (Connector%iLayer(indxStrm)-1) * NNodes + Connector%iGWNode(indxStrm)
+        iGWNode        = (Connector%iLayer(indxStrm)-1) * iNNodes + Connector%iGWNode(indxStrm)
+        rFractionForGW = Connector%rFractionForGW(indxStrm)
       
         !Unit conductance
-        UnitConductance  = Connector%Conductance(indxStrm)      !For this version of StrmGWConnector, original conductance does not include wetted perimeter
+        rUnitConductance = Connector%Conductance(indxStrm)      !For this version of StrmGWConnector, original conductance does not include wetted perimeter
                 
-        IF (StrmHead(indxStrm) .GE. StrmBottomElev(indxStrm)) THEN
-            IF (GWHead(indxStrm) .GE. StrmBottomElev(indxStrm)) THEN
-                rGWHead       = MIN(GWHead(indxStrm) , MaxElev(indxStrm))
-                HeadDiff      = StrmHead(indxStrm) - rGWHead
-                dHeadDiff_dHs = 1.0
-                dHeadDiff_dHg = -1.0
-                IF (rGWHead .GE. StrmHead(indxStrm)) THEN
-                    CALL WetPerimeterFunction(indxStrm)%EvaluateAndDerivative(rGWHead,WetPerimeter,dWetPerimeter_dHg)
-                    dWetPerimeter_dHs = 0.0
-                ELSE
-                    CALL WetPerimeterFunction(indxStrm)%EvaluateAndDerivative(StrmHead(indxStrm),WetPerimeter,dWetPerimeter_dHs)
-                    dWetPerimeter_dHg = 0.0
-                END IF
-            ELSE   
-                HeadDiff      = StrmHead(indxStrm) - StrmBottomElev(indxStrm)
-                dHeadDiff_dHs = 1.0
-                dHeadDiff_dHg = 0.0
-                CALL  WetPerimeterFunction(indxStrm)%EvaluateAndDerivative(StrmHead(indxStrm),WetPerimeter,dWetPerimeter_dHs) 
-                dWetPerimeter_dHg = 0.0
-            END IF
+        !Head differences
+        rGWHead     = MIN(rGWHeads(indxStrm) , rMaxElevs(indxStrm))
+        rDiff_GW    = rGWHead - Connector%rDisconnectElev(indxStrm)
+        rDiffGWSQRT = SQRT(rDiff_GW*rDiff_GW + f_rSmoothMaxP)
+        
+        !Wetted perimeter and conductance
+        CALL WetPerimeterFunction(indxStrm)%EvaluateAndDerivative(MAX(rGWHead,rStrmHeads(indxStrm)),rWetPerimeter,rdWetPerimeter) 
+        rConductance = rUnitConductance * rWetPerimeter
+        
+        !Available flow for node
+        rNodeAvailableFlow = rAvailableFlows(indxStrm)
+                
+        !Calculate stream-gw interaction and update Jacobian
+        !---------------------------------------------------
+        rHeadDiff         = rStrmHeads(indxStrm) - MAX(rGWHead , Connector%rDisconnectElev(indxStrm))
+        rStrmGWFlow       = rConductance * rHeadDiff
+        iNodes_Connect(1) = indxStrm
+        iNodes_Connect(2) = iGWNode
+
+        !Stream is gaining; no need to worry about drying stream (i.e. stream-gw flow is not a function of upstream flows)
+        !Also, WetPerimeter is a function of gw head
+        IF (rStrmGWFlow .LT. 0.0) THEN
+            Connector%StrmGWFlow(indxStrm) = rStrmGWFlow
+            
+            !Update Jacobian - entries for stream node 
+            rUpdateCOEFF_Keep(1) = rConductance
+            rUpdateCOEFF_Keep(2) = rUnitConductance * rdWetPerimeter * rHeadDiff - 0.5d0 * rConductance * (1d0+rDiff_GW/rDiffGWSQRT) 
+            rUpdateCOEFF         = rUpdateCOEFF_Keep
+            CALL Matrix%UpdateCOEFF(f_iStrmComp,indxStrm,2,iCompIDs,iNodes_Connect,rUpdateCOEFF)
+            
+            !Update Jacobian - entries for groundwater node
+            rUpdateCOEFF = -rFractionForGW * rUpdateCOEFF_Keep
+            CALL Matrix%UpdateCOEFF(f_iGWComp,iGWNode,2,iCompIDs,iNodes_Connect,rUpdateCOEFF)
+                                
+        !Stream is losing; we need to limit stream loss to available flow
+        !Also, WetPerimeter is a function of stream head
         ELSE
-            IF (GWHead(indxStrm) .GE. StrmBottomElev(indxStrm)) THEN
-                rGWHead       = MIN(GWHead(indxStrm) , MaxElev(indxStrm))
-                HeadDiff      = StrmBottomElev(indxStrm) - rGWHead
-                dHeadDiff_dHs = 0.0
-                dHeadDiff_dHg = -1.0
-                CALL  WetPerimeterFunction(indxStrm)%EvaluateAndDerivative(rGWHead,WetPerimeter,dWetPerimeter_dHg) 
-                dWetPerimeter_dHs = 0.0
-            ELSE
-                HeadDiff          = 0.0
-                dHeadDiff_dHs     = 0.0
-                dHeadDiff_dHg     = 0.0
-                WetPerimeter      = 0.0
-                dWetPerimeter_dHs = 0.0
-                dWetPerimeter_dHg = 0.0
-            END IF
+            Connector%StrmGWFlow(indxStrm) = MIN(rStrmGWFlow,rNodeAvailableFlow)
+            rStrmGWFlowAdj                 = rNodeAvailableFlow - rStrmGWFlow
+            rStrmGWFlowAdjSQRT             = SQRT(rStrmGWFlowAdj*rStrmGWFlowAdj + f_rSmoothMaxP)
+            rDStrmGWFlowAdj                = 0.5d0 * (1d0 + rStrmGWFlowAdj / rStrmGWFlowAdjSQRT)
+            
+            !Update Jacobian - entries for stream node 
+            rUpdateCOEFF_Keep(1) = (rConductance + rUnitConductance*rdWetPerimeter*rHeadDiff) * rDStrmGWFlowAdj
+            rUpdateCOEFF_Keep(2) = -0.5d0 * rConductance * (1d0+rDiff_GW/rDiffGWSQRT) * rDStrmGWFlowAdj
+            rUpdateCOEFF         = rUpdateCOEFF_Keep
+            CALL Matrix%UpdateCOEFF(f_iStrmComp,indxStrm,2,iCompIDs,iNodes_Connect,rUpdateCOEFF)
+            
+            !Update Jacobian - entries for groundwater node
+            rUpdateCOEFF = -rFractionForGW * rUpdateCOEFF_Keep
+            CALL Matrix%UpdateCOEFF(f_iGWComp,iGWNode,2,iCompIDs,iNodes_Connect,rUpdateCOEFF)
         END IF
+
+        !Update RHS 
+        rUpdateRHS(1) = Connector%StrmGWFlow(indxStrm)
+        rUpdateRHS(2) = -Connector%StrmGWFlow(indxStrm) * rFractionForGW
+        CALL Matrix%UpdateRHS(iCompIDs,iNodes_Connect,rUpdateRHS)
         
-        !If DeltaX is zero, it is an upstream boundary node; advance data and go to next node
-        IF (DeltaX(indxStrm) .EQ. 0.0) THEN
-            iGWNode_Prev           = iGWNode
-            UnitConductance_Prev   = UnitConductance
-            HeadDiff_Prev          = HeadDiff         
-            dHeadDiff_dHs_Prev     = dHeadDiff_dHs    
-            dHeadDiff_dHg_Prev     = dHeadDiff_dHg    
-            WetPerimeter_Prev      = WetPerimeter     
-            dWetPerimeter_dHs_Prev = dWetPerimeter_dHs
-            dWetPerimeter_dHg_Prev = dWetPerimeter_dHg
-            CYCLE
-        END IF
-        
-        !Coefficients that will be used regularly
-        Coeff      = 0.5D0 * UnitConductance      * DeltaX(indxStrm)
-        Coeff_Prev = 0.5D0 * UnitConductance_Prev * DeltaX(indxStrm)
-        
-        !Calculate and store stream-gw interaction
-        rInteraction                     = Coeff      * WetPerimeter      * HeadDiff
-        rInteraction_Prev                = Coeff_Prev * WetPerimeter_Prev * HeadDiff_Prev
-        Connector%StrmGWFlow(indxStrm)   = Connector%StrmGWFlow(indxStrm)   + rInteraction
-        Connector%StrmGWFlow(indxStrm-1) = Connector%StrmGWFlow(indxStrm-1) + rInteraction_Prev
-        
-        !Update RHS vector
-        iCompIDs(1)   = iStrmComp
-        iCompIDs(2:3) = iGWComp
-        iNodeIDs(1)   = indxStrm
-        iNodeIDs(2)   = iGWNode_Prev
-        iNodeIDs(3)   = iGWNode
-        rUpdateRHS(1) = rInteraction + rInteraction_Prev
-        rUpdateRHS(2) = -rInteraction_Prev
-        rUpdateRHS(3) = -rInteraction
-        CALL Matrix%UpdateRHS(iCompIDs,iNodeIDs,rUpdateRHS)
-        
-        !Update COEFF matrix for row indxStrm
-        iCompIDs_Connect(1:2) = iStrmComp
-        iCompIDs_Connect(3:4) = iGWComp
-        iNodeIDs_Connect(1)   = indxStrm - 1
-        iNodeIDs_Connect(2)   = indxStrm
-        iNodeIDs_Connect(3)   = iGWNode_Prev
-        iNodeIDs_Connect(4)   = iGWNode
-        rUpdateValues(1)      = Coeff_Prev * (dWetPerimeter_dHs_Prev * HeadDiff_Prev + WetPerimeter_Prev * dHeadDiff_dHs_Prev)
-        rUpdateValues(2)      = Coeff      * (dWetPerimeter_dHs * HeadDiff + WetPerimeter * dHeadDiff_dHs)
-        rUpdateValues(3)      = Coeff_Prev * (dWetPerimeter_dHg_Prev * HeadDiff_Prev + WetPerimeter_Prev * dHeadDiff_dHg_Prev)
-        rUpdateValues(4)      = Coeff      * (dWetPerimeter_dHg * HeadDiff + WetPerimeter * dHeadDiff_dHg)
-        CALL Matrix%UpdateCOEFF(iStrmComp,indxStrm,iCompIDs_Connect,iNodeIDs_Connect,rUpdateValues)
-        
-        !Update COEFF matrix for row iGWNode_Prev
-        iCompIDs_Connect(1) = iStrmComp
-        iCompIDs_Connect(2) = iGWComp
-        iNodeIDs_Connect(1) = indxStrm - 1
-        iNodeIDs_Connect(2) = iGWNode_Prev
-        rUpdateValues(1)    = -Coeff_Prev * (dWetPerimeter_dHs_Prev * HeadDiff_Prev + WetPerimeter_Prev * dHeadDiff_dHs_Prev)
-        rUpdateValues(2)    = -Coeff_Prev * (dWetPerimeter_dHg_Prev * HeadDiff_Prev + WetPerimeter_Prev * dHeadDiff_dHg_Prev)
-        CALL Matrix%UpdateCOEFF(iGWComp,iGWNode_Prev,iCompIDs_Connect(1:2),iNodeIDs_Connect(1:2),rUpdateValues(1:2))
-        
-        !Update COEFF matrix for row iGWNode
-        iCompIDs_Connect(1) = iStrmComp
-        iCompIDs_Connect(2) = iGWComp
-        iNodeIDs_Connect(1) = indxStrm
-        iNodeIDs_Connect(2) = iGWNode
-        rUpdateValues(1)    = -Coeff * (dWetPerimeter_dHs * HeadDiff + WetPerimeter * dHeadDiff_dHs)
-        rUpdateValues(2)    = -Coeff * (dWetPerimeter_dHg * HeadDiff + WetPerimeter * dHeadDiff_dHg)
-        CALL Matrix%UpdateCOEFF(iGWComp,iGWNode,iCompIDs_Connect(1:2),iNodeIDs_Connect(1:2),rUpdateValues(1:2))
-        
-        !Advance data
-        iGWNode_Prev           = iGWNode
-        UnitConductance_Prev   = UnitConductance
-        HeadDiff_Prev          = HeadDiff         
-        dHeadDiff_dHs_Prev     = dHeadDiff_dHs    
-        dHeadDiff_dHg_Prev     = dHeadDiff_dHg    
-        WetPerimeter_Prev      = WetPerimeter     
-        dWetPerimeter_dHs_Prev = dWetPerimeter_dHs
-        dWetPerimeter_dHg_Prev = dWetPerimeter_dHg
-        
-    END DO
+    END DO    
     
   END SUBROUTINE StrmGWConnector_v50_Simulate
   
@@ -443,67 +339,34 @@ MODULE Class_StrmGWConnector_v50
   ! -------------------------------------------------------------
   ! --- COMPUTE STREAM-GW INTERACTION WITHOUT UPDATING MATRIX
   ! --- *** Note: + flow means loosing stream
-  ! --- *** Note: Stream head is assumed to be always at or above stream bed elevation
   ! -------------------------------------------------------------
-  SUBROUTINE StrmGWConnector_v50_ComputeStrmGWFlow_AtMinHead(Connector,Flows,GWHead,StrmHead,StrmBottomElev,WetPerimeterFunction,DeltaX)
+  SUBROUTINE ComputeStrmGWFlow_AtMinHead(Connector,rStrmBottomElev,rGWHead,rMaxElev,WetPerimeterFunction,rFlows)
     CLASS(StrmGWConnector_v50_Type)        :: Connector
-    REAL(8),INTENT(OUT)                    :: Flows(:)
-    REAL(8),INTENT(IN)                     :: GWHead(:),StrmHead(:),StrmBottomElev(:)
-    CLASS(AbstractFunctionType),INTENT(IN) :: WetPerimeterFunction(:)                 !In this case, this is the wetted perimeter function defined using Manning's formula 
-    REAL(8),OPTIONAL,INTENT(IN)            :: DeltaX(:)
+    REAL(8),INTENT(IN)                     :: rStrmBottomElev(:),rGWHead(:),rMaxElev(:)
+    CLASS(AbstractFunctionType),INTENT(IN) :: WetPerimeterFunction(:)       !This is the wetted perimeter function defined using Manning's formula 
+    REAL(8),INTENT(OUT)                    :: rFlows(:)
     
     !Local variables
-    INTEGER :: indxStrm,NStrmNodes
-    REAL(8) :: UnitConductance,HeadDiff,WetPerimeter,UnitConductance_Prev,HeadDiff_Prev,  &
-               WetPerimeter_Prev,HeadDiff_AtMinHead,WetPerimeter_AtMinHead
+    INTEGER :: indxStrm
+    REAL(8) :: rWetPerimeter,rConductance
     
-    !Initialize
-    NStrmNodes = SIZE(StrmHead)
-    
-    DO indxStrm=1,NStrmNodes
+    DO indxStrm=1,SIZE(rGWHead)
         
-        !Unit conductance
-        UnitConductance  = Connector%Conductance(indxStrm)      !For this version of StrmGWConnector, original conductance does not include wetted perimeter
-                
-        !Head difference and wetted perimeter at minimum stream head,current stream head 
-        IF (GWHead(indxStrm) .GE. StrmBottomElev(indxStrm)) THEN
-            HeadDiff_AtMinHead     = StrmBottomElev(indxStrm) - GWHead(indxStrm) 
-            WetPerimeter_atMinHead = WetPerimeterFunction(indxStrm)%Evaluate(GWHead(indxStrm))
-            HeadDiff               = StrmHead(indxStrm) - GWHead(indxStrm) 
-            IF (GWHead(indxStrm) .GE. StrmHead(indxStrm)) THEN
-                WetPerimeter = WetPerimeterFunction(indxStrm)%Evaluate(GWHead(indxStrm))
-            ELSE
-                WetPerimeter = WetPerimeterFunction(indxStrm)%Evaluate(StrmHead(indxStrm))
-            END IF
-        ELSE   
-            HeadDiff_AtMinHead     = 0.0
-            WetPerimeter_AtMinHead = 0.0 
-            HeadDiff               = StrmHead(indxStrm) - StrmBottomElev(indxStrm)
-            WetPerimeter           = WetPerimeterFunction(indxStrm)%Evaluate(StrmHead(indxStrm)) 
-        END IF
-        
-        !If DeltaX is zero, it is an upstream boundary node; advance data and go to next node
-        IF (DeltaX(indxStrm) .EQ. 0.0) THEN
-            UnitConductance_Prev = UnitConductance
-            HeadDiff_Prev        = HeadDiff         
-            WetPerimeter_Prev    = WetPerimeter
-            Flows(indxStrm)      = 0.0
+        !If gw head is below the stream bottom flow will be zero
+        IF (rGWHead(indxStrm) .LE. rStrmBottomElev(indxStrm)) THEN
+            rFlows(indxStrm) = 0.0
             CYCLE
         END IF
         
-        !Stream-gw interaction
-        Flows(indxStrm) = 0.5D0 * UnitConductance      * WetPerimeter_AtMinHead * DeltaX(indxStrm) * HeadDiff_AtMinHead      &
-                        + 0.5D0 * UnitConductance_Prev * WetPerimeter_Prev      * DeltaX(indxStrm) * HeadDiff_Prev
+        !Wetted perimeter and conductance
+        rWetPerimeter = WetPerimeterFunction(indxStrm)%Evaluate(MIN(rGWHead(indxStrm),rMaxElev(indxStrm)))
+        rConductance  = Connector%Conductance(indxStrm) * rWetPerimeter
         
-        !Advance data
-        UnitConductance_Prev = UnitConductance
-        HeadDiff_Prev        = HeadDiff         
-        WetPerimeter_Prev    = WetPerimeter     
+        !Stream-gw interaction at min stream head
+        rFlows(indxStrm) = rConductance * (rStrmBottomElev(indxStrm) - MIN(rGWHead(indxStrm),rMaxElev(indxStrm))) 
 
     END DO
     
-  END SUBROUTINE StrmGWConnector_v50_ComputeStrmGWFlow_AtMinHead
-
-
+  END SUBROUTINE ComputeStrmGWFlow_AtMinHead
 
 END MODULE

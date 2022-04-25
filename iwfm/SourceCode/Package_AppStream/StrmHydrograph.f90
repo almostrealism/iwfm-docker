@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -24,13 +24,13 @@ MODULE StrmHydrograph
   USE MessageLogger          , ONLY: SetLastMessage                , &
                                      LogMessage                    , &
                                      MessageArray                  , &
-                                     iFatal                        , &
-                                     iInfo
+                                     f_iFatal                      , &
+                                     f_iInfo
   USE IOInterface            , ONLY: GenericFileType               , &
                                      iGetFileType_FromName         , &
-                                     DSS                           , &
-                                     UNKNOWN                       , &
-                                     iDataset                      
+                                     f_iDSS                        , &
+                                     f_iUNKNOWN                    , &
+                                     f_iDataset                      
   USE GeneralUtilities       , ONLY: LocateInList                  , &
                                      StripTextUntilCharacter       , &
                                      IntToText                     , &
@@ -38,15 +38,15 @@ MODULE StrmHydrograph
                                      CleanSpecialCharacters        , &
                                      EstablishAbsolutePathFilename , &
                                      PrepareTitle                  , &
-                                     UpperCase
+                                     UpperCase                     , &
+                                     ConvertID_To_Index
   USE TimeSeriesUtilities    , ONLY: TimeStepType                  , &
                                      IncrementTimeStamp
-  USE Package_Discretization , ONLY: NodeType
   USE Package_Misc           , ONLY: RealTSDataInFileType          , &
                                      PrepareTSDOutputFile          , &
                                      ReadTSData                    , &
-                                     iDataUnitType_Length          , &
-                                     iDataUnitType_Volume
+                                     f_iDataUnitType_Length        , &
+                                     f_iDataUnitType_Volume
   USE Class_StrmState 
   IMPLICIT NONE
   
@@ -105,6 +105,7 @@ MODULE StrmHydrograph
     PROCEDURE,PASS :: IsHydrographAtNodeRequested
     PROCEDURE,PASS :: GetFileName
     PROCEDURE,PASS :: GetNHydrographs
+    PROCEDURE,PASS :: GetHydrographNodes
     PROCEDURE,PASS :: GetCoordinates
     PROCEDURE,PASS :: GetNames
     PROCEDURE,PASS :: Transfer_To_HDF
@@ -137,19 +138,20 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INSTANTIATE STREAM HYDROGRAPH PRINT DATA
   ! -------------------------------------------------------------
-  SUBROUTINE New(StrmHyd,IsRoutedStreams,IsForInquiry,cWorkingDirectory,NStrmNodes,TimeStep,InFile,iStat) 
+  SUBROUTINE New(StrmHyd,IsRoutedStreams,IsForInquiry,cWorkingDirectory,NStrmNodes,iStrmNodeIDs,TimeStep,InFile,iStat) 
     CLASS(StrmHydrographType),INTENT(OUT) :: StrmHyd
     LOGICAL,INTENT(IN)                    :: IsRoutedStreams,IsForInquiry
     CHARACTER(LEN=*),INTENT(IN)           :: cWorkingDirectory
-    INTEGER,INTENT(IN)                    :: NStrmNodes
+    INTEGER,INTENT(IN)                    :: NStrmNodes,iStrmNodeIDs(NStrmNodes)
     TYPE(TimeStepType),INTENT(IN)         :: TimeStep
     TYPE(GenericFileType)                 :: InFile
     INTEGER,INTENT(OUT)                   :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+3) :: ThisProcedure = ModName // 'New'
-    INTEGER                     :: NHyd,iNode,indx,ErrorCode
+    INTEGER                     :: NHyd,indx,ErrorCode,iNode
     CHARACTER                   :: ALine*1000,cHydOutFile*1000,cNumber*7
+    INTEGER,ALLOCATABLE         :: iHydNodeIDs(:)
     CHARACTER(:),ALLOCATABLE    :: cAbsPathFileName
     
     !Read data
@@ -172,7 +174,7 @@ CONTAINS
     !Output file name
     CALL InFile%ReadData(cHydOutFile,iStat)  ;  IF (iStat .EQ. -1) RETURN ; cHydOutFile = StripTextUntilCharacter(cHydOutFile,'/') ; CALL CleanSpecialCharacters(cHydOutFile)
     IF (cHydOutFile .EQ. '') THEN
-        IF (IsRoutedStreams) CALL LogMessage('Stream hydrograph printing is suppressed because an output file name is not specified!',iInfo,ThisProcedure)
+        IF (IsRoutedStreams) CALL LogMessage('Stream hydrograph printing is suppressed because an output file name is not specified!',f_iInfo,ThisProcedure)
         DO indx=1,NHyd
             CALL InFile%ReadData(iNode,iStat)  
             IF (iStat .EQ. -1) RETURN
@@ -182,43 +184,38 @@ CONTAINS
     END IF
     
     !Allocate memory
-    ALLOCATE (StrmHyd%iHydNodes(StrmHyd%NHyd)  ,  StrmHyd%cHydNames(StrmHyd%NHyd))
+    ALLOCATE (StrmHyd%iHydNodes(StrmHyd%NHyd)  ,  StrmHyd%cHydNames(StrmHyd%NHyd) , iHydNodeIDs(StrmHyd%NHyd))
     StrmHyd%cHydNames = ''
     
     !Read the node numbers and hydrograph names for hydrograph printing
     DO indx=1,NHyd
         CALL InFile%ReadData(ALine,iStat)  ;  IF (iStat .EQ. -1) RETURN  ;  CALL CleanSpecialCharacters(ALine)  ;  ALine = StripTextUntilCharacter(ALine,'/')  ;  ALine = ADJUSTL(ALine)
-        READ (ALine,*,IOSTAT=ErrorCode) iNode
-        cNumber = ''  ;  cNumber = IntToText(iNode)  ;  cNumber = ADJUSTL(cNumber)
+        READ (ALine,*,IOSTAT=ErrorCode) iHydNodeIDs(indx)
+        CALL ConvertID_To_Index(iHydNodeIDs(indx),iStrmNodeIDs,iNode)
+        IF (iNode .EQ. 0) THEN
+            CALL SetLastMessage('Stream node ID '//TRIM(IntToText(iHydNodeIDs(indx)))//' listed for hydrograph printing is not in the model!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        cNumber = ''  ;  cNumber = IntToText(iHydNodeIDs(indx))  ;  cNumber = ADJUSTL(cNumber)
         StrmHyd%cHydNames(indx) = ADJUSTL(ALine(LEN_TRIM(cNumber)+1:))  ;  CALL CleanSpecialCharacters(StrmHyd%cHydNames(indx))
         IF (ErrorCode .NE. 0) THEN
             MessageArray(1) = 'Error in reading stream hydrograph print data!'
             MessageArray(2) = TRIM(ALine)
-            CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
         StrmHyd%iHydNodes(indx) = iNode
-        !Make sure node number is not greater than the nodes modled
-        IF (iNode .GT. NStrmNodes) THEN
-            IF (IsRoutedStreams) THEN
-                MessageArray(1) ='Stream node number for hydrograph printing is greater than the nodes modeled.'
-                MessageArray(2) ='Stream node entered='//TRIM(IntToText(iNode))
-                MessageArray(3)='Number of nodes modeled ='//TRIM(IntToText(NStrmNodes))
-                CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-                iStat = -1
-                RETURN
-            END IF
-        END IF
     END DO
     
     IF (IsRoutedStreams) THEN
         !Prepare hydrograph file
         CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(cHydOutFile)),cWorkingDirectory,cAbsPathFileName)
         IF (IsForInquiry) THEN
-            CALL PrepStrmHydFile_ForInquiry(TimeStep,cAbsPathFileName,StrmHyd%iHydType,StrmHyd%NHyd,StrmHyd%iHydNodes,StrmHyd%HydFile_ForInquiry,iStat)
+            CALL PrepStrmHydFile_ForInquiry(TimeStep,cAbsPathFileName,StrmHyd%iHydType,StrmHyd%NHyd,iHydNodeIDs,StrmHyd%HydFile_ForInquiry,iStat)
         ELSE
-            CALL PrepStrmHydFile(TimeStep,cAbsPathFileName,StrmHyd%UnitFlow,StrmHyd%UnitElev,StrmHyd%iHydType,StrmHyd%NHyd,StrmHyd%iHydNodes,StrmHyd%HydFile,iStat)
+            CALL PrepStrmHydFile(TimeStep,cAbsPathFileName,StrmHyd%UnitFlow,StrmHyd%UnitElev,StrmHyd%iHydType,StrmHyd%NHyd,iHydNodeIDs,StrmHyd%HydFile,iStat)
         END IF
         IF (iStat .EQ. -1) RETURN
         
@@ -250,7 +247,8 @@ CONTAINS
     CLASS(StrmHydrographType) :: StrmHyd
     
     !Local variables
-    INTEGER :: ErrorCode
+    INTEGER                  :: ErrorCode
+    TYPE(StrmHydrographType) :: Dummy
     
     !Deallocate array attributes
     DEALLOCATE (StrmHyd%iHydNodes , StrmHyd%cHydNames , STAT=ErrorCode)
@@ -260,13 +258,10 @@ CONTAINS
     CALL StrmHyd%HydFile_ForInquiry%Close()
     
     !Set attributes to their default values
-    StrmHyd%HydFile_Defined = .FALSE.
-    StrmHyd%iHydType        = iHydFlow
-    StrmHyd%FactFlow        = 1.0
-    StrmHyd%UnitFlow        = ''
-    StrmHyd%FactElev        = 1.0
-    StrmHyd%UnitElev        = ''
-    StrmHyd%NHyd            = 0
+    SELECT TYPE (p => StrmHyd)
+        TYPE IS (StrmHydrographType)
+            p = Dummy
+    END SELECT
     
   END SUBROUTINE Kill
   
@@ -297,7 +292,7 @@ CONTAINS
     DEALLOCATE (cFileName , STAT=ErrorCode)
     
     IF (StrmHyd%HydFile_Defined) THEN
-        IF (StrmHyd%HydFile%iGetFileType() .NE. UNKNOWN) THEN
+        IF (StrmHyd%HydFile%iGetFileType() .NE. f_iUNKNOWN) THEN
             CALL StrmHyd%HydFile%GetName(cFileName)
         ELSE
             CALL StrmHyd%HydFile_ForInquiry%GetFileName(cFileName)
@@ -306,6 +301,18 @@ CONTAINS
     
   END SUBROUTINE GetFileName
   
+  
+  ! -------------------------------------------------------------
+  ! --- GET STREAM NODE INDICES WHERE HYDROGRAPHS ARE PRINTED
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetHydrographNodes(StrmHyd,iNodes)
+    CLASS(StrmHydrographType),INTENT(IN) :: StrmHyd
+    INTEGER,INTENT(OUT)                  :: iNodes(:)
+    
+    IF (STrmHyd%NHyd .GT. 0) iNodes = StrmHyd%iHydNodes
+    
+  END SUBROUTINE GetHydrographNodes
+
   
   ! -------------------------------------------------------------
   ! --- GET NUMBER OF HYDROGRAPHS
@@ -322,19 +329,19 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET HYDROGRAPH COORDINATES
   ! -------------------------------------------------------------
-  SUBROUTINE GetCoordinates(StrmHyd,iGWNodes,GridNodeCoordinates,X,Y)
+  SUBROUTINE GetCoordinates(StrmHyd,iGWNodes,GridX,GridY,XHyd,YHyd)
     CLASS(StrmHydrographType) :: StrmHyd
     INTEGER,INTENT(IN)        :: iGWNodes(:)
-    TYPE(NodeType),INTENT(IN) :: GridNodeCoordinates(:)
-    REAL(8),INTENT(OUT)       :: X(:),Y(:)
+    REAL(8),INTENT(IN)        :: GridX(:),GridY(:)
+    REAL(8),INTENT(OUT)       :: XHyd(:),YHyd(:)
     
     !Local variables
     INTEGER :: indx,iGWNode
     
     DO indx=1,StrmHyd%NHyd
-        iGWNode = iGWNodes(StrmHYd%iHydNodes(indx))
-        X(indx) = GridNOdeCoordinates(iGWNode)%X
-        Y(indx) = GridNOdeCoordinates(iGWNode)%Y
+        iGWNode    = iGWNodes(StrmHyd%iHydNodes(indx))
+        XHyd(indx) = GridX(iGWNode)
+        YHyd(indx) = GridY(iGWNode)
     END DO
     
   END SUBROUTINE GetCoordinates
@@ -367,9 +374,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ STREAM HYDROGRAPH FOR A STREAM NODE FOR A TIME RANGE
   ! -------------------------------------------------------------
-  SUBROUTINE ReadStrmHydrograph_AtNode(StrmHyd,iNodeID,iHydType,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_LT,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
+  SUBROUTINE ReadStrmHydrograph_AtNode(StrmHyd,iNodeID,iNode,iHydType,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_LT,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
     CLASS(StrmHydrographType)   :: StrmHyd
-    INTEGER,INTENT(IN)          :: iNodeID,iHydType
+    INTEGER,INTENT(IN)          :: iNodeID,iNode,iHydType
     CHARACTER(LEN=*),INTENT(IN) :: cOutputBeginDateAndTime,cOutputEndDateAndTime
     REAL(8),INTENT(IN)          :: rFact_LT,rFact_VL
     INTEGER,INTENT(OUT)         :: iDataUnitType,nActualOutput
@@ -377,36 +384,45 @@ CONTAINS
     INTEGER,INTENT(OUT)         :: iStat
     
     !Local variables
-    INTEGER :: ErrorCode
-    REAL(8) :: rEffectiveFactor
+    CHARACTER(LEN=ModNameLen+25),PARAMETER :: ThisProcedure = ModName // 'ReadStrmHydrograph_AtNode'
+    INTEGER                                :: ErrorCode,iHydIndex
+    REAL(8)                                :: rEffectiveFactor
+    
+    !Convert node ID to hydrograph index
+    iHydIndex = LocateInList(iNode,StrmHyd%iHydNodes)
+    IF (iHydIndex .EQ. 0) THEN
+        CALL SetLastMessage('Stream node ID '//TRIM(IntToText(iNodeID))//' does not have a hydrograph printed as model results!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
     
     !Read data
     IF (StrmHyd%iHydType .EQ. iHydBoth) THEN
         IF (iHydType .EQ. iHydFlow) THEN
-            CALL StrmHyd%HydFile_ForInquiry%ReadData(iNodeID,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)  
+            CALL StrmHyd%HydFile_ForInquiry%ReadData(iHydIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)  
         ELSE
-            CALL StrmHyd%HydFile_ForInquiry%ReadData(2*StrmHyd%NHyd+iNodeID,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)  
+            CALL StrmHyd%HydFile_ForInquiry%ReadData(2*StrmHyd%NHyd+iHydIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)  
         END IF
     ELSE
-        CALL StrmHyd%HydFile_ForInquiry%ReadData(iNodeID,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)  
+        CALL StrmHyd%HydFile_ForInquiry%ReadData(iHydIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)  
     END IF
     IF (iStat .EQ. -1) RETURN
 
     !Convert flow/elevation data to simulation units, then to output units
     IF (StrmHyd%iHydType .EQ. iHydFlow) THEN
-        iDataUnitType    = iDataUnitType_Volume
+        iDataUnitType    = f_iDataUnitType_Volume
         rEffectiveFactor = rFact_VL / StrmHyd%FactFlow
         IF (rEffectiveFactor .NE. 1d0) rOutputValues(1:nActualOutput) = rOutputValues(1:nActualOutput) * rEffectiveFactor
     ELSEIF (StrmHyd%iHydType .EQ. iHydStage) THEN
-        iDataUnitType    = iDataUnitType_Length
+        iDataUnitType    = f_iDataUnitType_Length
         rEffectiveFactor = rFact_LT / StrmHyd%FactElev
         IF (rEffectiveFactor .NE. 1d0) rOutputValues(1:nActualOutput) = rOutputValues(1:nActualOutput) * rEffectiveFactor
     ELSE
         IF (iHydType .EQ. iHydFlow) THEN
-            iDataUnitType    = iDataUnitType_Volume
+            iDataUnitType    = f_iDataUnitType_Volume
             rEffectiveFactor = rFact_VL / StrmHyd%FactFlow
         ELSE
-            iDataUnitType    = iDataUnitType_Length
+            iDataUnitType    = f_iDataUnitType_Length
             rEffectiveFactor = rFact_LT / StrmHyd%FactElev
         END IF
         IF (rEffectiveFactor .NE. 1d0) rOutputValues(1:nActualOutput) = rOutputValues(1:nActualOutput) * rEffectiveFactor
@@ -678,7 +694,7 @@ CONTAINS
     EandFParts = UpperCase(TRIM(TimeStep%Unit)) // '/STREAM_HYDROGRAPHS/'
     
     !Instantiate file according to its type
-    IF (iGetFileType_FromName(cFileName) .EQ. DSS) THEN
+    IF (iGetFileType_FromName(cFileName) .EQ. f_iDSS) THEN
         !Form pathnames
         IF (iHydType .EQ. iHydBoth) THEN
             DO indx=1,NHyd
@@ -744,6 +760,11 @@ CONTAINS
     CALL OutFile%New(FileName=TRIM(cHDFFileName),InputFile=.FALSE.,IsTSFile=.TRUE.,iStat=iStat)
     IF (iStat .EQ. -1) RETURN
     
+    !Advance time to t=1
+    TimeStep_Local                    = TimeStep
+    TimeStep_Local%CurrentTimeStep    = TimeStep_Local%CurrentTimeStep + 1
+    TimeStep_Local%CurrentDateAndTime = IncrementTimeStamp(TimeStep_Local%CurrentDateAndTime,TimeStep_Local%DELTAT_InMinutes)
+    
     !Create dataset
     IF (StrmHyd%iHydType .EQ. iHydBoth) THEN
         NColumns(1) = 2 * StrmHyd%NHyd
@@ -751,11 +772,11 @@ CONTAINS
         NColumns(1) = StrmHyd%NHyd
     END IF
     cDataSetName(1) = '/Stream_Hydrographs'
-    CALL OutFile%CreateHDFDataSet(cPathNames=cDataSetName,NColumns=NColumns,NTime=NTIME,TimeStep=TimeStep,DataType=0d0,iStat=iStat)
+    CALL OutFile%CreateHDFDataSet(cPathNames=cDataSetName,NColumns=NColumns,NTime=NTIME,TimeStep=TimeStep_Local,DataType=0d0,iStat=iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Write the type of hydrograph
-    CALL OutFile%WriteData(iDataset,'/Stream_Hydrographs','HydrographType',ScalarAttrData=StrmHyd%iHydType)
+    CALL OutFile%WriteData(f_iDataset,'/Stream_Hydrographs','HydrographType',ScalarAttrData=StrmHyd%iHydType)
     
     !Conversion factor used when printing out results
     IF (StrmHyd%iHydType .EQ. iHydBoth) THEN
@@ -777,7 +798,6 @@ CONTAINS
     ELSE
         ALLOCATE (rData(StrmHyd%NHyd,1))
     END IF
-    TimeStep_Local = TimeStep
     DO indxTime=1,NTIME
         !Read data
         CALL ReadTSData(TimeStep_Local,'stream hydrographs',StrmHyd%HydFile_ForInquiry,FileReadCode,iStat)

@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -22,13 +22,13 @@
 !***********************************************************************
 MODULE Class_ZBudgetHeader
   USE MessageLogger       , ONLY: SetLastMessage    , &
-                                  iFatal
+                                  f_iFatal
   USE GeneralUtilities    , ONLY: IntToText
   USE TimeSeriesUtilities , ONLY: TimeStepType
   USE IOInterface         , ONLY: GenericFileType   , &
-                                  iGroup
-  USE ZBudget_Parameters  , ONLY: iMaxDataNameLen   , &
-                                  cAttributesDir
+                                  f_iGroup
+  USE ZBudget_Parameters  , ONLY: f_iMaxDataNameLen  , &
+                                  f_cAttributesDir
   USE Class_SystemData    , ONLY: SystemDataType
   IMPLICIT NONE
   
@@ -68,22 +68,22 @@ MODULE Class_ZBudgetHeader
   ! --- Z-BUDGET HEADER DATA TYPE
   ! -------------------------------------------------------------
   TYPE ZBudgetHeaderType
-      CHARACTER(LEN=100)                         :: cSoftwareVersion         = ''        !Version of the software that generated the Z-Budget raw data
-      CHARACTER(LEN=100)                         :: cDescriptor              = ''        !Descriptor for the Z-Budget file
-      LOGICAL                                    :: lVertFlows_DefinedAtNode = .TRUE.    !Are vertical flows, if defined, defined at nodes or elements?
-      LOGICAL                                    :: lFaceFlows_Defined       = .FALSE.   !Are the flows through each element face saved?
-      LOGICAL                                    :: lStorages_Defined        = .FALSE.   !Are the storages at each element saved?
-      LOGICAL                                    :: lComputeError            = .FALSE.   !Will a mass balance error be computed and printed for each zone?
-      INTEGER                                    :: iNData                   = 0         !Number of data columns (fixed columns; dynamic zone exchange data names are derived during post-processing)
-      INTEGER,ALLOCATABLE                        :: iDataTypes(:)                        !Data type of each (data) column
-      CHARACTER(LEN=iMaxDataNameLen),ALLOCATABLE :: cFullDataNames(:)                    !Full name of each (data)
-      CHARACTER(LEN=200),ALLOCATABLE             :: cDataHDFPaths(:)                     !Pathnames of each (data) in the HDF file under each layer
-      INTEGER,ALLOCATABLE                        :: iNDataElems(:,:)                     !Number of elements associated for each dataset given for (data,layer) combination
-      INTEGER,ALLOCATABLE                        :: iElemDataColumns(:,:,:)              !Column number in a specific dataset that stores the data for an element in a layer for each (element,data,layer) combination
-      INTEGER,ALLOCATABLE                        :: iErrorInCols(:)                      !If mass blance error will be computed, this stores the data column numbers for inflows
-      INTEGER,ALLOCATABLE                        :: iErrorOutCols(:)                     !If mass blance error will be computed, this stores the data column numbers for outflows
-      TYPE(ZBudgetASCIIOutputType)               :: ASCIIOutput                          !Information for ASCII output
-      CHARACTER(LEN=80),ALLOCATABLE              :: cDSSFParts(:)                        !F parts of DSS pathnames (excluding zone exchange flows, mass balance error and storage columns)
+      CHARACTER(LEN=100)                           :: cSoftwareVersion         = ''        !Version of the software that generated the Z-Budget raw data
+      CHARACTER(LEN=100)                           :: cDescriptor              = ''        !Descriptor for the Z-Budget file
+      LOGICAL                                      :: lVertFlows_DefinedAtNode = .TRUE.    !Are vertical flows, if defined, defined at nodes or elements?
+      LOGICAL                                      :: lFaceFlows_Defined       = .FALSE.   !Are the flows through each element face saved?
+      LOGICAL                                      :: lStorages_Defined        = .FALSE.   !Are the storages at each element saved?
+      LOGICAL                                      :: lComputeError            = .FALSE.   !Will a mass balance error be computed and printed for each zone?
+      INTEGER                                      :: iNData                   = 0         !Number of data columns (fixed columns; dynamic zone exchange data names are derived during post-processing)
+      INTEGER,ALLOCATABLE                          :: iDataTypes(:)                        !Data type of each (data) column
+      CHARACTER(LEN=f_iMaxDataNameLen),ALLOCATABLE :: cFullDataNames(:)                    !Full name of each (data)
+      CHARACTER(LEN=200),ALLOCATABLE               :: cDataHDFPaths(:)                     !Pathnames of each (data) in the HDF file under each layer
+      INTEGER,ALLOCATABLE                          :: iNDataElems(:,:)                     !Number of elements associated for each dataset given for (data,layer) combination
+      INTEGER,ALLOCATABLE                          :: iElemDataColumns(:,:,:)              !Column number in a specific dataset that stores the data for an element in a layer for each (element,data,layer) combination
+      INTEGER,ALLOCATABLE                          :: iErrorInCols(:)                      !If mass blance error will be computed, this stores the data column numbers for inflows
+      INTEGER,ALLOCATABLE                          :: iErrorOutCols(:)                     !If mass blance error will be computed, this stores the data column numbers for outflows
+      TYPE(ZBudgetASCIIOutputType)                 :: ASCIIOutput                          !Information for ASCII output
+      CHARACTER(LEN=80),ALLOCATABLE                :: cDSSFParts(:)                        !F parts of DSS pathnames (excluding zone exchange flows, mass balance error and storage columns)
   CONTAINS
       PROCEDURE,PASS :: Kill
       PROCEDURE,PASS :: ReadFromFile
@@ -131,64 +131,64 @@ CONTAINS
     CHARACTER(:),ALLOCATABLE               :: cFileName
     
     !Check that this is indeed Z-Budget data file by checking if an object that Budget file doesn't have exist
-    IF (.NOT. InFile%DoesHDFObjectExist(cAttributesDir//'/DataHDFPaths')) THEN
+    IF (.NOT. InFile%DoesHDFObjectExist(f_cAttributesDir//'/DataHDFPaths')) THEN
         CALL InFile%GetName(cFileName)
-        CALL SetLastMessage('File '//TRIM(cFileName)//' is not a Z-Budget file type!',iFatal,ThisProcedure)
+        CALL SetLastMessage('File '//TRIM(cFileName)//' is not a Z-Budget file type!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
     
     !Software version that created the raw Z-Budget data
-    CALL InFile%ReadData(cAttributesDir,'Software_Version',ScalarAttrData=Header%cSoftwareVersion,iStat=iStat)  
+    CALL InFile%ReadData(f_cAttributesDir,'Software_Version',ScalarAttrData=Header%cSoftwareVersion,iStat=iStat)  
     IF (iStat .EQ. -1) RETURN
     
     !Z-Budget file descriptor
-    CALL InFile%ReadData(cAttributesDir,'Descriptor',ScalarAttrData=Header%cDescriptor,iStat=iStat)  
+    CALL InFile%ReadData(f_cAttributesDir,'Descriptor',ScalarAttrData=Header%cDescriptor,iStat=iStat)  
     IF (iStat .EQ. -1) RETURN
     
     !Flags
-    CALL InFile%ReadData(cAttributesDir,'lVertFlows_DefinedAtNode',ScalarAttrData=Header%lVertFlows_DefinedAtNode,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL InFile%ReadData(cAttributesDir,'lFaceFlows_Defined',ScalarAttrData=Header%lFaceFlows_Defined,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL InFile%ReadData(cAttributesDir,'lStorages_Defined',ScalarAttrData=Header%lStorages_Defined,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL InFile%ReadData(cAttributesDir,'lComputeError',ScalarAttrData=Header%lComputeError,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL InFile%ReadData(f_cAttributesDir,'lVertFlows_DefinedAtNode',ScalarAttrData=Header%lVertFlows_DefinedAtNode,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL InFile%ReadData(f_cAttributesDir,'lFaceFlows_Defined',ScalarAttrData=Header%lFaceFlows_Defined,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL InFile%ReadData(f_cAttributesDir,'lStorages_Defined',ScalarAttrData=Header%lStorages_Defined,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL InFile%ReadData(f_cAttributesDir,'lComputeError',ScalarAttrData=Header%lComputeError,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
     
     !Column numbers for mass balance error computation
     IF (Header%lComputeError) THEN
-        CALL InFile%ReadData(cAttributesDir,'NErrorInCols',ScalarAttrData=NErrorInCols,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-        CALL InFile%ReadData(cAttributesDir,'NErrorOutCols',ScalarAttrData=NErrorOutCols,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL InFile%ReadData(f_cAttributesDir,'NErrorInCols',ScalarAttrData=NErrorInCols,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL InFile%ReadData(f_cAttributesDir,'NErrorOutCols',ScalarAttrData=NErrorOutCols,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
         ALLOCATE (Header%iErrorInCols(NErrorInCols) , Header%iErrorOutCols(NErrorOutCols))
-        CALL InFile%ReadData(cAttributesDir//'/ErrorInCols',Header%iErrorInCols,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-        CALL InFile%ReadData(cAttributesDir//'/ErrorOutCols',Header%iErrorOutCols,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL InFile%ReadData(f_cAttributesDir//'/ErrorInCols',Header%iErrorInCols,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL InFile%ReadData(f_cAttributesDir//'/ErrorOutCols',Header%iErrorOutCols,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
     END IF
     
     !ZBudget data columns related information
-    CALL InFile%ReadData(cAttributesDir,'NData',ScalarAttrData=Header%iNData,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL InFile%ReadData(f_cAttributesDir,'NData',ScalarAttrData=Header%iNData,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
     ALLOCATE (Header%iDataTypes(Header%iNData)                                               , &
               Header%cFullDataNames(Header%iNData)                                           , &
               Header%cDataHDFPaths(Header%iNData)                                            , &
               Header%iNDataElems(Header%iNData,SystemData%NLayers)                           , &
               Header%iElemDataColumns(SystemData%NElements,Header%iNData,SystemData%NLayers) )
-    CALL InFile%ReadData(cAttributesDir//'/DataTypes',Header%iDataTypes,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL InFile%ReadData(cAttributesDir//'/FullDataNames',Header%cFullDataNames,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL InFile%ReadData(cAttributesDir//'/DataHDFPaths',Header%cDataHDFPaths,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL InFile%ReadData(f_cAttributesDir//'/DataTypes',Header%iDataTypes,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL InFile%ReadData(f_cAttributesDir//'/FullDataNames',Header%cFullDataNames,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL InFile%ReadData(f_cAttributesDir//'/DataHDFPaths',Header%cDataHDFPaths,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
     DO indxLayer=1,SystemData%NLayers
-        CALL InFile%ReadData(cAttributesDir//'/Layer'//TRIM(IntToText(indxLayer))//'_ElemDataColumns',Header%iElemDataColumns(:,:,indxLayer),iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL InFile%ReadData(f_cAttributesDir//'/Layer'//TRIM(IntToText(indxLayer))//'_ElemDataColumns',Header%iElemDataColumns(:,:,indxLayer),iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
         DO indxData=1,Header%iNData
             Header%iNDataElems(indxData,indxLayer) = COUNT(Header%iElemDataColumns(:,indxData,indxLayer) .NE. 0)
         END DO
     END DO
         
     !ASCII output data
-    CALL InFile%ReadData(cAttributesDir,'ASCIIOutput%iLenTitles',ScalarAttrData=Header%ASCIIOutput%iLenTitles,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL InFile%ReadData(cAttributesDir,'ASCIIOutput%NTitles',ScalarAttrData=Header%ASCIIOutput%iNTitles,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL InFile%ReadData(cAttributesDir,'ASCIIOutput%LenColumnTitles',ScalarAttrData=Header%ASCIIOutput%iLenColumnTitles,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL InFile%ReadData(f_cAttributesDir,'ASCIIOutput%iLenTitles',ScalarAttrData=Header%ASCIIOutput%iLenTitles,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL InFile%ReadData(f_cAttributesDir,'ASCIIOutput%NTitles',ScalarAttrData=Header%ASCIIOutput%iNTitles,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL InFile%ReadData(f_cAttributesDir,'ASCIIOutput%LenColumnTitles',ScalarAttrData=Header%ASCIIOutput%iLenColumnTitles,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
     ALLOCATE (Header%ASCIIOutput%cColumnTitles(Header%ASCIIOutput%iNTitles))
-    CALL InFile%ReadData(cAttributesDir,'ASCIIOutput%ColumnTitles',ArrayAttrData=Header%ASCIIOutput%cColumnTitles,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL InFile%ReadData(cAttributesDir,'ASCIIOutput%NumberFormat',ScalarAttrData=Header%ASCIIOutput%cNumberFormat,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL InFile%ReadData(f_cAttributesDir,'ASCIIOutput%ColumnTitles',ArrayAttrData=Header%ASCIIOutput%cColumnTitles,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL InFile%ReadData(f_cAttributesDir,'ASCIIOutput%NumberFormat',ScalarAttrData=Header%ASCIIOutput%cNumberFormat,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
     
     !DSS pathname F parts
     ALLOCATE (Header%cDSSFParts(Header%iNData))
-    CALL InFile%ReadData(cAttributesDir,'DSSFParts',ArrayAttrData=Header%cDSSFParts,iStat=iStat)  
+    CALL InFile%ReadData(f_cAttributesDir,'DSSFParts',ArrayAttrData=Header%cDSSFParts,iStat=iStat)  
     
   END SUBROUTINE ReadFromFile
   
@@ -260,47 +260,47 @@ CONTAINS
     INTEGER :: indxLayer
     
     !Create Header directory
-    CALL OutFile%CreateHDFGroup(cAttributesDir)
+    CALL OutFile%CreateHDFGroup(f_cAttributesDir)
     
     !Software version that created the raw Z-Budget data
-    CALL OutFile%WriteData(iGroup,cAttributesDir,'Software_Version',ScalarAttrData=Header%cSoftwareVersion)
+    CALL OutFile%WriteData(f_iGroup,f_cAttributesDir,'Software_Version',ScalarAttrData=Header%cSoftwareVersion)
     
     !Z-Budget file descriptor
-    CALL OutFile%WriteData(iGroup,cAttributesDir,'Descriptor',ScalarAttrData=Header%cDescriptor)
+    CALL OutFile%WriteData(f_iGroup,f_cAttributesDir,'Descriptor',ScalarAttrData=Header%cDescriptor)
     
     !Flags
-    CALL OutFile%WriteData(iGroup,cAttributesDir,'lVertFlows_DefinedAtNode',ScalarAttrData=Header%lVertFlows_DefinedAtNode)
-    CALL OutFile%WriteData(iGroup,cAttributesDir,'lFaceFlows_Defined',ScalarAttrData=Header%lFaceFlows_Defined)
-    CALL OutFile%WriteData(iGroup,cAttributesDir,'lStorages_Defined',ScalarAttrData=Header%lStorages_Defined)
-    CALL OutFile%WriteData(iGroup,cAttributesDir,'lComputeError',ScalarAttrData=Header%lComputeError)
+    CALL OutFile%WriteData(f_iGroup,f_cAttributesDir,'lVertFlows_DefinedAtNode',ScalarAttrData=Header%lVertFlows_DefinedAtNode)
+    CALL OutFile%WriteData(f_iGroup,f_cAttributesDir,'lFaceFlows_Defined',ScalarAttrData=Header%lFaceFlows_Defined)
+    CALL OutFile%WriteData(f_iGroup,f_cAttributesDir,'lStorages_Defined',ScalarAttrData=Header%lStorages_Defined)
+    CALL OutFile%WriteData(f_iGroup,f_cAttributesDir,'lComputeError',ScalarAttrData=Header%lComputeError)
     
     !Column numbers for mass balance error computation
     IF (Header%lComputeError) THEN
-        CALL OutFile%WriteData(iGroup,cAttributesDir,'NErrorInCols',ScalarAttrData=SIZE(Header%iErrorInCols))
-        CALL OutFile%WriteData(iGroup,cAttributesDir,'NErrorOutCols',ScalarAttrData=SIZE(Header%iErrorOutCols))
-        CALL OutFile%WriteData(Header%iErrorInCols,cHDFPath=cAttributesDir//'/ErrorInCols')
-        CALL OutFile%WriteData(Header%iErrorOutCols,cHDFPath=cAttributesDir//'/ErrorOutCols')
+        CALL OutFile%WriteData(f_iGroup,f_cAttributesDir,'NErrorInCols',ScalarAttrData=SIZE(Header%iErrorInCols))
+        CALL OutFile%WriteData(f_iGroup,f_cAttributesDir,'NErrorOutCols',ScalarAttrData=SIZE(Header%iErrorOutCols))
+        CALL OutFile%WriteData(Header%iErrorInCols,cHDFPath=f_cAttributesDir//'/ErrorInCols')
+        CALL OutFile%WriteData(Header%iErrorOutCols,cHDFPath=f_cAttributesDir//'/ErrorOutCols')
     END IF
     
     !ZBudget data columns related information
-    CALL OutFile%WriteData(iGroup,cAttributesDir,'NData',ScalarAttrData=Header%iNData)
-    CALL OutFile%WriteData(Header%iDataTypes,cHDFPath=cAttributesDir//'/DataTypes')
-    CALL OutFile%WriteData(Header%cFullDataNames,cHDFPath=cAttributesDir//'/FullDataNames')
-    CALL OutFile%WriteData(Header%cDataHDFPaths,cHDFPath=cAttributesDir//'/DataHDFPaths')
+    CALL OutFile%WriteData(f_iGroup,f_cAttributesDir,'NData',ScalarAttrData=Header%iNData)
+    CALL OutFile%WriteData(Header%iDataTypes,cHDFPath=f_cAttributesDir//'/DataTypes')
+    CALL OutFile%WriteData(Header%cFullDataNames,cHDFPath=f_cAttributesDir//'/FullDataNames')
+    CALL OutFile%WriteData(Header%cDataHDFPaths,cHDFPath=f_cAttributesDir//'/DataHDFPaths')
     DO indxLayer=1,SystemData%NLayers
-        CALL OutFile%WriteData(Header%iElemDataColumns(:,:,indxLayer),cHDFPath=cAttributesDir//'/Layer'//TRIM(IntToText(indxLayer))//'_ElemDataColumns')
+        CALL OutFile%WriteData(Header%iElemDataColumns(:,:,indxLayer),cHDFPath=f_cAttributesDir//'/Layer'//TRIM(IntToText(indxLayer))//'_ElemDataColumns')
     END DO
     !CALL OutFile%WriteData(Header%iNDataElems,cHDFPath=cAttributesDir//'/NDataElems')  !Do not write this information; it will be compiled from Header%iElemDataColumns array during reading
     
     !ASCII output data
-    CALL OutFile%WriteData(iGroup,cAttributesDir,'ASCIIOutput%iLenTitles',ScalarAttrData=Header%ASCIIOutput%iLenTitles)
-    CALL OutFile%WriteData(iGroup,cAttributesDir,'ASCIIOutput%NTitles',ScalarAttrData=Header%ASCIIOutput%iNTitles)
-    CALL OutFile%WriteData(iGroup,cAttributesDir,'ASCIIOutput%LenColumnTitles',ScalarAttrData=Header%ASCIIOutput%iLenColumnTitles)
-    CALL OutFile%WriteData(iGroup,cAttributesDir,'ASCIIOutput%ColumnTitles',ArrayAttrData=Header%ASCIIOutput%cColumnTitles)
-    CALL OutFile%WriteData(iGroup,cAttributesDir,'ASCIIOutput%NumberFormat',ScalarAttrData=Header%ASCIIOutput%cNumberFormat)
+    CALL OutFile%WriteData(f_iGroup,f_cAttributesDir,'ASCIIOutput%iLenTitles',ScalarAttrData=Header%ASCIIOutput%iLenTitles)
+    CALL OutFile%WriteData(f_iGroup,f_cAttributesDir,'ASCIIOutput%NTitles',ScalarAttrData=Header%ASCIIOutput%iNTitles)
+    CALL OutFile%WriteData(f_iGroup,f_cAttributesDir,'ASCIIOutput%LenColumnTitles',ScalarAttrData=Header%ASCIIOutput%iLenColumnTitles)
+    CALL OutFile%WriteData(f_iGroup,f_cAttributesDir,'ASCIIOutput%ColumnTitles',ArrayAttrData=Header%ASCIIOutput%cColumnTitles)
+    CALL OutFile%WriteData(f_iGroup,f_cAttributesDir,'ASCIIOutput%NumberFormat',ScalarAttrData=Header%ASCIIOutput%cNumberFormat)
     
     !DSS pathname F parts
-    CALL OutFile%WriteData(iGroup,cAttributesDir,'DSSFParts',ArrayAttrData=Header%cDSSFParts)
+    CALL OutFile%WriteData(f_iGroup,f_cAttributesDir,'DSSFParts',ArrayAttrData=Header%cDSSFParts)
     
   END SUBROUTINE WriteToFile
 

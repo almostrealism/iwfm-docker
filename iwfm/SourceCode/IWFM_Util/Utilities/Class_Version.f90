@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2019  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -25,7 +25,7 @@ MODULE Class_Version
                                   CleanSpecialCharacters
   USE MessageLogger     ,  ONLY : SetLastMessage          , &
                                   MessageArray            , &
-                                  iFatal
+                                  f_iFatal
   USE IOInterface       ,  ONLY : GenericFileType
   IMPLICIT NONE
   
@@ -199,7 +199,7 @@ CONTAINS
         MessageArray(1) = 'Error in identifying the version number of the '//TRIM(cComponent)//' component!'
         MessageArray(2) = 'Make sure that the version number is listed at the first line of the'
         MessageArray(3) = TRIM(cComponent)//' input file (see the input file template for format).'
-        CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF

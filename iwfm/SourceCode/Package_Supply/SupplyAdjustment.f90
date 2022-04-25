@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -24,24 +24,27 @@ MODULE SupplyAdjustment
   USE MessageLogger               , ONLY: SetLastMessage                 , &
                                           EchoProgress                   , &
                                           MessageArray                   , &
-                                          iFatal
-  USE TimeSeriesUtilities
-  USE GeneralUtilities
+                                          f_iFatal
+  USE GeneralUtilities            , ONLY: NormalizeArray
+  USE TimeSeriesUtilities         , ONLY: TimeStepType
   USE Package_ComponentConnectors , ONLY: SupplyToDestinationType        , &
                                           DestinationToSupplyType        , &
                                           SupplyDestinationConnectorType
   USE Package_Misc                , ONLY: IntTSDataInFileType            , &
                                           ReadTSData                     , &
-                                          iSupply_Diversion              , &
-                                          iSupply_ElemPump               , &
-                                          iSupply_Well                   , &
-                                          FlowDest_Element
+                                          f_iSupply_Diversion            , &
+                                          f_iSupply_ElemPump             , &
+                                          f_iSupply_Well                 , &
+                                          f_iFlowDest_Element            , &
+                                          f_iAg                          , &
+                                          f_iUrb
   USE Package_AppGW               , ONLY: AppGWType                      , &
-                                          iPump_Well                     , &
-                                          iPump_ElemPump
-  USE Package_AppStream
-  USE Package_RootZone
-  USE Package_Discretization
+                                          f_iPump_Well                   , &
+                                          f_iPump_ElemPump
+  USE Package_AppStream           , ONLY: AppStreamType
+  USE Package_RootZone            , ONLY: RootZoneType
+  USE Package_Discretization      , ONLY: AppGridType                    , &
+                                          StratigraphyType
   IMPLICIT NONE
   
   
@@ -61,30 +64,28 @@ MODULE SupplyAdjustment
   ! -------------------------------------------------------------
   PRIVATE
   PUBLIC :: SupplyAdjustmentType                       ,  &
-            iAdjustNone                                ,  &
-            iAdjustPump                                ,  &
-            iAdjustDiver                               ,  &
-            iAdjustPumpDiver                           ,  &
-            iAdjustForNone                             ,  &
-            iAdjustForAg                               ,  &
-            iAdjustForUrb                              ,  &
-            iAdjustForAgUrb                            
+            f_iAdjustNone                              ,  &
+            f_iAdjustPump                              ,  &
+            f_iAdjustDiver                             ,  &
+            f_iAdjustPumpDiver                         ,  &
+            f_iAdjustForNone                           ,  &
+            f_iAdjustForAg                             ,  &
+            f_iAdjustForUrb                            ,  &
+            f_iAdjustForAgUrb                            
             
   
   
   ! -------------------------------------------------------------
   ! --- ADJUSTMENT FLAGS
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER :: iAdjustNone      = 00  , &   !No adjustment
-                       iAdjustPump      = 10  , &   !Adjust pumping only
-                       iAdjustDiver     = 01  , &   !Adjust diversions only
-                       iAdjustPumpDiver = 11  , &   !Adjust both diversion and pumping
-                       iAdjustForNone   = 00  , &   !Do not adjust supply for ag or urban 
-                       iAdjustForAg     = 10  , &   !Adjust supply for ag only
-                       iAdjustForUrb    = 01  , &   !Adjust supply for urban only
-                       iAdjustForAgUrb  = 11  , &   !Adjust supply for ag and urban both
-                       iAg              = 1   , &   !Flag to specify that an operation is done for Ag
-                       iUrb             = 2         !Flag to specify that an opeartion is done for Urban
+  INTEGER,PARAMETER :: f_iAdjustNone      = 00  , &   !No adjustment
+                       f_iAdjustPump      = 10  , &   !Adjust pumping only
+                       f_iAdjustDiver     = 01  , &   !Adjust diversions only
+                       f_iAdjustPumpDiver = 11  , &   !Adjust both diversion and pumping
+                       f_iAdjustForNone   = 00  , &   !Do not adjust supply for ag or urban 
+                       f_iAdjustForAg     = 10  , &   !Adjust supply for ag only
+                       f_iAdjustForUrb    = 01  , &   !Adjust supply for urban only
+                       f_iAdjustForAgUrb  = 11        !Adjust supply for ag and urban both
                        
 
   ! -------------------------------------------------------------
@@ -92,16 +93,16 @@ MODULE SupplyAdjustment
   ! -------------------------------------------------------------
   TYPE SupplyAdjustmentType
     PRIVATE
-    INTEGER                   :: iAdjust               = iAdjustNone  !Will pumping, diversions or both will be adjusted
-    INTEGER                   :: NAdjustLocations      = 0            !Number of demand locations (e.g. elements or subregions) for which supply will be adjusted
-    INTEGER                   :: NMaxPumpAdjustIter    = 0            !Number of maximum supply adjustment iterations (only used for pumping; for diversions diversion rank is used to limit the iterations)
-    INTEGER                   :: iWellPumpAdjustIter   = 0            !Current well pumping adjustment iteration 
-    INTEGER                   :: iElemPumpAdjustIter   = 0            !Current element pumping adjustment iteration 
-    INTEGER                   :: iDiverAdjustIter      = -1           !Current diversion adjustment iteration; set to -1 since smallest diversion rank is zero
-    INTEGER                   :: iGlobalAdjustIter     = 1            !Current global iteration counting all pumping and diversion adjustment iterations
-    REAL(8)                   :: Tolerance             = 0.0          !Tolerance as a fraction of demand that supply will be adjusted to (has to be a number between 0 and 1)
-    LOGICAL                   :: lAdjust               = .FALSE.      !Flag to check further adjustment runs will be performed
-    TYPE(IntTSDataInFileType) :: SpecFile                             !Supply adjustment specifications file
+    INTEGER                   :: iAdjust               = f_iAdjustNone  !Will pumping, diversions or both will be adjusted
+    INTEGER                   :: NAdjustLocations      = 0              !Number of demand locations (e.g. elements or subregions) for which supply will be adjusted
+    INTEGER                   :: NMaxPumpAdjustIter    = 0              !Number of maximum supply adjustment iterations (only used for pumping; for diversions diversion rank is used to limit the iterations)
+    INTEGER                   :: iWellPumpAdjustIter   = 0              !Current well pumping adjustment iteration 
+    INTEGER                   :: iElemPumpAdjustIter   = 0              !Current element pumping adjustment iteration 
+    INTEGER                   :: iDiverAdjustIter      = -1             !Current diversion adjustment iteration; set to -1 since smallest diversion rank is zero
+    INTEGER                   :: iGlobalAdjustIter     = 1              !Current global iteration counting all pumping and diversion adjustment iterations
+    REAL(8)                   :: Tolerance             = 0.0            !Tolerance as a fraction of demand that supply will be adjusted to (has to be a number between 0 and 1)
+    LOGICAL                   :: lAdjust               = .FALSE.        !Flag to check further adjustment runs will be performed
+    TYPE(IntTSDataInFileType) :: SpecFile                               !Supply adjustment specifications file
   CONTAINS
     PROCEDURE,PASS :: New  
     PROCEDURE,PASS :: Kill
@@ -109,13 +110,14 @@ MODULE SupplyAdjustment
     PROCEDURE,PASS :: IsDiversionAdjusted       
     PROCEDURE,PASS :: IsPumpingAdjusted         
     PROCEDURE,PASS :: GetAdjustFlag             
-    PROCEDURE,PASS :: GetAdjustIter             
+    PROCEDURE,PASS :: GetAdjustIter
+    PROCEDURE,PASS :: GetFileName
     PROCEDURE,PASS :: SetTolerance              
     PROCEDURE,PASS :: SetAdjustFlag             
     PROCEDURE,PASS :: SetMaxPumpAdjustIter      
     PROCEDURE,PASS :: ReadTSData           => SupplyAdjustment_ReadTSData      
     PROCEDURE,PASS :: Adjust                    
-    PROCEDURE,PASS :: AdvanceState              
+    PROCEDURE,PASS :: ResetState              
   END TYPE SupplyAdjustmentType
   
   
@@ -147,9 +149,9 @@ CONTAINS
   ! --- NEW SUPPLY ADJUSTMENT DATA
   ! --- *** Note: Assumes iAdjust and NMaxPumpAdjustIter flags are already set
   ! -------------------------------------------------------------
-  SUBROUTINE New(SupplyAdjustment,cFileName,NDemandLocations,TimeStep,iStat)
+  SUBROUTINE New(SupplyAdjustment,cFileName,cWorkingDirectory,NDemandLocations,TimeStep,iStat)
     CLASS(SupplyAdjustmentType)   :: SupplyAdjustment
-    CHARACTER(LEN=*),INTENT(IN)   :: cFileName
+    CHARACTER(LEN=*),INTENT(IN)   :: cFileName,cWorkingDirectory
     INTEGER,INTENT(IN)            :: NDemandLocations
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
     INTEGER,INTENT(OUT)           :: iStat
@@ -160,20 +162,20 @@ CONTAINS
     !Initialize
     iStat = 0
     
-    !Return if supply adjustment is not turned on
-    IF (SupplyAdjustment%iAdjust .EQ. iAdjustNone) RETURN
+    !Always instantiate SupplyAdjustment object since it maybe modified later and info will be needed
+    !IF (SupplyAdjustment%iAdjust .EQ. f_iAdjustNone) RETURN
     
     !Stop if no filename is given
     IF (cFileName .EQ. '') THEN
         MessageArray(1) = 'Supply adjustment specifications file must be specified'
-        MessageArray(2) = ' when automated supply adjustment is turn on!'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+        MessageArray(2) = ' when pumping or diversions are defined!'
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
     
     !Instantiate data
-    CALL SupplyAdjustment%SpecFile%Init(cFileName,'supply adjustment specifications file',TimeStep%TrackTime,BlocksToSkip=1,iStat=iStat)  
+    CALL SupplyAdjustment%SpecFile%Init(cFileName,cWorkingDirectory,'supply adjustment specifications file',TimeStep%TrackTime,BlocksToSkip=1,iStat=iStat)  
     IF (iStat .EQ. -1) RETURN
     
     !Set number of locations for which supply adjustment will be performed
@@ -233,6 +235,18 @@ CONTAINS
 ! ******************************************************************
   
   ! -------------------------------------------------------------
+  ! --- GET SUPPLY ADJUSTMENT FLAGS FILENAME
+  ! -------------------------------------------------------------
+  SUBROUTINE GetFileName(SupplyAdjustment,cFileName)
+    CLASS(SupplyAdjustmentType),INTENT(IN) :: SupplyAdjustment
+    CHARACTER(:),ALLOCATABLE,INTENT(OUT)   :: cFileName
+    
+    CALL SupplyAdjustment%SpecFile%GetFileName(cFileName)
+    
+  END SUBROUTINE GetFileName
+  
+
+  ! -------------------------------------------------------------
   ! --- GET SUPPLY ADJUSTMENT FLAG
   ! -------------------------------------------------------------
   PURE FUNCTION GetAdjustFlag(SupplyAdjustment) RESULT(iFlag)
@@ -275,7 +289,7 @@ CONTAINS
     CLASS(SupplyAdjustmentType),INTENT(IN) :: SupplyAdjustment
     LOGICAL                                :: lAdjust
     
-    IF (SupplyAdjustment%iAdjust.EQ.iAdjustDiver  .OR.  SupplyAdjustment%iAdjust.EQ.iAdjustPumpDiver) THEN
+    IF (SupplyAdjustment%iAdjust.EQ.f_iAdjustDiver  .OR.  SupplyAdjustment%iAdjust.EQ.f_iAdjustPumpDiver) THEN
       lAdjust = .TRUE.
     ELSE
       lAdjust = .FALSE.
@@ -291,15 +305,14 @@ CONTAINS
     CLASS(SupplyAdjustmentType),INTENT(IN) :: SupplyAdjustment
     LOGICAL                                :: lAdjust
     
-    IF (SupplyAdjustment%iAdjust.EQ.iAdjustPump  .OR.  SupplyAdjustment%iAdjust.EQ.iAdjustPumpDiver) THEN
+    IF (SupplyAdjustment%iAdjust.EQ.f_iAdjustPump  .OR.  SupplyAdjustment%iAdjust.EQ.f_iAdjustPumpDiver) THEN
       lAdjust = .TRUE.
     ELSE
       lAdjust = .FALSE.
     END IF
     
   END FUNCTION IsPumpingAdjusted
-
-
+  
   
   
   
@@ -329,7 +342,7 @@ CONTAINS
     
     !Make sure tolerance is set to a value between 0 and 1
     IF (Toler.GT.1.0  .OR. Toler.LT.0.0) THEN
-        CALL SetLastMessage('Supply adjustment tolerance must be a value between 0 and 1',iFatal,ThisProcedure)
+        CALL SetLastMessage('Supply adjustment tolerance must be a value between 0 and 1',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -356,7 +369,7 @@ CONTAINS
     
     !Make sure that iMaxIter is not less than 1
     IF (iMaxIter .LE. 0) THEN
-        CALL SetLastMessage('Maximum supply adjustment iteration number must be greater than zero!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Maximum supply adjustment iteration number must be greater than zero!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -381,11 +394,11 @@ CONTAINS
     iStat = 0
     
     !Make sure that adjustment flag is recognised
-    IF (iAdjust .NE. iAdjustNone) THEN      
-        IF (iAdjust .NE. iAdjustPump) THEN      
-            IF (iAdjust .NE. iAdjustDiver) THEN
-                IF (iAdjust .NE. iAdjustPumpDiver) THEN
-                    CALL SetLastMessage('Supply adjustment flag to adjust pumping, diversions or both is not recognized!',iFatal,ThisProcedure)
+    IF (iAdjust .NE. f_iAdjustNone) THEN      
+        IF (iAdjust .NE. f_iAdjustPump) THEN      
+            IF (iAdjust .NE. f_iAdjustDiver) THEN
+                IF (iAdjust .NE. f_iAdjustPumpDiver) THEN
+                    CALL SetLastMessage('Supply adjustment flag to adjust pumping, diversions or both is not recognized!',f_iFatal,ThisProcedure)
                     iStat = -1
                     RETURN
                 END IF
@@ -396,7 +409,7 @@ CONTAINS
     SupplyAdjustment%iAdjust = iAdjust
     
     !Set the flag to check if adjustment runs will be performed
-    IF (iAdjust .NE. iAdjustNone) THEN
+    IF (iAdjust .NE. f_iAdjustNone) THEN
         SupplyAdjustment%lAdjust = .TRUE.
     ELSE
         SupplyAdjustment%lAdjust = .FALSE.
@@ -428,7 +441,7 @@ CONTAINS
     INTEGER :: FileReadCode
     
     !Return if no adjustment is asked for
-    IF (SupplyAdjustment%iAdjust .EQ. iAdjustNone) THEN
+    IF (SupplyAdjustment%iAdjust .EQ. f_iAdjustNone) THEN
         iStat = 0
         RETURN
     END IF
@@ -453,10 +466,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- ADJUST SUPPLIES
   ! -------------------------------------------------------------
-  SUBROUTINE Adjust(SupplyAdjustment,AppGrid,Stratigraphy,RootZone,AppGW,AppStream,DiverDestConnector,WellDestConnector,ElemPumpDestConnector)
+  SUBROUTINE Adjust(SupplyAdjustment,AppGrid,RootZone,AppGW,AppStream,DiverDestConnector,WellDestConnector,ElemPumpDestConnector)
     CLASS(SupplyAdjustmentType)          :: SupplyAdjustment
     TYPE(AppGridType),INTENT(IN)         :: AppGrid
-    TYPE(StratigraphyType),INTENT(IN)    :: Stratigraphy
     TYPE(RootZoneType),INTENT(IN)        :: RootZone
     TYPE(AppGWType)                      :: AppGW
     TYPE(AppStreamType)                  :: AppStream
@@ -464,11 +476,11 @@ CONTAINS
     
     !Local variables
     INTEGER                                              :: NDiver,NPump
-    REAL(8),DIMENSION(SupplyAdjustment%NAdjustLocations) :: AgDiff,UrbDiff,AgDemand,UrbDemand,AgToler,UrbToler
+    REAL(8),DIMENSION(SupplyAdjustment%NAdjustLocations) :: AgDiff,UrbDiff,AgDemand,UrbDemand,AgToler,UrbToler,AgSupply,UrbSupply
     LOGICAL                                              :: lAdjusted
     
     !Return if there is no need to adjust
-    IF (SupplyAdjustment%iAdjust .EQ. iAdjustNone) RETURN
+    IF (SupplyAdjustment%iAdjust .EQ. f_iAdjustNone) RETURN
     
     !Initialize
     SupplyAdjustment%lAdjust = .TRUE.
@@ -476,17 +488,22 @@ CONTAINS
     !Inform user
     CALL EchoProgress('Adjusting supplies to meet water demand')
     
-    !Get ag and urban demands at each demand location
-    CALL RootZone%GetWaterDemand_Ag(AgDemand)
-    CALL RootZone%GetWaterDemand_Urb(UrbDemand)
+    !Get water demands
+    CALL RootZone%GetWaterDemand(f_iAg,AgDemand)
+    CALL RootZone%GetWaterDemand(f_iUrb,UrbDemand)
+    
+    !Get water suppies
+    CALL RootZone%GetWaterSupply(AppGrid,f_iAg,AgSupply)
+    CALL RootZone%GetWaterSupply(AppGrid,f_iUrb,UrbSupply)
+    
+    !Supply shortage (demand-supply) at each demand location
+    AgDiff  = AgDemand - AgSupply
+    UrbDiff = UrbDemand - UrbSupply
     
     !Supply adjustment tolerance at each demand location
     AgToler  = AgDemand * SupplyAdjustment%Tolerance
     UrbToler = UrbDemand * SupplyAdjustment%Tolerance
 
-    !Get demand less supply
-    CALL ComputeDemandSupplyDiff(AppGrid,RootZone,AgDemand,UrbDemand,AgDiff,UrbDiff)
-    
     !First adjust diversions
     IF (IsDiversionsAdjustable(SupplyAdjustment,AppStream)) THEN
         NDiver = AppStream%GetNDiver()
@@ -516,14 +533,12 @@ CONTAINS
     END IF
       
     !Then adjust wells
-    IF (IsPumpingAdjustable(SupplyAdjustment,AppGW,iSupply_Well)) THEN
+    IF (IsPumpingAdjustable(SupplyAdjustment,AppGW,f_iSupply_Well)) THEN
         NPump = AppGW%GetNWells()
-        CALL AdjustPumping(AppGrid                               , &
-                           Stratigraphy                          , &
-                           AppGW                                 , &
+        CALL AdjustPumping(AppGW                                 , &
                            WellDestConnector                     , &
                            NPump                                 , &
-                           iSupply_Well                          , &
+                           f_iSupply_Well                        , &
                            AgToler                               , &
                            UrbToler                              , &
                            AgDiff                                , &
@@ -547,14 +562,12 @@ CONTAINS
     END IF
       
     !Finally adjust elemental pumping
-    IF (IsPumpingAdjustable(SupplyAdjustment,AppGW,iSupply_ElemPump)) THEN
+    IF (IsPumpingAdjustable(SupplyAdjustment,AppGW,f_iSupply_ElemPump)) THEN
         NPump = AppGW%GetNElemPumps()
-        CALL AdjustPumping(AppGrid                               , &
-                           Stratigraphy                          , &
-                           AppGW                                 , &
+        CALL AdjustPumping(AppGW                                 , &
                            ElemPumpDestConnector                 , &
                            NPump                                 , &
-                           iSupply_ElemPump                      , &
+                           f_iSupply_ElemPump                    , &
                            AgToler                               , &
                            UrbToler                              , &
                            AgDiff                                , &
@@ -616,7 +629,7 @@ CONTAINS
     END DO 
         
     !Adjust diversions
-    CALL AdjustSupplies(iSupply_Diversion    , &
+    CALL AdjustSupplies(f_iSupply_Diversion  , &
                         iDiverRank           , &
                         iDiverAdjustIter     , &
                         iDiverAdjustFlags    , &
@@ -645,9 +658,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- ADJUST WELL/ELEMENT PUMPING TO MEET ELEMENT LEVEL DEMANDS
   ! -------------------------------------------------------------
-  SUBROUTINE AdjustPumping(AppGrid,Stratigraphy,AppGW,PumpDestConnector,NPump,iSupplyType,AgToler,UrbToler,AgDiff,UrbDiff,iAdjustFlags,iGlobalAdjustIter,iPumpAdjustIter,lAdjusted)
-    TYPE(AppGridType),INTENT(IN)         :: AppGrid
-    TYPE(StratigraphyType),INTENT(IN)    :: Stratigraphy
+  SUBROUTINE AdjustPumping(AppGW,PumpDestConnector,NPump,iSupplyType,AgToler,UrbToler,AgDiff,UrbDiff,iAdjustFlags,iGlobalAdjustIter,iPumpAdjustIter,lAdjusted)
     TYPE(AppGWType)                      :: AppGW
     TYPE(SupplyDestinationConnectorType) :: PumpDestConnector
     INTEGER,INTENT(IN)                   :: NPump,iSupplyType,iAdjustFlags(:)
@@ -692,7 +703,7 @@ CONTAINS
     !If any pumping is adjusted...
     IF (lAdjusted) THEN
       !Update the supply specs with pumping object
-      CALL AppGW%SetSupplySpecs(PumpDestConnector,iSupplyType,AppGrid,Stratigraphy,PumpRequired,IrigFracs,PumpDestConnector%SupplyToDestination)
+      CALL AppGW%SetSupplySpecs(PumpDestConnector,iSupplyType,PumpRequired,IrigFracs,PumpDestConnector%SupplyToDestination)
    
       !Increment global and pumping specific adjustment iteration number
       iGlobalAdjustIter = iGlobalAdjustIter + 1 
@@ -715,15 +726,15 @@ CONTAINS
     
     !Local variables
     INTEGER :: indxDest,nAdjustable,nSupply,indxSupply
-    REAL(8) :: Diff,SourcesRequired_Old(SupplyDestConnector%NSupply),Toler,IrigFracs_Original(SupplyDestConnector%NSupply)
+    REAL(8) :: Diff,SourcesRequired_Original(SupplyDestConnector%NSupply),Toler,IrigFracs_Original(SupplyDestConnector%NSupply)
     LOGICAL :: lAdjustSuppliesForADest(500),lAdjustedSupplies(SupplyDestConnector%NSupply)
     
     !Initialize
-    lAdjusted           = .FALSE.
-    lAdjustedSupplies   = .FALSE.
-    SourcesRequired_Old = SourcesRequired
-    SourcesRequired     = SourcesActual
-    IrigFracs_Original  = IrigFracs
+    lAdjusted                = .FALSE.
+    lAdjustedSupplies        = .FALSE.
+    SourcesRequired_Original = SourcesRequired
+    SourcesRequired          = SourcesActual
+    IrigFracs_Original       = IrigFracs
     
     ASSOCIATE (pSupplyToDest => SupplyDestConnector%SupplyToDestination , &
                pDestToSupply => SupplyDestConnector%DestinationToSupply )
@@ -736,7 +747,7 @@ CONTAINS
         
         !Iterate over destinations
         Destination_Loop:  &
-        DO indxDest=1,SIZE(AgDiff)
+        DO indxDest=1,SupplyDestConnector%NDestination
           nSupply = pDestToSupply(indxDest)%nSupply
           
           !If there are no sources serving this destination, cycle
@@ -754,9 +765,9 @@ CONTAINS
             !Count adjustable supplies
             CALL TagAdjustableSupplies(iSupplyType             , &
                                        Diff                    , &
-                                       iAg                     , &
+                                       f_iAg                   , &
                                        iAdjustFlags            , &
-                                       SourcesRequired_Old     , &
+                                       SourcesRequired_Original, &
                                        SourcesRequired         , &
                                        SourcesActual           , &
                                        SourcesMax              , &
@@ -780,7 +791,7 @@ CONTAINS
             END DO
           
             !Adjust supply
-            CALL Adjust(iAg,Toler,lAdjustSuppliesForADest,pDestToSupply(indxDest),pSupplyToDest,SourcesActual,SourcesRequired)
+            CALL Adjust(f_iAg,Toler,lAdjustSuppliesForADest,SourcesMax,pDestToSupply(indxDest),pSupplyToDest,SourcesActual,SourcesRequired)
           
           END DO Ag_Supply_Adjustment_Loop
 
@@ -796,9 +807,9 @@ CONTAINS
             !Count adjustable supplies
             CALL TagAdjustableSupplies(iSupplyType             , &
                                        Diff                    , &
-                                       iUrb                    , &
+                                       f_iUrb                  , &
                                        iAdjustFlags            , &
-                                       SourcesRequired_Old     , &
+                                       SourcesRequired_Original, &
                                        SourcesRequired         , &
                                        SourcesActual           , &
                                        SourcesMax              , &
@@ -822,7 +833,7 @@ CONTAINS
             END DO
           
             !Adjust supply
-            CALL Adjust(iUrb,Toler,lAdjustSuppliesForADest,pDestToSupply(indxDest),pSupplyToDest,SourcesActual,SourcesRequired)
+            CALL Adjust(f_iUrb,Toler,lAdjustSuppliesForADest,SourcesMax,pDestToSupply(indxDest),pSupplyToDest,SourcesActual,SourcesRequired)
           
           END DO Urb_Supply_Adjustment_Loop
           
@@ -830,14 +841,23 @@ CONTAINS
     
         !Finally convert volumetric supply-to-destination connections to fractions
         DO indxSupply=1,SupplyDestConnector%NSupply
-            IF (.NOT. lAdjustedSupplies(indxSupply)) SourcesRequired(indxSupply) = SourcesRequired_Old(indxSupply)
-            IF (SourcesRequired(indxSupply) .GT. 0.0) THEN
-                IrigFracs(indxSupply) = SUM(pSupplyToDest(indxSupply)%SupplyToDestFracs_Ag) / SourcesRequired(indxSupply)
+            IF (.NOT. lAdjustedSupplies(indxSupply)) THEN
+                SourcesRequired(indxSupply) = SourcesRequired_Original(indxSupply)
+                IrigFracs(indxSupply)       = IrigFracs_Original(indxSupply)
             ELSE
-                IrigFracs(indxSupply) = IrigFracs_Original(indxSupply)
+                IF (SourcesRequired(indxSupply) .GT. 0.0) THEN
+                    IrigFracs(indxSupply) = SUM(pSupplyToDest(indxSupply)%SupplyToDestFracs_Ag) / SourcesRequired(indxSupply)
+                ELSE
+                    IrigFracs(indxSupply) = IrigFracs_Original(indxSupply)
+                END IF
             END IF
-            CALL NormalizeArray(pSupplyToDest(indxSupply)%SupplyToDestFracs_Ag)
-            CALL NormalizeArray(pSupplyToDest(indxSupply)%SupplyToDestFracs_Urb)
+            IF (pSupplyToDest(indxSupply)%nDest .EQ. 1) THEN
+                pSupplyToDest(indxSupply)%SupplyToDestFracs_Ag  = 1.0
+                pSupplyToDest(indxSupply)%SupplyToDestFracs_Urb = 1.0
+            ELSE
+                CALL NormalizeArray(pSupplyToDest(indxSupply)%SupplyToDestFracs_Ag)
+                CALL NormalizeArray(pSupplyToDest(indxSupply)%SupplyToDestFracs_Urb)
+            END IF
         END DO
     
     END ASSOCIATE
@@ -849,19 +869,20 @@ CONTAINS
     ! ############################################
     ! --- ADJUST SUPPLIES FOR AN ELEMENT
     ! ############################################
-    SUBROUTINE Adjust(iAdjustFor,Toler,lAdjustSupplies,DestToSupply,SupplyToDest,SourcesActual,SourcesRequired)
+    SUBROUTINE Adjust(iAdjustFor,Toler,lAdjustSupplies,SourcesMax,DestToSupply,SupplyToDest,SourcesActual,SourcesRequired)
       INTEGER,INTENT(IN)                       :: iAdjustFor
-      REAL(8),INTENT(IN)                       :: Toler,SourcesActual(:)
+      REAL(8),INTENT(IN)                       :: Toler,SourcesActual(:),SourcesMax(:)
       LOGICAL,INTENT(IN)                       :: lAdjustSupplies(:)
       TYPE(DestinationToSupplyType),INTENT(IN) :: DestToSupply
       TYPE(SupplyToDestinationType)            :: SupplyToDest(:)
       REAL(8)                                  :: SourcesRequired(:)
 
       !Local variables
-      INTEGER :: indxSupply,iSupply,indxInServedDest
-      REAL(8) :: rCorrection,rAdjustedSupply,rCheck,AgSupplyTotal,         &
-                 DestSupply_Ag_Old,DestSupply_Urb_Old,DestSupply_Ag_New,   &
-                 DestSupply_Urb_New
+      INTEGER             :: indxSupply,iSupply,indxInServedDest,iErrorCode,inDest
+      REAL(8)             :: rCorrection,rAdjustedSupply,rCheck,AgSupplyTotal,         &
+                             DestSupply_Ag_Old,DestSupply_Urb_Old,DestSupply_Ag_New,   &
+                             DestSupply_Urb_New 
+      REAL(8),ALLOCATABLE :: SourcesMax_Local(:)
                  
     
       !Find correction
@@ -870,57 +891,76 @@ CONTAINS
       !Adjust each adjustable supply
       Diff = 0.0
       DO indxSupply=1,DestToSupply%nSupply
-        IF (.NOT. lAdjustSupplies(indxSupply)) CYCLE
-        iSupply            =  DestToSupply%iSupplies(indxSupply)
-        indxInServedDest   =  DestToSupply%iIndexInServedDest(indxSupply)
-        ASSOCIATE (pSupplyToDest      => SupplyToDest(iSupply)    )
-            
-            DestSupply_Ag_Old  = pSupplyToDest%SupplyToDestFracs_Ag(indxInServedDest)
-            DestSupply_Urb_Old = pSupplyToDest%SupplyToDestFracs_Urb(indxInServedDest)
-            IF (iAdjustFor .EQ. iAg) THEN
-              rAdjustedSupply = DestSupply_Ag_Old 
-            ELSE
-              rAdjustedSupply = DestSupply_Urb_Old
-            END IF 
-             
-            !If the supply is being reduced
-            IF (rCorrection .LT. 0.0) THEN
-              !If Tolerance is zero, the demand is zero. Set the supply to zero
-              IF (Toler .EQ. 0.0) THEN
-                rAdjustedSupply = 0.0
+          IF (.NOT. lAdjustSupplies(indxSupply)) CYCLE
+          iSupply            =  DestToSupply%iSupplies(indxSupply)
+          indxInServedDest   =  DestToSupply%iIndexInServedDest(indxSupply)
+          ASSOCIATE (pSupplyToDest      => SupplyToDest(iSupply)    )
+              
+              DestSupply_Ag_Old  = pSupplyToDest%SupplyToDestFracs_Ag(indxInServedDest)
+              DestSupply_Urb_Old = pSupplyToDest%SupplyToDestFracs_Urb(indxInServedDest)
+              IF (iAdjustFor .EQ. f_iAg) THEN
+                  rAdjustedSupply = DestSupply_Ag_Old 
               ELSE
-                rCheck = rAdjustedSupply + rCorrection
-                !Adjusted supply cannot be less than zero
-                IF (rCheck .LT. 0.0) THEN
-                  Diff            = Diff + rCheck
-                  rAdjustedSupply = 0.0
-                ELSE
-                  rAdjustedSupply = rCheck
-                END IF
+                  rAdjustedSupply = DestSupply_Urb_Old
+              END IF 
+               
+              !If the supply is being reduced
+              IF (rCorrection .LT. 0.0) THEN
+                  !If Tolerance is zero, the demand is zero. Set the supply to zero
+                  IF (Toler .EQ. 0.0) THEN
+                      rAdjustedSupply = 0.0
+                  ELSE
+                      rCheck = rAdjustedSupply + rCorrection
+                      !Adjusted supply cannot be less than zero
+                      IF (rCheck .LT. 0.0) THEN
+                          Diff            = Diff + rCheck
+                          rAdjustedSupply = 0.0
+                      ELSE
+                          rAdjustedSupply = rCheck
+                      END IF
+                  END IF
+          
+              !If the supply is being increased
+              ELSE
+                  rAdjustedSupply = rAdjustedSupply + rCorrection
+                  inDest          = pSupplyToDest%nDest
+                  DEALLOCATE (SourcesMax_Local , STAT=iErrorCode)
+                  ALLOCATE (SourcesMax_Local(inDest))
+                  IF (iAdjustFor .EQ. f_iAg) THEN
+                      SourcesMax_Local   = pSupplyToDest%SupplyToDestFracs_Ag
+                      IF (ALL(SourcesMax_Local .EQ. 0d0)) THEN
+                          SourcesMax_Local = 1d0 / REAL(inDest,8)
+                      ELSE
+                          CALL NormalizeArray(SourcesMax_Local)
+                      END IF
+                      SourcesMax_Local   = SourcesMax(iSupply) * SourcesMax_Local
+                      rAdjustedSupply    = MIN(rAdjustedSupply , SourcesMax_Local(indxInServedDest))
+                  ELSE
+                      SourcesMax_Local   = pSupplyToDest%SupplyToDestFracs_Urb
+                      IF (ALL(SourcesMax_Local .EQ. 0d0)) THEN
+                          SourcesMax_Local = 1d0 / REAL(inDest,8)
+                      ELSE
+                          CALL NormalizeArray(SourcesMax_Local)
+                      END IF
+                      SourcesMax_Local   = SourcesMax(iSupply) * SourcesMax_Local
+                      rAdjustedSupply    = MIN(rAdjustedSupply , SourcesMax_Local(indxInServedDest))
+                  END IF
               END IF
-
-            !If the supply is being increased
-            ELSE
-              !Don't do anything special; if the overall SourceRequired is greater than SourceMax, 
-              !this will be taken care of during routing and any unmet demand will be taken care 
-              !of in the next supply adjustment iteration
-              rAdjustedSupply  = rAdjustedSupply + rCorrection
-            END IF
-            
-            !Store adjusted supplies
-            IF (iAdjustFor .EQ. iAg) THEN
-              DestSupply_Ag_New  = rAdjustedSupply
-              DestSupply_Urb_New = DestSupply_Urb_Old
-            ELSE
-              DestSupply_Ag_New  = DestSupply_Ag_Old
-              DestSupply_Urb_New = rAdjustedSupply
-            END IF
-            SourcesRequired(iSupply)                              = SourcesRequired(iSupply) - (DestSupply_Ag_Old + DestSupply_Urb_Old) + (DestSupply_Ag_New + DestSupply_Urb_New)
-            SourcesRequired(iSupply)                              = MAX(0d0 , SourcesRequired(iSupply))   !Check for round-off errors; sometimes sources become a tiny negative value
-            pSupplyToDest%SupplyToDestFracs_Ag(indxInServedDest)  = DestSupply_Ag_New
-            pSupplyToDest%SupplyToDestFracs_Urb(indxInServedDest) = DestSupply_Urb_New
-            
-        END ASSOCIATE
+              
+              !Store adjusted supplies
+              IF (iAdjustFor .EQ. f_iAg) THEN
+                DestSupply_Ag_New  = rAdjustedSupply
+                DestSupply_Urb_New = DestSupply_Urb_Old
+              ELSE
+                DestSupply_Ag_New  = DestSupply_Ag_Old
+                DestSupply_Urb_New = rAdjustedSupply
+              END IF
+              SourcesRequired(iSupply)                              = SourcesRequired(iSupply) - (DestSupply_Ag_Old + DestSupply_Urb_Old) + (DestSupply_Ag_New + DestSupply_Urb_New)
+              SourcesRequired(iSupply)                              = MAX(0d0 , SourcesRequired(iSupply))   !Check for round-off errors; sometimes sources become a tiny negative value
+              pSupplyToDest%SupplyToDestFracs_Ag(indxInServedDest)  = DestSupply_Ag_New
+              pSupplyToDest%SupplyToDestFracs_Urb(indxInServedDest) = DestSupply_Urb_New
+              
+          END ASSOCIATE
       END DO
 
     END SUBROUTINE Adjust
@@ -958,20 +998,20 @@ CONTAINS
       
       !Is the supply tagged for adjustment?
       iAdjustSupplyFor = iAdjustFlags(iSupply)
-      IF (iAdjustFor .EQ. iAg) THEN
-        IF (iAdjustSupplyFor.EQ.iAdjustForUrb .OR. iAdjustSupplyFor.EQ.iAdjustForNone) THEN
+      IF (iAdjustFor .EQ. f_iAg) THEN
+        IF (iAdjustSupplyFor.EQ.f_iAdjustForUrb .OR. iAdjustSupplyFor.EQ.f_iAdjustForNone) THEN
           lAdjustSupplies(indxSupply) = .FALSE.
           CYCLE
         END IF
       ELSE
-        IF (iAdjustSupplyFor.EQ.iAdjustForAg .OR. iAdjustSupplyFor.EQ.iAdjustForNone) THEN
+        IF (iAdjustSupplyFor.EQ.f_iAdjustForAg .OR. iAdjustSupplyFor.EQ.f_iAdjustForNone) THEN
           lAdjustSupplies(indxSupply) = .FALSE.
           CYCLE
         END IF
       END IF
       
       !Is the rank of the diversion greater than or equal to the rank being considered?
-      IF (iSupplyType .EQ. iSupply_Diversion) THEN
+      IF (iSupplyType .EQ. f_iSupply_Diversion) THEN
         IF (iDiverRanks(indxSupply) .LT. iDiverAdjustIter) THEN
           lAdjustSupplies(indxSupply) = .FALSE.
           CYCLE
@@ -980,13 +1020,13 @@ CONTAINS
       
       !If the supply needs to be decreased...
       IF (Diff .LT. 0.0) THEN
-        IF (iAdjustFor .EQ. iAg) THEN
+        IF (iAdjustFor .EQ. f_iAg) THEN
           Supply = SupplyToDest(iSupply)%SupplyToDestFracs_Ag(indxInServedDest)
         ELSE
           Supply = SupplyToDest(iSupply)%SupplyToDestFracs_Urb(indxInServedDest)
         END IF
         !Is the original supply greater than zero?
-        IF (Supply .EQ. 0.0) THEN
+        IF (Supply .EQ. 0d0) THEN
           lAdjustSupplies(indxSupply) = .FALSE.
           CYCLE
         END IF
@@ -994,14 +1034,14 @@ CONTAINS
       !If the supply needs to be increased...
       ELSE   
         !Is the water at source less than the maximum amount?
-        IF (SourcesRequired_New(iSupply) .GE. MaxSources(iSupply)) THEN
-          lAdjustSupplies(indxSupply) = .FALSE.
-          CYCLE
+        IF (SourcesRequired_New(iSupply) .GT. 0.99999d0*MaxSources(iSupply)) THEN  !Use a slightly decreased version of MAxSource in comparison to cover for round-off errors that might show up in SourcesRequired_New 
+            lAdjustSupplies(indxSupply) = .FALSE.
+            CYCLE
         END IF
         !Is the actual source less than required source indicating that there is not enough water at the source?
         IF (SourcesRequired_Old(iSupply) .GT. SourcesActual(iSupply)) THEN
-          lAdjustSupplies(indxSupply) = .FALSE.
-          CYCLE
+            lAdjustSupplies(indxSupply) = .FALSE.
+            CYCLE
         END IF              
       END IF
 
@@ -1011,39 +1051,16 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
-  ! --- COMPUTE DEMAND LESS SUPPLY AT ELEMENTS
+  ! --- RESET THE STATE OF THE SUPPLY ADJUSTMENT OBJECT
   ! -------------------------------------------------------------
-  SUBROUTINE ComputeDemandSupplyDiff(AppGrid,RootZone,AgDemand,UrbDemand,AgDiff,UrbDiff)
-    TYPE(AppGridType),INTENT(IN)  :: AppGrid
-    TYPE(RootZoneType),INTENT(IN) :: RootZone
-    REAL(8),INTENT(IN)            :: AgDemand(:),UrbDemand(:)
-    REAL(8),INTENT(OUT)           :: AgDiff(SIZE(AgDemand)),UrbDiff(SIZE(AgDemand))
-    
-    !Local variables
-    REAL(8) :: AgSupply(SIZE(AgDemand)),UrbSupply(SIZE(AgDemand))
-    
-    !Get supplies
-    CALL RootZone%GetWaterSupply_Ag(AppGrid,AgSupply)
-    CALL RootZone%GetWaterSupply_Urb(AppGrid,UrbSupply)
-    
-    !Compute differences
-    AgDiff  = AgDemand - AgSupply
-    UrbDiff = UrbDemand - UrbSupply
-            
-  END SUBROUTINE ComputeDemandSupplyDiff
-  
-  
-  ! -------------------------------------------------------------
-  ! --- ADVANCE THE STATE OF THE SUPPLY ADJUSTMENT OBJECT
-  ! -------------------------------------------------------------
-  SUBROUTINE AdvanceState(SupplyAdjustment)
+  SUBROUTINE ResetState(SupplyAdjustment)
     CLASS(SupplyAdjustmentType) :: SupplyAdjustment
     
     !Local variables
     TYPE(SupplyAdjustmentType) :: DefaultData
     
     !No need to do anything if supply adjustment is not on
-    IF (SupplyAdjustment%iAdjust .EQ. iAdjustNone) RETURN
+    IF (SupplyAdjustment%iAdjust .EQ. f_iAdjustNone) RETURN
     
     SupplyAdjustment%iWellPumpAdjustIter = DefaultData%iWellPumpAdjustIter
     SupplyAdjustment%iElemPumpAdjustIter = DefaultData%iElemPumpAdjustIter
@@ -1051,7 +1068,7 @@ CONTAINS
     SupplyAdjustment%iGlobalAdjustIter   = DefaultData%iGlobalAdjustIter
     SupplyAdjustment%lAdjust             = .TRUE.
     
-  END SUBROUTINE AdvanceState
+  END SUBROUTINE ResetState
   
   
   ! -------------------------------------------------------------
@@ -1075,7 +1092,7 @@ CONTAINS
     IF (NDiver .EQ. 0) RETURN
     
     !Has the user asked for diversion adjustment?
-    IF (SupplyAdjustment%iAdjust.EQ.iAdjustNone .OR. SupplyAdjustment%iAdjust.EQ.iAdjustPump) RETURN
+    IF (SupplyAdjustment%iAdjust.EQ.f_iAdjustNone .OR. SupplyAdjustment%iAdjust.EQ.f_iAdjustPump) RETURN
     
     !Is the iteration number less than the maximum?
     IF (SupplyAdjustment%iDiverAdjustIter .GT. AppStream%GetMaxDiversionRank()) RETURN
@@ -1086,7 +1103,7 @@ CONTAINS
     lAdjusting = .FALSE.
     DO indxDiver=1,NDiver
         IF (iColAdjust(indxDiver) .EQ. 0) CYCLE
-        IF (SupplyAdjustment%SpecFile%iValues(iColAdjust(indxDiver)) .NE. iAdjustForNone) THEN
+        IF (SupplyAdjustment%SpecFile%iValues(iColAdjust(indxDiver)) .NE. f_iAdjustForNone) THEN
             lAdjusting = .TRUE.
             EXIT
         END IF
@@ -1117,22 +1134,22 @@ CONTAINS
     !Initialize
     lAdjustable = .FALSE.
     SELECT CASE (iSupplyType)
-      CASE (iSupply_Well)
+      CASE (f_iSupply_Well)
         NPumps    = AppGW%GetNWells()
         iIter     = SupplyAdjustment%iWellPumpAdjustIter
-        iPumpType = iPump_Well
+        iPumpType = f_iPump_Well
         
-      CASE (iSupply_ElemPump)
+      CASE (f_iSupply_ElemPump)
         NPumps    = AppGW%GetNElemPumps()
         iIter     = SupplyAdjustment%iElemPumpAdjustIter
-        iPumpType = iPump_ElemPump
+        iPumpType = f_iPump_ElemPump
     END SELECT
     
     !Are there any pumping defined?
     IF (NPumps .EQ. 0) RETURN
     
     !Has the user asked for pumping adjustment?
-    IF (SupplyAdjustment%iAdjust.EQ.iAdjustNone .OR. SupplyAdjustment%iAdjust.EQ.iAdjustDiver) RETURN
+    IF (SupplyAdjustment%iAdjust.EQ.f_iAdjustNone .OR. SupplyAdjustment%iAdjust.EQ.f_iAdjustDiver) RETURN
     
     !Is the iteration number less than the maximum?
     IF (iIter .GE. SupplyAdjustment%nMaxPumpAdjustIter) RETURN
@@ -1143,7 +1160,7 @@ CONTAINS
     lAdjusting = .FALSE.
     DO indxPump=1,NPumps
       IF (iColAdjust(indxPump) .EQ. 0) CYCLE
-      IF (SupplyAdjustment%SpecFile%iValues(iColAdjust(indxPump)) .NE. iAdjustForNone) THEN
+      IF (SupplyAdjustment%SpecFile%iValues(iColAdjust(indxPump)) .NE. f_iAdjustForNone) THEN
         lAdjusting = .TRUE.
         EXIT
       END IF
@@ -1176,13 +1193,13 @@ CONTAINS
     END IF
     
     !Any wells adjustable?
-    IF (IsPumpingAdjustable(SupplyAdjustment,AppGW,iSupply_Well)) THEN
+    IF (IsPumpingAdjustable(SupplyAdjustment,AppGW,f_iSupply_Well)) THEN
       lPossible = .TRUE.
       RETURN
     END IF
     
     !Any element pumping adjustable?
-    IF (IsPumpingAdjustable(SupplyAdjustment,AppGW,iSupply_ElemPump)) lPossible = .TRUE.
+    IF (IsPumpingAdjustable(SupplyAdjustment,AppGW,f_iSupply_ElemPump)) lPossible = .TRUE.
     
   END FUNCTION IsMoreAdjustmentPossible
  

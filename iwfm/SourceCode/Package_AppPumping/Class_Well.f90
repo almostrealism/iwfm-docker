@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,13 +21,28 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_Well
-  USE MessageLogger               , ONLY: SetLastMessage  , &
-                                          MessageArray    , &
-                                          iFatal
-  USE GeneralUtilities
-  USE IOInterface
-  USE Package_ComponentConnectors , ONLY: Supply_New            
-  USE Class_Pumping
+  USE MessageLogger               , ONLY: SetLastMessage           , &
+                                          MessageArray             , &
+                                          f_iFatal                   
+  USE GeneralUtilities            , ONLY: ConvertID_To_Index       , &
+                                          IntToText                , &
+                                          ShellSort                , &
+                                          GetUniqueArrayComponents , &
+                                          LocateInList
+  USE Package_Discretization      , ONLY: AppGridType              , &
+                                          StratigraphyType         
+  USE IOInterface                 , ONLY: GenericFileType          
+  USE Package_Misc                , ONLY: ElemGroupType            , &
+                                          FlowDestinationType      , &
+                                          f_iFlowDest_Outside      , &
+                                          f_iFlowDest_Element      , &
+                                          f_iFlowDest_Subregion    , &
+                                          f_iFlowDest_ElementSet      
+  USE Package_ComponentConnectors , ONLY: Supply_New                
+  USE Class_Pumping               , ONLY: PumpingType              , &
+                                          NormalizerFPumpColRaw    , &
+                                          f_iDistTypeArray         , &
+                                          f_iDestTypeArray
   IMPLICIT NONE
   
   
@@ -99,19 +114,25 @@ CONTAINS
     
     !Local variables
     CHARACTER(LEN=ModNameLen+8),PARAMETER :: ThisProcedure = ModName // 'Well_New'
-    INTEGER                               :: NWell,ErrorCode,indxWell,ID,Element,NLayers,iElem,iRegion,  &
-                                             iNGroup,indxGroup,NElem,indxElem,iDest
-    REAL(8)                               :: FactXY,FactR,FactLT,DummyArray(6),X,Y,R,PerfBottom,PerfTop, &
+    INTEGER                               :: NWell,ErrorCode,indxWell,Element,NLayers,iElem,iRegion,ID,       &
+                                             iNGroup,indxGroup,NElem,indxElem,iDest,indxWell1,iWell,iElemID,  &
+                                             iElemIDs(AppGrid%NElements),iSubregionIDs(AppGrid%NSubregions),  &
+                                             iRegionID,indxGroup1,iDestID
+    REAL(8)                               :: FactXY,FactR,FactLT,DummyArray(6),X,Y,R,PerfBottom,PerfTop,      &
                                              DummyArray1(10)
     CHARACTER                             :: ALine*2000
-    INTEGER,ALLOCATABLE                   :: Nodes(:),TempArray(:),iColIrigFrac(:),iColAdjust(:)
+    INTEGER,ALLOCATABLE                   :: Nodes(:),TempArray(:),iColIrigFrac(:),iColAdjust(:),iWellIDs(:), &
+                                             Indices(:)
     REAL(8),ALLOCATABLE                   :: rFactor(:)
     TYPE(GenericFileType)                 :: WellDataFile
     TYPE(FlowDestinationType),ALLOCATABLE :: WellDest(:)
     TYPE(ElemGroupType),ALLOCATABLE       :: ElemGroups(:)
+    LOGICAL,ALLOCATABLE                   :: lProcessed(:)
     
     !Initialize
-    NLayers = Stratigraphy%NLayers
+    NLayers       = Stratigraphy%NLayers
+    iElemIDs      = AppGrid%AppElement%ID
+    iSubregionIDs = AppGrid%AppSubregion%ID
     
     !Open file
     CALL WellDataFile%New(FileName=cFileName , InputFile=.TRUE. , iStat=iStat)
@@ -120,8 +141,8 @@ CONTAINS
     !Read number of wells
     CALL WellDataFile%ReadData(NWell,iStat)  ;  IF (iStat .EQ. -1) RETURN
     IF (NWell .EQ. 0) THEN
-      CALL WellDataFile%Kill()
-      RETURN
+        CALL WellDataFile%Kill()
+        RETURN
     END IF
     
     !Read conversion factors
@@ -130,9 +151,9 @@ CONTAINS
     CALL WellDataFile%ReadData(FactLT,iStat)  ;  IF (iStat .EQ. -1) RETURN
     
     !Allocate memory
-    ALLOCATE (Wells(NWell) , WellDest(NWell) , iColIrigFrac(NWell) , iColAdjust(NWell) , STAT=ErrorCode)
+    ALLOCATE (Wells(NWell) , WellDest(NWell) , iColIrigFrac(NWell) , iColAdjust(NWell) , lProcessed(NWell) , iWellIDs(NWell) , STAT=ErrorCode)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for the wells!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for the wells!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -140,107 +161,135 @@ CONTAINS
     !Read structural and location-related well data 
     DO indxWell=1,NWell
         CALL WellDataFile%ReadData(DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
-        ID = INT(DummyArray(1))
-        IF (ID .NE. indxWell) THEN
-            MessageArray(1) = 'Well data should be entered sequentially!'
-            MessageArray(2) = 'Well ID expected = ' // TRIM(IntToText(indxWell))
-            MessageArray(3) = 'Well ID entered  = ' // TRIM(IntToText(ID))
-            CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-            iStat = -1
-            RETURN
-        END IF
-        X          = DummyArray(2) * FactXY       
-        Y          = DummyArray(3) * FactXY       
-        R          = DummyArray(4) * FactR / 2.0  
-        PerfTop    = DummyArray(5) * FactLT       
-        PerfBottom = DummyArray(6) * FactLT      
+        iWellIDs(indxWell) = INT(DummyArray(1))
+        X                  = DummyArray(2) * FactXY       
+        Y                  = DummyArray(3) * FactXY       
+        R                  = DummyArray(4) * FactR / 2.0  
+        PerfTop            = DummyArray(5) * FactLT       
+        PerfBottom         = DummyArray(6) * FactLT  
+        
+        !Make sure well ID is not used more than once
+        DO indxWell1=1,indxWell-1
+            IF (iWellIDs(indxWell) .EQ. iWellIDs(indxWell1)) THEN
+                CALL SetLastMessage('Well ID '//TRIM(IntToText(iWellIDs(indxWell)))//' is assigned to more than one well!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+        END DO
         
         !Find the element number that the well belongs to
         CALL AppGrid%FEInterpolate(X,Y,Element,Nodes,rFactor)
         IF (Element .LT. 1) THEN
-            CALL SetLastMessage('Well '// TRIM(IntToText(ID)) // 'is outside the model domain!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Well '// TRIM(IntToText(iWellIDs(indxWell))) // ' is outside the model domain!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
         
         !Instantiate well 
-        CALL Well_(indxWell,X,Y,R,PerfTop,PerfBottom,rFactor,Nodes,Element,AppGrid,Stratigraphy,Wells(indxWell),iStat)
+        CALL Well_(iWellIDs(indxWell),X,Y,R,PerfTop,PerfBottom,rFactor,Nodes,Element,AppGrid,Stratigraphy,Wells(indxWell),iStat)
         IF (iStat .EQ. -1) RETURN
       
     END DO
     
     !Read pumping specs for wells
+    lProcessed = .FALSE.
     DO indxWell=1,NWell
-      CALL WellDataFile%ReadData(DummyArray1,iStat)  ;  IF (iStat .EQ. -1) RETURN
-      ID = INT(DummyArray1(1))
-      IF (ID .NE. indxWell) THEN
-          MessageArray(1) = 'Pumping spec data for wells data should be entered sequentially!'
-          MessageArray(2) = 'Well ID expected = ' // TRIM(IntToText(indxWell))
-          MessageArray(3) = 'Well ID entered  = ' // TRIM(IntToText(ID))
-          CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-          iStat = -1
-          RETURN
-      END IF
-      Wells(indxWell)%iColPump      = INT(DummyArray1(2))
-      Wells(indxWell)%rFPumpColRaw  =     DummyArray1(3)
-      Wells(indxWell)%iDistMethod   = INT(DummyArray1(4))
-      WellDest(indxWell)%iDestType  = INT(DummyArray1(5))  
-      WellDest(indxWell)%iDest      = INT(DummyArray1(6))  
-      iColIrigFrac(indxWell)        = INT(DummyArray1(7))
-      iColAdjust(indxWell)          = INT(DummyArray1(8))
-      Wells(indxWell)%iColPumpMax   = INT(DummyArray1(9))
-      Wells(indxWell)%rFPumpMaxCol  =     DummyArray1(10)
-      
-      !Make sure that a non-zero irrigation fraction column is supplied if pumping is delievred within the model domain
-      IF (WellDest(indxWell)%iDestType .NE. FlowDest_Outside) THEN
-          IF (iColIrigFrac(indxWell) .LE. 0) THEN
-              MessageArray(1) = 'Irrigation fraction column number for well ID '//TRIM(IntTotext(ID))
-              MessageArray(2) = 'must be larger than zero when pumping is delivered within the model domain!'
-              MessageArray(3) = 'Alternatively, pumping can be delivered outside the model domain.'
-              CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-              iStat = -1
-              RETURN
-          END IF
-      END IF
-      
-      !Make sure that iDistMethod is an acceptable value
-      IF (.NOT. ANY(Wells(indxWell)%iDistMethod .EQ. iDistTypeArray)) THEN
-          CALL SetLastMessage('Pumping distribution option (IOPTWL) for well ' // TRIM(IntToText(indxWell)) // ' is not recognized!',iFatal,ThisProcedure)
-          iStat = -1
-          RETURN
-      END IF
-      
-      !Make sure that destination type is recognized
-      IF (.NOT. ANY(WellDest(indxWell)%iDestType .EQ. DestTypeArray)) THEN
-          CALL SetLastMessage('Destination type for well ID '//TRIM(IntToText(indxWell))//' is not recognized!',iFatal,ThisProcedure)
-          iStat = -1
-          RETURN
-      END IF
-
-      !Delivery region
-      IF (WellDest(indxWell)%iDestType .LT. 0) THEN
-        !Delivery to its own element
-        iElem                          = Wells(indxWell)%Element
-        WellDest(indxWell)%iDestType   = FlowDest_Element
-        WellDest(indxWell)%iDest       = iElem
-        WellDest(indxWell)%iDestRegion = AppGrid%AppElement(iElem)%Subregion
-      
-      !Otherwise
-      ELSE
-        SELECT CASE (WellDest(indxWell)%iDestType)
-          CASE (FlowDest_Outside)
-            !Do nothing
-          CASE (FlowDest_Element)
-            iElem = WellDest(indxWell)%iDest
-            IF (iElem .GT. 0) WellDest(indxWell)%iDestRegion = AppGrid%AppElement(iElem)%Subregion
-          CASE (FlowDest_Subregion)
-            iRegion = WellDest(indxWell)%iDest
-            IF (iRegion .GT. 0) WellDest(indxWell)%iDestRegion = iRegion
-          CASE (FlowDest_ElementSet)
-            !Do nothing for now. Will do more processing when element groups are read
-        END SELECT
-      END IF
-
+        CALL WellDataFile%ReadData(DummyArray1,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        ID = INT(DummyArray1(1))
+        
+        !Make sure well ID is recognized
+        CALL ConvertID_To_Index(ID,iWellIDs,iWell)
+        IF (iWell .EQ. 0) THEN
+            CALL SetLastMessage('Well ID '//TRIM(IntToText(ID))//' listed for well pumping characteristics is not recognized!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        
+        !Make sure same well is not entered more than once
+        IF (lProcessed(iWell)) THEN
+            CALL SetLastMessage('Well ID '//TRIM(IntToText(ID))//' specified for well pumping characteristics is listed more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iWell) = .TRUE.
+        
+        !Process data
+        Wells(iWell)%iColPump      = INT(DummyArray1(2))
+        Wells(iWell)%rFPumpColRaw  =     DummyArray1(3)
+        Wells(iWell)%iDistMethod   = INT(DummyArray1(4))
+        WellDest(iWell)%iDestType  = INT(DummyArray1(5))  
+        WellDest(iWell)%iDest      = INT(DummyArray1(6))  
+        iColIrigFrac(iWell)        = INT(DummyArray1(7))
+        iColAdjust(iWell)          = INT(DummyArray1(8))
+        Wells(iWell)%iColPumpMax   = INT(DummyArray1(9))
+        Wells(iWell)%rFPumpMaxCol  =     DummyArray1(10)
+        
+        !Make sure that a non-zero irrigation fraction column is supplied if pumping is delivered within the model domain
+        IF (WellDest(iWell)%iDestType .NE. f_iFlowDest_Outside) THEN
+            IF (iColIrigFrac(iWell) .LE. 0) THEN
+                MessageArray(1) = 'Irrigation fraction column number for well ID '//TRIM(IntTotext(ID))
+                MessageArray(2) = 'must be larger than zero when pumping is delivered within the model domain!'
+                MessageArray(3) = 'Alternatively, pumping can be delivered outside the model domain.'
+                CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+        END IF
+        
+        !Make sure that iDistMethod is an acceptable value
+        IF (.NOT. ANY(Wells(iWell)%iDistMethod .EQ. f_iDistTypeArray)) THEN
+            CALL SetLastMessage('Pumping distribution option (IOPTWL) for well ID ' // TRIM(IntToText(ID)) // ' is not recognized!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        
+        !Make sure that destination type is recognized
+        IF (.NOT. ANY(WellDest(iWell)%iDestType .EQ. f_iDestTypeArray)) THEN
+            CALL SetLastMessage('Destination type for well ID '//TRIM(IntToText(ID))//' is not recognized!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        
+        !Delivery region
+        IF (WellDest(iWell)%iDestType .LT. 0) THEN
+            !Delivery to its own element
+            iElem                       = Wells(iWell)%Element
+            WellDest(iWell)%iDestType   = f_iFlowDest_Element
+            WellDest(iWell)%iDest       = iElem
+            WellDest(iWell)%iDestRegion = AppGrid%AppElement(iElem)%Subregion
+        
+        !Otherwise
+        ELSE
+            SELECT CASE (WellDest(iWell)%iDestType)
+                CASE (f_iFlowDest_Outside)
+                    !Do nothing
+                
+                CASE (f_iFlowDest_Element)
+                    iElemID = WellDest(iWell)%iDest
+                    CALL ConvertID_To_Index(iElemID,iElemIDs,iElem)
+                    IF (iElem .EQ. 0) THEN
+                        CALL SetLastMessage('Destination element '//TRIM(IntToText(iElemID))//' listed for well '//TRIM(IntToText(ID))//' is not in the model!',f_iFatal,ThisProcedure)
+                        iStat = -1
+                        RETURN
+                    END IF
+                    WellDest(iWell)%iDest       = iElem
+                    WellDest(iWell)%iDestRegion = AppGrid%AppElement(iElem)%Subregion
+                    
+                CASE (f_iFlowDest_Subregion)
+                    iRegionID = WellDest(iWell)%iDest
+                    CALL ConvertID_To_Index(iRegionID,iSubregionIDs,iRegion)
+                    IF (iRegion.EQ. 0) THEN
+                        CALL SetLastMessage('Destination subregion '//TRIM(IntToText(iRegionID))//' listed for well '//TRIM(IntToText(ID))//' is not in the model!',f_iFatal,ThisProcedure)
+                        iStat = -1
+                        RETURN
+                    END IF
+                    WellDest(iWell)%iDest       = iRegion
+                    WellDest(iWell)%iDestRegion = iRegion
+                    
+                CASE (f_iFlowDest_ElementSet)
+                    !Do nothing for now. Will do more processing when element groups are read
+            END SELECT
+        END IF
     END DO
     
     !Read element group data served by well pumping
@@ -249,25 +298,25 @@ CONTAINS
     DO indxGroup=1,iNGroup
         CALL WellDataFile%ReadData(ALine,iStat)  ;  IF (iStat .EQ. -1) RETURN
         READ (ALine,*) ID,NElem,iElem
+        ElemGroups(indxGroup)%ID = ID
         
-        !Make sure groups are entered sequentially
-        IF (ID .NE. indxGroup) THEN
-            MessageArray(1) = 'Element group IDs for well pumping delivery locations must be entered sequentially!'
-            MessageArray(2) = 'Group ID expected = '//TRIM(IntToText(indxGroup))
-            MessageArray(3) = 'Group ID entered  = '//TRIM(IntToText(ID))
-            CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-            iStat = -1
-            RETURN
-        END IF
+        !Make sure same element group ID is not used more than once
+        DO indxGroup1=1,indxGroup-1
+            IF (ID .EQ. ElemGroups(indxGroup1)%ID) THEN
+                CALL SetLastMessage('Element group ID '//TRIM(IntToText(ID))//' for well pumping destinations is specified more than once!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+        END DO
         
         !Cycle if no elements are listed
         IF (NElem .LE. 0) CYCLE
         
         !Allocate memory and store the initial readings
         ALLOCATE (ElemGroups(indxGroup)%iElems(NElem))
+        DEALLOCATE (Indices, STAT=ErrorCode)  ;  ALLOCATE (Indices(NElem))
         ElemGroups(indxGroup)%NElems    = NElem
         ElemGroups(indxGroup)%iElems(1) = iElem
-        IF (iElem .GT. 0) iRegion = AppGrid%AppElement(iElem)%Subregion
         
         !Read the rest of the elements 
         DO indxElem=2,NElem
@@ -277,6 +326,15 @@ CONTAINS
         
         !Order the element numbers
         CALL ShellSort(ElemGroups(indxGroup)%iElems)
+        
+        !Make sure elements are in the model
+        CALL ConvertID_To_Index(ElemGroups(indxGroup)%iElems,iElemIDs,Indices)
+        IF (ANY(Indices.EQ.0)) THEN
+            CALL SetLastMessage('One or more elements listed in element group ID '//TRIM(IntToText(ID))//' listed for well pumping destination are not in the model!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        ElemGroups(indxGroup)%iElems = Indices
         
         !Get rid of the dublicates
         CALL GetUniqueArrayComponents(ElemGroups(indxGroup)%iElems,TempArray)
@@ -290,19 +348,23 @@ CONTAINS
 
     !Assign element groups to wells
     DO indxWell=1,NWell
-       IF (WellDest(indxWell)%iDestType .EQ. FlowDest_ElementSet) THEN
-           iDest = WellDest(indxWell)%iDest
+       IF (WellDest(indxWell)%iDestType .EQ. f_iFlowDest_ElementSet) THEN
+           iDestID = WellDest(indxWell)%iDest
            
            !Make sure element group is defined
-           IF (iDest.LT.1  .OR.  iDest.GT.iNGroup) THEN
-               CALL SetLastMessage('Element group number '//TRIM(IntToText(iDest))//' to which well number '//TRIM(IntToText(indxWell))//' is delivered is not defined!',iFatal,ThisProcedure) 
+           iDest = LocateInList(iDestID,ElemGroups%ID)
+           IF (iDest .EQ. 0) THEN
+               ID = Wells(indxWell)%ID
+               CALL SetLastMessage('Element group number '//TRIM(IntToText(iDestID))//' to which well ID '//TRIM(IntToText(ID))//' is delivered is not defined!',f_iFatal,ThisProcedure) 
                iStat = -1
                RETURN
            END IF
+           WellDest(indxWell)%iDest = iDest
            
            !Make sure there is at least one element in the group
            IF (ElemGroups(iDest)%NElems .EQ. 0) THEN
-               CALL SetLastMessage('Element group '//TRIM(IntToText(iDest))//' as destination for well pumping '//TRIM(IntToText(indxWell))//' has no elements listed!',iFatal,ThisProcedure)
+               ID = Wells(indxWell)%ID
+               CALL SetLastMessage('Element group '//TRIM(IntToText(iDest))//' as destination for well pumping '//TRIM(IntToText(ID))//' has no elements listed!',f_iFatal,ThisProcedure)
                iStat = -1
                RETURN
            END IF
@@ -323,7 +385,7 @@ CONTAINS
     Wells%rFPumpCol = Wells%rFPumpColRaw
     
     !Clear memory
-    DEALLOCATE (WellDest , ElemGroups , Nodes , TempArray , iColIrigFrac , iColAdjust , STAT=ErrorCode)
+    DEALLOCATE (WellDest , ElemGroups , Nodes , TempArray , iColIrigFrac , iColAdjust , Indices , STAT=ErrorCode)
     
     !Kill file
     CALL WellDataFile%Kill()
@@ -347,7 +409,7 @@ CONTAINS
     REAL(8),PARAMETER                     :: PiHalf =  3.141592654d0/2d0
     INTEGER                               :: NLayers,PerfTopLayer,PerfBottomLayer,indxLayer,NVertex
     REAL(8)                               :: GSElev,PerfTopWork,PerfBottomWork,BottomMax,Top,Bottom,AquiferTop,AquiferBot,  &
-                                             ScreenLength,AquiferThick,ScreenFrac(Stratigraphy%NLayers)                                        
+                                             ScreenLength,AquiferThick,ScreenFrac                                        
     
     !Initialize
     iStat   = 0
@@ -355,7 +417,7 @@ CONTAINS
     NVertex = SIZE(Nodes)
     
     !Allocate memory for the (node,layer) distribution fractions
-    ALLOCATE (Well%rLayerFactor(NLayers) , Well%rNodePumpFactor(NVertex,NLayers))
+    ALLOCATE (Well%rLayerFactor(NLayers) , Well%rNodePumpRequired(NVertex,NLayers) , Well%rNodePumpActual(NVertex,NLayers))
     
     !GSElev and BottomMax at well
     GSElev    = SUM(Stratigraphy%GSElev(Nodes) * rFactor)
@@ -363,11 +425,11 @@ CONTAINS
     
     !Convert screen intervals to elevations if necessary
     IF (PerfBottom .GT. PerfTop) THEN
-      PerfBottomWork = GSElev - PerfBottom
-      PerfTopWork    = GSElev - PerfTop
+        PerfBottomWork = GSElev - PerfBottom
+        PerfTopWork    = GSElev - PerfTop
     ELSE
-      PerfBottomWork = PerfBottom
-      PerfTopWork    = PerfTop
+        PerfBottomWork = PerfBottom
+        PerfTopWork    = PerfTop
     END IF
 
     !Find the aquifer layers that top and bottom of the perforation belong
@@ -378,7 +440,7 @@ CONTAINS
         WRITE (MessageArray(2),'(A,F10.4)') 'Top elevation of well screen = ',PerfTopWork
         WRITE (MessageArray(3),'(A,F10.4)') 'Ground surface elevation     = ',GSElev       
         WRITE (MessageArray(4),'(A,F10.4)') 'Elevation of aquifer bottom  = ',BottomMax
-        CALL SetLastMessage(MessageArray(1:4),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:4),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -387,7 +449,7 @@ CONTAINS
         WRITE (MessageArray(2),'(A,F10.4)') 'Bottom elevation of well screen = ',PerfBottomWork
         WRITE (MessageArray(3),'(A,F10.4)') 'Ground surface elevation        = ',GSElev       
         WRITE (MessageArray(4),'(A,F10.4)') 'Elevation of aquifer bottom     = ',BottomMax
-        CALL SetLastMessage(MessageArray(1:4),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:4),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -395,18 +457,18 @@ CONTAINS
     !Compute screen length as a fraction of aquifer thickness and vertical pumping distribution factors
     ASSOCIATE (pBottomElev => Stratigraphy%BottomElev  ,  &
                pTopElev    => Stratigraphy%TopElev     )
-      ScreenFrac           = 0.0
-      Well%rLayerFactor    = 0.0
-      Top                  = PerfTopWork
-      AquiferTop           = SUM(pTopElev(Nodes,1) * rFactor)
+      Well%rLayerFactor = 0.0
+      Top               = PerfTopWork
+      AquiferTop        = SUM(pTopElev(Nodes,1) * rFactor)
       DO indxLayer=PerfTopLayer,PerfBottomLayer
         AquiferBot   = SUM(pBottomElev(Nodes,indxLayer) * rFactor)
         Bottom       = MAX(PerfBottomWork , AquiferBot)
         ScreenLength = Top - Bottom
         AquiferThick = AquiferTop - AquiferBot
         IF (AquiferThick .GT. 0.0) THEN
-            ScreenFrac(indxLayer)        = ScreenLength / AquiferThick
-            Well%rLayerFactor(indxLayer) = ScreenFrac(indxLayer) *(1.0 + 7.0 *SQRT(R/(2.0*ScreenLength)) * COS(PiHalf*ScreenFrac(indxLayer)))
+            ScreenFrac = ScreenLength / AquiferThick
+            IF (ScreenFrac .GT. 0.0) &
+                Well%rLayerFactor(indxLayer) = ScreenFrac *(1.0 + 7.0 *SQRT(R/(2.0*ScreenLength)) * COS(PiHalf*ScreenFrac))
         END IF
         Top        = Bottom
         AquiferTop = AquiferBot
@@ -414,6 +476,7 @@ CONTAINS
     END ASSOCIATE
     
     !Instantiate object
+    Well%ID          = WellID
     Well%Element     = iElement
     Well%X           = X
     Well%Y           = Y

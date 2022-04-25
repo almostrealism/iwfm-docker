@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,29 +21,48 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_AppDiverBypass
-  USE MessageLogger                , ONLY: LogMessage         , &
-                                           SetLastMessage     , &
-                                           EchoProgress       , &
-                                           MessageArray       , &
-                                           iFatal             , &
-                                           iInfo
-  USE TimeSeriesUtilities
-  USE GeneralUtilities
-  USE IOInterface
-  USE Package_Misc
-  USE Package_Discretization
-  USE Package_Budget               , ONLY: BudgetType         , &
-                                           BudgetHeaderType   , &
-                                           VolumeUnitMarker   , &
-                                           LocationNameMarker , &
-                                           VR                 , &
-                                           PER_CUM
-  USE Package_ComponentConnectors
-  USE Class_ElemToRecvLoss
-  USE Class_Diversion   
-  USE Class_Bypass
-  USE Class_RechargeZone
-  USE Class_StrmReach
+  USE MessageLogger                , ONLY: LogMessage             , &
+                                           SetLastMessage         , &
+                                           EchoProgress           , &
+                                           MessageArray           , &
+                                           f_iFatal               , &
+                                           f_iWarn                , &
+                                           f_iInfo                  
+  USE TimeSeriesUtilities          , ONLY: TimeStepType           , &
+                                           IncrementTimeStamp     , &
+                                           TimeIntervalConversion
+  USE GeneralUtilities             , ONLY: IntToText              , &
+                                           LocateInList           , &
+                                           ArrangeText            , &
+                                           NormalizeArray         , &
+                                           ConvertID_To_Index
+  USE Package_Misc                 , ONLY: RealTSDataInFileType   , &
+                                           ReadTSData             , &
+                                           f_iFlowDest_Outside    , &
+                                           f_iFlowDest_Element    , &
+                                           f_iFlowDest_ElementSet , &
+                                           f_iFlowDest_Subregion  , &
+                                           f_iFlowDest_StrmNode   , &
+                                           f_iFlowDest_Lake       
+  USE Package_Discretization       , ONLY: AppGridType            
+  USE Package_Budget               , ONLY: BudgetType             , &
+                                           BudgetHeaderType       , &
+                                           f_iColumnHeaderLen     , &
+                                           f_cVolumeUnitMarker    , &
+                                           f_cLocationNameMarker  , &
+                                           f_iVR                  , &
+                                           f_iPER_CUM
+  USE Package_ComponentConnectors  , ONLY: StrmLakeConnectorType  , &
+                                           f_iBypassToLakeFlow
+  USE Class_ElemToRecvLoss         , ONLY: ElemToRecvLossType
+  USE Class_Diversion              , ONLY: DiversionType          , &
+                                           Diversion_New          , &
+                                           Diversion_GetPurpose    
+  USE Class_Bypass                 , ONLY: BypassType             , &
+                                           Bypass_New             , &
+                                           f_iBypassDestTypes => f_iDestTypes
+  USE Class_RechargeZone           , ONLY: RechargeZoneType
+  USE Class_StrmReach              , ONLY: StrmReachType
   IMPLICIT NONE
   
   
@@ -62,10 +81,11 @@ MODULE Class_AppDiverBypass
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC :: AppDiverBypassType                      , &
-            iDiverRecvLoss                          , &
-            iBypassRecvLoss                         , &
-            iAllRecvLoss
+  PUBLIC :: AppDiverBypassType     , &
+            f_iNDiverDetailColumns , &
+            f_iDiverRecvLoss       , &
+            f_iBypassRecvLoss      , &
+            f_iAllRecvLoss
      
 
 
@@ -97,37 +117,63 @@ MODULE Class_AppDiverBypass
     LOGICAL                                   :: DiverDetailsBudRawFile_Defined = .FALSE.
     TYPE(BudgetType)                          :: DiverDetailsBudRawFile
   CONTAINS
-    PROCEDURE,PASS :: New                            => AppDiverBypass_New
-    PROCEDURE,PASS :: Kill                           => AppDiverBypass_Kill
-    PROCEDURE,PASS :: GetBypassRecieved              => AppDiverBypass_GetBypassRecieved       
-    PROCEDURE,PASS :: GetElemRecvLosses              => AppDiverBypass_GetElemRecvLosses        
-    PROCEDURE,PASS :: GetSubregionalRecvLosses       => AppDiverBypass_GetSubregionalRecvLosses
-    PROCEDURE,PASS :: GetNodeDiversions              => AppDiverBypass_GetNodeDiversions       
-    PROCEDURE,PASS :: GetReachDiversions             => AppDiverBypass_GetReachDiversions      
-    PROCEDURE,PASS :: GetNodeDiversionShort          => AppDiverBypass_GetNodeDiversionShort    
-    PROCEDURE,PASS :: GetReachDiversionShort         => AppDiverBypass_GetReachDiversionShort   
-    PROCEDURE,PASS :: GetNodeNetBypass               => AppDiverBypass_GetNodeNetBypass        
-    PROCEDURE,PASS :: GetReachNetBypass              => AppDiverBypass_GetReachNetBypass
-    PROCEDURE,PASS :: GetExportNode
-    PROCEDURE,PASS :: IsBypassNode
-    PROCEDURE,PASS :: IsRatingTableTypeBypassNode
-    PROCEDURE,PASS :: ConvertTimeUnit                => AppDiverBypass_ConvertTimeUnit         
-    PROCEDURE,PASS :: CompileNodalDiversions         => AppDiverBypass_CompileNodalDiversions   
-    PROCEDURE,PASS :: ComputeBypass                  => AppDiverBypass_ComputeBypass            
-    PROCEDURE,PASS :: ComputeDiversions              => AppDiverBypass_ComputeDiversions        
-    PROCEDURE,PASS :: ReadTSData                     => AppDiverBypass_ReadTSData               
-    PROCEDURE,PASS :: PrintResults                   => AppDiverBypass_PrintResults
+    PROCEDURE,PASS   :: New                            => AppDiverBypass_New
+    PROCEDURE,PASS   :: Kill                           => AppDiverBypass_Kill
+    PROCEDURE,PASS   :: GetDiversionIDs
+    PROCEDURE,PASS   :: GetBypassIDs      
+    PROCEDURE,PASS   :: GetBypassDiverOriginDestData
+    PROCEDURE,PASS   :: GetElemRecvLosses                  => AppDiverBypass_GetElemRecvLosses        
+    PROCEDURE,PASS   :: GetSubregionalRecvLosses           => AppDiverBypass_GetSubregionalRecvLosses
+    PROCEDURE,PASS   :: GetNodeDiversions                  => AppDiverBypass_GetNodeDiversions       
+    PROCEDURE,PASS   :: GetReachDiversions                 => AppDiverBypass_GetReachDiversions      
+    PROCEDURE,PASS   :: GetNodeDiversionShort              => AppDiverBypass_GetNodeDiversionShort    
+    PROCEDURE,PASS   :: GetReachDiversionShort             => AppDiverBypass_GetReachDiversionShort   
+    PROCEDURE,PASS   :: GetNodeNetBypass                   => AppDiverBypass_GetNodeNetBypass        
+    PROCEDURE,PASS   :: GetReachNetBypass                  => AppDiverBypass_GetReachNetBypass
+    PROCEDURE,PASS   :: GetBudget_NColumns
+    PROCEDURE,PASS   :: GetBudget_ColumnTitles
+    PROCEDURE,PASS   :: GetBudget_TSData
+    PROCEDURE,PASS   :: GetActualDiversions_AtSomeDiversions
+    PROCEDURE,PASS   :: GetBypassReceived_AtADestination                     
+    PROCEDURE,PASS   :: GetBypassReceived_FromABypass
+    PROCEDURE,PASS   :: GetBypassExportNode
+    PROCEDURE,PASS   :: GetBypassOutflows
+    PROCEDURE,PASS   :: GetStrmBypassInflows
+    PROCEDURE,PASS   :: GetDiversionsExportNodes
+    PROCEDURE,PASS   :: GetDeliveryAtDiversion
+    PROCEDURE,PASS   :: GetDiversionsForDeliveries
+    PROCEDURE,PASS   :: GetDiversionPurpose
+    PROCEDURE,PASS   :: SetBypassFlows_AtABypass
+    PROCEDURE,PASS   :: SetDiversionRead
+    PROCEDURE,PASS   :: SetDiverRequired
+    PROCEDURE,PASS   :: IsBypassNode
+    PROCEDURE,PASS   :: IsRatingTableTypeBypassNode
+    PROCEDURE,PASS   :: AddBypass
+    PROCEDURE,PASS   :: ConvertTimeUnit                    => AppDiverBypass_ConvertTimeUnit         
+    PROCEDURE,PASS   :: CompileNodalDiversions             => AppDiverBypass_CompileNodalDiversions   
+    PROCEDURE,PASS   :: ComputeBypass                      => AppDiverBypass_ComputeBypass            
+    PROCEDURE,PASS   :: ComputeDiversions                  => AppDiverBypass_ComputeDiversions        
+    PROCEDURE,PASS   :: ReadTSData                         => AppDiverBypass_ReadTSData              
+    PROCEDURE,PASS   :: PrintResults                       => AppDiverBypass_PrintResults
   END TYPE AppDiverBypassType
   
   
   ! -------------------------------------------------------------
   ! --- MISC. ENTITIES
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER                   :: ModNameLen      = 22
-  CHARACTER(LEN=ModNameLen),PARAMETER :: ModName         = 'Class_AppDiverBypass::'
-  INTEGER,PARAMETER                   :: iDiverRecvLoss  = 1 , &
-                                         iBypassRecvLoss = 2 , &
-                                         iAllRecvLoss    = 3
+  INTEGER,PARAMETER                   :: ModNameLen        = 22
+  CHARACTER(LEN=ModNameLen),PARAMETER :: ModName           = 'Class_AppDiverBypass::'
+  INTEGER,PARAMETER                   :: f_iDiverRecvLoss  = 1 , &
+                                         f_iBypassRecvLoss = 2 , &
+                                         f_iAllRecvLoss    = 3 
+  INTEGER,PARAMETER                   :: f_iNDiverDetailColumns                          = 6 
+  CHARACTER(LEN=35),PARAMETER         :: f_cDiverDetailColTitles(f_iNDiverDetailColumns) = ['Actual Diversion'      , &
+                                                                                            'Diversion Shortage'    , &
+                                                                                            'Recoverable Loss'      , &
+                                                                                            'Non-recoverable Loss'  , &
+                                                                                            'Actual Delivery to'    , &
+                                                                                            'Delivery Shortage for' ]
+
 
   
   
@@ -150,51 +196,31 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INSTANTIATE DIVERSIONS DATABASE
   ! -------------------------------------------------------------
-  SUBROUTINE AppDiverBypass_New(AppDiverBypass,IsForInquiry,DiverSpecFileName,BypassSpecFileName,DiverFileName,DiverDetailBudFileName,cVersion,NTIME,TimeStep,NStrmNodes,Reaches,AppGrid,StrmLakeConnector,iStat)
+  SUBROUTINE AppDiverBypass_New(AppDiverBypass,IsForInquiry,DiverSpecFileName,BypassSpecFileName,DiverFileName,DiverDetailBudFileName,cWorkingDirectory,cVersion,NTIME,TimeStep,NStrmNodes,iStrmNodeIDs,iLakeIDs,Reaches,AppGrid,StrmLakeConnector,iStat)
     CLASS(AppDiverBypassType),INTENT(OUT) :: AppDiverBypass
     LOGICAL,INTENT(IN)                    :: IsForInquiry
-    CHARACTER(LEN=*),INTENT(IN)           :: DiverSpecFileName,BypassSpecFileName,DiverFileName,DiverDetailBudFileName,cVersion
-    INTEGER,INTENT(IN)                    :: NTIME,NStrmNodes
+    CHARACTER(LEN=*),INTENT(IN)           :: DiverSpecFileName,BypassSpecFileName,DiverFileName,DiverDetailBudFileName,cWorkingDirectory,cVersion
+    INTEGER,INTENT(IN)                    :: NTIME,NStrmNodes,iStrmNodeIDs(NStrmNodes),iLakeIDs(:)
     TYPE(TimeStepType),INTENT(IN)         :: TimeStep
-    TYPE(StrmReachType),INTENT(IN)        :: Reaches(:)
+    TYPE(StrmReachType)                   :: Reaches(:)
     TYPE(AppGridType),INTENT(IN)          :: AppGrid
     TYPE(StrmLakeConnectorType)           :: StrmLakeConnector
     INTEGER,INTENT(OUT)                   :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+18) :: ThisProcedure = ModName // 'AppDiverBypass_New'
-    INTEGER                      :: NElements,NSubregions,ErrorCode,iSize
+    INTEGER                      :: NElements,NSubregions,ErrorCode,iSize,iElemIDs(AppGrid%NElements),iSubregionIDs(AppGrid%NSubregions)
     TYPE(BudgetHeaderType)       :: BudHeader
 
     !Initialize
-    iStat       = 0
-    NElements   = AppGrid%NElements
-    NSubregions = AppGrid%NSubregions
+    iStat         = 0
+    NElements     = AppGrid%NElements
+    NSubregions   = AppGrid%NSubregions
+    iElemIDs      = AppGrid%AppElement%ID
+    iSubregionIDs = AppGrid%AppSubregion%ID
     
-    !Instantiate the diversions data file
-    CALL DiverFile_New(DiverFileName,TimeStep,AppDiverBypass%DiverFile,iStat)
-    IF (iStat .EQ. -1) RETURN
-    
-    !Instantiate the diversions and delivery database
-    CALL Diversion_New(DiverSpecFileName,AppGrid,Reaches,AppDiverBypass%Diver,iStat)
-    IF (iStat .EQ. -1) RETURN
-    AppDiverBypass%NDiver = SIZE(AppDiverBypass%Diver) 
-    
-    !Allocate memory for element-to-diversion-recoverable-loss pointers
-    IF (AppDiverBypass%NDiver .GT. 0) THEN
-        IF (SUM(AppDiverBypass%Diver%Recharge%NZones) .GT. 0) THEN
-           ALLOCATE (AppDiverBypass%ElemToDiverRecvLoss(NElements) ,STAT=ErrorCode)
-           IF (ErrorCode .NE. 0) THEN
-               CALL SetLastMessage('Error in allocating memory for element-to-diversion-recoverable-loss pointers!',iFatal,ThisProcedure)
-               iStat = -1
-               RETURN
-           END IF
-           CALL ElemToRecvLossPointers(NElements,AppDiverBypass%Diver%Recharge,AppDiverBypass%ElemToDiverRecvLoss)
-        END IF
-    END IF
-    
-    !Instantiate the bypass database
-    CALL Bypass_New(BypassSpecFileName,NStrmNodes,Reaches,StrmLakeConnector,AppDiverBypass%TimeUnitStrmFlow,AppDiverBypass%TimeUnitBypass,AppDiverBypass%Bypasses,iStat)
+    !Instantiate the bypass database (Reaches may come back rearranged based on bypasses)
+    CALL Bypass_New(BypassSpecFileName,NStrmNodes,iStrmNodeIDs,iElemIDs,iLakeIDs,Reaches,StrmLakeConnector,AppDiverBypass%TimeUnitStrmFlow,AppDiverBypass%TimeUnitBypass,AppDiverBypass%Bypasses,iStat)
     IF (iStat .EQ. -1) RETURN
     AppDiverBypass%NBypass = SIZE(AppDiverBypass%Bypasses)
     
@@ -203,11 +229,33 @@ CONTAINS
         IF (SUM(AppDiverBypass%Bypasses%Recharge%NZones) .GT. 0) THEN
             ALLOCATE (AppDiverBypass%ElemToBypassRecvLoss(NElements) ,STAT=ErrorCode)
             IF (ErrorCode .NE. 0) THEN
-                CALL SetLastMessage('Error in allocating memory for element-to-bypass-recoverable-loss pointers!',iFatal,ThisProcedure)
+                CALL SetLastMessage('Error in allocating memory for element-to-bypass-recoverable-loss pointers!',f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
             CALL ElemToRecvLossPointers(NElements,AppDiverBypass%Bypasses%Recharge,AppDiverBypass%ElemToBypassRecvLoss)
+        END IF
+    END IF
+    
+    !Instantiate the diversions data file
+    CALL DiverFile_New(DiverFileName,cWorkingDirectory,TimeStep,AppDiverBypass%DiverFile,iStat)
+    IF (iStat .EQ. -1) RETURN
+    
+    !Instantiate the diversions and delivery database
+    CALL Diversion_New(DiverSpecFileName,AppGrid,iElemIDs,iStrmNodeIDs,iSubregionIDs,Reaches,AppDiverBypass%Diver,iStat)
+    IF (iStat .EQ. -1) RETURN
+    AppDiverBypass%NDiver = SIZE(AppDiverBypass%Diver) 
+    
+    !Allocate memory for element-to-diversion-recoverable-loss pointers
+    IF (AppDiverBypass%NDiver .GT. 0) THEN
+        IF (SUM(AppDiverBypass%Diver%Recharge%NZones) .GT. 0) THEN
+           ALLOCATE (AppDiverBypass%ElemToDiverRecvLoss(NElements) ,STAT=ErrorCode)
+           IF (ErrorCode .NE. 0) THEN
+               CALL SetLastMessage('Error in allocating memory for element-to-diversion-recoverable-loss pointers!',f_iFatal,ThisProcedure)
+               iStat = -1
+               RETURN
+           END IF
+           CALL ElemToRecvLossPointers(NElements,AppDiverBypass%Diver%Recharge,AppDiverBypass%ElemToDiverRecvLoss)
         END IF
     END IF
     
@@ -225,7 +273,7 @@ CONTAINS
         IF (AppDiverBypass%NDiver .GT. 0) THEN
             MessageArray(1) = 'Time-series diversions data file needs to be '
             MessageArray(2) = 'specified when there are diversions modeled!'
-            CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -234,7 +282,7 @@ CONTAINS
         IF (ANY(AppDiverBypass%Bypasses%iColBypass.GT.0)) THEN
             MessageArray(1) = 'Time-series diversions data file needs to be specified'
             MessageArray(2) = 'when there are bypasses with pre-defined bypass rates!'
-            CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -259,13 +307,13 @@ CONTAINS
         IF (AppDiverBypass%NDiver .EQ. 0) THEN
             MessageArray(1) = 'There are no diversions specified.'
             MessageArray(2) = 'Print-out of diversion details budget file is suppressed!'
-            CALL LogMessage(MessageArray(1:2),iInfo,ThisProcedure)
+            CALL LogMessage(MessageArray(1:2),f_iInfo,ThisProcedure)
         ELSE 
             IF (IsForInquiry) THEN
                 CALL AppDiverBypass%DiverDetailsBudRawFile%New(TRIM(DiverDetailBudFileName),iStat)
                 IF (iStat .EQ. -1) RETURN
             ELSE
-                BudHeader = PrepareDiverDetailsBudgetHeader(AppDiverBypass%NDiver,TimeStep,NTIME,AppDiverBypass%Diver,cVersion)
+                BudHeader = PrepareDiverDetailsBudgetHeader(AppDiverBypass%NDiver,TimeStep,NTIME,iElemIDs,iStrmNodeIDs,iSubregionIDs,AppDiverBypass%Diver,cVersion)
                 CALL AppDiverBypass%DiverDetailsBudRawFile%New(TRIM(DiverDetailBudFileName),BudHeader,iStat)
                 IF (iStat .EQ. -1) RETURN
                 CALL BudHeader%Kill()
@@ -280,15 +328,15 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INITIALIZE DIVERSIONS TIME SERIES DATA FILE
   ! -------------------------------------------------------------
-  SUBROUTINE DiverFile_New(FileName,TimeStep,DiverDataFile,iStat)
-    CHARACTER(LEN=*),INTENT(IN)   :: FileName
+  SUBROUTINE DiverFile_New(FileName,cWorkingDirectory,TimeStep,DiverDataFile,iStat)
+    CHARACTER(LEN=*),INTENT(IN)   :: FileName,cWorkingDirectory
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
     TYPE(DiverFileType)           :: DiverDataFile
     INTEGER,INTENT(OUT)           :: iStat
 
     !Local variables
     REAL(8) :: Factor(1)
-    LOGICAL :: DummyArray(1) = (/.TRUE./)
+    LOGICAL :: DummyArray(1) = [.TRUE.]
     
     !Initialize
     iStat = 0
@@ -300,7 +348,7 @@ CONTAINS
     CALL EchoProgress('Instantiating diversions data file')
 
     !Instantiate
-    CALL DiverDataFile%Init(FileName,'diversions data file',TimeStep%TrackTime,1,.TRUE.,Factor,DummyArray,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL DiverDataFile%Init(FileName,cWorkingDirectory,'diversions data file',TimeStep%TrackTime,1,.TRUE.,Factor,DummyArray,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
     DiverDataFile%Fact = Factor(1)
 
   END SUBROUTINE DiverFile_New
@@ -384,32 +432,284 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
+  ! --- GET NUMBER OF COLUMNS IN BUDGET FILE (EXCLUDING TIME COLUMN) 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_NColumns(AppDiverBypass,iLocationIndex,iNCols,iStat)
+    CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
+    INTEGER,INTENT(IN)                   :: iLocationIndex
+    INTEGER,INTENT(OUT)                  :: iNCols,iStat       
+        
+    IF (AppDiverBypass%DiverDetailsBudRawFile_Defined) THEN
+        CALL AppDiverBypass%DiverDetailsBudRawFile%GetNDataColumns(iLocationIndex,iNCols,iStat) !Includes Time column
+        iNCols = iNCols - 1  !Exclude Time column
+    ELSE
+        iStat  = 0
+        iNCols = 0
+    END IF
+
+  END SUBROUTINE GetBudget_NColumns
+
+
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET COLUMN TITLES (EXCLUDING TIME COLUMN) 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_ColumnTitles(AppDiverBypass,iDiver,cUnitLT,cUnitAR,cUnitVL,cColTitles,iStat)
+    CLASS(AppDiverBypassType),TARGET,INTENT(IN) :: AppDiverBypass
+    INTEGER,INTENT(IN)                          :: iDiver
+    CHARACTER(LEN=*),INTENT(IN)                 :: cUnitLT,cUnitAR,cUnitVL
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT)    :: cColTitles(:)       
+    INTEGER,INTENT(OUT)                         :: iStat
+        
+    !Local variables
+    INTEGER                                       :: iNCols,iErrorCode
+    CHARACTER(LEN=f_iColumnHeaderLen),ALLOCATABLE :: cColTitles_Local(:)
+    
+    !Return if Budget file is not defined
+    IF (.NOT. AppDiverBypass%DiverDetailsBudRawFile_Defined) THEN
+        ALLOCATE (cColTitles(0))
+        iStat = 0
+        RETURN
+    END IF
+        
+    !Number of columns (includes Time column)
+    CALL AppDiverBypass%DiverDetailsBudRawFile%GetNDataColumns(iDiver,iNCols,iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Get column titles (includes Time column)
+    ALLOCATE (cColTitles_Local(iNCols))
+    cColTitles_Local = AppDiverBypass%DiverDetailsBudRawFile%GetFullColumnHeaders(iDiver,iNCols)
+    
+    !Insert units
+    CALL AppDiverBypass%DiverDetailsBudRawFile%ModifyFullColumnHeaders(cUnitLT,cUnitAR,cUnitVL,cColTitles_Local)
+    
+    !Remove Time column
+    iNCols = iNCols - 1
+    ALLOCATE (cColTitles(iNCols))
+    cColTitles = ADJUSTL(cColTitles_Local(2:))
+    
+    !Clear memory
+    DEALLOCATE (cColTitles_Local , STAT=iErrorCode)
+
+  END SUBROUTINE GetBudget_ColumnTitles
+
+
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET TIME SERIES DATA FOR A SET OF COLUMNS 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_TSData(AppDiverBypass,iDiverIndex,iCols,cBeginDate,cEndDate,cInterval,rFactLT,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+    CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
+    INTEGER,INTENT(IN)                   :: iDiverIndex,iCols(:)
+    CHARACTER(LEN=*),INTENT(IN)          :: cBeginDate,cEndDate,cInterval
+    REAL(8),INTENT(IN)                   :: rFactLT,rFactAR,rFactVL
+    REAL(8),INTENT(OUT)                  :: rOutputDates(:),rOutputValues(:,:)    !rOutputValues is in (timestep,column) format
+    INTEGER,INTENT(OUT)                  :: iDataTypes(:),inActualOutput,iStat
+    
+    !Local variables
+    INTEGER :: indx,ID
+    
+    IF (AppDiverBypass%DiverDetailsBudRawFile_Defined) THEN
+        !Read data
+        ID = AppDiverBypass%Diver(iDiverIndex)%Deli%ID
+        DO indx=1,SIZE(iCols)
+            CALL AppDiverBypass%DiverDetailsBudRawFile%ReadData(ID,iCols(indx),cInterval,cBeginDate,cEndDate,1d0,0d0,0d0,rFactLT,rFactAR,rFactVL,iDataTypes(indx),inActualOutput,rOutputDates,rOutputValues(:,indx),iStat)
+        END DO
+    ELSE
+        inActualOutput = 0
+        iDataTypes     = -1
+        rOutputDates   = 0.0
+        rOutputValues  = 0.0
+    END IF
+    
+  END SUBROUTINE GetBudget_TSData
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET PURPOSE OF DIVERSIONS (IF THEY SERVE AG, URBAN OR BOTH) BEFORE ANY ADJUSTMENT
+  ! -------------------------------------------------------------
+  SUBROUTINE GetDiversionPurpose(AppDiverBypass,iDivers,iAgOrUrban,iStat)
+    CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
+    INTEGER,INTENT(IN)                   :: iDivers(:)
+    INTEGER,INTENT(OUT)                  :: iAgOrUrban(:),iStat
+    
+    CALL Diversion_GetPurpose(AppDiverBypass%Diver(iDivers),iAgOrUrban,iStat)
+    
+  END SUBROUTINE GetDiversionPurpose
+
+  
+  ! -------------------------------------------------------------
+  ! --- GET ACTUAL DIVERSIONS FOR A SET OF DIVERSIONS
+  ! -------------------------------------------------------------
+  SUBROUTINE GetActualDiversions_AtSomeDiversions(AppDiverBypass,iDivers,rDivers,iStat)
+    CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
+    INTEGER,INTENT(IN)                   :: iDivers(:)
+    REAL(8),INTENT(OUT)                  :: rDivers(:)
+    INTEGER,INTENT(OUT)                  :: iStat
+    
+    !Local variables
+    CHARACTER(ModNameLen+36),PARAMETER :: ThisProcedure = ModName // 'GetActualDiversions_AtSomeDiversions'
+    
+    iStat   = 0    
+    rDivers = AppDiverBypass%Diver(iDivers)%DiverActual
+    
+  END SUBROUTINE GetActualDiversions_AtSomeDiversions
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET DIVERSIONS FOR A SPECIFIED DELIVERIES; I.E. ADD LOSSES TO DELIVERIES
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetDiversionsForDeliveries(AppDiverBypass,iDivers,rDelis,rDivers)
+    CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
+    INTEGER,INTENT(IN)                   :: iDivers(:)
+    REAL(8),INTENT(IN)                   :: rDelis(:)
+    REAL(8),INTENT(OUT)                  :: rDivers(:)
+    
+    !Local variables
+    INTEGER :: indxDiver,iDiver
+    REAL(8) :: rFrac 
+    
+    DO indxDiver=1,SIZE(iDivers)
+        iDiver = iDivers(indxDiver)
+        rFrac  = 1d0 - AppDiverBypass%Diver(iDiver)%Ratio_RecvLoss - AppDiverBypass%Diver(iDiver)%Ratio_NonRecvLoss
+        IF (rFrac .LE. 1d-8) THEN    !Don't compare it zero as this seems to cause issues due to floating point inaccuracy in certain cases
+            rDivers(indxDiver) = rDelis(indxDiver)
+        ELSE
+            rDivers(indxDiver) = rDelis(indxDiver) / rFrac
+        END IF
+    END DO
+    
+  END SUBROUTINE GetDiversionsForDeliveries
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET DELIVERY RELATED TO A DIVERSION
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetDeliveryAtDiversion(AppDiverBypass,iDiver) RESULT(rDeli)
+    CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
+    INTEGER,INTENT(IN)                   :: iDiver
+    REAL(8)                              :: rDeli
+    
+    rDeli = AppDiverBypass%Diver(iDiver)%Deli%SupplyActual
+    
+  END FUNCTION GetDeliveryAtDiversion
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET DIVERSION/DELIVERY IDs
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetDiversionIDs(AppDiverBypass,iDiversionIDs)
+    CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
+    INTEGER,INTENT(OUT)                  :: iDiversionIDs(:)
+    
+    IF (AppDiverBypass%NDiver .EQ. 0) RETURN
+    iDiversionIDs = AppDiverBypass%Diver%Deli%ID
+    
+  END SUBROUTINE GetDiversionIDs
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET BYPASS IDs
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetBypassIDs(AppDiverBypass,iBypassIDs)
+    CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
+    INTEGER,INTENT(OUT)                  :: iBypassIDs(:)
+    
+    IF (AppDiverBypass%NBypass .EQ. 0) RETURN
+    iBypassIDs = AppDiverBypass%Bypasses%ID
+    
+  END SUBROUTINE GetBypassIDs
+  
+  
+  ! -------------------------------------------------------------
   ! --- GET BYPASS EXPORT NODE
   ! -------------------------------------------------------------
-  SUBROUTINE GetExportNode(AppDiverBypass,BypassID,iNode_Exp,iStat)
+  SUBROUTINE GetBypassExportNode(AppDiverBypass,iBypass,iNode_Exp,iStat)
     CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
-    INTEGER,INTENT(IN)                   :: BypassID
+    INTEGER,INTENT(IN)                   :: iBypass
     INTEGER,INTENT(OUT)                  :: iNode_Exp,iStat
     
     !Local variables
-    CHARACTER(LEN=ModNameLen+13) :: ThisProcedure = ModName // 'GetExportNode'
+    CHARACTER(LEN=ModNameLen+19) :: ThisProcedure = ModName // 'GetBypassExportNode'
     
-    !INitialize
+    !Initialize
     iStat = 0
     
     !Make sure bypass ID is defined 
-    IF (BypassID.LT.1  .OR.  BypassID.GT.AppDiverBypass%NBypass) THEN
-        CALL SetLastMessage('Bypass ID '//TRIM(IntToText(BypassID))//' is not simulated!',iFatal,ThisProcedure)
+    IF (iBypass.LT.1  .OR.  iBypass.GT.AppDiverBypass%NBypass) THEN
+        CALL SetLastMessage('Bypass '//TRIM(IntToText(iBypass))//' is not simulated!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
     
     !Get the export node
-    iNode_Exp = AppDiverBypass%Bypasses(BypassID)%iNode_Exp
+    iNode_Exp = AppDiverBypass%Bypasses(iBypass)%iNode_Exp
     
-  END SUBROUTINE GetExportNode
+  END SUBROUTINE GetBypassExportNode
   
 
+  ! -------------------------------------------------------------
+  ! --- GET STREAM NODE INDICES FOR GIVEN DIVERSION INDICES
+  ! -------------------------------------------------------------
+  SUBROUTINE GetDiversionsExportNodes(AppDiverBypass,iDivList,iStrmNodeList)
+    CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
+    INTEGER,INTENT(IN)                   :: iDivList(:)
+    INTEGER,INTENT(OUT)                  :: iStrmNodeList(:)
+    
+    iStrmNodeList = AppDiverBypass%Diver(iDivList)%iStrmNode
+    
+  END SUBROUTINE GetDiversionsExportNodes
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET BYPASS OR DIVERSION ORIGIN AND DESTINATION DATA
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetBypassDiverOriginDestData(AppDiverBypass,lIsBypass,iBypassOrDiver,iNodeExport,iDestType,iDest)
+    CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
+    LOGICAL,INTENT(IN)                   :: lIsBypass   
+    INTEGER,INTENT(IN)                   :: iBypassOrDiver
+    INTEGER,INTENT(OUT)                  :: iNodeExport,iDestType,iDest
+    
+    !If this is a bypass
+    IF (lIsBypass) THEN
+        iNodeExport = AppDiverBypass%Bypasses(iBypassOrDiver)%iNode_Exp
+        iDestType   = AppDiverBypass%Bypasses(iBypassOrDiver)%iDestType
+        iDest       = AppDiverBypass%Bypasses(iBypassOrDiver)%iDest
+    !If this is a diversion
+    ELSE
+        iNodeExport = AppDiverBypass%Diver(iBypassOrDiver)%iStrmNode
+        iDestType   = AppDiverBypass%Diver(iBypassOrDiver)%Deli%Destination%iDestType
+        iDest       = AppDiverBypass%Diver(iBypassOrDiver)%Deli%Destination%iDest
+    END IF
+    
+  END SUBROUTINE GetBypassDiverOriginDestData
+  
+
+  ! -------------------------------------------------------------
+  ! --- GET BYPASS INFLOWS INTO EACH STREAM NODE 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetStrmBypassInflows(AppDiverBypass,rBPInflows)
+    CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
+    REAL(8),INTENT(OUT)                  :: rBPInflows(:)
+    
+    !Local variables
+    INTEGER :: indxBypass,iNodeRecieve
+    
+    !Initialize
+    rBPInflows = 0.0
+    
+    !Return, if there are no bypasses
+    IF (AppDiverBypass%NBypass .EQ. 0) RETURN
+    
+    !Compile bypass inflows
+    DO indxBypass=1,AppDiverBypass%NBypass
+        IF (AppDiverBypass%Bypasses(indxBypass)%iDestType .EQ. f_iFlowDest_StrmNode) THEN
+            iNodeRecieve             = AppDiverBypass%Bypasses(indxBypass)%iDest
+            rBPInflows(iNodeRecieve) = rBPInflows(iNodeRecieve) + AppDiverBypass%Bypasses(indxBypass)%Bypass_Received
+        END IF
+    END DO
+    
+  END SUBROUTINE GetStrmBypassInflows
+  
+    
   ! -------------------------------------------------------------
   ! --- GET NET BYPASS FROM A SET OF NODES 
   ! -------------------------------------------------------------
@@ -433,11 +733,11 @@ CONTAINS
       iLoc      = LocateInList(iNode_Exp,iNodes)
       IF (iLoc .GT. 0) &
         Bypasses(iLoc) = Bypasses(iLoc) + AppDiverBypass%Bypasses(indxBypass)%Bypass_Out
-      IF (AppDiverBypass%Bypasses(indxBypass)%iDestType .EQ. FlowDest_StrmNode) THEN
+      IF (AppDiverBypass%Bypasses(indxBypass)%iDestType .EQ. f_iFlowDest_StrmNode) THEN
         iNodeRecieve = AppDiverBypass%Bypasses(indxBypass)%iDest
         iLoc = LocateInList(iNodeRecieve,iNodes)
         IF (iLoc .GT. 0) &
-          Bypasses(iLoc) = Bypasses(iLoc) - AppDiverBypass%Bypasses(indxBypass)%Bypass_Recieved
+          Bypasses(iLoc) = Bypasses(iLoc) - AppDiverBypass%Bypasses(indxBypass)%Bypass_Received
       END IF
     END DO
     
@@ -447,16 +747,16 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET NET BYPASS FROM EACH REACH 
   ! -------------------------------------------------------------
-  FUNCTION AppDiverBypass_GetReachNetBypass(AppDiverBypass,NReaches,Reaches) RESULT(Bypasses)
+  FUNCTION AppDiverBypass_GetReachNetBypass(AppDiverBypass,NStrmNodes,NReaches,Reaches) RESULT(Bypasses)
     CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
-    INTEGER,INTENT(IN)                   :: NReaches
+    INTEGER,INTENT(IN)                   :: NStrmNodes,NReaches
     TYPE(StrmReachType),INTENT(IN)       :: Reaches(NReaches)
     REAL(8)                              :: Bypasses(NReaches)
     
     !Local variables
-    INTEGER                                           :: indxBypass,iNode_Exp,iNodeRecieve,indxReach, &
-                                                         iUpstrmNode,iDownstrmNode
-    REAL(8),DIMENSION(Reaches(NReaches)%DownStrmNode) :: NodalBypassOut,NodalBypassRecieved
+    INTEGER                       :: indxBypass,iNode_Exp,iNodeRecieve,indxReach, &
+                                     iUpstrmNode,iDownstrmNode
+    REAL(8),DIMENSION(NStrmNodes) :: NodalBypassOut,NodalBypassRecieved
     
     !Initialize
     Bypasses = 0.0
@@ -468,19 +768,20 @@ CONTAINS
     NodalBypassOut      = 0.0
     NodalBypassRecieved = 0.0
     DO indxBypass=1,AppDiverBypass%NBypass
-      iNode_Exp                 = AppDiverBypass%Bypasses(indxBypass)%iNode_Exp
-      NodalBypassOut(iNode_Exp) = NodalBypassOut(iNode_Exp) + AppDiverBypass%Bypasses(indxBypass)%Bypass_Out
-      IF (AppDiverBypass%Bypasses(indxBypass)%iDestType .EQ. FlowDest_StrmNode) THEN
-        iNodeRecieve                      = AppDiverBypass%Bypasses(indxBypass)%iDest
-        NodalBypassRecieved(iNodeRecieve) = NodalBypassRecieved(iNodeRecieve) + AppDiverBypass%Bypasses(indxBypass)%Bypass_Recieved
-      END IF
+        iNode_Exp = AppDiverBypass%Bypasses(indxBypass)%iNode_Exp
+        IF (iNode_Exp .EQ. 0) CYCLE
+        NodalBypassOut(iNode_Exp) = NodalBypassOut(iNode_Exp) + AppDiverBypass%Bypasses(indxBypass)%Bypass_Out
+        IF (AppDiverBypass%Bypasses(indxBypass)%iDestType .EQ. f_iFlowDest_StrmNode) THEN
+            iNodeRecieve                      = AppDiverBypass%Bypasses(indxBypass)%iDest
+            NodalBypassRecieved(iNodeRecieve) = NodalBypassRecieved(iNodeRecieve) + AppDiverBypass%Bypasses(indxBypass)%Bypass_Received
+        END IF
     END DO
     
     !Then, accumulate for reaches
     DO indxReach=1,NReaches
-      iUpstrmNode         = Reaches(indxReach)%UpstrmNode
-      iDownstrmNode       = Reaches(indxReach)%DownstrmNode
-      Bypasses(indxReach) = SUM(NodalBypassOut(iUpstrmNode:iDownstrmNode) - NodalBypassRecieved(iUpstrmNode:iDownstrmNode))
+        iUpstrmNode         = Reaches(indxReach)%UpstrmNode
+        iDownstrmNode       = Reaches(indxReach)%DownstrmNode
+        Bypasses(indxReach) = SUM(NodalBypassOut(iUpstrmNode:iDownstrmNode) - NodalBypassRecieved(iUpstrmNode:iDownstrmNode))
     END DO
     
   END FUNCTION AppDiverBypass_GetReachNetBypass
@@ -560,15 +861,15 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET TOTAL DIVERSION SHORTAGES FOR EACH REACH 
   ! -------------------------------------------------------------
-  FUNCTION AppDiverBypass_GetReachDiversionShort(AppDiverBypass,NReaches,Reaches) RESULT(Shorts)
+  FUNCTION AppDiverBypass_GetReachDiversionShort(AppDiverBypass,NStrmNodes,NReaches,Reaches) RESULT(Shorts)
     CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
-    INTEGER,INTENT(IN)                   :: NReaches
+    INTEGER,INTENT(IN)                   :: NStrmNodes,NReaches
     TYPE(StrmReachType),INTENT(IN)       :: Reaches(NReaches)
     REAL(8)                              :: Shorts(NReaches)
     
     !Local variables
     INTEGER :: indxReach,iUpstrmNode,iDownstrmNode,indxDiver
-    REAL(8) :: NodeShorts(0:Reaches(NReaches)%DownStrmNode)
+    REAL(8) :: NodeShorts(0:NStrmNodes)
     
     !Initialize
     Shorts = 0.0
@@ -649,7 +950,7 @@ CONTAINS
     
     SELECT CASE (iSource)
       !Recoverable losses from diversions
-      CASE (iDiverRecvLoss)
+      CASE (f_iDiverRecvLoss)
         NRecharge = AppDiverBypass%NDiver
         IF (NRecharge .GT. 0) THEN
           ElemRecvLosses = CompileRecvLosses(NElements,NRecharge,AppDiverBypass%Diver%RecvLoss,AppDiverBypass%Diver%Recharge)
@@ -658,7 +959,7 @@ CONTAINS
         END IF
         
       !Recoverable losses from bypasses
-      CASE (iBypassRecvLoss) 
+      CASE (f_iBypassRecvLoss) 
         NRecharge = AppDiverBypass%NBypass
         IF (NRecharge .GT. 0) THEN
           ElemRecvLosses = CompileRecvLosses(NElements,NRecharge,AppDiverBypass%Bypasses%RecvLoss,AppDiverBypass%Bypasses%Recharge)
@@ -667,7 +968,7 @@ CONTAINS
         END IF
           
       !Recoverable losses from both diversions and bypasses
-      CASE (iAllRecvLoss)
+      CASE (f_iAllRecvLoss)
         IF (AppDiverBypass%NDiver.EQ.0  .AND. AppDiverBypass%NBypass.EQ.0) THEN
           ElemRecvLosses = 0.0
         ELSE
@@ -721,34 +1022,182 @@ CONTAINS
 
 
   ! -------------------------------------------------------------
+  ! --- GET NET FLOW FROM A BYPASS (AFTER RECOVERABLE AND NON-RECOVERABLE LOSSES ARE TAKEN OUT)
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetBypassReceived_FromABypass(AppDiverBypass,iBypass) RESULT(rFlow)
+    CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
+    INTEGER,INTENT(IN)                   :: iBypass
+    REAL(8)                              :: rFlow
+    
+    rFlow = AppDiverBypass%Bypasses(iBypass)%Bypass_Received
+    
+  END FUNCTION GetBypassReceived_FromABypass
+  
+  
+  ! -------------------------------------------------------------
   ! --- GET RECEIVED BYPASS FLOW AT A DESTINATION
   ! -------------------------------------------------------------
-  FUNCTION AppDiverBypass_GetBypassRecieved(AppDiverBypass,iDestType,iDest) RESULT(BypassRecieved)
+  FUNCTION GetBypassReceived_AtADestination(AppDiverBypass,iDestType,iDest) RESULT(BypassReceived)
     CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
     INTEGER,INTENT(IN)                   :: iDestType,iDest
-    REAL(8)                              :: BypassRecieved
+    REAL(8)                              :: BypassReceived
     
     !Local variables
     INTEGER :: indxBypass
     
     !Initialize
-    BypassRecieved = 0.0
+    BypassReceived = 0.0
     
     !Find the recieved bypass
     ASSOCIATE (pBypasses => AppDiverBypass%Bypasses)
       DO indxBypass=1,AppDiverBypass%NBypass
         IF (pBypasses(indxBypass)%iDest .EQ. iDest) THEN
           IF (pBypasses(indxBypass)%iDestType .EQ. iDestType)  &
-            BypassRecieved = BypassRecieved + pBypasses(indxBypass)%Bypass_Recieved
+            BypassReceived = BypassReceived + pBypasses(indxBypass)%Bypass_Received
         END IF
       END DO
     END ASSOCIATE
     
-  END FUNCTION AppDiverBypass_GetBypassRecieved
+  END FUNCTION GetBypassReceived_AtADestination
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET BYPASS OUTFLOWS FOR EACH BYPASS
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetBypassOutflows(AppDiverBypass,rOutflows)
+    CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
+    REAL(8),INTENT(OUT)                  :: rOutflows(:)
+    
+    rOutflows = AppDiverBypass%Bypasses%Bypass_Out
+    
+  END SUBROUTINE GetBypassOutflows
   
   
     
 
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+! ***
+! *** SETTERS
+! ***
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+
+  ! -------------------------------------------------------------
+  ! --- SET REQUIRED DIVERSIONS 
+  ! -------------------------------------------------------------
+  SUBROUTINE SetDiverRequired(AppDiverBypass,DeliRequired)
+    CLASS(AppDiverBypassType) :: AppDiverBypass
+    REAL(8),INTENT(IN)        :: DeliRequired(:)
+    
+    !Local variables
+    INTEGER :: indx
+    REAL(8) :: rFrac
+    
+    ASSOCIATE (pDivers => AppDiverBypass%Diver)
+    
+      DO indx=1,AppDiverBypass%NDiver
+          rFrac                       = 1d0 - pDivers(indx)%Ratio_RecvLoss - pDivers(indx)%Ratio_NonRecvLoss
+          IF (rFrac .LE. 1d-8) CYCLE  !Don't compare it zero as this seems to cause issues due to floating point inaccuracy in certain cases
+          pDivers(indx)%DiverRequired = DeliRequired(indx) / rFrac
+          pDivers(indx)%DiverActual   = pDivers(indx)%DiverRequired
+      END DO
+      
+    END ASSOCIATE
+    
+    AppDiverBypass%lDiverRequired_Updated = .TRUE.
+    CALL AppDiverBypass%CompileNodalDiversions()
+    
+  END SUBROUTINE SetDiverRequired
+  
+  
+  ! -------------------------------------------------------------
+  ! --- SET DIVERSION READ
+  ! -------------------------------------------------------------
+  SUBROUTINE SetDiversionRead(AppDiverBypass,iDiver,rDiversion)
+    CLASS(AppDiverBypassType) :: AppDiverBypass
+    INTEGER,INTENT(IN)        :: iDiver
+    REAL(8),INTENT(IN)        :: rDiversion
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+16),PARAMETER :: ThisProcedure = ModName // 'SetDiversionRead'
+    INTEGER                                :: ID
+    REAL(8)                                :: RecvLoss,NonRecvLoss,Factor,rSum,rNormFracs(3)
+    
+    !When diversions are set from outside the model, we must assume delivery, recoverable and non-recoverable losses 
+    !  are based on single data so fractions must be normalized
+    
+    rNormFracs(1) = AppDiverBypass%Diver(iDiver)%FracRecvLoss
+    rNormFracs(2) = AppDiverBypass%Diver(iDiver)%FracNonRecvLoss
+    rNormFracs(3) = AppDiverBypass%Diver(iDiver)%Deli%FracDeli
+    CALL NormalizeArray(rNormFracs)
+    
+    !Deliveries
+    AppDiverBypass%Diver(iDiver)%Deli%SupplyRequired = rDiversion * rNormFracs(3)
+    AppDiverBypass%Diver(iDiver)%Deli%DeliRead       = AppDiverBypass%Diver(iDiver)%Deli%SupplyRequired
+    
+    !Recoverable losses
+    RecvLoss = rDiversion * rNormFracs(1)
+
+    !Non-recoverable losses
+    NonRecvLoss = rDiversion * rNormFracs(2)
+    
+    !Total diversions
+    AppDiverBypass%Diver(iDiver)%DiverRead = AppDiverBypass%Diver(iDiver)%Deli%SupplyRequired + RecvLoss + NonRecvLoss
+              
+    !Ratio of recoverable and non-recoverable losses to total diversions
+    IF (AppDiverBypass%Diver(iDiver)%DiverRead .GT. 0.0) THEN
+        AppDiverBypass%Diver(iDiver)%Ratio_RecvLoss    = rNormFracs(1)
+        AppDiverBypass%Diver(iDiver)%Ratio_NonRecvLoss = rNormFracs(2)
+    ELSE !If read diversion is zero, then use the original fractions for recoverable and non-recoverable losses
+        rSum = AppDiverBypass%Diver(iDiver)%FracRecvLoss + AppDiverBypass%Diver(iDiver)%FracNonRecvLoss + AppDiverBypass%Diver(iDiver)%Deli%FracDeli
+        IF (rSum .GT. 0.0) THEN
+            AppDiverBypass%Diver(iDiver)%Ratio_RecvLoss    = AppDiverBypass%Diver(iDiver)%FracRecvLoss / rSum
+            AppDiverBypass%Diver(iDiver)%Ratio_NonRecvLoss = AppDiverBypass%Diver(iDiver)%FracNonRecvLoss / rSum
+        ELSE
+            AppDiverBypass%Diver(iDiver)%Ratio_RecvLoss    = 0.0
+            AppDiverBypass%Diver(iDiver)%Ratio_NonRecvLoss = 0.0
+        END IF
+    END IF
+    
+    !Is diversion that is read larger than maximum diversion? If so, update
+    IF (AppDiverBypass%Diver(iDiver)%DiverRead .GT. AppDiverBypass%Diver(iDiver)%MaxDiver) THEN
+        ID = AppDiverBypass%Diver(iDiver)%Deli%ID
+        MessageArray(1) = 'Diversion rate at diversion ID '//TRIM(IntToText(ID))//' is larger than the maximum diversion rate!'
+        MessageArray(2) = 'Scaling down the diversion rate to match the maximum diversion.'
+        CALL LogMessage(MessageArray(1:2),f_iWarn,ThisProcedure) 
+        Factor                                           = AppDiverBypass%Diver(iDiver)%MaxDiver / AppDiverBypass%Diver(iDiver)%DiverRead
+        AppDiverBypass%Diver(iDiver)%Deli%SupplyRequired = AppDiverBypass%Diver(iDiver)%Deli%SupplyRequired * Factor
+        AppDiverBypass%Diver(iDiver)%Deli%DeliRead       = AppDiverBypass%Diver(iDiver)%Deli%SupplyRequired
+        AppDiverBypass%Diver(iDiver)%DiverRead           = AppDiverBypass%Diver(iDiver)%MaxDiver
+    END IF
+    
+    !Equate required values to read values
+    AppDiverBypass%Diver(iDiver)%DiverRequired = AppDiverBypass%Diver(iDiver)%DiverRead
+
+  END SUBROUTINE SetDiversionRead
+  
+  
+  ! -------------------------------------------------------------
+  ! --- SET BYPASS ORIGINATING FLOW AS WELL AS OTHER RELATED FLOWS
+  ! -------------------------------------------------------------
+  SUBROUTINE SetBypassFlows_AtABypass(AppDiverBypass,iBypass,rOriginatingFlow)
+    CLASS(AppDiverBypassType) :: AppDiverBypass
+    INTEGER,INTENT(IN)        :: iBypass
+    REAL(8),INTENT(IN)        :: rOriginatingFlow
+    
+    AppDiverBypass%Bypasses(iBypass)%Bypass_Out      = rOriginatingFlow
+    AppDiverBypass%Bypasses(iBypass)%RecvLoss        = rOriginatingFlow * AppDiverBypass%Bypasses(iBypass)%FracRecvLoss
+    AppDiverBypass%Bypasses(iBypass)%NonRecvLoss     = rOriginatingFlow * AppDiverBypass%Bypasses(iBypass)%FracNonRecvLoss
+    AppDiverBypass%Bypasses(iBypass)%Bypass_Received = rOriginatingFlow - AppDiverBypass%Bypasses(iBypass)%RecvLoss - AppDiverBypass%Bypasses(iBypass)%NonRecvLoss 
+    
+  END SUBROUTINE SetBypassFlows_AtABypass
+  
+  
+  
+  
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
@@ -824,21 +1273,22 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ DIVERSIONS TIME SERIES DATA FILE
   ! -------------------------------------------------------------
-  SUBROUTINE AppDiverBypass_ReadTSData(AppDiverBypass,lDiverAdjusted,TimeStep,iStat,DiversionsOverwrite)
+  SUBROUTINE AppDiverBypass_ReadTSData(AppDiverBypass,lDiverAdjusted,TimeStep,iDiversions,rDiversions,iBypasses,rBypasses,iStat)
     CLASS(AppDiverBypassType)     :: AppDiverBypass
     LOGICAL,INTENT(IN)            :: lDiverAdjusted
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
+    INTEGER,INTENT(IN)            :: iDiversions(:),iBypasses(:)  !Diversions and bypasses that will be overwritten
+    REAL(8),INTENT(IN)            :: rDiversions(:),rBypasses(:)  !Overwriting diversion and bypasses values
     INTEGER,INTENT(OUT)           :: iStat
-    REAL(8),OPTIONAL,INTENT(IN)   :: DiversionsOverwrite(:)
 
     !Local variables
     CHARACTER(LEN=ModNameLen+25) :: ThisProcedure = ModName // 'AppDiverBypass_ReadTSData'
-    INTEGER                      :: indx,iMaxDiverCol,FileReadCode
-    REAL(8)                      :: RecvLoss,NonRecvLoss,Factor
+    INTEGER                      :: indx,iMaxDiverCol,FileReadCode,iDivIndx,iBypsIndx,iCol
+    REAL(8)                      :: RecvLoss,NonRecvLoss,Factor,rSum
     
     !Initialize
     iStat = 0
-
+    
     !Read data
     CALL ReadTSData(TimeStep,'diversion data',AppDiverBypass%DiverFile%RealTSDataInFileType,FileReadCode,iStat)
     IF (iStat .EQ. -1) RETURN
@@ -859,97 +1309,88 @@ CONTAINS
         IF (ANY(AppDiverBypass%DiverFile%rValues .LT. 0.0)) THEN
             MessageArray(1) = 'One or more diversions are less than zero.'
             MessageArray(2) = 'Diversions cannot be less than zero!'
-            CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
         
         !Diversions
         DO indx=1,AppDiverBypass%NDiver
-          ASSOCIATE (pDiver => AppDiverBypass%Diver(indx))
-            !Maximum diversions
-            iMaxDiverCol = pDiver%iMaxDiverCol
-            IF (iMaxDiverCol .GT. 0) pDiver%MaxDiver = AppDiverBypass%DiverFile%rValues(iMaxDiverCol) * pDiver%FracMaxDiver
-            
-            !Deliveries
-            pDiver%Deli%SupplyRequired = AppDiverBypass%DiverFile%rValues(pDiver%Deli%iColDeli) * pDiver%Deli%FracDeli
-            pDiver%Deli%DeliRead       = pDiver%Deli%SupplyRequired
-          
-            !Recoverable losses
-            RecvLoss = AppDiverBypass%DiverFile%rValues(pDiver%iColRecvLoss) * pDiver%FracRecvLoss
-
-            !Non-recoverable losses
-            NonRecvLoss = AppDiverBypass%DiverFile%rValues(pDiver%iColNonRecvLoss) * pDiver%FracNonRecvLoss
-            
-            !Total diversions
-            pDiver%DiverRead = pDiver%Deli%SupplyRequired + RecvLoss + NonRecvLoss
-                      
-            !Ratio of recoverable and non-recoverable losses to total diversions
-            IF (pDiver%DiverRead .GT. 0.0) THEN
-              pDiver%Ratio_RecvLoss    = RecvLoss / pDiver%DiverRead
-              pDiver%Ratio_NonRecvLoss = NonRecvLoss / pDiver%DiverRead
-            ELSE
-              pDiver%Ratio_RecvLoss    = 0.0
-              pDiver%Ratio_NonRecvLoss = 0.0
-            END IF
-            
-            !Is diversion that is read is larger than maximum diversion? If so, update
-            IF (pDiver%DiverRead .GT. pDiver%MaxDiver) THEN
-              Factor                     = pDiver%MaxDiver / pDiver%DiverRead
-              pDiver%Deli%SupplyRequired = pDiver%Deli%SupplyRequired * Factor
-              pDiver%Deli%DeliRead       = pDiver%Deli%SupplyRequired
-              pDiver%DiverRead           = pDiver%MaxDiver
-            END IF
-            
-            !Equate required values to read values
-            pDiver%DiverRequired = pDiver%DiverRead
-                         
-          END ASSOCIATE
-        END DO
-        
+            ASSOCIATE (pDiver => AppDiverBypass%Diver(indx))
+                !Maximum diversions
+                iMaxDiverCol = pDiver%iMaxDiverCol
+                IF (iMaxDiverCol .GT. 0) pDiver%MaxDiver = AppDiverBypass%DiverFile%rValues(iMaxDiverCol) * pDiver%FracMaxDiver
+                
+                !Deliveries
+                pDiver%Deli%SupplyRequired = AppDiverBypass%DiverFile%rValues(pDiver%Deli%iColDeli) * pDiver%Deli%FracDeli
+                pDiver%Deli%DeliRead       = pDiver%Deli%SupplyRequired
+                
+                !Recoverable losses
+                RecvLoss = AppDiverBypass%DiverFile%rValues(pDiver%iColRecvLoss) * pDiver%FracRecvLoss
+                
+                !Non-recoverable losses
+                NonRecvLoss = AppDiverBypass%DiverFile%rValues(pDiver%iColNonRecvLoss) * pDiver%FracNonRecvLoss
+                
+                !Total diversions
+                pDiver%DiverRead = pDiver%Deli%SupplyRequired + RecvLoss + NonRecvLoss
+                          
+                !Ratio of recoverable and non-recoverable losses to total diversions
+                IF (pDiver%DiverRead .GT. 0.0) THEN
+                    pDiver%Ratio_RecvLoss    = RecvLoss / pDiver%DiverRead
+                    pDiver%Ratio_NonRecvLoss = NonRecvLoss / pDiver%DiverRead
+                ELSE
+                    rSum = pDiver%FracRecvLoss + pDiver%FracNonRecvLoss + pDiver%Deli%FracDeli
+                    IF (rSum .GT. 0.0) THEN
+                        pDiver%Ratio_RecvLoss    = pDiver%FracRecvLoss / rSum
+                        pDiver%Ratio_NonRecvLoss = pDiver%FracNonRecvLoss / rSum
+                    ELSE
+                        pDiver%Ratio_RecvLoss    = 0.0
+                        pDiver%Ratio_NonRecvLoss = 0.0
+                    END IF
+                END IF
+                
+                !Is diversion that is read larger than maximum diversion? If so, update
+                IF (pDiver%DiverRead .GT. pDiver%MaxDiver) THEN
+                  Factor                     = pDiver%MaxDiver / pDiver%DiverRead
+                  pDiver%Deli%SupplyRequired = pDiver%Deli%SupplyRequired * Factor
+                  pDiver%Deli%DeliRead       = pDiver%Deli%SupplyRequired
+                  pDiver%DiverRead           = pDiver%MaxDiver
+                END IF
+                
+                !Equate required values to read values
+                pDiver%DiverRequired = pDiver%DiverRead
+                           
+            END ASSOCIATE
+        END DO        
         !Update flag to check if DiverAdjusted is updated
         AppDiverBypass%lDiverRequired_Updated = .TRUE.
         
     END SELECT
       
-    !If diversions to overwrite provided, do so
-    IF (.NOT. PRESENT(DiversionsOverwrite)) RETURN
-    DO indx=1,AppDiverBypass%NDiver
-        !Deliveries
-        AppDiverBypass%Diver(indx)%Deli%SupplyRequired = DiversionsOverwrite(indx) * AppDiverBypass%Diver(indx)%Deli%FracDeli
-        AppDiverBypass%Diver(indx)%Deli%DeliRead       = AppDiverBypass%Diver(indx)%Deli%SupplyRequired
-      
-        !Recoverable losses
-        RecvLoss = DiversionsOverwrite(indx) * AppDiverBypass%Diver(indx)%FracRecvLoss
-
-        !Non-recoverable losses
-        NonRecvLoss = DiversionsOverwrite(indx) * AppDiverBypass%Diver(indx)%FracNonRecvLoss
-        
-        !Total diversions
-        AppDiverBypass%Diver(indx)%DiverRead = AppDiverBypass%Diver(indx)%Deli%SupplyRequired + RecvLoss + NonRecvLoss
-                  
-        !Ratio of recoverable and non-recoverable losses to total diversions
-        IF (AppDiverBypass%Diver(indx)%DiverRead .GT. 0.0) THEN
-          AppDiverBypass%Diver(indx)%Ratio_RecvLoss    = RecvLoss / AppDiverBypass%Diver(indx)%DiverRead
-          AppDiverBypass%Diver(indx)%Ratio_NonRecvLoss = NonRecvLoss / AppDiverBypass%Diver(indx)%DiverRead
-        ELSE
-          AppDiverBypass%Diver(indx)%Ratio_RecvLoss    = 0.0
-          AppDiverBypass%Diver(indx)%Ratio_NonRecvLoss = 0.0
-        END IF
-        
-        !Is diversion that is read is larger than maximum diversion? If so, update
-        IF (AppDiverBypass%Diver(indx)%DiverRead .GT. AppDiverBypass%Diver(indx)%MaxDiver) THEN
-          Factor                                         = AppDiverBypass%Diver(indx)%MaxDiver / AppDiverBypass%Diver(indx)%DiverRead
-          AppDiverBypass%Diver(indx)%Deli%SupplyRequired = AppDiverBypass%Diver(indx)%Deli%SupplyRequired * Factor
-          AppDiverBypass%Diver(indx)%Deli%DeliRead       = AppDiverBypass%Diver(indx)%Deli%SupplyRequired
-          AppDiverBypass%Diver(indx)%DiverRead           = AppDiverBypass%Diver(indx)%MaxDiver
-        END IF
-        
-        !Equate required values to read values
-        AppDiverBypass%Diver(indx)%DiverRequired = AppDiverBypass%Diver(indx)%DiverRead
-                     
-    END DO
-        
+    !Overwrite diversions
+    IF (SIZE(iDiversions) .GT. 0) THEN
+        DO indx=1,SIZE(iDiversions)
+            iDivIndx = iDiversions(indx)
+            CALL AppDiverBypass%SetDiversionRead(iDivIndx,rDiversions(indx))
+        END DO
+        AppDiverBypass%lDiverRequired_Updated = .TRUE.
+    END IF
+    
+    !Overwrite bypasses
+    IF (SIZE(iBypasses) .GT. 0) THEN
+        DO indx=1,SIZE(iBypasses)
+            iBypsIndx = iBypasses(indx)
+            !Bypass rate is user-definied
+            iCol = AppDiverBypass%Bypasses(iBypsIndx)%iColBypass
+            IF (iCol .GT. 0) THEN
+                AppDiverBypass%DiverFile%rValues(iCol) = rBypasses(indx)
+            !Bypass rate is calculated via rating table; update rating table accordingly
+            ELSE
+                AppDiverBypass%Bypasses(iBypsIndx)%RatingTable%YPoint = rBypasses(indx)
+            END IF
+        END DO
+    END IF
+            
   END SUBROUTINE AppDiverBypass_ReadTSData
   
   
@@ -1063,76 +1504,74 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- FUNCTION TO PREPARE THE BUDGET HEADER DATA FOR DIVERSION DETAILS OUTPUT
   ! -------------------------------------------------------------
-  FUNCTION PrepareDiverDetailsBudgetHeader(NDiver,TimeStep,NTIME,Diversions,cVersion) RESULT(Header)
+  FUNCTION PrepareDiverDetailsBudgetHeader(NDiver,TimeStep,NTIME,iElemIDs,iStrmNodeIDs,iSubregionIDs,Diversions,cVersion) RESULT(Header)
     TYPE(TimeStepType),INTENT(IN)  :: TimeStep
-    INTEGER,INTENT(IN)             :: NTIME,NDiver
+    INTEGER,INTENT(IN)             :: NTIME,NDiver,iElemIDs(:),iStrmNodeIDs(:),iSubregionIDs(:)
     TYPE(DiversionType),INTENT(IN) :: Diversions(NDiver)
     CHARACTER(LEN=*),INTENT(IN)    :: cVersion
     TYPE(BudgetHeaderType)         :: Header
     
     !Local variables
-    INTEGER,PARAMETER                 :: TitleLen           = 104  , &
-                                         NTitles            = 3    , &
-                                         NColumnHeaderLines = 4    , &  
-                                         NColumns           = 6  
-    INTEGER                           :: iCount,indxLocation,indxCol,indxDiver,I,      &
-                                         iDest,iStrmNode,iCount1,iDestType
-    CHARACTER                         :: UnitT*10,TextTime*17
-    CHARACTER(LEN=15),PARAMETER       :: FParts(4) = (/'ACTUAL_DIV'      , &
-                                                       'DIV_SHORT'       , &
-                                                       'RECVRBL_LOSS'    , &
-                                                       'NON_RCVRBL_LOSS' /)
-    CHARACTER,DIMENSION(NDiver)       :: Text_ASCII*20,Text1_ASCII*14 , &
-                                         Text_DSS*20,Text1_DSS*21
-    TYPE(TimeStepType)                :: TimeStepLocal
+    INTEGER,PARAMETER           :: TitleLen           = 104  , &
+                                   NTitles            = 3    , &
+                                   NColumnHeaderLines = 4    
+    INTEGER                     :: iCount,indxLocation,indxCol,indxDiver,I,iDestID, &
+                                   iStrmNodeID,iCount1,iDestType,iDiverID
+    CHARACTER                   :: UnitT*10,TextTime*17
+    CHARACTER(LEN=15),PARAMETER :: FParts(4) = ['ACTUAL_DIV'      , &
+                                                'DIV_SHORT'       , &
+                                                'RECVRBL_LOSS'    , &
+                                                'NON_RCVRBL_LOSS' ]
+    CHARACTER,DIMENSION(NDiver) :: Text_ASCII*20,Text1_ASCII*14 , &
+                                   Text_DSS*20,Text1_DSS*21
+    TYPE(TimeStepType)          :: TimeStepLocal
 
     !Initialize
     DO indxDiver=1,NDiver
-      iDestType =  Diversions(indxDiver)%Deli%Destination%iDestType
-      
-      SELECT CASE (iDestType)
-          !Delivery to outside model area
-          CASE (FlowDest_Outside)      
-              Text_ASCII(indxDiver)  = 'Outside Model Area'
-              Text1_ASCII(indxDiver) = 'Subreg. 0'  ;  Text1_ASCII(indxDiver) = ADJUSTR(Text1_ASCII(indxDiver))
-              Text_DSS(indxDiver)    = 'ACT_DELI_SUBRG_0'
-              Text1_DSS(indxDiver)   = 'DELI_SHORT_SUBRG_0'
-      
-          !Delivery to a single element
-          CASE (FlowDest_Element) 
-              iDest                  = Diversions(indxDiver)%Deli%Destination%iDest
-              Text_ASCII(indxDiver)  = 'Element '//TRIM(IntToText(iDest))
-              Text1_ASCII(indxDiver) = 'Elem. '//TRIM(IntToText(iDest))  ;  Text1_ASCII(indxDiver) = ADJUSTR(Text1_ASCII(indxDiver))
-              Text_DSS(indxDiver)    = 'ACT_DELI_ELEM_'//TRIM(IntToText(iDest))
-              Text1_DSS(indxDiver)   = 'DELI_SHORT_ELEM_'//TRIM(IntToText(iDest))
+        iDestType =  Diversions(indxDiver)%Deli%Destination%iDestType
         
-          !Delivery to a group of elements
-          CASE (FlowDest_ElementSet)
-              iDest                  = Diversions(indxDiver)%Deli%Destination%iDest
-              Text_ASCII(indxDiver)  = 'Element Group '//TRIM(IntToText(iDest))
-              Text1_ASCII(indxDiver) = 'Elem. Grp. '//TRIM(IntToText(iDest))  ;  Text1_ASCII(indxDiver) = ADJUSTR(Text1_ASCII(indxDiver))
-              Text_DSS(indxDiver)    = 'ACT_DELI_ELEMGRP_'//TRIM(IntToText(iDest))
-              Text1_DSS(indxDiver)   = 'DELI_SHORT_ELEMGRP_'//TRIM(IntToText(iDest))
-
-          !Delivery to a subregion
-          CASE (FlowDest_Subregion)
-              iDest                  = Diversions(indxDiver)%Deli%Destination%iDest
-              Text_ASCII(indxDiver)  = 'Subregion '//TRIM(IntToText(iDest))
-              Text1_ASCII(indxDiver) = 'Subreg. '//TRIM(IntToText(iDest))  ;  Text1_ASCII(indxDiver) = ADJUSTR(Text1_ASCII(indxDiver))
-              Text_DSS(indxDiver)    = 'ACT_DELI_SUBRG_'//TRIM(IntToText(iDest))
-              Text1_DSS(indxDiver)   = 'DELI_SHORT_SUBRG_'//TRIM(IntToText(iDest))
-      END SELECT
-
+        SELECT CASE (iDestType)
+            !Delivery to outside model area
+            CASE (f_iFlowDest_Outside)      
+                Text_ASCII(indxDiver)  = 'Outside Model Area'
+                Text1_ASCII(indxDiver) = 'Subreg. 0'  ;  Text1_ASCII(indxDiver) = ADJUSTR(Text1_ASCII(indxDiver))
+                Text_DSS(indxDiver)    = 'ACT_DELI_SUBRG_0'
+                Text1_DSS(indxDiver)   = 'DELI_SHORT_SUBRG_0'
+        
+            !Delivery to a single element
+            CASE (f_iFlowDest_Element) 
+                iDestID                = iElemIDs(Diversions(indxDiver)%Deli%Destination%iDest)
+                Text_ASCII(indxDiver)  = 'Element '//TRIM(IntToText(iDestID))
+                Text1_ASCII(indxDiver) = 'Elem. '//TRIM(IntToText(iDestID))  ;  Text1_ASCII(indxDiver) = ADJUSTR(Text1_ASCII(indxDiver))
+                Text_DSS(indxDiver)    = 'ACT_DELI_ELEM_'//TRIM(IntToText(iDestID))
+                Text1_DSS(indxDiver)   = 'DELI_SHORT_ELEM_'//TRIM(IntToText(iDestID))
+          
+            !Delivery to a group of elements
+            CASE (f_iFlowDest_ElementSet)
+                iDestID                = Diversions(indxDiver)%Deli%Destination%iDestElems%ID
+                Text_ASCII(indxDiver)  = 'Element Group '//TRIM(IntToText(iDestID))
+                Text1_ASCII(indxDiver) = 'Elem. Grp. '//TRIM(IntToText(iDestID))  ;  Text1_ASCII(indxDiver) = ADJUSTR(Text1_ASCII(indxDiver))
+                Text_DSS(indxDiver)    = 'ACT_DELI_ELEMGRP_'//TRIM(IntToText(iDestID))
+                Text1_DSS(indxDiver)   = 'DELI_SHORT_ELEMGRP_'//TRIM(IntToText(iDestID))
+        
+            !Delivery to a subregion
+            CASE (f_iFlowDest_Subregion)
+                iDestID                = iSubregionIDs(Diversions(indxDiver)%Deli%Destination%iDest)
+                Text_ASCII(indxDiver)  = 'Subregion '//TRIM(IntToText(iDestID))
+                Text1_ASCII(indxDiver) = 'Subreg. '//TRIM(IntToText(iDestID))  ;  Text1_ASCII(indxDiver) = ADJUSTR(Text1_ASCII(indxDiver))
+                Text_DSS(indxDiver)    = 'ACT_DELI_SUBRG_'//TRIM(IntToText(iDestID))
+                Text1_DSS(indxDiver)   = 'DELI_SHORT_SUBRG_'//TRIM(IntToText(iDestID))
+        END SELECT
     END DO
  
     !Increment the initial simulation time to represent the data begin date for budget binary output files  
     TimeStepLocal = TimeStep
     IF (TimeStep%TrackTime) THEN
-      TimeStepLocal%CurrentDateAndTime = IncrementTimeStamp(TimeStepLocal%CurrentDateAndTime,TimeStepLocal%DeltaT_InMinutes)
-      UnitT                            = ''
+        TimeStepLocal%CurrentDateAndTime = IncrementTimeStamp(TimeStepLocal%CurrentDateAndTime,TimeStepLocal%DeltaT_InMinutes)
+        UnitT                            = ''
     ELSE
-      TimeStepLocal%CurrentTime        = TimeStepLocal%CurrentTime + TimeStepLocal%DeltaT
-      UnitT                            = '('//TRIM(TimeStep%Unit)//')'
+        TimeStepLocal%CurrentTime        = TimeStepLocal%CurrentTime + TimeStepLocal%DeltaT
+        UnitT                            = '('//TRIM(TimeStep%Unit)//')'
     END IF
     TextTime = ArrangeText(TRIM(UnitT),17)
   
@@ -1149,99 +1588,107 @@ CONTAINS
                                                      
     !Data for ASCII output
     ASSOCIATE (pASCIIOutput => Header%ASCIIOutput)
-      pASCIIOutput%TitleLen           = TitleLen
-      pASCIIOutput%NTitles            = NTitles
-      ALLOCATE(pASCIIOutput%cTitles(NTitles)  ,  pASCIIOutput%lTitlePersist(NTitles))
-      pASCIIOutput%cTitles(1)         = ArrangeText('IWFM STREAM PACKAGE (v'//TRIM(cVersion)//')' , pASCIIOutput%TitleLen)
-      pASCIIOutput%cTitles(2)         = ArrangeText('DIVERSION AND DELIVERY DETAILS IN '//VolumeUnitMarker//' FOR '//LocationNameMarker , pASCIIOutput%TitleLen)
-      pASCIIOutput%cTitles(3)         = REPEAT('-',pASCIIOutput%TitleLen)
-      pASCIIOutput%lTitlePersist(1:2) = .TRUE.
-      pASCIIOutput%lTitlePersist(3)   = .FALSE.
-      pASCIIOutput%cFormatSpec        = ADJUSTL('(A16,1X,2000(F13.1,1X))')
-      pASCIIOutput%NColumnHeaderLines = NColumnHeaderLines
+        pASCIIOutput%TitleLen           = TitleLen
+        pASCIIOutput%NTitles            = NTitles
+        ALLOCATE(pASCIIOutput%cTitles(NTitles)  ,  pASCIIOutput%lTitlePersist(NTitles))
+        pASCIIOutput%cTitles(1)         = ArrangeText('IWFM STREAM PACKAGE (v'//TRIM(cVersion)//')' , pASCIIOutput%TitleLen)
+        pASCIIOutput%cTitles(2)         = ArrangeText('DIVERSION AND DELIVERY DETAILS IN '//f_cVolumeUnitMarker//' FOR '//f_cLocationNameMarker , pASCIIOutput%TitleLen)
+        pASCIIOutput%cTitles(3)         = REPEAT('-',pASCIIOutput%TitleLen)
+        pASCIIOutput%lTitlePersist(1:2) = .TRUE.
+        pASCIIOutput%lTitlePersist(3)   = .FALSE.
+        pASCIIOutput%cFormatSpec        = ADJUSTL('(A16,1X,2000(F13.1,1X))')
+        pASCIIOutput%NColumnHeaderLines = NColumnHeaderLines
     END ASSOCIATE 
    
     !Location names
     Header%NLocations = NDiver
     ALLOCATE (Header%cLocationNames(NDiver))
     DO indxLocation=1,NDiver
-      Header%cLocationNames(indxLocation) = 'DIVERSION_'//TRIM(IntToText(indxLocation))//'(SN'//TRIM(IntToText(Diversions(indxLocation)%iStrmNode))//')' 
+        iDiverID = Diversions(indxLocation)%Deli%ID
+        IF (Diversions(indxLocation)%iStrmNode .EQ. 0) THEN
+            iStrmNodeID = 0
+        ELSE
+            iStrmNodeID = iStrmNodeIDs(Diversions(indxLocation)%iStrmNode)
+        END IF
+        Header%cLocationNames(indxLocation) = 'DIVERSION_'//TRIM(IntToText(iDiverID))//'(SN'//TRIM(IntToText(iStrmNodeID))//')' 
     END DO
     
     !Locations
     ALLOCATE (Header%Locations(NDiver))
     iCount = 0
     DO indxLocation=1,NDiver
-      ASSOCIATE (pLocation => Header%Locations(indxLocation))
-        pLocation%NDataColumns = NColumns
-        ALLOCATE (pLocation%cFullColumnHeaders(NColumns+1)                  , &
-                  pLocation%iDataColumnTypes(NColumns)                      , &
-                  pLocation%iColWidth(NColumns+1)                           , &
-                  pLocation%cColumnHeaders(NColumns+1,NColumnHeaderLines)   , &
-                  pLocation%cColumnHeadersFormatSpec(NColumnHeaderLines)    )
-        pLocation%cFullColumnHeaders(1:5) = (/'Time'                 , &
-                                              'Actual Diversion'     , &
-                                              'Diversion Shortage'   , &
-                                              'Recoverable Loss'     , &
-                                              'Non-recoverable Loss' /)
-        ASSOCIATE (pColumnHeaders => pLocation%cColumnHeaders           , &
-                   pFormatSpecs   => pLocation%cColumnHeadersFormatSpec )
-          pColumnHeaders(1:5,1) = (/'                 ','              ','              ','              ','       Non    '/)
-          pColumnHeaders(1:5,2) = (/'      Time       ','       Actual ','     Diversion','   Recoverable','   Recoverable'/)
-          pColumnHeaders(1:5,3) = (/      TextTime     ,'     Diversion','      Shortage','       Loss   ','       Loss   '/)
-          pColumnHeaders(:,4)   = ''
-          pFormatSpecs(1)       = '(A17,2000A14)'
-          pFormatSpecs(2)       = '(A17,2000A14)'
-          pFormatSpecs(3)       = '(A17,2000A14)'
-          pFormatSpecs(4)       = '('//TRIM(IntToText(TitleLen))//'(1H-),'//TRIM(IntToText(NColumns+1))//'A0)'
+        ASSOCIATE (pLocation => Header%Locations(indxLocation))
+            pLocation%NDataColumns = f_iNDiverDetailColumns
+            ALLOCATE (pLocation%cFullColumnHeaders(f_iNDiverDetailColumns+1)                  , &
+                      pLocation%iDataColumnTypes(f_iNDiverDetailColumns)                      , &
+                      pLocation%iColWidth(f_iNDiverDetailColumns+1)                           , &
+                      pLocation%cColumnHeaders(f_iNDiverDetailColumns+1,NColumnHeaderLines)   , &
+                      pLocation%cColumnHeadersFormatSpec(NColumnHeaderLines)                  )
+            pLocation%cFullColumnHeaders(1)  = 'Time'                 
+            pLocation%cFullColumnHeaders(2:) = f_cDiverDetailColTitles
+            ASSOCIATE (pColumnHeaders => pLocation%cColumnHeaders           , &
+                       pFormatSpecs   => pLocation%cColumnHeadersFormatSpec )
+                pColumnHeaders(1:5,1) = ['                 ','              ','              ','              ','       Non    ']
+                pColumnHeaders(1:5,2) = ['      Time       ','       Actual ','     Diversion','   Recoverable','   Recoverable']
+                pColumnHeaders(1:5,3) = [      TextTime     ,'     Diversion','      Shortage','       Loss   ','       Loss   ']
+                pColumnHeaders(:,4)   = ''
+                pFormatSpecs(1)       = '(A17,2000A14)'
+                pFormatSpecs(2)       = '(A17,2000A14)'
+                pFormatSpecs(3)       = '(A17,2000A14)'
+                pFormatSpecs(4)       = '('//TRIM(IntToText(TitleLen))//'(1H-),'//TRIM(IntToText(f_iNDiverDetailColumns+1))//'A0)'
+            END ASSOCIATE
+            iCount  = iCount + 1
+            indxCol = f_iNDiverDEtailColumns
+            pLocation%cFullColumnHeaders(indxCol)   = TRIM(pLocation%cFullColumnHeaders(indxCol))   // ' ' // TRIM(Text_ASCII(iCount))
+            pLocation%cFullColumnHeaders(indxCol+1) = TRIM(pLocation%cFullColumnHeaders(indxCol+1)) // ' ' // TRIM(Text_ASCII(iCount))
+            ASSOCIATE (pColumnHeaders => pLocation%cColumnHeaders)
+                pColumnHeaders(indxCol:indxCol+1,1) = ['      Actual  ','   Delivery   ']
+                pColumnHeaders(indxCol:indxCol+1,2) = ['   Delivery to','  Shortage for']
+                pColumnHeaders(indxCol:indxCol+1,3) =  Text1_ASCII(iCount)
+            END ASSOCIATE
+            pLocation%iDataColumnTypes = f_iVR
+            pLocation%iColWidth        = [17,(14,I=1,f_iNDiverDetailColumns)]
         END ASSOCIATE
-        iCount  = iCount + 1
-        indxCol = 6
-        pLocation%cFullColumnHeaders(indxCol)   = 'Actual Delivery to '//TRIM(Text_ASCII(iCount))
-        pLocation%cFullColumnHeaders(indxCol+1) = 'Delivery Shortage for '//TRIM(Text_ASCII(iCount))
-        ASSOCIATE (pColumnHeaders => pLocation%cColumnHeaders)
-          pColumnHeaders(indxCol:indxCol+1,1) = (/'      Actual  ','   Delivery   '/)
-          pColumnHeaders(indxCol:indxCol+1,2) = (/'   Delivery to','  Shortage for'/)
-          pColumnHeaders(indxCol:indxCol+1,3) =   Text1_ASCII(iCount)
-        END ASSOCIATE
-        pLocation%iDataColumnTypes = VR
-        pLocation%iColWidth        = (/17,(14,I=1,NColumns)/)
-      END ASSOCIATE
     END DO
     
     !Data for DSS output  
     ASSOCIATE (pDSSOutput => Header%DSSOutput)
-      ALLOCATE (pDSSOutput%cPathNames(6*NDiver) , pDSSOutput%iDataTypes(1))
-      iCount  = 0
-      iCount1 = 0
-      DO indxLocation=1,NDiver
-        iStrmNode   = Diversions(indxLocation)%iStrmNode
-        DO indxCol=1,4
-          iCount                        = iCount+1
-          pDSSOutput%cPathNames(iCount) = '/IWFM_DIVER_DETAIL/'                                                                      //  &  !A part
-                                          'DIVER'//TRIM(IntToText(indxLocation))//'_SN'//TRIM(IntToText(iStrmNode))//'/'             //  &  !B part
-                                          'VOLUME/'                                                                                  //  &  !C part
-                                          '/'                                                                                        //  &  !D part
-                                          TRIM(TimeStep%Unit)//'/'                                                                   //  &  !E part
-                                          TRIM(FParts(indxCol))//'/'                                                                        !F part
+        ALLOCATE (pDSSOutput%cPathNames(f_iNDiverDetailColumns*NDiver) , pDSSOutput%iDataTypes(1))
+        iCount  = 0
+        iCount1 = 0
+        DO indxLocation=1,NDiver
+            iDiverID = Diversions(indxLocation)%Deli%ID
+            IF (Diversions(indxLocation)%iStrmNode .EQ. 0) THEN
+                iStrmNodeID = 0
+            ELSE
+                iStrmNodeID = iStrmNodeIDs(Diversions(indxLocation)%iStrmNode)
+            END IF 
+            DO indxCol=1,4
+                iCount                        = iCount+1
+                pDSSOutput%cPathNames(iCount) = '/IWFM_DIVER_DETAIL/'                                                                //  &  !A part
+                                                'DIVER'//TRIM(IntToText(iDiverID))//'_SN'//TRIM(IntToText(iStrmNodeID))//'/'         //  &  !B part
+                                                'VOLUME/'                                                                            //  &  !C part
+                                                '/'                                                                                  //  &  !D part
+                                                TRIM(TimeStep%Unit)//'/'                                                             //  &  !E part
+                                                TRIM(FParts(indxCol))//'/'                                                                    !F part
+            END DO
+            iCount                        = iCount+1
+            iCount1                       = iCount1 + 1
+            pDSSOutput%cPathNames(iCount) = '/IWFM_DIVER_DETAIL/'                                                                    //  &  !A part
+                                            'DIVER'//TRIM(IntToText(iDiverID))//'_SN'//TRIM(IntToText(iStrmNodeID))//'/'             //  &  !B part
+                                            'VOLUME/'                                                                                //  &  !C part
+                                            '/'                                                                                      //  &  !D part
+                                            TRIM(TimeStep%Unit)//'/'                                                                 //  &  !E part
+                                            TRIM(Text_DSS(iCount1))//'/'                                                                    !F part
+            iCount                        = iCount+1
+            pDSSOutput%cPathNames(iCount) = '/IWFM_DIVER_DETAIL/'                                                                    //  &  !A part
+                                            'DIVER'//TRIM(IntToText(iDiverID))//'_SN'//TRIM(IntToText(iStrmNodeID))//'/'             //  &  !B part
+                                            'VOLUME/'                                                                                //  &  !C part
+                                            '/'                                                                                      //  &  !D part
+                                            TRIM(TimeStep%Unit)//'/'                                                                 //  &  !E part
+                                            TRIM(Text1_DSS(iCount1))//'/'                                                                   !F part
         END DO
-        iCount                        = iCount+1
-        iCount1                       = iCount1 + 1
-        pDSSOutput%cPathNames(iCount) = '/IWFM_DIVER_DETAIL/'                                                                      //  &  !A part
-                                        'DIVER'//TRIM(IntToText(indxLocation))//'_SN'//TRIM(IntToText(iStrmNode))//'/'             //  &  !B part
-                                        'VOLUME/'                                                                                  //  &  !C part
-                                        '/'                                                                                        //  &  !D part
-                                        TRIM(TimeStep%Unit)//'/'                                                                   //  &  !E part
-                                        TRIM(Text_DSS(iCount1))//'/'                                                                      !F part
-        iCount                        = iCount+1
-        pDSSOutput%cPathNames(iCount) = '/IWFM_DIVER_DETAIL/'                                                                      //  &  !A part
-                                        'DIVER'//TRIM(IntToText(indxLocation))//'_SN'//TRIM(IntToText(iStrmNode))//'/'             //  &  !B part
-                                        'VOLUME/'                                                                                  //  &  !C part
-                                        '/'                                                                                        //  &  !D part
-                                        TRIM(TimeStep%Unit)//'/'                                                                   //  &  !E part
-                                        TRIM(Text1_DSS(iCount1))//'/'                                                                     !F part
-      END DO
-      pDSSOutput%iDataTypes = PER_CUM
+        pDSSOutput%iDataTypes = f_iPER_CUM
     END ASSOCIATE
 
   END FUNCTION PrepareDiverDetailsBudgetHeader
@@ -1287,58 +1734,49 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- COMPUTE BYPASS FLOWS
   ! -------------------------------------------------------------
-  SUBROUTINE AppDiverBypass_ComputeBypass(AppDiverBypass,iNode,rInflow,rOutflow,StrmLakeConnector,lDiverMet,CoeffBypass)
+  SUBROUTINE AppDiverBypass_ComputeBypass(AppDiverBypass,iNode,rAvailableFlow,StrmLakeConnector,rBypassOut)
     CLASS(AppDiverBypassType)   :: AppDiverBypass
     INTEGER,INTENT(IN)          :: iNode
-    REAL(8),INTENT(IN)          :: rInflow
-    REAL(8),INTENT(INOUT)       :: rOutflow
+    REAL(8),INTENT(IN)          :: rAvailableFlow
     TYPE(StrmLakeConnectorType) :: StrmLakeConnector
-    LOGICAL,INTENT(IN)          :: lDiverMet
-    REAL(8),INTENT(OUT)         :: CoeffBypass
+    REAL(8),INTENT(OUT)         :: rBypassOut
     
     !Local variables
     INTEGER :: indxBypass
-    REAL(8) :: Bypass_Required,dBypass_dFlow,rAvailableFlow
-    
-    !Initialize
-    CoeffBypass = 0.0
+    REAL(8) :: rBypass_Required,dBypass_dFlow
     
     !Locate the bypass from iNode
     indxBypass = LocateInList(iNode,AppDiverBypass%Bypasses%iNode_Exp)
     
     !Return if no bypasses are exported from iNode
-    IF (indxBypass .EQ. 0) RETURN
-    
-    !Available flow for bypass
-    rAvailableFlow = rInflow - rOutflow
+    IF (indxBypass .EQ. 0) THEN
+        rBypassOut = 0.0
+        RETURN
+    END IF
     
     ASSOCIATE (pBypass => AppDiverBypass%Bypasses(indxBypass))
-      !Specified bypass rate
-      IF (pBypass%iColBypass .GT. 0) THEN
-        Bypass_Required    = AppDiverBypass%DiverFile%rValues(pBypass%iColBypass)
-        pBypass%Bypass_Out = MIN(rAvailableFlow , Bypass_Required)
-        IF (pBypass%Bypass_Out .LT. Bypass_Required) THEN
-          IF (lDiverMet) CoeffBypass = 1.0
+        !Specified bypass rate
+        IF (pBypass%iColBypass .GT. 0) THEN
+            rBypass_Required   = AppDiverBypass%DiverFile%rValues(pBypass%iColBypass)
+            pBypass%Bypass_Out = MIN(rBypass_Required , rAvailableFlow)
+          
+        !Rating-table type bypass rate
+        ELSE
+            CALL pBypass%RatingTable%EvaluateAndDerivative(rAvailableFlow,pBypass%Bypass_Out,dBypass_dFlow)
+            pBypass%Bypass_Out = MIN(rAvailableFlow,MAX(pBypass%Bypass_Out , 0.0))
         END IF
         
-      !Rating-table type bypass rate
-      ELSE
-        CALL pBypass%RatingTable%EvaluateAndDerivative(rAvailableFlow,pBypass%Bypass_Out,dBypass_dFlow)
-        pBypass%Bypass_Out = MIN(MAX(pBypass%Bypass_Out,0.0) , rAvailableFlow)
-        IF (lDiverMet) CoeffBypass = dBypass_dFlow
-      END IF
-      
-      !Received bypass, recoverable and non-recoverable flows
-      pBypass%RecvLoss        = pBypass%Bypass_Out * pBypass%FracRecvLoss
-      pBypass%NonRecvLoss     = pBypass%Bypass_Out * pBypass%FracNonRecvLoss
-      pBypass%Bypass_Recieved = pBypass%Bypass_Out - pBypass%RecvLoss - pBypass%NonRecvLoss
-      
-      !If the bypass flow goes to a lake, store that data
-      IF (pBypass%iDestType .EQ. FlowDest_Lake) CALL StrmLakeConnector%SetFlow(iBypassToLakeType,indxBypass,pBypass%iDest,pBypass%Bypass_Recieved)
-      
-      !Update the flow in the stream
-      rOutflow = rOutflow + pBypass%Bypass_Out
-      
+        !Received bypass, recoverable and non-recoverable flows
+        pBypass%RecvLoss        = pBypass%Bypass_Out * pBypass%FracRecvLoss
+        pBypass%NonRecvLoss     = pBypass%Bypass_Out * pBypass%FracNonRecvLoss
+        pBypass%Bypass_Received = pBypass%Bypass_Out - pBypass%RecvLoss - pBypass%NonRecvLoss
+        
+        !If the bypass flow goes to a lake, store that data
+        IF (pBypass%iDestType .EQ. f_iFlowDest_Lake) CALL StrmLakeConnector%SetFlow(f_iBypassToLakeFlow,indxBypass,pBypass%iDest,pBypass%Bypass_Received)
+        
+        !Return bypass outflow
+        rBypassOut = pBypass%Bypass_Out
+        
     END ASSOCIATE
       
   END SUBROUTINE AppDiverBypass_ComputeBypass
@@ -1390,6 +1828,84 @@ CONTAINS
     END DO
     
   END SUBROUTINE AppDiverBypass_ComputeDiversions
+  
+  
+  ! -------------------------------------------------------------
+  ! --- ADD BYPASS
+  ! --- Assumes all model features are already converted from IDs to indices, excpet bypass ID
+  ! -------------------------------------------------------------
+  SUBROUTINE AddBypass(AppDiverBypass,ID,iNode_Exp,iColBypass,cName,rFracRecvLoss,rFracNonRecvLoss,iNRechargeElems,iRechargeElems,rRechargeFractions,iDestType,iDest,StrmLakeConnector,iStat)
+    CLASS(AppDiverBypassType)   :: AppDiverBypass
+    INTEGER,INTENT(IN)          :: ID,iNode_Exp,iColBypass,iNRechargeElems,iRechargeElems(iNRechargeElems),iDestType,iDest
+    CHARACTER(LEN=*),INTENT(IN) :: cName
+    REAL(8),INTENT(IN)          :: rFracRecvLoss,rFracNonRecvLoss,rRechargeFractions(iNRechargeElems)
+    TYPE(StrmLakeConnectorType) :: StrmLakeConnector
+    INTEGER,INTENT(OUT)         :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+9),PARAMETER :: ThisProcedure = ModName // 'AddBypass'
+    INTEGER                               :: iNBypass
+    TYPE(RechargeZoneType)                :: Recharge
+    TYPE(BypassType),ALLOCATABLE          :: TempBypass(:)
+    
+    !Initialize
+    iStat    = 0
+    iNBypass = AppDiverBypass%NBypass
+    
+    !Transfer already defined bypasses to temporary array
+    ALLOCATE  (TempBypass(iNBypass+1))
+    IF (iNBypass .GT. 0) TempBypass(1:iNBypass) = AppDiverBypass%Bypasses
+    
+    !Check that bypass ID is not being used more than once
+    IF (iNBypass .GT. 0) THEN
+        IF (LocateInList(ID,AppDiverBypass%Bypasses%ID) .GT. 0) THEN
+            CALL SetLastMessage('ID number ('//TRIM(IntToText(ID))//') of the bypass being added has already been used!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+    END IF
+    
+    !Define recharge area
+    ALLOCATE (Recharge%Zones(iNRechargeElems) , Recharge%Fracs(iNRechargeElems))
+    Recharge%NZones = iNRechargeElems
+    Recharge%Zones  = iRechargeElems
+    Recharge%Fracs  = rRechargeFractions
+    CALL NormalizeArray(Recharge%Fracs)
+    
+    !Add new bypass
+    iNBypass                             = iNBypass + 1
+    TempBypass(iNBypass)%ID              = ID
+    TempBypass(iNBypass)%cName           = cName
+    TempBypass(iNBypass)%iNode_Exp       = iNode_Exp
+    TempBypass(iNBypass)%iColBypass      = iColBypass
+    TempBypass(iNBypass)%FracRecvLoss    = rFracRecvLoss
+    TempBypass(iNBypass)%FracNonRecvLoss = rFracNonRecvLoss
+    TempBypass(iNBypass)%Recharge        = Recharge
+    TempBypass(iNBypass)%iDestType       = iDestType
+    TempBypass(iNBypass)%iDest           = iDest
+    
+    !Make sure destination type is recognized
+    IF (.NOT. ANY(iDestType.EQ.f_iBypassDestTypes)) THEN
+        CALL SetLastMessage('Destination type for bypass number '//TRIM(IntToText(ID))//' is not recognized!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
+           
+    !Destination region
+    SELECT CASE (TempBypass(iNBypass)%iDestType)
+        CASE (f_iFlowDest_Outside)
+            !Do nothing
+        CASE (f_iFlowDest_StrmNode)
+            TempBypass(iNBypass)%iDestRegion = 0
+        CASE (f_iFlowDest_Lake)
+            CALL StrmLakeConnector%AddData(f_iBypassToLakeFlow,iNBypass,TempBypass(iNBypass)%iDest)
+    END SELECT
+            
+    !Transfer temp data to permenant data
+    AppDiverBypass%NBypass = iNBypass
+    CALL MOVE_ALLOC(TempBypass , AppDiverBypass%Bypasses)
+    
+  END SUBROUTINE AddBypass
 
 
 END MODULE

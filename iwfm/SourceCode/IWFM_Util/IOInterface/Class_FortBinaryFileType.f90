@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2019  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -23,11 +23,11 @@
 MODULE Class_FortBinaryFileType
   USE MessageLogger      , ONLY: SetLastMessage          , &
                                  LogMessage              , &
-                                 iWarn                   , &
-                                 iFatal
+                                 f_iWarn                 , &
+                                 f_iFatal
   USE GeneralUtilities   , ONLY: GenericString           , &
                                  GenericString_To_String , &
-                                 LineFeed
+                                 f_cLineFeed
   USE Class_BaseFileType , ONLY: BaseFileType 
   IMPLICIT NONE
   
@@ -77,9 +77,8 @@ MODULE Class_FortBinaryFileType
   ! -------------------------------------------------------------
   ! --- MISC. ENTITIES
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER                   :: ModNameLen               = 24
-  CHARACTER(LEN=ModNameLen),PARAMETER :: ModName                  = 'Class_FortBinaryFileType'
-  CHARACTER(LEN=3),PARAMETER          :: DefaultFileNameExtension = 'BIN'
+  INTEGER,PARAMETER                   :: ModNameLen = 24
+  CHARACTER(LEN=ModNameLen),PARAMETER :: ModName    = 'Class_FortBinaryFileType'
 
           
         
@@ -139,7 +138,7 @@ CONTAINS
             FileOpenCode = ErrorCode
             RETURN
         ELSE
-            CALL SetLastMessage('Error in opening file '//TRIM(ThisFile%Name)//'!'//LineFeed//TRIM(cErrMessage),iFatal,ThisProcedure)
+            CALL SetLastMessage('Error in opening file '//TRIM(ThisFile%Name)//'!'//f_cLineFeed//TRIM(cErrMessage),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -260,7 +259,7 @@ CONTAINS
 
             
         CLASS DEFAULT
-            CALL SetLastMessage('Trying to read unrecognized data type from file '//ThisFile%Name//'!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Trying to read unrecognized data type from file '//ThisFile%Name//'!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
             
@@ -330,7 +329,7 @@ CONTAINS
         
             
         CLASS DEFAULT
-            CALL SetLastMessage('Trying to read unrecognized data type from file '//ThisFile%Name//'!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Trying to read unrecognized data type from file '//ThisFile%Name//'!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
             
@@ -411,7 +410,7 @@ CONTAINS
 
             
         CLASS DEFAULT
-            CALL SetLastMessage('Trying to read unrecognized data type from file '//ThisFile%Name//'!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Trying to read unrecognized data type from file '//ThisFile%Name//'!',f_iFatal,ThisProcedure)
             iStat = -1
             
     END SELECT 
@@ -459,7 +458,7 @@ CONTAINS
             WRITE (ThisFile%UnitN) GenericString_To_String(Data)
 
         CLASS DEFAULT
-            CALL LogMessage('Trying to write unrecognized data type to file '//ThisFile%Name//'!',iWarn,ThisProcedure) 
+            CALL LogMessage('Trying to write unrecognized data type to file '//ThisFile%Name//'!',f_iWarn,ThisProcedure) 
             RETURN
 
     END SELECT
@@ -500,7 +499,7 @@ CONTAINS
             END DO
             
         CLASS DEFAULT
-            CALL LogMessage('Trying to write unrecognized data type to file '//ThisFile%Name//'!',iWarn,ThisProcedure)
+            CALL LogMessage('Trying to write unrecognized data type to file '//ThisFile%Name//'!',f_iWarn,ThisProcedure)
 
         END SELECT
 
@@ -536,7 +535,7 @@ CONTAINS
             
             
         CLASS DEFAULT
-            CALL LogMessage('Trying to write unrecognized data type to file '//ThisFile%Name//'!',iWarn,ThisProcedure) 
+            CALL LogMessage('Trying to write unrecognized data type to file '//ThisFile%Name//'!',f_iWarn,ThisProcedure) 
             RETURN
             
     END SELECT

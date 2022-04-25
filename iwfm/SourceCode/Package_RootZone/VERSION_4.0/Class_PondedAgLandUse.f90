@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,36 +21,48 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_PondedAgLandUse
-  USE MessageLogger           , ONLY: SetLastMessage                 , &
-                                      EchoProgress                   , &
-                                      MessageArray                   , &
-                                      iFatal
-  USE TimeSeriesUtilities     , ONLY: TimeStepType                   , &
-                                      IncrementTimeStamp             , &
-                                      CTimeStep_To_RTimeStep
-  USE IOInterface             , ONLY: GenericFileType               
-  USe GeneralUtilities        , ONLY: StripTextUntilCharacter        , &
-                                      UpperCase                      , &
-                                      IntToText                      , &
-                                      CleanSpecialCharacters         , &
-                                      NormalizeArray                 , &
-                                      ShellSort                      , &
-                                      LocateInList                   , &
-                                      EstablishAbsolutePathFileName
-  USE Class_BaseRootZone      , ONLY: TrackMoistureDueToSource
-  USE Class_GenericLandUse
-  USE Class_LandUseDataFile
-  USE Class_SolverData
-  USE Class_AppGrid
-  USE Package_PrecipitationET , ONLY: ETType
-  USE Util_RootZone_v40
-  USE Package_UnsatZone
-  USE Package_Misc            , ONLY: RealTSDataInFileType           , &
-                                      IntTSDataInFileType            , &
-                                      ReadTSData                     , &
-                                      FlowDest_GWElement
-  USE Package_Budget          , ONLY: BudgetType                     , &
-                                      MaxLocationNameLen             
+  !$ USE OMP_LIB
+  USE MessageLogger           , ONLY: SetLastMessage                    , &
+                                      EchoProgress                      , &
+                                      MessageArray                      , &
+                                      f_iFatal                            
+  USE TimeSeriesUtilities     , ONLY: TimeStepType                      , &
+                                      IncrementTimeStamp                , &
+                                      CTimeStep_To_RTimeStep            
+  USE IOInterface             , ONLY: GenericFileType                   
+  USe GeneralUtilities        , ONLY: StripTextUntilCharacter           , &
+                                      UpperCase                         , &
+                                      IntToText                         , &
+                                      CleanSpecialCharacters            , &
+                                      NormalizeArray                    , &
+                                      ShellSort                         , &
+                                      LocateInList                      , &
+                                      EstablishAbsolutePathFileName     
+  USE Class_BaseRootZone      , ONLY: TrackMoistureDueToSource          
+  USE Class_GenericLandUse    , ONLY: GenericLandUseType                
+  USE Class_LandUseDataFile   , ONLY: LandUseDataFileType               
+  USE Package_Discretization  , ONLY: AppGridType                       
+  USE Package_PrecipitationET , ONLY: ETType  
+  USE Util_Package_RootZone   , ONLY: WaterSupplyType                   , &
+                                      ReadRealData                      , &
+                                      ReadPointerData                   , &
+                                      f_iNoIrigPeriod                   , &
+                                      f_iBudgetType_PondedCrop_LWU      , & 
+                                      f_iBudgetType_PondedCrop_RZ 
+  USE Util_RootZone_v40       , ONLY: AgRootZoneBudRawFile_New          , &
+                                      AgLWUseBudRawFile_New             , &
+                                      f_iNAgLWUseBudColumns             , &
+                                      f_iNAgRootZoneBudColumns          
+  USE Package_UnsatZone       , ONLY: RootZoneSoilType                  , &
+                                      PondedCropDemand                  , &
+                                      PondedLUMoistureRouter            
+  USE Package_Misc            , ONLY: RealTSDataInFileType              , &
+                                      IntTSDataInFileType               , &
+                                      SolverDataType                    , &
+                                      ReadTimeSeriesData  => ReadTSData , &
+                                      f_iFlowDest_GWElement
+  USE Package_Budget          , ONLY: BudgetType                        , &
+                                      f_iMaxLocationNameLen             
   IMPLICIT NONE
   
   
@@ -69,30 +81,21 @@ MODULE Class_PondedAgLandUse
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC :: NPondedCrops                                 ,  &
-            PondedAgDatabaseType                         ,  &
-            PondedAgLandUse_New                          ,  &
-            PondedAgLandUse_Kill                         ,  &
-            PondedAgLandUse_SetAreas                     ,  &
-            PondedAgLandUse_AdvanceAreas                 ,  &
-            PondedAgLandUse_SoilMContent_To_Depth        ,  &
-            PondedAgLandUse_ReadTSData                   ,  &
-            PondedAgLandUse_ComputeWaterDemand           ,  &
-            PondedAgLandUse_Simulate                     ,  &
-            PondedAgLandUse_PrintResults                 
-  
+  PUBLIC :: PondedAgDatabaseType  ,  &                       
+            f_iNPondedCrops                              
+            
   
   ! -------------------------------------------------------------
   ! --- STATIC PARAMETERS
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER          :: NPondedCrops             = 5 , &
-                                indxRice_FloodDecomp     = 1 , &
-                                indxRice_NonFloodDecomp  = 2 , &
-                                indxRice_NoDecomp        = 3 , &
-                                indxRefuge_Seasonal      = 4 , &
-                                indxRefuge_Permanent     = 5 
-  INTEGER,PARAMETER          :: LenCropCode              = 9
-  CHARACTER(LEN=LenCropCode),PARAMETER :: CropCodes(NPondedCrops)  = (/'RICE_FL','RICE_NFL','RICE_NDC','REFUGE_SL','REFUGE_PR'/) 
+  INTEGER,PARAMETER          :: f_iNPondedCrops             = 5 , &
+                                f_iindxRice_FloodDecomp     = 1 , &
+                                f_iindxRice_NonFloodDecomp  = 2 , &
+                                f_iindxRice_NoDecomp        = 3 , &
+                                f_iindxRefuge_Seasonal      = 4 , &
+                                f_iindxRefuge_Permanent     = 5 
+  INTEGER,PARAMETER          :: f_iLenCropCode              = 9
+  CHARACTER(LEN=f_iLenCropCode),PARAMETER :: f_cCropCodes(f_iNPondedCrops)  = ['RICE_FL','RICE_NFL','RICE_NDC','REFUGE_SL','REFUGE_PR'] 
                        
                        
   ! -------------------------------------------------------------
@@ -123,28 +126,40 @@ MODULE Class_PondedAgLandUse
   ! --- PONDED LAND DATABASE TYPE
   ! -------------------------------------------------------------
   TYPE PondedAgDatabaseType
-    INTEGER                        :: NCrops                      = NPondedCrops  !Number of ponded crops
-    TYPE(PondedAgType),ALLOCATABLE :: Crops(:,:)                                  !Ponded crops for each (crop,element) combination
-    CHARACTER(LEN=LenCropCode)     :: CropCodes(NPondedCrops)     = CropCodes     !Non-ponded crop codes
-    INTEGER                        :: NBudgetCrops                = 0             !Number of ponded crops for budget output
-    INTEGER,ALLOCATABLE            :: iBudgetCrops(:)                             !Indices of ponded crops for budget output
-    INTEGER,ALLOCATABLE            :: iColAgDemand(:,:)                           !Pointer to ag water demand file for each (crop,element) combination
-    INTEGER,ALLOCATABLE            :: iColNonFloodRiceDecompAW(:)                 !Column number in the rice/refuge operations data file for non-floooded rice decomp water application depth for each (element)
-    REAL(8),ALLOCATABLE            :: RegionETPot(:,:)                            !Regional potential ET for each (crop,region) combination
-    REAL(8),ALLOCATABLE            :: RootDepth(:)                                !Rooting depth for each ponded crop
-    REAL(8)                        :: PondDepthFactor             = 1.0           !Conversion factor for rice/refuge pond depths
-    REAL(8)                        :: OperationFlowsFactor        = 1.0           !Conversion factor for rice/refuge operation flows
-    TYPE(LandUseDataFileType)      :: LandUseDataFile                             !Land use data file
-    TYPE(RealTSDataInFileType)     :: PondDepthFile                               !Rice/refuge pond depths data file
-    TYPE(RealTSDataInFileType)     :: OperationFlowsFile                          !Rice/refuge operations flow (application for non-flooded rice decomp, return flow and re-use flow) data file
-    LOGICAL                        :: lLWUseBudRawFile_Defined    = .FALSE.       !Flag to see if the land and water use file is defined
-    TYPE(BudgetType)               :: LWUseBudRawFile                             !Raw binary file for ponded-ag land and water use budget
-    LOGICAL                        :: lRootZoneBudRawFile_Defined = .FALSE.       !Flag to see if the root zone budget file is defined
-    TYPE(BudgetType)               :: RootZoneBudRawFile                          !Raw binary file for ponded-ag root zone budget
+    INTEGER                        :: NCrops                      = f_iNPondedCrops  !Number of ponded crops
+    TYPE(PondedAgType),ALLOCATABLE :: Crops(:,:)                                     !Ponded crops for each (crop,element) combination
+    CHARACTER(LEN=f_iLenCropCode)  :: CropCodes(f_iNPondedCrops)  = f_cCropCodes     !Ponded crop codes
+    INTEGER                        :: NBudgetCrops                = 0                !Number of ponded crops for budget output
+    INTEGER,ALLOCATABLE            :: iBudgetCrops(:)                                !Indices of ponded crops for budget output
+    INTEGER,ALLOCATABLE            :: iColAgDemand(:,:)                              !Pointer to ag water demand file for each (crop,element) combination
+    INTEGER,ALLOCATABLE            :: iColNonFloodRiceDecompAW(:)                    !Column number in the rice/refuge operations data file for non-floooded rice decomp water application depth for each (element)
+    REAL(8),ALLOCATABLE            :: RegionETPot(:,:)                               !Regional potential ET for each (crop,region) combination
+    REAL(8),ALLOCATABLE            :: RootDepth(:)                                   !Rooting depth for each ponded crop
+    REAL(8)                        :: PondDepthFactor             = 1.0              !Conversion factor for rice/refuge pond depths
+    REAL(8)                        :: OperationFlowsFactor        = 1.0              !Conversion factor for rice/refuge operation flows
+    TYPE(LandUseDataFileType)      :: LandUseDataFile                                !Land use data file
+    TYPE(RealTSDataInFileType)     :: PondDepthFile                                  !Rice/refuge pond depths data file
+    TYPE(RealTSDataInFileType)     :: OperationFlowsFile                             !Rice/refuge operations flow (application for non-flooded rice decomp, return flow and re-use flow) data file
+    LOGICAL                        :: lLWUseBudRawFile_Defined    = .FALSE.          !Flag to see if the land and water use file is defined
+    TYPE(BudgetType)               :: LWUseBudRawFile                                !Raw binary file for ponded-ag land and water use budget
+    LOGICAL                        :: lRootZoneBudRawFile_Defined = .FALSE.          !Flag to see if the root zone budget file is defined
+    TYPE(BudgetType)               :: RootZoneBudRawFile                             !Raw binary file for ponded-ag root zone budget
   CONTAINS
+    PROCEDURE,PASS :: New                          
+    PROCEDURE,PASS :: Kill                         
+    PROCEDURE,PASS :: GetBudget_TSData                     
+    PROCEDURE,PASS :: SetAreas                     
+    PROCEDURE,PASS :: PrintResults                 
     PROCEDURE,PASS :: PrintRestartData
     PROCEDURE,PASS :: ReadRestartData
     PROCEDURE,PASS :: ReadTotalElemArea
+    PROCEDURE,PASS :: ReadTSData                   
+    PROCEDURE,PASS :: AdvanceAreas                 
+    PROCEDURE,PASS :: SoilMContent_To_Depth        
+    PROCEDURE,PASS :: ComputeWaterDemand           
+    PROCEDURE,PASS :: CheckSpecifiedDemandAndArea
+    PROCEDURE,PASS :: Simulate                     
+    PROCEDURE,PASS :: RewindTSInputFilesToTimeStamp                     
   END TYPE PondedAgDatabaseType
 
 
@@ -175,30 +190,30 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW PONDED AG LAND USE DATA
   ! -------------------------------------------------------------
-  SUBROUTINE PondedAgLandUse_New(IsForInquiry,cFileName,cWorkingDirectory,FactCN,AppGrid,TimeStep,NTimeSteps,cVersion,PondLand,iStat)
+  SUBROUTINE New(PondLand,IsForInquiry,cFileName,cWorkingDirectory,FactCN,AppGrid,iElemIDs,TimeStep,NTimeSteps,cVersion,iStat)
+    CLASS(PondedAgDatabaseType)   :: PondLand
     LOGICAL,INTENT(IN)            :: IsForInquiry
     CHARACTER(LEN=*),INTENT(IN)   :: cFileName,cWorkingDirectory
     REAL(8),INTENT(IN)            :: FACTCN
     TYPE(AppGridType),INTENT(IN)  :: AppGrid
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
-    INTEGER,INTENT(IN)            :: NTimeSteps
+    INTEGER,INTENT(IN)            :: NTimeSteps,iElemIDs(AppGrid%NElements)
     CHARACTER(LEN=*),INTENT(IN)   :: cVersion
-    TYPE(PondedAgDatabaseType)    :: PondLand
     INTEGER,INTENT(OUT)           :: iStat
     
     !Local variables
-    CHARACTER(LEN=ModNameLen+19)                  :: ThisProcedure = ModName // 'PondedAgLandUse_New'
-    CHARACTER                                     :: ALine*1000,cBudgetCropCode*LenCropCode
-    CHARACTER(LEN=MaxLocationNameLen),ALLOCATABLE :: cRegionNames(:)
-    CHARACTER(LEN=MaxLocationNameLen)             :: SubRegionNames(AppGrid%NSubregions+1)
-    REAL(8)                                       :: FACT,Factor(1),SubRegionArea(AppGrid%NSubregions+1)
-    INTEGER                                       :: ErrorCode,indxCrop,indxElem,NBudgetCrops,NBudgetRegions,NElements, &
-                                                     NRegions,indxCropP,indxRegion
-    INTEGER,ALLOCATABLE                           :: DummyIntArray(:,:)
-    REAL(8),ALLOCATABLE                           :: DummyRealArray(:,:),RegionAreas(:)
-    TYPE(GenericFileType)                         :: RiceRefugeDataFile
-    LOGICAL                                       :: lCropFound,TrackTime
-    CHARACTER(:),ALLOCATABLE                      :: cAbsPathFileName
+    CHARACTER(LEN=ModNameLen+3)                      :: ThisProcedure = ModName // 'New'
+    CHARACTER                                        :: ALine*1000,cBudgetCropCode*f_iLenCropCode
+    CHARACTER(LEN=f_iMaxLocationNameLen),ALLOCATABLE :: cRegionNames(:)
+    CHARACTER(LEN=f_iMaxLocationNameLen)             :: SubRegionNames(AppGrid%NSubregions+1)
+    REAL(8)                                          :: FACT,Factor(1),SubRegionArea(AppGrid%NSubregions+1)
+    INTEGER                                          :: ErrorCode,indxCrop,indxElem,NBudgetCrops,NBudgetRegions,NElements, &
+                                                        NRegions,indxCropP,indxRegion,iElem,ID
+    INTEGER,ALLOCATABLE                              :: DummyIntArray(:,:)
+    REAL(8),ALLOCATABLE                              :: DummyRealArray(:,:),RegionAreas(:)
+    TYPE(GenericFileType)                            :: RiceRefugeDataFile
+    LOGICAL                                          :: lCropFound,TrackTime,lProcessed(AppGrid%NElements)
+    CHARACTER(:),ALLOCATABLE                         :: cAbsPathFileName
     
     !Initialize
     iStat = 0
@@ -220,13 +235,13 @@ CONTAINS
     IF (iStat .EQ. -1) RETURN
     
     !Allocate memory
-    ALLOCATE (PondLand%Crops(NPondedCrops,NElements)         ,  &
-              PondLand%RegionETPot(NPondedCrops,NRegions)    ,  &
-              PondLand%RootDepth(NPondedCrops)               ,  &
-              PondLand%iColNonFloodRiceDecompAW(NElements)   ,  &
-              STAT=ErrorCode                                 )
+    ALLOCATE (PondLand%Crops(f_iNPondedCrops,NElements)         ,  &
+              PondLand%RegionETPot(f_iNPondedCrops,NRegions)    ,  &
+              PondLand%RootDepth(f_iNPondedCrops)               ,  &
+              PondLand%iColNonFloodRiceDecompAW(NElements)      ,  &
+              STAT=ErrorCode                                    )
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for ponded agricultural data!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for ponded agricultural data!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -236,7 +251,7 @@ CONTAINS
     ALine = StripTextUntilCharacter(ALine,'/') 
     CALL CleanSpecialCharacters(ALine)
     CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-    CALL PondLand%LandUseDataFile%New(cAbsPathFileName,'Ponded ag. area file',NElements,NPondedCrops,TrackTime,iStat)
+    CALL PondLand%LandUseDataFile%New(cAbsPathFileName,cWorkingDirectory,'Ponded ag. area file',NElements,f_iNPondedCrops,TrackTime,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Crops for budget output
@@ -252,7 +267,7 @@ CONTAINS
                 RegionAreas(NBudgetRegions)           ,  &
                 STAT=ErrorCode                        )
       IF (ErrorCode .NE. 0) THEN
-          CALL SetLastMessage('Error in allocating memory for ponded crops budget output data!',iFatal,ThisProcedure)
+          CALL SetLastMessage('Error in allocating memory for ponded crops budget output data!',f_iFatal,ThisProcedure)
           iStat = -1
           RETURN
       END IF
@@ -261,15 +276,15 @@ CONTAINS
       DO indxCrop=1,NBudgetCrops
         CALL RiceRefugeDataFile%ReadData(ALine,iStat)  ;  IF (iStat .EQ. -1) RETURN  ;  cBudgetCropCode = ADJUSTL(StripTextUntilCharacter(ALine,'/'))  ;  CALL CleanSpecialCharacters(cBudgetCropCode)
         lCropFound = .FALSE.
-        DO indxCropP=1,NPondedCrops
-          IF (UpperCase(cBudgetCropCode) .EQ. UpperCase(CropCodes(indxCropP))) THEN
+        DO indxCropP=1,f_iNPondedCrops
+          IF (UpperCase(cBudgetCropCode) .EQ. UpperCase(f_cCropCodes(indxCropP))) THEN
             PondLand%iBudgetCrops(indxCrop) = indxCropP
             lCropFound                      = .TRUE.
             EXIT
           END IF
         END DO
         IF (.NOT. lCropFound) THEN
-            CALL SetLastMessage (TRIM(cBudgetCropCode)//' for water budget output is not defined as a ponded crop!',iFatal,ThisProcedure)
+            CALL SetLastMessage (TRIM(cBudgetCropCode)//' for water budget output is not defined as a ponded crop!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -282,7 +297,7 @@ CONTAINS
       DO indxCrop=1,NBudgetCrops
         indxCropP = PondLand%iBudgetCrops(indxCrop)
         DO indxRegion=1,NRegions+1
-          cRegionNames((indxRegion-1)*NBudgetCrops+indxCrop) = TRIM(SubRegionNames(indxRegion)) // '_' // TRIM(UpperCase(CropCodes(indxCropP)))
+          cRegionNames((indxRegion-1)*NBudgetCrops+indxCrop) = TRIM(SubRegionNames(indxRegion)) // '_' // TRIM(UpperCase(f_cCropCodes(indxCropP)))
           RegionAreas((indxRegion-1)*NBudgetCrops+indxCrop)  = SubregionArea(indxRegion)
         END DO
       END DO
@@ -312,43 +327,70 @@ CONTAINS
 
     !Root depths
     CALL RiceRefugeDataFile%ReadData(FACT,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    DO indxCrop=1,NPondedCrops
+    DO indxCrop=1,f_iNPondedCrops
       CALL RiceRefugeDataFile%ReadData(PondLand%RootDepth(indxCrop),iStat)  ;  IF (iStat .EQ. -1) RETURN
       PondLand%RootDepth(indxCrop) = PondLand%RootDepth(indxCrop) * FACT
     END DO
     
     !Curve numbers
-    CALL ReadRealData(RiceRefugeDataFile,NElements,NPondedCrops+1,DummyRealArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL ReadRealData(RiceRefugeDataFile,'curve numbers for ponded crops','elements',NElements,f_iNPondedCrops+1,iElemIDs,DummyRealArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    lProcessed = .FALSE.
     DO indxElem=1,NElements
-      DO indxCrop=1,NPondedCrops
-        PondLand%Crops(indxCrop,indxElem)%SMax = (1000.0/DummyRealArray(indxElem,indxCrop+1)-10.0)*FACTCN
-      END DO
+        iElem = INT(DummyRealArray(indxElem,1))
+        IF (lProcessed(iElem)) THEN
+            ID = iElemIDs(iElem)
+            CALL SetLastMessage('Curve numbers for ponded crops at element '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iElem)            = .TRUE.
+        PondLand%Crops(:,iElem)%SMax = (1000.0/DummyRealArray(indxElem,2:)-10.0) * FACTCN
     END DO
        
     !ETc
-    CALL ReadPointerData(RiceRefugeDataFile,NElements,NPondedCrops+1,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    FORALL (indxElem=1:NElements , indxCrop=1:NPondedCrops)   &
-      PondLand%Crops(indxCrop,indxElem)%iColETc = DummyIntArray(indxElem,indxCrop+1)
+    CALL ReadPointerData(RiceRefugeDataFile,'evapotranspiration column pointers for ponded crops','elements',NElements,f_iNPondedCrops+1,iElemIDs,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    lProcessed = .FALSE.
+    DO indxElem=1,NElements
+        iElem = INT(DummyRealArray(indxElem,1))
+        IF (lProcessed(iElem)) THEN
+            ID = iElemIDs(iElem)
+            CALL SetLastMessage('Evapotranspiration column pointers for ponded crops at element '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iElem)               = .TRUE.
+        PondLand%Crops(:,iElem)%iColETc = DummyIntArray(indxElem,2:)
+    END DO
     
     !Water demand pointers
-    CALL ReadPointerData(RiceRefugeDataFile,NElements,NPondedCrops+1,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    IF (.NOT. ALL(DummyIntArray(:,2:NPondedCrops+1).EQ.0)) THEN
-      ALLOCATE (PondLand%iColAgDemand(NPondedCrops,NElements) ,STAT=ErrorCode)
-      IF (ErrorCode .NE. 0) THEN
-          CALL SetLastMessage('Error in allocating memory for ponded agricultural water demand column pointers!',iFatal,ThisProcedure)
-          iStat = -1
-          RETURN
-      END IF
-      FORALL (indxElem=1:NElements , indxCrop=1:NPondedCrops)   &
-        PondLand%iColAgDemand(indxCrop,indxElem) = DummyIntArray(indxElem,indxCrop+1)
-    END IF   
+    ALLOCATE (PondLand%iColAgDemand(f_iNPondedCrops,NElements))
+    CALL ReadPointerData(RiceRefugeDataFile,'water supply requirement column pointers for ponded crops','elements',NElements,f_iNPondedCrops+1,iElemIDs,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    lProcessed = .FALSE.
+    DO indxElem=1,NElements
+        iElem = DummyIntArray(indxElem,1)
+        IF (lProcessed(iElem)) THEN
+            ID = iElemIDs(iElem)
+            CALL SetLastMessage('Water supply requirement column pointers for ponded crops at element '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iElem)              = .TRUE.
+        PondLand%iColAgDemand(:,iElem) = DummyIntArray(indxElem,2:)
+    END DO
     
     !Irrigation period pointers
-    CALL ReadPointerData(RiceRefugeDataFile,NElements,NPondedCrops+1,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL ReadPointerData(RiceRefugeDataFile,'irrigation period column pointers for ponded crops','elements',NElements,f_iNPondedCrops+1,iElemIDs,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    lProcessed = .FALSE.
     DO indxElem=1,NElements
-        DO indxCrop=1,NPondedCrops
-            PondLand%Crops(indxCrop,indxElem)%iColIrigPeriod = DummyIntArray(indxElem,indxCrop+1)
-        END DO
+        iElem = DummyIntArray(indxElem,1)
+        IF (lProcessed(iElem)) THEN
+            ID = iElemIDs(iElem)
+            CALL SetLastMessage('Irrigation period column pointers for ponded crops at element '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iElem)                      = .TRUE.
+        PondLand%Crops(:,iElem)%iColIrigPeriod = DummyIntArray(indxElem,2:)
     END DO
 
     !Ponding depth data file
@@ -356,7 +398,7 @@ CONTAINS
     ALine = StripTextUntilCharacter(ALine,'/') 
     CALL CleanSpecialCharacters(ALine)
     CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-    CALL PondLand%PondDepthFile%Init(cAbsPathFileName,'rice/refuge ponding depth data file',TrackTime,1,.TRUE.,Factor,(/.FALSE./),iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL PondLand%PondDepthFile%Init(cAbsPathFileName,cWorkingDirectory,'rice/refuge ponding depth data file',TrackTime,1,.TRUE.,Factor,[.FALSE.],iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
     PondLand%PondDepthFactor = Factor(1)
     
     !Operations flow data file
@@ -364,71 +406,121 @@ CONTAINS
     ALine = StripTextUntilCharacter(ALine,'/') 
     CALL CleanSpecialCharacters(ALine)
     CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-    CALL PondLand%OperationFlowsFile%Init(cAbsPathFileName,'rice/refuge operations flow data file',TrackTime,1,.TRUE.,Factor,(/.TRUE./),iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL PondLand%OperationFlowsFile%Init(cAbsPathFileName,cWorkingDirectory,'rice/refuge operations flow data file',TrackTime,1,.TRUE.,Factor,[.TRUE.],iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
     PondLand%OperationFlowsFactor = Factor(1)
     
     !Ponding depths
-    CALL ReadPointerData(RiceRefugeDataFile,NElements,6,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    FORALL (indxElem=1:NElements)  
-      PondLand%Crops(indxRice_FloodDecomp,indxElem)%iColPondDepth    = DummyIntArray(indxElem,2) 
-      PondLand%Crops(indxRice_NonFloodDecomp,indxElem)%iColPondDepth = DummyIntArray(indxElem,3)
-      PondLand%Crops(indxRice_NoDecomp,indxElem)%iColPondDepth       = DummyIntArray(indxElem,4)
-      PondLand%Crops(indxRefuge_Seasonal,indxElem)%iColPondDepth     = DummyIntArray(indxElem,5)
-      PondLand%Crops(indxRefuge_Permanent,indxElem)%iColPondDepth    = DummyIntArray(indxElem,6)
-    END FORALL
+    CALL ReadPointerData(RiceRefugeDataFile,'ponding depth column pointers for ponded crops','elements',NElements,6,iElemIDs,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    lProcessed = .FALSE.
+    DO indxElem=1,NElements
+        iElem = DummyIntArray(indxElem,1)
+        IF (lProcessed(iElem)) THEN
+            ID = iElemIDs(iElem)
+            CALL SetLastMessage('Ponding depth column pointers for ponded crops at element '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iElem)                                           = .TRUE.
+        PondLand%Crops(f_iindxRice_FloodDecomp,iElem)%iColPondDepth    = DummyIntArray(indxElem,2) 
+        PondLand%Crops(f_iindxRice_NonFloodDecomp,iElem)%iColPondDepth = DummyIntArray(indxElem,3)
+        PondLand%Crops(f_iindxRice_NoDecomp,iElem)%iColPondDepth       = DummyIntArray(indxElem,4)
+        PondLand%Crops(f_iindxRefuge_Seasonal,iElem)%iColPondDepth     = DummyIntArray(indxElem,5)
+        PondLand%Crops(f_iindxRefuge_Permanent,iElem)%iColPondDepth    = DummyIntArray(indxElem,6)
+    END DO
 
     !Non-flooded decomposition application depths
-    CALL ReadPointerData(RiceRefugeDataFile,NElements,2,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    PondLand%iColNonFloodRiceDecompAW = DummyIntArray(:,2)
+    CALL ReadPointerData(RiceRefugeDataFile,'non-flooded rice decomposition water column pointers for ponded crops','elements',NElements,2,iElemIDs,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    lProcessed = .FALSE.
+    DO indxElem=1,NElements
+        iElem = DummyIntArray(indxElem,1)
+        IF (lProcessed(iElem)) THEN
+            ID = iElemIDs(iElem)
+            CALL SetLastMessage('Non-flooded rice decomposition water column pointers for ponded crops at element '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iElem)                        = .TRUE.
+        PondLand%iColNonFloodRiceDecompAW(iElem) = DummyIntArray(indxElem,2)
+    END DO
         
     !Return flow depths
-    CALL ReadPointerData(RiceRefugeDataFile,NElements,NPondedCrops+1,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    FORALL (indxElem=1:NElements  , indxCrop=1:NPondedCrops)  &  
-      PondLand%Crops(indxCrop,indxElem)%iColReturn = DummyIntArray(indxElem,indxCrop+1) 
+    CALL ReadPointerData(RiceRefugeDataFile,'return flow depth column pointers for ponded crops','elements',NElements,f_iNPondedCrops+1,iElemIDs,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    lProcessed = .FALSE.
+    DO indxElem=1,NElements
+        iElem = DummyIntArray(indxElem,1)
+        IF (lProcessed(iElem)) THEN
+            ID = iElemIDs(iElem)
+            CALL SetLastMessage('Return flow depth column pointers for ponded crops at element '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iElem)                  = .TRUE.
+        PondLand%Crops(:,iElem)%iColReturn = DummyIntArray(indxElem,2:) 
+    END DO
       
     !Re-use water depths
-    CALL ReadPointerData(RiceRefugeDataFile,NElements,NPondedCrops+1,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    FORALL (indxElem=1:NElements  , indxCrop=1:NPondedCrops)  &  
-      PondLand%Crops(indxCrop,indxElem)%iColReuse = DummyIntArray(indxElem,indxCrop+1) 
+    CALL ReadPointerData(RiceRefugeDataFile,'re-use depth column pointers for ponded crops','elements',NElements,f_iNPondedCrops+1,iElemIDs,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    lProcessed = .FALSE.
+    DO indxElem=1,NElements
+        iElem = DummyIntArray(indxElem,1)
+        IF (lProcessed(iElem)) THEN
+            ID = iElemIDs(iElem)
+            CALL SetLastMessage('Re-use flow depth column pointers for ponded crops at element '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iElem)                 = .TRUE.
+        PondLand%Crops(:,iElem)%iColReuse = DummyIntArray(indxElem,2:) 
+    END DO
     
     !Check for time-series column pointer errors
     DO indxElem=1,NElements
-        CALL PondLand%PondDepthFile%CheckColNum('Pond depth file as referenced by element '//TRIM(IntToText(indxElem)),PondLand%Crops(:,indxElem)%iColPondDepth,.TRUE.,iStat)                                                                                                ;  IF (iStat .EQ. -1) RETURN
-        CALL PondLand%OperationFlowsFile%CheckColNum('Rice/refuge pond operations flow file as referenced by element '//TRIM(IntToText(indxElem))//' for application depths for non-flooded rice decomposition',[PondLand%iColNonFloodRiceDecompAW(indxElem)],.TRUE.,iStat)  ;  IF (iStat .EQ. -1) RETURN
-        CALL PondLand%OperationFlowsFile%CheckColNum('Rice/refuge pond operations flow file as referenced by element '//TRIM(IntToText(indxElem))//' for return flow depths',PondLand%Crops(:,indxElem)%iColReturn,.TRUE.,iStat)                                             ;  IF (iStat .EQ. -1) RETURN
-        CALL PondLand%OperationFlowsFile%CheckColNum('Rice/refuge pond operations flow file as referenced by element '//TRIM(IntToText(indxElem))//' for re-use flow depths',PondLand%Crops(:,indxElem)%iColReuse,.TRUE.,iStat)                                              ;  IF (iStat .EQ. -1) RETURN
+        ID = iElemIDs(indxElem)
+        CALL PondLand%PondDepthFile%CheckColNum('Pond depth file as referenced by element '//TRIM(IntToText(ID)),PondLand%Crops(:,indxElem)%iColPondDepth,.TRUE.,iStat)                                                                                                ;  IF (iStat .EQ. -1) RETURN
+        CALL PondLand%OperationFlowsFile%CheckColNum('Rice/refuge pond operations flow file as referenced by element '//TRIM(IntToText(ID))//' for application depths for non-flooded rice decomposition',[PondLand%iColNonFloodRiceDecompAW(indxElem)],.TRUE.,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL PondLand%OperationFlowsFile%CheckColNum('Rice/refuge pond operations flow file as referenced by element '//TRIM(IntToText(ID))//' for return flow depths',PondLand%Crops(:,indxElem)%iColReturn,.TRUE.,iStat)                                             ;  IF (iStat .EQ. -1) RETURN
+        CALL PondLand%OperationFlowsFile%CheckColNum('Rice/refuge pond operations flow file as referenced by element '//TRIM(IntToText(ID))//' for re-use flow depths',PondLand%Crops(:,indxElem)%iColReuse,.TRUE.,iStat)                                              ;  IF (iStat .EQ. -1) RETURN
     END DO
     
     !Initial conditions
-    CALL ReadRealData(RiceRefugeDataFile,NElements,NPondedCrops+2,DummyRealArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL ReadRealData(RiceRefugeDataFile,'initial conditions for ponded crops','elements',NElements,f_iNPondedCrops+2,iElemIDs,DummyRealArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
     IF (MINVAL(DummyRealArray(:,2)) .LT. 0.0   .OR.  &
         MAXVAL(DummyRealArray(:,2)) .GT. 1.0         ) THEN
         MessageArray(1) = 'Some fractions of initial soil moisture due to precipitation is less '
         MessageArray(2) = 'than 0.0 or greater than 1.0 for ponded agricultural crops!'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)      
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)      
         iStat = -1
         RETURN
     END IF
     IF (MINVAL(DummyRealArray(:,3:)) .LT. 0.0) THEN
         MessageArray(1) = 'Some or all initial root zone moisture contents are less than'
         MessageArray(2) = '0.0 for ponded crops!'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)      
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)      
         iStat = -1
         RETURN
     END IF
-    FORALL (indxElem=1:NElements , indxCrop=1:NPondedCrops)  
-      PondLand%Crops(indxCrop,indxElem)%SoilM_Precip = DummyRealArray(indxElem,2)         * DummyRealArray(indxElem,indxCrop+2)
-      PondLand%Crops(indxCrop,indxElem)%SoilM_AW     = (1d0 - DummyRealArray(indxElem,2)) * DummyRealArray(indxElem,indxCrop+2)
-    END FORALL
-    PondLand%Crops%SoilM_Precip_P_BeforeUpdate   = PondLand%Crops%SoilM_Precip
-    PondLand%Crops%SoilM_Precip_P                = PondLand%Crops%SoilM_Precip
-    PondLand%Crops%SoilM_AW_P_BeforeUpdate       = PondLand%Crops%SoilM_AW
-    PondLand%Crops%SoilM_AW_P                    = PondLand%Crops%SoilM_AW
+    lProcessed = .FALSE.
+    DO indxElem=1,NElements
+        iElem = INT(DummyRealArray(indxElem,1))
+        IF (lProcessed(iElem)) THEN
+            ID = iElemIDs(iElem)
+            CALL SetLastMessage('Initial conditions for ponded crops at element '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iElem)                    = .TRUE.
+        PondLand%Crops(:,iElem)%SoilM_Precip = DummyRealArray(indxElem,2) * DummyRealArray(indxElem,3:)
+        PondLand%Crops(:,iElem)%SoilM_AW     = DummyRealArray(indxElem,3:) - PondLand%Crops(:,iElem)%SoilM_Precip
+    END DO
+    PondLand%Crops%SoilM_Precip_P_BeforeUpdate = PondLand%Crops%SoilM_Precip
+    PondLand%Crops%SoilM_Precip_P              = PondLand%Crops%SoilM_Precip
+    PondLand%Crops%SoilM_AW_P_BeforeUpdate     = PondLand%Crops%SoilM_AW
+    PondLand%Crops%SoilM_AW_P                  = PondLand%Crops%SoilM_AW
     
     !Close file
     CALL RiceRefugeDataFile%Kill()
     
-  END SUBROUTINE PondedAgLandUse_New
+  END SUBROUTINE New
   
   
   
@@ -446,8 +538,8 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- KILL PONDED AG LAND USE DATA
   ! -------------------------------------------------------------
-  SUBROUTINE PondedAgLandUse_Kill(PondLand)
-    TYPE(PondedAgDatabaseType) :: PondLand
+  SUBROUTINE Kill(PondLand)
+    CLASS(PondedAgDatabaseType) :: PondLand
     
     !Local variables
     INTEGER                    :: ErrorCode
@@ -469,10 +561,75 @@ CONTAINS
     CALL PondLand%RootZoneBudRawFile%Kill()
     
     !Assign default values to components
-    PondLand = Dummy
-    
-  END SUBROUTINE PondedAgLandUse_Kill
+    SELECT TYPE (PondLand)
+        TYPE IS (PondedAgDatabaseType)
+            PondLand = Dummy
+    END SELECT
+        
+  END SUBROUTINE Kill
   
+  
+  
+  
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+! ***
+! *** GETTERS
+! ***
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+  
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET TIME SERIES DATA FOR A SET OF COLUMNS 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_TSData(PondLand,iBudgetType,iLocationIndex,iCols,cBeginDate,cEndDate,cInterval,rFactLT,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+    CLASS(PondedAgDatabaseType),TARGET,INTENT(IN) :: PondLand
+    INTEGER,INTENT(IN)                            :: iBudgetType,iLocationIndex,iCols(:)
+    CHARACTER(LEN=*),INTENT(IN)                   :: cBeginDate,cEndDate,cInterval
+    REAL(8),INTENT(IN)                            :: rFactLT,rFactAR,rFactVL
+    REAL(8),INTENT(OUT)                           :: rOutputDates(:),rOutputValues(:,:)    !rOutputValues is in (timestep,column) format
+    INTEGER,INTENT(OUT)                           :: iDataTypes(:),inActualOutput,iStat
+    
+    !Local variables
+    INTEGER                  :: indx
+    TYPE(BudgetTYpe),POINTER :: pBudget
+    
+    !Initialize
+    NULLIFY(pBudget)
+    
+    !Pointer to budget file
+    SELECT CASE (iBudgetType)
+        CASE (f_iBudgetType_PondedCrop_LWU)
+            IF (PondLand%lLWUseBudRawFile_Defined) pBudget => PondLand%LWUseBudRawFile
+            
+        CASE (f_iBudgetType_PondedCrop_RZ)
+            IF (PondLand%lRootZoneBudRawFile_Defined) pBudget => PondLand%RootZoneBudRawFile
+            
+    END SELECT
+        
+    !Return if Budget file is not defined
+    IF (.NOT. ASSOCIATED(pBudget)) THEN
+        iStat          = 0
+        inActualOutput = 0
+        iDataTypes     = -1
+        rOutputDates   = 0.0
+        rOutputValues  = 0.0
+        RETURN
+    END IF
+    
+    !Retrieve data
+    DO indx=1,SIZE(iCols)
+        CALL pBudget%ReadData(iLocationIndex,iCols(indx),cInterval,cBeginDate,cEndDate,1d0,0d0,0d0,rFactLT,rFactAR,rFactVL,iDataTypes(indx),inActualOutput,rOutputDates,rOutputValues(:,indx),iStat)
+        IF (iStat .NE. 0) EXIT
+    END DO
+    
+    !Clear memory
+    NULLIFY(pBudget)
+    
+  END SUBROUTINE GetBudget_TSData
+
   
   
   
@@ -489,13 +646,13 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- SET THE CROP AREAS
   ! -------------------------------------------------------------
-  SUBROUTINE PondedAgLandUse_SetAreas(Area,PondedAgLand)
-    REAL(8),INTENT(IN)         :: Area(:,:)
-    TYPE(PondedAgDatabaseType) :: PondedAgLand
+  SUBROUTINE SetAreas(PondedAgLand,Area)
+    CLASS(PondedAgDatabaseType) :: PondedAgLand
+    REAL(8),INTENT(IN)          :: Area(:,:)
    
     PondedAgLand%Crops%Area = Area
     
-  END SUBROUTINE PondedAgLandUse_SetAreas
+  END SUBROUTINE SetAreas
   
   
 
@@ -535,14 +692,16 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ TIME SERIES DATA FOR PONDED AG
   ! -------------------------------------------------------------
-  SUBROUTINE PondedAgLandUse_ReadTSData(TimeStep,AppGrid,PondLand,iStat)
+  SUBROUTINE ReadTSData(PondLand,TimeStep,AppGrid,iElemIDs,rElemAreas,iStat)
+    CLASS(PondedAgDataBaseType)   :: PondLand
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
     TYPE(AppGridType),INTENT(IN)  :: AppGrid
-    TYPE(PondedAgDataBaseType)    :: PondLand
+    INTEGER,INTENT(IN)            :: iElemIDs(AppGrid%NElements)
+    REAL(8),INTENT(IN)            :: rElemAreas(AppGrid%NElements)
     INTEGER,INTENT(OUT)           :: iStat
     
     !Local variables
-    CHARACTER(LEN=ModNameLen+26) :: ThisProcedure = ModName // 'PondedAgLandUse_ReadTSData'
+    CHARACTER(LEN=ModNameLen+10) :: ThisProcedure = ModName // 'ReadTSData'
     INTEGER                      :: indxCrop,indxElem,FileReadCode
     
     !Initialize
@@ -552,7 +711,7 @@ CONTAINS
     CALL EchoProgress('Reading time series data for ponded agricultural crops')
     
     !Land use areas
-    CALL PondLand%LandUseDataFile%ReadTSData('Ponded crop areas',TimeStep,AppGrid%AppElement%Area,iStat)
+    CALL PondLand%LandUseDataFile%ReadTSData('Ponded crop areas',TimeStep,rElemAreas,iElemIDs,iStat)
     IF (iStat .EQ. -1) RETURN
     IF (PondLand%LandUseDataFile%lUpdated) THEN
       DO indxElem=1,AppGrid%NElements
@@ -561,33 +720,33 @@ CONTAINS
     END IF
     
     !Ponding depths
-    CALL ReadTSData(TimeStep,'Rice/refuge pond depths data',PondLand%PondDepthFile,FileReadCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL ReadTimeSeriesData(TimeStep,'Rice/refuge pond depths data',PondLand%PondDepthFile,FileReadCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
     IF (FileReadCode .EQ. 0) PondLand%PondDepthFile%rValues = PondLand%PondDepthFile%rValues * PondLand%PondDepthFactor
     
     !Operation flow depths
-    CALL ReadTSData(TimeStep,'Rice/refuge pond operation flows data',PondLand%OperationFlowsFile,FileReadCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL ReadTimeSeriesData(TimeStep,'Rice/refuge pond operation flows data',PondLand%OperationFlowsFile,FileReadCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
     IF (FileReadCode .EQ. 0) PondLand%OperationFlowsFile%rValues = PondLand%OperationFlowsFile%rValues * PondLand%OperationFlowsFactor
     
     !Make sure that return flow depth is larger than re-use depth
     ASSOCIATE (pPondOps => PondLand%OperationFlowsFile%rValues  , &
                pCrops   => PondLand%Crops                   )
     
-      DO indxElem=1,AppGrid%NElements
-        DO indxCrop=1,NPondedCrops
-          IF (pPondOps(pCrops(indxCrop,indxElem)%iColReturn) .LT. pPondOps(pCrops(indxCrop,indxElem)%iColReuse)) THEN
-            MessageArray(1) = 'Re-use depth for ' // TRIM(CropCodes(indxCrop)) // ' at element ' // TRIM(IntToText(indxElem))//' is greater than return flow depth!'
-            WRITE (MessageArray(2),'(A,F5.3)') 'Re-use depth      = ',pPondOps(pCrops(indxCrop,indxElem)%iColReuse)
-            WRITE (MessageArray(3),'(A,F5.3)') 'Return flow depth = ',pPondOps(pCrops(indxCrop,indxElem)%iColReturn)
-            CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-            iStat = -1
-            RETURN
-          END IF
+        DO indxElem=1,AppGrid%NElements
+            DO indxCrop=1,f_iNPondedCrops
+                IF (pPondOps(pCrops(indxCrop,indxElem)%iColReturn) .LT. pPondOps(pCrops(indxCrop,indxElem)%iColReuse)) THEN
+                    MessageArray(1) = 'Re-use depth for ' // TRIM(f_cCropCodes(indxCrop)) // ' at element ' // TRIM(IntToText(iElemIDs(indxElem)))//' is greater than return flow depth!'
+                    WRITE (MessageArray(2),'(A,F5.3)') 'Re-use depth      = ',pPondOps(pCrops(indxCrop,indxElem)%iColReuse)
+                    WRITE (MessageArray(3),'(A,F5.3)') 'Return flow depth = ',pPondOps(pCrops(indxCrop,indxElem)%iColReturn)
+                    CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
+                    iStat = -1
+                    RETURN
+                END IF
+            END DO
         END DO
-      END DO
       
     END ASSOCIATE
 
-  END SUBROUTINE PondedAgLandUse_ReadTSData
+  END SUBROUTINE ReadTSData
   
 
   ! -------------------------------------------------------------
@@ -663,11 +822,11 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GATEWAY PROCEDURE FOR RESULTS PRINTING
   ! -------------------------------------------------------------
-  SUBROUTINE PondedAgLandUse_PrintResults(AppGrid,ElemSupply,ElemPrecip,ElemGenericMoist,PondedAg)
+  SUBROUTINE PrintResults(PondedAg,AppGrid,ElemSupply,ElemPrecip,ElemGenericMoist)
+    CLASS(PondedAgDatabaseType)      :: PondedAg
     TYPE(AppGridType),INTENT(IN)     :: AppGrid
     TYPE(WaterSupplyType),INTENT(IN) :: ElemSupply(AppGrid%NElements)
     REAL(8),INTENT(IN)               :: ElemPrecip(AppGrid%NElements),ElemGenericMoist(AppGrid%NElements)
-    TYPE(PondedAgDatabaseType)       :: PondedAg
     
     !Local variables
     INTEGER                                                          :: NBudgetCrops,indxLast,indxCrop,indxElem
@@ -712,7 +871,7 @@ CONTAINS
     IF (PondedAg%lLWUseBudRawFile_Defined)    CALL WriteLWUseFlowsToBudRawFile(AppGrid,RLUArea,RPump,RDeli,RRunoff,PondedAg)
     IF (PondedAg%lRootZoneBudRawFile_Defined) CALL WriteRootZoneFlowsToBudRawFile(AppGrid,RLUArea,RPump,RDeli,RRunoff,ElemPrecip,ElemGenericMoist,Area,PondedAg)
     
-  END SUBROUTINE PondedAgLandUse_PrintResults
+  END SUBROUTINE PrintResults
   
   
   ! -------------------------------------------------------------
@@ -726,7 +885,7 @@ CONTAINS
     !Local variables
     INTEGER                                                          :: indxCrop,iBudgetCrops(PondedAg%NBudgetCrops),indxLast,NBudgetCrops
     REAL(8),DIMENSION(AppGrid%NElements)                             :: ElemValue
-    REAL(8)                                                          :: DummyArray(NAgLWUseBudColumns,(AppGrid%NSubregions+1)*PondedAg%NBudgetCrops)
+    REAL(8)                                                          :: DummyArray(f_iNAgLWUseBudColumns,(AppGrid%NSubregions+1)*PondedAg%NBudgetCrops)
     REAL(8),DIMENSION((AppGrid%NSubregions+1)*PondedAg%NBudgetCrops) :: RDemandRaw,RDemand,RDemandShort,RETAW,RETP,RETOth
 
     !Initialize
@@ -785,7 +944,7 @@ CONTAINS
     !Local variables
     INTEGER                                                          :: NRegions,NElements,NBudgetCrops,indxCrop,indxLast,  &
                                                                         iBudgetCrops(PondedAg%NBudgetCrops),iCrop
-    REAL(8)                                                          :: DummyArray(NAgRootZoneBudColumns,(AppGrid%NSubregions+1)*PondedAg%NBudgetCrops) 
+    REAL(8)                                                          :: DummyArray(f_iNAgRootZoneBudColumns,(AppGrid%NSubregions+1)*PondedAg%NBudgetCrops) 
     REAL(8),DIMENSION(AppGrid%NElements)                             :: ElemValue
     REAL(8),DIMENSION((AppGrid%NSubregions+1)*PondedAg%NBudgetCrops) :: RRunoff,RPrecip,RReuse,RReturn,RSoilMCh,RInfilt,RETPot,           &
                                                                         RETa,RPerc,Error,RSoilM,RSoilM_P,RDrain,RGenMoistInflow
@@ -885,74 +1044,80 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- SIMULATE FLOW PROCESSES AT PONDED AG LANDS
   ! -------------------------------------------------------------
-  SUBROUTINE PondedAgLandUse_Simulate(AppGrid,ETData,DeltaT,Precip,GenericMoisture,SoilsData,HydCondPonded,ElemSupply,ElemsToGW,SolverData,lLakeElem,PondedAg,iStat)
-    TYPE(AppGridType),INTENT(IN)      :: AppGrid
-    TYPE(ETType)                      :: ETData
-    TYPE(RootZoneSoilType),INTENT(IN) :: SoilsData(AppGrid%NElements)
-    REAL(8),INTENT(IN)                :: HydCondPonded(:),DeltaT,Precip(:),GenericMoisture(:,:),ElemSupply(:,:)
-    INTEGER,INTENT(IN)                :: ElemsToGW(:)
-    TYPE(SolverDataType),INTENT(IN)   :: SolverData
-    LOGICAL,INTENT(IN)                :: lLakeElem(:)
-    TYPE(PondedAgDatabaseType)        :: PondedAg
-    INTEGER,INTENT(OUT)               :: iStat
+  SUBROUTINE Simulate(PondedAg,AppGrid,ETData,DeltaT,Precip,GenericMoisture,SoilsData,HydCondPonded,ElemSupply,ElemsToGW,SolverData,lLakeElem,iStat)
+    CLASS(PondedAgDatabaseType),TARGET :: PondedAg
+    TYPE(AppGridType),INTENT(IN)       :: AppGrid
+    TYPE(ETType),INTENT(IN)            :: ETData
+    TYPE(RootZoneSoilType),INTENT(IN)  :: SoilsData(AppGrid%NElements)
+    REAL(8),INTENT(IN)                 :: HydCondPonded(:),DeltaT,Precip(:),GenericMoisture(:,:),ElemSupply(:,:)
+    INTEGER,INTENT(IN)                 :: ElemsToGW(:)
+    TYPE(SolverDataType),INTENT(IN)    :: SolverData
+    LOGICAL,INTENT(IN)                 :: lLakeElem(:)
+    INTEGER,INTENT(OUT)                :: iStat
     
     !Local variables
-    CHARACTER(LEN=ModNameLen+24) :: ThisProcedure = ModName // 'PondedAgLandUse_Simulate'
-    INTEGER                      :: indxElem,indxCrop,KunsatMethod
-    REAL(8)                      :: AchievedConv,Area,ETc(NPondedCrops),HydCond,TotalPorosity,          &
-                                    FieldCapacity,TotalPorosityCrop,FieldCapacityCrop,RootDepth,Lambda, &
-                                    Supply,WiltingPoint,WiltingPointCrop,SoilM,SoilM_P,GM,PrecipD,      &
-                                    rMultip,GMElem,Inflow,Excess,dRF,dRU,ratio(3),SoilM_P_Array(3),     &
-                                    SoilM_Array(3),Infilt(3),ETPartition(3)
-    LOGICAL                      :: lNegativeMoist
+    CHARACTER(LEN=ModNameLen+8) :: ThisProcedure = ModName // 'Simulate'
+    !$ INTEGER                  :: iChunk
+    INTEGER                     :: indxElem,indxCrop,KunsatMethod,iElemID
+    REAL(8)                     :: AchievedConv,Area,ETc(f_iNPondedCrops),HydCond,TotalPorosity,       &
+                                   FieldCapacity,TotalPorosityCrop,FieldCapacityCrop,RootDepth,Lambda, &
+                                   Supply,WiltingPoint,WiltingPointCrop,SoilM,SoilM_P,GM,PrecipD,      &
+                                   rMultip,GMElem,Inflow,Excess,dRF,dRU,ratio(3),SoilM_P_Array(3),     &
+                                   SoilM_Array(3),Infilt(3),ETPartition(3)
+    TYPE(PondedAgType),POINTER  :: pCrop
+    LOGICAL                     :: lNegativeMoist
     
     !Initialize
-    iStat = 0
+    iStat     = 0
+    !$ iChunk = MAX(1 , AppGrid%NElements/(OMP_GET_MAX_THREADS()-1)/10)
                                     
     !Inform user
     CALL EchoProgress('Simulating flows at ponded agricultural crop lands')
     
-    ASSOCIATE (pCrops          => PondedAg%Crops                       , &
-               pRootDepth      => PondedAg%RootDepth                   , &
-               pPondDepths     => PondedAg%PondDepthFile%rValues       , &
-               pOperationFlows => PondedAg%OperationFlowsFile%rValues  )
-
-      !Initialize
-      pCrops%Runoff       = 0.0   
-      pCrops%ReturnFlow   = 0.0   
-      pCrops%PrecipInfilt = 0.0                      
-      pCrops%IrigInfilt   = 0.0 
-      pCrops%Drain        = 0.0
-      pCrops%ETa          = 0.0                     
-      pCrops%ETAW         = 0.0   
-      pCrops%ETP          = 0.0 
-      pCrops%ETOth        = 0.0
-      pCrops%Perc         = 0.0 
-      pCrops%Reuse        = 0.0
-      pCrops%GMExcess     = 0.0
-      
-      DO indxElem=1,AppGrid%NElements
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(AppGrid,lLakeElem,SoilsData,HydCondPonded,ETData,Precip,GenericMoisture,    &
+    !$OMP                                  DeltaT,PondedAg,ElemSupply,SolverData,ElemsToGW,iStat)                      &
+    !$OMP          NUM_THREADS(OMP_GET_MAX_THREADS()-1) 
+    !$OMP DO SCHEDULE(DYNAMIC,iChunk)
+    DO indxElem=1,AppGrid%NElements
+        !Initialize flows
+        PondedAg%Crops(:,indxElem)%Runoff       = 0.0   
+        PondedAg%Crops(:,indxElem)%ReturnFlow   = 0.0   
+        PondedAg%Crops(:,indxElem)%PrecipInfilt = 0.0                      
+        PondedAg%Crops(:,indxElem)%IrigInfilt   = 0.0 
+        PondedAg%Crops(:,indxElem)%Drain        = 0.0
+        PondedAg%Crops(:,indxElem)%ETa          = 0.0                     
+        PondedAg%Crops(:,indxElem)%ETAW         = 0.0   
+        PondedAg%Crops(:,indxElem)%ETP          = 0.0 
+        PondedAg%Crops(:,indxElem)%ETOth        = 0.0
+        PondedAg%Crops(:,indxElem)%Perc         = 0.0 
+        PondedAg%Crops(:,indxElem)%Reuse        = 0.0
+        PondedAg%Crops(:,indxElem)%GMExcess     = 0.0
+        
+        !Cycle if necessary
+        IF (iStat .EQ. -1) CYCLE
         IF (lLakeElem(indxElem)) CYCLE
+        
+        !Soil parameters
         WiltingPoint  = SoilsData(indxElem)%WiltingPoint
         FieldCapacity = SoilsData(indxElem)%FieldCapacity
         TotalPorosity = SoilsData(indxElem)%TotalPorosity
         HydCond       = HydCondPonded(indxElem)
         Lambda        = SoilsData(indxElem)%Lambda
         KunsatMethod  = SoilsData(indxElem)%KunsatMethod
-        ETc           = ETData%GetValues(pCrops(:,indxElem)%iColETc) * DeltaT
+        ETc           = ETData%GetValues(PondedAg%Crops(:,indxElem)%iColETc) * DeltaT
         GMElem        = GenericMoisture(1,indxElem) * DeltaT
         PrecipD       = Precip(indxElem) * DeltaT
         
         !Loop over each land use
-        DO indxCrop=1,NPondedCrops
-          ASSOCIATE (pCrop => pCrops(indxCrop,indxElem))
-          
+        DO indxCrop=1,f_iNPondedCrops
+            pCrop => PondedAg%Crops(indxCrop,indxElem)
+            
             !Cycle if area is zero
-            Area = pCrops(indxCrop,indxElem)%Area
+            Area = pCrop%Area
             IF (Area .EQ. 0.0) CYCLE
           
             !Initialize
-            RootDepth         = pRootDepth(indxCrop)
+            RootDepth         = PondedAg%RootDepth(indxCrop)
             WiltingPointCrop  = WiltingPoint  * RootDepth
             TotalPorosityCrop = TotalPorosity * RootDepth
             FieldCapacityCrop = FieldCapacity * RootDepth
@@ -960,13 +1125,13 @@ CONTAINS
             Supply            = ElemSupply(indxCrop,indxElem)*DeltaT/Area
             SoilM_P           = pCrop%SoilM_Precip_P + pCrop%SoilM_AW_P + pCrop%SoilM_Oth_P
             Inflow            = GM + Supply
-            dRF               = pOperationFlows(pCrop%iColReturn)
-            dRU               = pOperationFlows(pCrop%iColReuse)
+            dRF               = PondedAg%OperationFlowsFile%rValues(pCrop%iColReturn)
+            dRU               = PondedAg%OperationFlowsFile%rValues(pCrop%iColReuse)
             
             !Simulate
             CALL PondedLUMoistureRouter(PrecipD                                             ,  &
                                         pCrop%SMax                                          ,  &
-                                        pPondDepths(pCrop%iColPondDepth)                    ,  &
+                                        PondedAg%PondDepthFile%rValues(pCrop%iColPondDepth) ,  &
                                         SoilM_P                                             ,  &
                                         ETc(indxCrop)                                       ,  & 
                                         HydCond                                             ,  & 
@@ -989,14 +1154,17 @@ CONTAINS
 
             !Generate error if convergence is not achieved
             IF (AchievedConv .NE. 0.0) THEN
-              MessageArray(1) = 'Convergence error in soil moisture routing for ponded lands!'
-              MessageArray(2) = 'Element              = '//TRIM(IntToText(indxElem))
-              MessageArray(3) = 'Crop type            = '//TRIM(CropCodes(indxCrop))
-              WRITE (MessageArray(4),'(A,F11.8)') 'Desired convergence  = ',SolverData%Tolerance*TotalPorosityCrop
-              WRITE (MessageArray(5),'(A,F11.8)') 'Achieved convergence = ',ABS(AchievedConv)
-              CALL SetLastMessage(MessageArray(1:5),iFatal,ThisProcedure)
-              iStat = -1
-              RETURN
+                !$OMP CRITICAL
+                iElemID         = AppGrid%AppElement(indxElem)%ID
+                MessageArray(1) = 'Convergence error in soil moisture routing for ponded lands!'
+                MessageArray(2) = 'Element              = '//TRIM(IntToText(iElemID))
+                MessageArray(3) = 'Crop type            = '//TRIM(f_cCropCodes(indxCrop))
+                WRITE (MessageArray(4),'(A,F11.8)') 'Desired convergence  = ',SolverData%Tolerance*TotalPorosityCrop
+                WRITE (MessageArray(5),'(A,F11.8)') 'Achieved convergence = ',ABS(AchievedConv)
+                CALL SetLastMessage(MessageArray(1:5),f_iFatal,ThisProcedure)
+                iStat = -1
+                !$OMP END CRITICAL
+                EXIT
             END IF
             
             !Infiltration due to irrigation
@@ -1056,13 +1224,16 @@ CONTAINS
             IF (pCrop%SoilM_AW     .LT. 0.0) lNegativeMoist = .TRUE.
             IF (pCrop%SoilM_Oth    .LT. 0.0) lNegativeMoist = .TRUE.
             IF (lNegativeMoist) THEN
-                MessageArray(1) = 'Soil moisture content becomes negative at element '//TRIM(IntToText(indxElem))//'.'
+                !$OMP CRITICAL
+                iElemID         = AppGrid%AppElement(indxElem)%ID
+                MessageArray(1) = 'Soil moisture content becomes negative at element '//TRIM(IntToText(iElemID))//'.'
                 MessageArray(2) = 'This may be due to a too high convergence criteria set for the iterative solution.'
                 MessageArray(3) = 'Try using a smaller value for RZCONV and a higher value for RZITERMX parameters'
                 MessageArray(4) = 'in the Root Zone Main Input File.'
-                CALL SetLastMessage(MessageArray(1:4),iFatal,ThisProcedure)
+                CALL SetLastMessage(MessageArray(1:4),f_iFatal,ThisProcedure)
                 iStat = -1
-                RETURN
+                !$OMP END CRITICAL
+                EXIT
             END IF
  
             !Convert depths to volumetric rates
@@ -1081,100 +1252,98 @@ CONTAINS
 
             !If surface flow goes to groundwater, update the runoff processes
             IF (LocateInList(indxElem,ElemsToGW) .GT. 0) THEN
-              pCrop%Perc         = pCrop%Perc + pCrop%Runoff + pCrop%ReturnFlow + pCrop%Drain
-              pCrop%PrecipInfilt = pCrop%PrecipInfilt + pCrop%Runoff                     !Runoff and 
-              pCrop%IrigInfilt   = pCrop%IrigInfilt + pCrop%ReturnFlow + pCrop%Drain     ! return flow are assumed to bypass root zone for proper mass balance       
-              pCrop%Runoff       = 0.0
-              pCrop%ReturnFlow   = 0.0
-              pCrop%Drain        = 0.0
+                pCrop%Perc         = pCrop%Perc + pCrop%Runoff + pCrop%ReturnFlow + pCrop%Drain
+                pCrop%PrecipInfilt = pCrop%PrecipInfilt + pCrop%Runoff                     !Runoff and 
+                pCrop%IrigInfilt   = pCrop%IrigInfilt + pCrop%ReturnFlow + pCrop%Drain     ! return flow are assumed to bypass root zone for proper mass balance       
+                pCrop%Runoff       = 0.0
+                pCrop%ReturnFlow   = 0.0
+                pCrop%Drain        = 0.0
             END IF
-              
-          END ASSOCIATE
         END DO
-      END DO
-    END ASSOCIATE                  
+    END DO
+    !$OMP END DO
+    !$OMP END PARALLEL
     
-  END SUBROUTINE PondedAgLandUse_Simulate
+  END SUBROUTINE Simulate
   
   
   ! -------------------------------------------------------------
   ! --- COMPUTE PONDED AG DEMAND
   ! -------------------------------------------------------------
-  SUBROUTINE PondedAgLandUse_ComputeWaterDemand(AppGrid,ETData,DeltaT,Precip,GenericMoisture,SoilsData,HydCondPonded,SpecifiedDemand,IrigPeriod,lLakeElem,lReadAgWaterDemand,PondedAg)
-    TYPE(AppGridType),INTENT(IN)      :: AppGrid
-    TYPE(ETType)                      :: ETData
-    TYPE(RootZoneSoilType),INTENT(IN) :: SoilsData(AppGrid%NElements)
-    REAL(8),INTENT(IN)                :: HydCondPonded(:),DeltaT,Precip(:),GenericMoisture(:,:),SpecifiedDemand(:)
-    INTEGER,INTENT(IN)                :: IrigPeriod(:)
-    LOGICAL,INTENT(IN)                :: lLakeElem(:),lReadAgWaterDemand
-    TYPE(PondedAgDatabaseType)        :: PondedAg
+  SUBROUTINE ComputeWaterDemand(PondedAg,AppGrid,ETData,DeltaT,Precip,GenericMoisture,SoilsData,HydCondPonded,SpecifiedDemand,IrigPeriod,lLakeElem,lReadAgWaterDemand)
+    CLASS(PondedAgDatabaseType),TARGET :: PondedAg
+    TYPE(AppGridType),INTENT(IN)       :: AppGrid
+    TYPE(ETType)                       :: ETData
+    TYPE(RootZoneSoilType),INTENT(IN)  :: SoilsData(AppGrid%NElements)
+    REAL(8),INTENT(IN)                 :: HydCondPonded(:),DeltaT,Precip(:),GenericMoisture(:,:),SpecifiedDemand(:)
+    INTEGER,INTENT(IN)                 :: IrigPeriod(:)
+    LOGICAL,INTENT(IN)                 :: lLakeElem(:),lReadAgWaterDemand
     
     !Local variables
-    INTEGER :: indxElem,indxCrop
-    REAL(8) :: Area,ETc(NPondedCrops),RootDepth,TotalPorosityCrop,TotalPorosity,GM,  &
-               FieldCapacity,FieldCapacityCrop,PondDepth,SoilM,NonFloodRiceDecompAW, &
-               PrecipD,GMElem
+    !$ INTEGER                 :: iChunk
+    INTEGER                    :: indxElem,indxCrop
+    REAL(8)                    :: Area,ETc(f_iNPondedCrops),RootDepth,TotalPorosityCrop,TotalPorosity,GM,  &
+                                  FieldCapacity,FieldCapacityCrop,PondDepth,SoilM,NonFloodRiceDecompAW,    &
+                                  PrecipD,GMElem,Reuse,ReturnFlow
+    TYPE(PondedAgType),POINTER :: pCrop
 
-    ASSOCIATE (pCrops                    => PondedAg%Crops                       , &
-               pRootDepth                => PondedAg%RootDepth                   , &
-               piColAgDemand             => PondedAg%iColAgDemand                , &
-               piColNonFloodRiceDecompAW => PondedAg%iColNonFloodRiceDecompAW    , &
-               pPondDepths               => PondedAg%PondDepthFile%rValues       , &
-               pOperationFlows           => PondedAg%OperationFlowsFile%rValues  )
-               
-      !Initialize
-      pCrops%DemandRaw  = 0.0  
-      pCrops%Demand     = 0.0
-    
-      DO indxElem=1,AppGrid%NElements
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(AppGrid,lLakeElem,SoilsData,ETData,Precip,GenericMoisture,PondedAg,DeltaT, &
+    !$OMP                                  IrigPeriod,lReadAgWaterDemand,SpecifiedDemand,HydCondPonded) &
+    !$OMP          NUM_THREADS(OMP_GET_MAX_THREADS()-1)
+    !$OMP DO SCHEDULE(DYNAMIC,iChunk)
+    DO indxElem=1,AppGrid%NElements
+        PondedAg%Crops(:,indxElem)%DemandRaw = 0.0  
+        PondedAg%Crops(:,indxElem)%Demand    = 0.0
         IF (lLakeElem(indxElem)) CYCLE
         TotalPorosity = SoilsData(indxElem)%TotalPorosity
         FieldCapacity = SoilsData(indxElem)%FieldCapacity
-        ETc           = ETData%GetValues(pCrops(:,indxElem)%iColETc) * DeltaT
+        ETc           = ETData%GetValues(PondedAg%Crops(:,indxElem)%iColETc) * DeltaT
         GMElem        = GenericMoisture(1,indxElem) * DeltaT
         PrecipD       = Precip(indxElem) * DeltaT
-        DO indxCrop=1,NPondedCrops
-          ASSOCIATE (pCrop => pCrops(indxCrop,indxElem))
-          
+        DO indxCrop=1,f_iNPondedCrops
+            pCrop => PondedAg%Crops(indxCrop,indxElem)
+            
             !Cycle if Area is zero
             Area  = pCrop%Area
             IF (Area .EQ. 0.0) CYCLE
           
             !Cycle if demand is specified 
             IF (lReadAgWaterDemand) THEN
-              IF (piColAgDemand(indxCrop,indxElem) .GT. 0) THEN
-                pCrop%DemandRaw = SpecifiedDemand(piColAgDemand(indxCrop,indxElem))
-                pCrop%Demand    = pCrop%DemandRaw
-                CYCLE
-              END IF
+                IF (PondedAg%iColAgDemand(indxCrop,indxElem) .GT. 0) THEN
+                    pCrop%DemandRaw = SpecifiedDemand(PondedAg%iColAgDemand(indxCrop,indxElem))
+                    pCrop%Demand    = pCrop%DemandRaw
+                    CYCLE
+                END IF
             END IF
             
             !If it is non-flooded rice decomp and it is decomp time, specify demand and cycle
-            IF (indxCrop .EQ. indxRice_NonFloodDecomp) THEN
-              NonFloodRiceDecompAW = pOperationFlows(piColNonFloodRiceDecompAW(indxElem))
-              IF (NonFloodRiceDecompAW .GT. 0.0) THEN
-                pCrop%Demand = NonFloodRiceDecompAW
-                CYCLE
-              END IF
+            IF (indxCrop .EQ. f_iindxRice_NonFloodDecomp) THEN
+                NonFloodRiceDecompAW = PondedAg%OperationFlowsFile%rValues(PondedAg%iColNonFloodRiceDecompAW(indxElem))
+                IF (NonFloodRiceDecompAW .GT. 0.0) THEN
+                    pCrop%Demand = NonFloodRiceDecompAW
+                    CYCLE
+                END IF
             END IF
             
             !Cycle if it is not an irrigation period
-            IF (IrigPeriod(pCrop%iColIrigPeriod) .EQ. NoIrigPeriod) CYCLE
+            IF (IrigPeriod(pCrop%iColIrigPeriod) .EQ. f_iNoIrigPeriod) CYCLE
 
             !Initialize
-            RootDepth         = pRootDepth(indxCrop)
-            PondDepth         = pPondDepths(pCrop%iColPondDepth)
+            RootDepth         = PondedAg%RootDepth(indxCrop)
+            PondDepth         = PondedAg%PondDepthFile%rValues(pCrop%iColPondDepth)
+            ReturnFlow        = PondedAg%OperationFlowsFile%rValues(pCrop%iColReturn) * DeltaT
+            Reuse             = PondedAg%OperationFlowsFile%rValues(pCrop%iColReuse) * DeltaT
             TotalPorosityCrop = TotalPorosity * RootDepth
             FieldCapacityCrop = FieldCapacity * RootDepth
             GM                = GMElem * RootDepth
-            SoilM             = pCrop%SoilM_Precip + pCrop%SoilM_AW + pCrop%SoilM_Oth
+            SoilM             = pCrop%SoilM_Precip_P + pCrop%SoilM_AW_P + pCrop%SoilM_Oth_P
 
             !Compute demand
             CALL PondedCropDemand(PrecipD                                    ,  &
                                   pCrop%SMax                                 ,  &
                                   GM                                         ,  &
-                                  pOperationFlows(pCrop%iColReturn) * DeltaT ,  &
-                                  pOperationFlows(pCrop%iColReuse) * DeltaT  ,  &
+                                  ReturnFlow                                 ,  &
+                                  Reuse                                      ,  &
                                   PondDepth                                  ,  &
                                   ETc(indxCrop)                              ,  &
                                   HydCondPonded(indxElem)                    ,  &
@@ -1187,15 +1356,12 @@ CONTAINS
             !Convert demand related data to volumetric rate and store in persistent arrays
             pCrop%DemandRaw = pCrop%DemandRaw / DeltaT * Area
             pCrop%Demand    = pCrop%Demand    / DeltaT * Area
+        END DO
+    END DO
+    !$OMP END DO
+    !$OMP END PARALLEL
 
-          END ASSOCIATE 
-          
-        END DO      
-      END DO
-      
-    END ASSOCIATE
-
-  END SUBROUTINE PondedAgLandUse_ComputeWaterDemand
+  END SUBROUTINE ComputeWaterDemand
 
 
 
@@ -1214,14 +1380,14 @@ CONTAINS
   ! --- CONVERT SOIL INITIAL MOISTURE CONTENTS TO DEPTHS
   ! ---  Note: Called only once at the beginning of simulation
   ! -------------------------------------------------------------
-  SUBROUTINE PondedAgLandUse_SoilMContent_To_Depth(NElements,TotalPorosity,PondedAgLand)
-    INTEGER,INTENT(IN)         :: NElements
-    REAL(8),INTENT(IN)         :: TotalPorosity(:)
-    TYPE(PondedAgDatabaseType) :: PondedAgLand
+  SUBROUTINE SoilMContent_To_Depth(PondedAgLand,NElements,TotalPorosity)
+    CLASS(PondedAgDatabaseType) :: PondedAgLand
+    INTEGER,INTENT(IN)          :: NElements
+    REAL(8),INTENT(IN)          :: TotalPorosity(:)
     
     !Local variables
     INTEGER :: indxElem,indxCrop
-    REAL(8) :: RootDepth(NPondedCrops),TP,SoilM,rValue(3)
+    REAL(8) :: RootDepth(f_iNPondedCrops),TP,SoilM,rValue(3)
     
     !Return if rice/refuge is not modeled
     IF (.NOT. ALLOCATED(PondedAgLand%Crops)) RETURN
@@ -1232,7 +1398,7 @@ CONTAINS
     !Convert contents to depths, find initial ponding depth and equate SoilM_P to SoilM
     DO indxElem=1,NElements
       TP = TotalPorosity(indxElem) 
-      DO indxCrop=1,NPondedCrops
+      DO indxCrop=1,f_iNPondedCrops
         ASSOCIATE (pCrop => PondedAgLand%Crops(indxCrop,indxElem))
           SoilM              = pCrop%SoilM_Precip + pCrop%SoilM_AW + pCrop%SoilM_Oth
           pCrop%PondDepth    = MAX((SoilM-TP) * RootDepth(indxCrop)  ,   0.0                      )
@@ -1252,18 +1418,82 @@ CONTAINS
     PondedAgLand%Crops%SoilM_AW_P     = PondedAgLand%Crops%SoilM_AW
     PondedAgLand%Crops%SoilM_Oth_P    = PondedAgLand%Crops%SoilM_Oth
     
-  END SUBROUTINE PondedAgLandUse_SoilMContent_To_Depth
+  END SUBROUTINE SoilMContent_To_Depth
   
   
   ! -------------------------------------------------------------
   ! --- ADVANCE AREAS IN TIME
   ! -------------------------------------------------------------
-  SUBROUTINE PondedAgLandUse_AdvanceAreas(PondedAgLand) 
-    TYPE(PondedAgDatabaseType) :: PondedAgLand
+  SUBROUTINE AdvanceAreas(PondedAgLand) 
+    CLASS(PondedAgDatabaseType) :: PondedAgLand
     
     PondedAgLand%Crops%Area_P = PondedAgLand%Crops%Area
     
-  END SUBROUTINE PondedAgLandUse_AdvanceAreas
+  END SUBROUTINE AdvanceAreas
   
+  
+  ! -------------------------------------------------------------
+  ! --- COMPARE SPECIFIED AG DEMAND TO AREAS
+  ! -------------------------------------------------------------
+  SUBROUTINE CheckSpecifiedDemandAndArea(PondedAgLand,iElemIDs,rSpecifiedDemand,iStat)
+    CLASS(PondedAgDatabaseType),INTENT(IN) :: PondedAgLand
+    INTEGER,INTENT(IN)                     :: iElemIDs(:)
+    REAL(8),INTENT(IN)                     :: rSpecifiedDemand(:)
+    INTEGER,INTENT(OUT)                    :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+27) :: ThisProcedure = ModName // 'CheckSpecifiedDemandAndArea'
+    INTEGER                      :: indxElem,indxCrop,iCol
+    
+    !Initialize
+    iStat = 0
+    
+    !Compare
+    DO indxElem=1,SIZE(PondedAgLand%Crops,DIM=2)
+        DO indxCrop=1,PondedAgLand%NCrops
+            iCol = PondedAgLand%iColAgDemand(indxCrop,indxElem)
+            IF (iCol .GT. 0) THEN
+                IF (rSpecifiedDemand(iCol) .GT. 0.0) THEN
+                    IF (PondedAgLand%Crops(indxCrop,indxElem)%Area .EQ. 0.0) THEN
+                        MessageArray(1) = 'Specified water demand for crop ' // TRIM(PondedAgLand%CropCodes(indxCrop)) // ' at element ' // TRIM(IntToText(iElemIDs(indxElem))) // ' is greater '
+                        MessageArray(2) = 'than zero when crop area is zero.'
+                        MessageArray(3) = '(This may be due to the element being specified as a lake element)'
+                        CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
+                        iStat = -1
+                        RETURN
+                    END IF
+                END IF
+            END IF
+        END DO
+    END DO
+    
+  END SUBROUTINE CheckSpecifiedDemandAndArea
+  
+  
+  ! -------------------------------------------------------------
+  ! --- REWIND TIMESERIES INPUT FILES TO A SPECIDED TIME STAMP
+  ! -------------------------------------------------------------
+  SUBROUTINE RewindTSInputFilesToTimeStamp(PondedAgLand,iElemIDs,rElemAreas,TimeStep,iStat)
+    CLASS(PondedAgDatabaseType)   :: PondedAgLand
+    INTEGER,INTENT(IN)            :: iElemIDs(:)
+    REAL(8),INTENT(IN)            :: rElemAreas(:)
+    TYPE(TimeStepType),INTENT(IN) :: TimeStep 
+    INTEGER,INTENT(OUT)           :: iStat
+    
+    !Local variables
+    INTEGER :: iFileReadCode
+    
+    CALL PondedAgLand%LandUseDataFile%File%RewindFile_To_BeginningOfTSData(iStat)                         ;  IF (iStat .NE. 0) RETURN
+    CALL PondedAgLand%LandUseDataFile%ReadTSData('Ponded crop areas',TimeStep,rElemAreas,iElemIDs,iStat)  ;  IF (iStat .NE. 0) RETURN
 
+    CALL PondedAgLand%PondDepthFile%File%RewindFile_To_BeginningOfTSData(iStat)                                     ;  IF (iStat .NE. 0) RETURN
+    CALL ReadTimeSeriesData(TimeStep,'Rice/refuge pond depths data',PondedAgLand%PondDepthFile,iFileReadCode,iStat)  ;  IF (iStat .NE. 0) RETURN
+    IF (iFileReadCode .EQ. 0) PondedAgLand%PondDepthFile%rValues = PondedAgLand%PondDepthFile%rValues * PondedAgLand%PondDepthFactor
+
+    CALL PondedAgLand%OperationFlowsFile%File%RewindFile_To_BeginningOfTSData(iStat)                                               ;  IF (iStat .NE. 0) RETURN
+    CALL ReadTimeSeriesData(TimeStep,'Rice/refuge pond operation flows data',PondedAgLand%OperationFlowsFile,iFileReadCode,iStat)  ;  IF (iStat .NE. 0) RETURN 
+    IF (iFileReadCode .EQ. 0) PondedAgLand%OperationFlowsFile%rValues = PondedAgLand%OperationFlowsFile%rValues * PondedAgLand%OperationFlowsFactor
+    
+  END SUBROUTINE RewindTSInputFilesToTimeStamp
+  
 END MODULE

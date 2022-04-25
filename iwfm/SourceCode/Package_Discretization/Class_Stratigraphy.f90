@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,13 +21,15 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_Stratigraphy
-  USE MessageLogger    , ONLY: SetLastMessage  , &
-                               EchoProgress    , &
-                               MessageArray    , &
-                               iFatal
-  USE IOInterface      
-  USE GeneralUtilities , ONLY: IntToText
-  USE Class_AppGrid    , ONLY: AppGridType     
+  USE MessageLogger    , ONLY: SetLastMessage      , &
+                               EchoProgress        , &
+                               MessageArray        , &
+                               f_iFatal              
+  USE IOInterface                                  
+  USE GeneralUtilities , ONLY: IntToText           , &
+                               ConvertID_To_Index
+  USE Class_AppGrid    , ONLY: AppGridType         
+                               
   IMPLICIT NONE
 
 
@@ -71,6 +73,10 @@ MODULE Class_Stratigraphy
     PROCEDURE,PASS :: GetTopActiveLayer          
     PROCEDURE,PASS :: GetLayerNumberForElevation 
     PROCEDURE,PASS :: GetNLayers
+    PROCEDURE,PASS :: GetGSElev
+    PROCEDURE,PASS :: GetAquiferTopElev
+    PROCEDURE,PASS :: GetAquiferBottomElev
+    PROCEDURE,PASS :: GetStratigraphy_AtXYCoordinate
     PROCEDURE,PASS :: WritePreProcessedData      
     GENERIC        :: New        => ReadStratigraphyData           , &
                                     ReadProcessedStratigraphyData  , &
@@ -127,7 +133,7 @@ CONTAINS
               Stratigraphy%BottomElev(NNodes,NLayers) , &
               STAT = ErrorCode                        )
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for stratigraphy data!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for stratigraphy data!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -189,27 +195,28 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ DATA FROM PRE-PROCESSOR FILE
   ! -------------------------------------------------------------
-  SUBROUTINE ReadStratigraphyData(Stratigraphy,NNodes,FileName,iStat) 
+  SUBROUTINE ReadStratigraphyData(Stratigraphy,NNodes,NodeIDs,FileName,iStat) 
     CLASS(StratigraphyType),INTENT(OUT) :: Stratigraphy
-    INTEGER,INTENT(IN)                  :: NNodes
+    INTEGER,INTENT(IN)                  :: NNodes,NodeIDs(NNodes)
     CHARACTER(LEN=*),INTENT(IN)         :: FileName
     INTEGER,INTENT(OUT)                 :: iStat
 
     !Local variables
-    CHARACTER(LEN=ModNameLen+20) :: ThisProcedure=ModName//'ReadStratigraphyData'
+    CHARACTER(LEN=ModNameLen+20) :: ThisProcedure = ModName // 'ReadStratigraphyData'
     TYPE(GenericFileType)        :: StratigraphyFile
-    INTEGER                      :: indxNode,ID,indxLayer,indxNL,NLayers,ErrorCode,TopActiveLayer(NNodes)
+    INTEGER                      :: indxNode,ID,indxLayer,NLayers,ErrorCode,TopActiveLayer(NNodes),index
     REAL(8)                      :: Factor,GSElev(NNodes),Elevation
+    LOGICAL                      :: lProcessed(NNodes)
     REAL(8),POINTER              :: pTopElev,pBottomElev
-    REAL(8),TARGET,ALLOCATABLE   :: Dummy2DRealArray(:,:),W(:),TopElev(:,:),BottomElev(:,:)
+    REAL(8),TARGET,ALLOCATABLE   :: W(:),TopElev(:,:),BottomElev(:,:),rDummyArray(:)
     LOGICAL,ALLOCATABLE          :: ActiveNode(:,:)
     
-    !Inituialize
+    !Initialize
     iStat = 0
 
     !Make sure number of nodes is non-zero
     IF (NNodes .LE. 0) THEN
-        CALL SetLastMessage('Application grid needs to be defined before reading stratigraphy data!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Application grid needs to be defined before reading stratigraphy data!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -226,60 +233,80 @@ CONTAINS
     CALL StratigraphyFile%ReadData(Factor,iStat)   ;  IF (iStat .EQ. -1) RETURN 
 
     !Allocate memory
-    ALLOCATE (TopElev(NNodes,NLayers)              , &
-              BottomElev(NNodes,NLayers)           , &
-              ActiveNode(NNodes,NLayers)           , &
-              Dummy2DRealArray(NNodes,2+2*NLayers) , &
-              W(2*NLayers)                         , &
-              STAT=ErrorCode)
+    ALLOCATE (TopElev(NNodes,NLayers)    , &
+              BottomElev(NNodes,NLayers) , &
+              ActiveNode(NNodes,NLayers) , &
+              rDummyArray(2+2*NLayers)   , &
+              W(2*NLayers)               , &
+              STAT=ErrorCode             )
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory to read stratigraphy data!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory to read stratigraphy data!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
    
-    !Read layer thickness, etc
-    CALL StratigraphyFile%ReadData(Dummy2DRealArray,iStat)  ;  IF (iStat .EQ. -1) RETURN 
-    
     !Construct stratigraphy
+    lProcessed     = .FALSE.
     TopActiveLayer = -1
     DO indxNode=1,NNodes
-      ID               =INT(Dummy2DRealArray(indxNode,1))
-      GSElev(indxNode) =    Dummy2DRealArray(indxNode,2)*Factor
-      W                =    Dummy2DRealArray(indxNode,3:)*Factor
-      IF (ID .NE. indxNode) THEN
-        MessageArray(1)='The stratigraphy data should be entered sequentially!'
-        MessageArray(2)='Node number expected = '//TRIM(IntToText(indxNode))
-        MessageArray(3)='Node number entered  = '//TRIM(IntToText(ID))
-        CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-        iStat = -1
-        RETURN
-      END IF
-      Elevation        = GSElev(indxNode)
-      DO indxLayer = 1,NLayers
-        pTopElev     => TopElev(indxNode,indxLayer)
-        pBottomElev  => BottomElev(indxNode,indxLayer)
-        indxNL       =  (indxLayer-1)*NNodes+indxNode
-        Elevation    =  Elevation - W((indxLayer-1)*2+1)
-        pTopElev     =  Elevation
-        Elevation    =  Elevation - W((indxLayer-1)*2+2)
-        pBottomElev  =  Elevation
-        !Error if a negative aquifer thickness is supplied
-        IF (pTopElev .LT. pBottomElev) THEN 
-          MessageArray(1)='Aquifer thickness cannot be less than zero!'
-          MessageArray(2)=                    'Node               = '//TRIM(IntToText(indxNode))
-          WRITE (MessageArray(3),'(A,F10.2)') 'Specified thickness= ',W((indxLayer-1)*2+2)
-          CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-          iStat = -1
-          RETURN
+        !Read data for the node
+        CALL StratigraphyFile%ReadData(rDummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        
+        !Check that node ID is legit
+        ID = INT(rDummyArray(1)) 
+        CALL ConvertID_To_Index(ID,NodeIDs,index)
+        IF (index .EQ. 0) THEN
+            CALL SetLastMessage('Node ID '//TRIM(IntToText(ID))//' listed for stratigraphy data is not in the model!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
         END IF
-        !Top active layer
-        IF (pTopElev.GT.pBottomElev .AND. TopActiveLayer(indxNode).EQ.-1) TopActiveLayer(indxNode) = indxLayer
-        !Active node indicator
-        ActiveNode(indxNode,indxLayer) = .TRUE.  
-        IF (pTopElev .EQ. pBottomElev) ActiveNode(indxNode,indxLayer) = .FALSE.
-      END DO
+        
+        !Make sure same node is not listed more than once
+        IF (lProcessed(index)) THEN
+            CALL SetLastMessage('Node ID '//TRIM(IntToText(ID))//' is listed more than once for stratigraphy data!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        
+        !Process data
+        lProcessed(index) = .TRUE.
+        GSElev(index)     = rDummyArray(2)*Factor
+        W                 = rDummyArray(3:)*Factor
+        Elevation         = GSElev(index)
+        DO indxLayer = 1,NLayers
+            pTopElev     => TopElev(index,indxLayer)
+            pBottomElev  => BottomElev(index,indxLayer)
+            Elevation    =  Elevation - W((indxLayer-1)*2+1)
+            pTopElev     =  Elevation
+            Elevation    =  Elevation - W((indxLayer-1)*2+2)
+            pBottomElev  =  Elevation
+            !Error if a negative aquifer thickness is supplied
+            IF (pTopElev .LT. pBottomElev) THEN 
+                MessageArray(1) ='Aquifer thickness cannot be less than zero!'
+                MessageArray(2) =                   'Node               = '//TRIM(IntToText(ID))
+                WRITE (MessageArray(3),'(A,F10.2)') 'Specified thickness= ',W((indxLayer-1)*2+2)
+                CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            !Top active layer
+            IF (pTopElev.GT.pBottomElev .AND. TopActiveLayer(index).EQ.-1) TopActiveLayer(index) = indxLayer
+            !Active node indicator
+            ActiveNode(index,indxLayer) = .TRUE.  
+            IF (pTopElev .EQ. pBottomElev) ActiveNode(index,indxLayer) = .FALSE.
+        END DO
     END DO
+    
+    !Make sure all nodes are processed
+    DO indxNode=1,NNodes
+        IF (.NOT. lProcessed(indxNode)) THEN
+            CALL SetLastMessage('Stratigraphy is not defined at node '//TRIM(IntToText(NodeIDs(indxNode)))//'!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+    END DO
+    
+    !Instantiate stratigraphy
     CALL Stratigraphy%New(NNodes,NLayers,TopActiveLayer,ActiveNode,GSElev,TopElev,BottomElev,iStat)
     IF (iStat .EQ. -1) RETURN
 
@@ -287,7 +314,7 @@ CONTAINS
     CALL StratigraphyFile%Kill()
     
     !Free memory
-    DEALLOCATE (ActiveNode , TopElev , BottomElev , Dummy2DRealArray , W , STAT=ErrorCode)
+    DEALLOCATE (ActiveNode , TopElev , BottomElev , rDummyArray , W , STAT=ErrorCode)
 
   END SUBROUTINE ReadStratigraphyData
 
@@ -313,7 +340,7 @@ CONTAINS
 
     !Check if number of nodes in the application grid is specified
     IF (NNodes .LE. 0) THEN
-        CALL SetLastMessage('Application grid needs to be set before reading stratigraphy data!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Application grid needs to be set before reading stratigraphy data!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -328,7 +355,7 @@ CONTAINS
               BottomElev(NNodes,NLayers)    , &
               STAT=ErrorCode                )
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for stratigraphy data when reading from pre-processor binary file!',iFatal,ThisProcedure)  
+        CALL SetLastMessage('Error in allocating memory for stratigraphy data when reading from pre-processor binary file!',f_iFatal,ThisProcedure)  
         iStat = -1
         RETURN
     END IF
@@ -570,4 +597,89 @@ CONTAINS
   END FUNCTION GetLayerNumberForElevation
 
 
+  ! -------------------------------------------------------------
+  ! --- GET GROUND SURFACE ELEVATIONS
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetGSElev(Stratigraphy,rGSElev)
+    CLASS(StratigraphyType),INTENT(IN) :: Stratigraphy
+    REAL(8),INTENT(OUT)                :: rGSElev(:)
+    
+    rGSElev = Stratigraphy%GSElev
+    
+  END SUBROUTINE GetGSElev
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET ELEVATIONS OF AQUIFER TOPS 
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetAquiferTopElev(Stratigraphy,rTopElev)
+    CLASS(StratigraphyType),INTENT(IN) :: Stratigraphy
+    REAL(8),INTENT(OUT)                :: rTopElev(:,:)
+    
+    rTopElev = Stratigraphy%TopElev
+    
+  END SUBROUTINE GetAquiferTopElev
+
+
+  ! -------------------------------------------------------------
+  ! --- GET ELEVATIONS OF AQUIFER BOTTOMS 
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetAquiferBottomElev(Stratigraphy,rBottomElev)
+    CLASS(StratigraphyType),INTENT(IN) :: Stratigraphy
+    REAL(8),INTENT(OUT)                :: rBottomElev(:,:)
+    
+    rBottomElev = Stratigraphy%BottomElev
+    
+  END SUBROUTINE GetAquiferBottomElev
+
+  
+  ! -------------------------------------------------------------
+  ! --- GET STRATIGRAPHY AT X-Y COORDINATE
+  ! -------------------------------------------------------------
+  SUBROUTINE GetStratigraphy_AtXYCoordinate(Stratigraphy,AppGrid,rX,rY,rGSElev,rTopElevs,rBottomElevs,iStat)
+    CLASS(StratigraphyType),INTENT(IN) :: Stratigraphy
+    TYPE(AppGridType),INTENT(IN)       :: AppGrid 
+    REAL(8),INTENT(IN)                 :: rX,rY
+    REAL(8),INTENT(OUT)                :: rGSElev,rTopElevs(:),rBottomElevs(:)
+    INTEGER,INTENT(OUT)                :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+30),PARAMETER :: ThisProcedure = ModName // 'GetStratigraphy_AtXYCoordinate'
+    INTEGER                                :: iElem,indxNode,indxLayer,iNode
+    REAL(8)                                :: rFactor
+    INTEGER,ALLOCATABLE                    :: iNodes(:)
+    REAL(8),ALLOCATABLE                    :: rFactors(:)
+    
+    !Initialize
+    iStat        = 0
+    rGSElev      = 0.0
+    rTopElevs    = 0.0
+    rBottomElevs = 0.0
+    
+    !Get interpolation factors
+    CALL AppGrid%FEInterpolate(rX,rY,iElem,iNodes,rFactors)
+    
+    !Make sure the coordinate was located within the model
+    IF (iElem .EQ. 0) THEN
+        MessageArray(1) = 'Location described by a coordinate cannot be located in the model area!'
+        WRITE (MessageArray(2),'(A,F11.2,A,F11.2,A)') 'X-Y coordinate: (' , rX , ',' , rY , ')'
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
+    
+    !Iterate over surrounding nodes
+    DO indxNode=1,SIZE(iNodes)
+        iNode   = iNodes(indxNode)
+        rFactor = rFactors(indxNode)
+        rGSElev = rGSElev + Stratigraphy%GSElev(iNode) * rFactor
+        DO indxLayer=1,Stratigraphy%NLayers
+            rTopElevs(indxLayer)    = rTopElevs(indxLayer) + Stratigraphy%TopElev(iNode,indxLayer) * rFactor
+            rBottomElevs(indxLayer) = rBottomElevs(indxLayer) + Stratigraphy%BottomElev(iNode,indxLayer) * rFactor
+        END DO
+    END DO
+    
+  END SUBROUTINE GetStratigraphy_AtXYCoordinate
+  
+  
 END MODULE

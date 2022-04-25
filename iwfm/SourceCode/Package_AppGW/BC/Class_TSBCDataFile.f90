@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -24,7 +24,7 @@ MODULE Class_TSBCDataFile
   USE GeneralUtilities    , ONLY: AllocArray
   USE TimeSeriesUtilities , ONLY: TimeStepType
   USE MessageLogger       , ONLY: SetLastMessage        , &
-                                  iFatal
+                                  f_iFatal
   USE Package_Misc        , ONLY: RealTSDataInFileType  , &
                                   ReadTSData
   IMPLICIT NONE
@@ -90,8 +90,8 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INSTANTIATE TIME SERIES BOUNDARY CONDITIONS DATA FILE
   ! -------------------------------------------------------------
-  SUBROUTINE TSBCDataFile_New(cFileName,iTSFlowBCColumns,TimeStep,TSBCDataFile,iStat)
-    CHARACTER(LEN=*),INTENT(IN)   :: cFileName
+  SUBROUTINE TSBCDataFile_New(cFileName,cWorkingDirectory,iTSFlowBCColumns,TimeStep,TSBCDataFile,iStat)
+    CHARACTER(LEN=*),INTENT(IN)   :: cFileName,cWorkingDirectory
     INTEGER,INTENT(IN)            :: iTSFlowBCColumns(:)
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
     TYPE(TSBCDataFileType)        :: TSBCDataFile
@@ -116,7 +116,7 @@ CONTAINS
         TSBCDataFile%NTSFlowBCColumns = SIZE(iTSFlowBCColumns)
         ALLOCATE (TSBCDataFile%iTSFlowBCColumns(SIZE(iTSFlowBCColumns)) , STAT=ErrorCode , ERRMSG=cErrorMsg)
         IF (ErrorCode .NE. 0) THEN
-            CALL SetLastMessage('Error in allocating memory for the time series flow boundary conditions.'//NEW_LINE('')//TRIM(cErrorMsg),iFatal,ThisProcedure)
+            CALL SetLastMessage('Error in allocating memory for the time series flow boundary conditions.'//NEW_LINE('')//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -132,9 +132,9 @@ CONTAINS
 
     !Open file
     IF (ALLOCATED(RateTypeDataArray)) THEN
-        CALL TSBCDataFile%Init(cFileName,'time-series boundary conditions data file',TimeStep%TrackTime,1,.TRUE.,rFactor,RateTypeDataArray,iStat=iStat)
+        CALL TSBCDataFile%Init(cFileName,cWorkingDirectory,'time-series boundary conditions data file',TimeStep%TrackTime,1,.TRUE.,rFactor,RateTypeDataArray,iStat=iStat)
     ELSE
-        CALL TSBCDataFile%Init(cFileName,'time-series boundary conditions data file',TimeStep%TrackTime,1,.TRUE.,rFactor,iStat=iStat)
+        CALL TSBCDataFile%Init(cFileName,cWorkingDirectory,'time-series boundary conditions data file',TimeStep%TrackTime,1,.TRUE.,rFactor,iStat=iStat)
     END IF
     IF (iStat .EQ. -1) RETURN
     TSBCDataFile%Factor_TSHeadBC = rFactor(1)

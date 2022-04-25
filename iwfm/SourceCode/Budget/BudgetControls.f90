@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,24 +21,33 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE BudgetControls
-  USE IWFM_Util_VersionF
-  USE MessageLogger        , ONLY: SetLastMessage , &
-                                   LogMessage     , &
-                                   LogLastMessage , &
-                                   PrintRunTime   , &
-                                   SCREEN         , &
-                                   MessageArray   , &
-                                   iWarn          , &
-                                   iFatal         , &
-                                   iMessage
+  USE IWFM_Util_VersionF   , ONLY: IWFM_Util
+  USE MessageLogger        , ONLY: SetLastMessage            , &
+                                   LogMessage                , &
+                                   LogLastMessage            , &
+                                   PrintRunTime              , &
+                                   MessageArray              , &
+                                   f_iWarn                   , &
+                                   f_iFatal                  , &
+                                   f_iMessage                , &
+                                   f_iSCREEN                 
   USE ProgramTimer         , ONLY: StopTimer      
-  USE GeneralUtilities
-  USE TimeSeriesUtilities
-  USE IOInterface
-  USE Opening_Screen
-  USE IWFM_Core_Version
-  USE Package_Budget
-  USE Package_Misc
+  USE GeneralUtilities     , ONLY: StripTextUntilCharacter   , &
+                                   CleanSpecialCharacters    , &
+                                   LocateInList              , &
+                                   ConvertID_To_Index        , &
+                                   AllocArray                , &
+                                   f_cLineFeed               
+  USE TimeSeriesUtilities  , ONLY: IsTimeStampValid          , &
+                                   StripTimeStamp
+  USE IOInterface          , ONLY: GenericFileType
+  USE Opening_Screen       , ONLY: Print_Screen              , &
+                                   Get_Main_File
+  USE IWFM_Core_Version    , ONLY: IWFM_Core
+  USE Package_Budget       , ONLY: BudgetType                , &
+                                   PrintIntervalType         , &
+                                   Package_Budget_GetVersion
+  USE Package_Misc         , ONLY: Package_Misc_GetVersion   
   IMPLICIT NONE
   
   
@@ -133,7 +142,7 @@ CONTAINS
       MainFileName = FileName
     ELSE
       CALL Print_screen('Program: Budget',IWFM_Core)
-      CALL Get_Main_File(MainFileName)
+      CALL Get_Main_File(' Enter the Name of the Main Input File >  ',MainFileName)
       IF (TRIM(MainFileName) .EQ. '-about') THEN
         CALL PrintVersionNumbers()
         STOP
@@ -175,7 +184,7 @@ CONTAINS
         IF (IsTimeStampValid(ALine)) THEN
           PrintInterval%PrintEndDateAndTime = StripTimeStamp(ALine)
         ELSE
-          CALL SetLastMessage('Budget output ending time should be in MM/DD/YYYY_hh:mm format!',iFatal,ThisProcedure)
+          CALL SetLastMessage('Budget output ending time should be in MM/DD/YYYY_hh:mm format!',f_iFatal,ThisProcedure)
           iStat = -1
           RETURN
         END IF
@@ -185,7 +194,7 @@ CONTAINS
         !Set the budget output beginning time
         READ (ALine,*,IOSTAT=ErrorCode) PrintInterval%PrintBeginTime
         IF (ErrorCode .NE. 0) THEN
-            CALL SetLastMessage('Error in reading the budget output beginning time!',iFatal,ThisProcedure) 
+            CALL SetLastMessage('Error in reading the budget output beginning time!',f_iFatal,ThisProcedure) 
             iStat = -1
             RETURN
         END IF
@@ -234,7 +243,7 @@ CONTAINS
     MessageArray(4) = '  Package_Misc.lib  : '//TRIM(Package_Misc_GetVersion())
     MessageArray(5) = '  Package_Budget.lib: '//TRIM(Package_Budget_GetVersion())
     
-    CALL LogMessage(MessageArray(1:5),iMessage,'',Destination=SCREEN)
+    CALL LogMessage(MessageArray(1:5),f_iMessage,'',Destination=f_iSCREEN)
   
   END SUBROUTINE PrintVersionNumbers
   
@@ -263,7 +272,7 @@ CONTAINS
     
     !If NBUdget is zero, message to the user and return
     IF (NBudget .EQ. 0) THEN
-        CALL LogMessage('Number of budget tables to be processed is set to zero!',iWarn,ThisProcedure)
+        CALL LogMessage('Number of budget tables to be processed is set to zero!',f_iWarn,ThisProcedure)
         RETURN
     END IF
     
@@ -302,7 +311,7 @@ CONTAINS
     IF (iStat .EQ. -1) RETURN
     
     !Inform user
-    CALL LogMessage('Processing '//TRIM(Budget%GetDescriptor())//'.',iMessage,'')
+    CALL LogMessage('Processing '//TRIM(Budget%GetDescriptor())//'.',f_iMessage,'')
     
     !Print locations
     IF (BudgetClass%iPrintLocs(1) .EQ. -1) THEN
@@ -315,7 +324,7 @@ CONTAINS
       iPrintLocations = BudgetClass%iPrintLocs
       !Make sure that all print location indices are in range
       IF (ANY(iPrintLocations .GT. Budget%GetNLocations()) .OR. ANY(iPrintLocations .LT. -1)) THEN
-          CALL SetLastMessage('One or more location indices for '//TRIM(Budget%GetDescriptor())//' printing is out of range!',iFatal,ThisProcedure) 
+          CALL SetLastMessage('One or more location indices for '//TRIM(Budget%GetDescriptor())//' printing is out of range!',f_iFatal,ThisProcedure) 
           iStat = -1
           RETURN
       END IF
@@ -340,7 +349,7 @@ CONTAINS
      IF (iStat .EQ. -1) THEN
          CALL LogLastMessage()
      ELSE
-         CALL LogMessage(LineFeed//'Program completed successfully.',iMessage,'')
+         CALL LogMessage(f_cLineFeed//'Program completed successfully.',f_iMessage,'')
      END IF
      CALL StopTimer()
      CALL PrintRunTime()

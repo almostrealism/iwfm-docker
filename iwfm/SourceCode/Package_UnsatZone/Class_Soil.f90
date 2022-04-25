@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -44,9 +44,9 @@ MODULE Class_Soil
   ! -------------------------------------------------------------
   ! --- METHODS TO REPRESENT UNSATURATED HYDRAULIC CONDUCTIVITY
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER :: Campbell            = 1                         , &
-                       vanGenuchten        = 2                         , &
-                       KunsatMethodList(2) = [Campbell , VanGenuchten]   
+  INTEGER,PARAMETER :: f_iCampbell            = 1                         , &
+                       f_ivanGenuchten        = 2                         , &
+                       f_iKunsatMethodList(2) = [f_iCampbell , f_ivanGenuchten]   
 
 
   ! -------------------------------------------------------------
@@ -54,9 +54,9 @@ MODULE Class_Soil
   ! -------------------------------------------------------------
   TYPE SoilType
     REAL(8) :: TotalPorosity = 0.0
-    REAL(8) :: Lambda        = 0.0           !Pore size distribution index
-    REAL(8) :: HydCond       = 0.0           !Saturated hydraulic conductivity
-    INTEGER :: KunsatMethod  = vanGenuchten  !Method to represent unsaturated hydraulic conductivity as a function of moisture content
+    REAL(8) :: Lambda        = 0.0              !Pore size distribution index
+    REAL(8) :: HydCond       = 0.0              !Saturated hydraulic conductivity
+    INTEGER :: KunsatMethod  = f_ivanGenuchten  !Method to represent unsaturated hydraulic conductivity as a function of moisture content
   END TYPE SoilType
   
 

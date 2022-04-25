@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,7 +21,9 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_AgLandUse_v50
-  USE TimeSeriesUtilities     , ONLY: TimeStepType
+  USE TimeSeriesUtilities     , ONLY: TimeStepType                            , &
+                                      IncrementTimeStamp                      , &
+                                      OPERATOR(.TSGT.)
   USE GeneralUtilities        , ONLY: StripTextUntilCharacter                 , &
                                       CleanSpecialCharacters                  , &
                                       IntTotext                               , &
@@ -35,9 +37,10 @@ MODULE Class_AgLandUse_v50
                                       SetLastMessage                          , &
                                       LogMessage                              , &
                                       MessageArray                            , &
-                                      iFatal                                  , &
-                                      iInfo
-  USE IOInterface             , ONLY: GenericFileType                         
+                                      f_iFatal                                , &
+                                      f_iInfo
+  USE IOInterface             , ONLY: GenericFileType                         , &
+                                      f_iUNKNOWN 
   USE Package_Discretization  , ONLY: AppGridType
   USE Class_GenericLandUse    , ONLY: GenericLandUseType
   USE Class_LandUseDataFile   , ONLY: LandUseDataFileType  
@@ -52,11 +55,11 @@ MODULE Class_AgLandUse_v50
   USE Class_BaseRootZone      , ONLY: TrackMoistureDueToSource
   USE Util_Package_RootZone   , ONLY: ReadRealData                            , &
                                       ReadPointerData                         , &
-                                      iDemandFromMoistAtBegin                 , &
-                                      iDemandFromMoistAtEnd                   , &
-                                      NoIrigPeriod                            , &
-                                      IrigPeriod                              , &
-                                      IrigPeriodFlags
+                                      f_iDemandFromMoistAtBegin               , &
+                                      f_iDemandFromMoistAtEnd                 , &
+                                      f_iNoIrigPeriod                         , &
+                                      f_iIrigPeriod                           , &
+                                      f_iIrigPeriodFlags
   USE Package_PrecipitationET , ONLY: ETType
   IMPLICIT NONE
 
@@ -101,7 +104,7 @@ MODULE Class_AgLandUse_v50
   TYPE AvgCropType
       REAL(8) :: RootDepth   = 0.0     
       REAL(8) :: ETc         = 0.0 
-      INTEGER :: IrigPeriod  = NoIrigPeriod
+      INTEGER :: IrigPeriod  = f_iNoIrigPeriod
       REAL(8) :: MinSoilM    = 0.0
       REAL(8) :: TargetSoilM = 0.0
   END TYPE AvgCropType
@@ -111,38 +114,39 @@ MODULE Class_AgLandUse_v50
   ! --- AG LAND DATABASE TYPE
   ! -------------------------------------------------------------
   TYPE AgDatabase_v50_Type
-      TYPE(AgType),ALLOCATABLE      :: AgData(:,:)                                       !Ag data for each (soil,subregion) combination
-      INTEGER                       :: NCrops                 = 0                        !Number of simulated crops
-      TYPE(AvgCropType),ALLOCATABLE :: AvgCrop(:)                                        !Average crop parameters at each (subregion)
-      INTEGER                       :: iDemandFromMoist       = iDemandFromMoistAtBegin  !Flag to check if demand is computed based on moisture at the beginning or at the end of timestep
-      REAL(8),ALLOCATABLE           :: RootDepth(:)                                      !Rooting depth for each ag crop
-      INTEGER,ALLOCATABLE           :: iColReturnFrac(:)                                 !Column number in the return flow fraction data file defined for each (subregion)
-      INTEGER,ALLOCATABLE           :: iColReuseFrac(:)                                  !Column number in the re-use fraction data file defined for each (subregion)
-      INTEGER,ALLOCATABLE           :: iColETcCrop(:,:)                                  !Column number in the ET data file for each (crop,subregion) combination; overrides the iColETc parameter in AgType data type
-      INTEGER,ALLOCATABLE           :: iColWaterDemand(:)                                !Column number in the ag water demand data file (if specified) defined for each (subregion)
-      INTEGER,ALLOCATABLE           :: iColIrigPeriod(:,:)                               !Column number in irrigation period data file for each (crop,subregion) combination
-      INTEGER,ALLOCATABLE           :: iColMinSoilM(:,:)                                 !Column number in min. soil moisture file for each (crop,subregion) combination
-      INTEGER,ALLOCATABLE           :: iColTargetSoilM(:,:)                              !Column number in irrgation target soil moisture file for each (crop,subregion) combination
-      REAL(8),ALLOCATABLE           :: ElementalArea(:)                                  !Ag area at each (element) at current time step
-      REAL(8),ALLOCATABLE           :: ElementalArea_P(:)                                !Ag area at each (element) at previous time step
-      REAL(8),ALLOCATABLE           :: SubregionalArea(:)                                !Total ag area for each (subregion)             
-      REAL(8),ALLOCATABLE           :: SubregionalCropAreaFrac(:,:)                      !Subregional crop area fractions for each (crop,subregion) combination
-      REAL(8),ALLOCATABLE           :: SubregionalDemand(:)                              !Ag water demand for each (subregion)
-      REAL(8),ALLOCATABLE           :: RegionETPot(:)                                    !Regional AG potential ET
-      TYPE(LandUseDataFileType)     :: SubregionCropAreaDataFile                         !Subregional crop area data file
-      TYPE(LandUseDataFileType)     :: ElemAgAreaDataFile                                !Elemental ag area data file
-      TYPE(RealTSDataInFileType)    :: WaterDemandFile                                   !Ag water demand data file (optional)
-      REAL(8)                       :: WaterDemandFactor      = 1.0                      !Conversion factor for specified ag water demand
-      TYPE(IntTSDataInFileType)     :: IrigPeriodFile                                    !Irrigation period file
-      TYPE(RealTSDataInFileType)    :: MinSoilMFile                                      !Irrigation trigger minimum soil moisture data file
-      TYPE(RealTSDataInFileType)    :: TargetSoilMFile                                   !Irrigation target soil moisture data file
-      TYPE(GenericFileType)         :: AvgCropOutput                                     !Output file for average crop characteristics
-      REAL(8)                       :: FactorAvgCropLen       = 1.0                      !Conversion factor for the length unit of average crop characteristics output
-      LOGICAL                       :: lWaterDemand_Defined   = .FALSE.                  !Flag to check if ag water demand is pre-defined or computed dynamically
-      LOGICAL                       :: lAvgCropOutput_Defined = .FALSE.                  !Flag to check if output file for average crop characteristics is specified
+      TYPE(AgType),ALLOCATABLE      :: AgData(:,:)                                         !Ag data for each (soil,subregion) combination
+      INTEGER                       :: NCrops                 = 0                          !Number of simulated crops
+      TYPE(AvgCropType),ALLOCATABLE :: AvgCrop(:)                                          !Average crop parameters at each (subregion)
+      INTEGER                       :: iDemandFromMoist       = f_iDemandFromMoistAtBegin  !Flag to check if demand is computed based on moisture at the beginning or at the end of timestep
+      REAL(8),ALLOCATABLE           :: RootDepth(:)                                        !Rooting depth for each ag crop
+      INTEGER,ALLOCATABLE           :: iColReturnFrac(:)                                   !Column number in the return flow fraction data file defined for each (subregion)
+      INTEGER,ALLOCATABLE           :: iColReuseFrac(:)                                    !Column number in the re-use fraction data file defined for each (subregion)
+      INTEGER,ALLOCATABLE           :: iColETcCrop(:,:)                                    !Column number in the ET data file for each (crop,subregion) combination; overrides the iColETc parameter in AgType data type
+      INTEGER,ALLOCATABLE           :: iColWaterDemand(:)                                  !Column number in the ag water demand data file (if specified) defined for each (subregion)
+      INTEGER,ALLOCATABLE           :: iColIrigPeriod(:,:)                                 !Column number in irrigation period data file for each (crop,subregion) combination
+      INTEGER,ALLOCATABLE           :: iColMinSoilM(:,:)                                   !Column number in min. soil moisture file for each (crop,subregion) combination
+      INTEGER,ALLOCATABLE           :: iColTargetSoilM(:,:)                                !Column number in irrgation target soil moisture file for each (crop,subregion) combination
+      REAL(8),ALLOCATABLE           :: ElementalArea(:)                                    !Ag area at each (element) at current time step
+      REAL(8),ALLOCATABLE           :: ElementalArea_P(:)                                  !Ag area at each (element) at previous time step
+      REAL(8),ALLOCATABLE           :: SubregionalArea(:)                                  !Total ag area for each (subregion)             
+      REAL(8),ALLOCATABLE           :: SubregionalCropAreaFrac(:,:)                        !Subregional crop area fractions for each (crop,subregion) combination
+      REAL(8),ALLOCATABLE           :: SubregionalDemand(:)                                !Ag water demand for each (subregion)
+      REAL(8),ALLOCATABLE           :: RegionETPot(:)                                      !Regional AG potential ET
+      TYPE(LandUseDataFileType)     :: SubregionCropAreaDataFile                           !Subregional crop area data file
+      TYPE(LandUseDataFileType)     :: ElemAgAreaDataFile                                  !Elemental ag area data file
+      TYPE(RealTSDataInFileType)    :: WaterDemandFile                                     !Ag water demand data file (optional)
+      REAL(8)                       :: WaterDemandFactor      = 1.0                        !Conversion factor for specified ag water demand
+      TYPE(IntTSDataInFileType)     :: IrigPeriodFile                                      !Irrigation period file
+      TYPE(RealTSDataInFileType)    :: MinSoilMFile                                        !Irrigation trigger minimum soil moisture data file
+      TYPE(RealTSDataInFileType)    :: TargetSoilMFile                                     !Irrigation target soil moisture data file
+      TYPE(GenericFileType)         :: AvgCropOutput                                       !Output file for average crop characteristics
+      REAL(8)                       :: FactorAvgCropLen       = 1.0                        !Conversion factor for the length unit of average crop characteristics output
+      LOGICAL                       :: lWaterDemand_Defined   = .FALSE.                    !Flag to check if ag water demand is pre-defined or computed dynamically
+      LOGICAL                       :: lAvgCropOutput_Defined = .FALSE.                    !Flag to check if output file for average crop characteristics is specified
   CONTAINS
       PROCEDURE,PASS :: New
       PROCEDURE,PASS :: Kill
+      PROCEDURE,PASS :: GetMaxAndMinNetReturnFlowFrac
       PROCEDURE,PASS :: SetAreas
       PROCEDURE,PASS :: ReadTSData
       PROCEDURE,PASS :: ReadRestartData
@@ -152,6 +156,7 @@ MODULE Class_AgLandUse_v50
       PROCEDURE,PASS :: AdvanceAreas
       PROCEDURE,PASS :: Simulate
       PROCEDURE,PASS :: ComputeWaterDemand
+      PROCEDURE,PASS :: RewindTSInputFilesToTimeStamp
   END TYPE AgDatabase_v50_Type
 
 
@@ -182,23 +187,24 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW AG LAND USE DATA
   ! -------------------------------------------------------------
-  SUBROUTINE New(AgLand,IsForInquiry,cFileName,cWorkingDirectory,AppGrid,FactCN,NSoils,TimeStep,iStat)
+  SUBROUTINE New(AgLand,IsForInquiry,cFileName,cWorkingDirectory,AppGrid,FactCN,NSoils,iSubregionIDs,TimeStep,iStat)
     CLASS(AgDatabase_v50_Type)    :: AgLand
     LOGICAL,INTENT(IN)            :: IsForInquiry
     CHARACTER(LEN=*),INTENT(IN)   :: cFileName,cWorkingDirectory
     TYPE(AppGridType),INTENT(IN)  :: AppGrid
     REAL(8),INTENT(IN)            :: FACTCN
-    INTEGER,INTENT(IN)            :: NSoils
+    INTEGER,INTENT(IN)            :: NSoils,iSubregionIDs(AppGrid%NSubregions)
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
     INTEGER,INTENT(OUT)           :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+3) :: ThisProcedure = ModName // 'New'
-    INTEGER                     :: NElements,NSubregions,ErrorCode,NCrops,indxCrop,indxRegion
+    INTEGER                     :: NElements,NSubregions,ErrorCode,NCrops,indxCrop,indxRegion,iRegion,ID
     INTEGER,ALLOCATABLE         :: DummyIntArray(:,:)
     REAL(8)                     :: Factor(1)
     REAL(8),ALLOCATABLE         :: DummyArray(:,:)
     CHARACTER                   :: ALine*1000,cUnitAvgCropOutput*10
+    LOGICAL                     :: lProcessed(AppGrid%NSubregions)
     TYPE(GenericFileType)       :: AgDataFile
     CHARACTER(:),ALLOCATABLE    :: cAbsPathFileName
     
@@ -238,7 +244,7 @@ CONTAINS
               AgLand%RegionETPot(NSubregions)                     , &
               STAT=ErrorCode                                      )
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for agricultural data!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for agricultural data!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -251,7 +257,7 @@ CONTAINS
     ALine = StripTextUntilCharacter(ALine,'/') 
     CALL CleanSpecialCharacters(ALine)
     CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-    CALL AgLand%SubregionCropAreaDataFile%New(cAbsPathFileName,'Subregional crop area file',NSubregions,NCrops,TimeStep%TrackTime,iStat)  
+    CALL AgLand%SubregionCropAreaDataFile%New(cAbsPathFileName,cWorkingDirectory,'Subregional crop area file',NSubregions,NCrops,TimeStep%TrackTime,iStat)  
     IF (iStat .EQ. -1) RETURN
     
     !Elemental ag area data file
@@ -259,7 +265,7 @@ CONTAINS
     ALine = StripTextUntilCharacter(ALine,'/') 
     CALL CleanSpecialCharacters(ALine)
     CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-    CALL AgLand%ElemAgAreaDataFile%New(cAbsPathFileName,'Elemental agricultural area file',NElements,1,TimeStep%TrackTime,iStat)  
+    CALL AgLand%ElemAgAreaDataFile%New(cAbsPathFileName,cWorkingDirectory,'Elemental agricultural area file',NElements,1,TimeStep%TrackTime,iStat)  
     IF (iStat .EQ. -1) RETURN
 
     !Average crop output file and related data
@@ -292,15 +298,33 @@ CONTAINS
     END DO
     
     !Read curve numbers
-    CALL ReadRealData(AgDataFile,NSubregions,NSoils+1,DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL ReadRealData(AgDataFile,'curve numbers for agricultural crops','subregions',NSubregions,NSoils+1,iSubregionIDs,DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    lProcessed = .FALSE.
     DO indxRegion=1,NSubregions
-        AgLand%AgData(:,indxRegion)%SMax = (1000.0/DummyArray(indxRegion,2:NSoils+1)-10.0) * FACTCN
+        iRegion = INT(DummyArray(indxRegion,1))
+        IF (lProcessed(iRegion)) THEN
+            ID = iSubregionIDs(iRegion)
+            CALL SetLastMessage('Curve numbers for agricultural crops at subregion '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iRegion)           = .TRUE.
+        AgLand%AgData(:,iRegion)%SMax = (1000.0/DummyArray(indxRegion,2:)-10.0) * FACTCN
     END DO
     
     !Read ETc column pointers
-    CALL ReadPointerData(AgDataFile,NSubregions,NCrops+1,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL ReadPointerData(AgDataFile,'evapotranspiration column pointers for agricultural crops','subregions',NSubregions,NCrops+1,iSubregionIDs,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    lProcessed = .FALSE.
     DO indxRegion=1,NSubregions
-        AgLand%iColETcCrop(:,indxRegion) = DummyIntArray(indxRegion,2:)
+        iRegion = DummyIntArray(indxRegion,1)
+        IF (lProcessed(iRegion)) THEN
+            ID = iSubregionIDs(iRegion)
+            CALL SetLastMessage('Evapotranspration column pointers for agricultural crops at subregion '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iRegion)           = .TRUE.
+        AgLand%iColETcCrop(:,iRegion) = DummyIntArray(indxRegion,2:)
     END DO
     
     !Irrigation period data
@@ -309,15 +333,24 @@ CONTAINS
     CALL CleanSpecialCharacters(ALine)
     ALine = ADJUSTL(ALine)
     IF (ALine .EQ. '') THEN
-        CALL SetLastMessage('Irrigation Period Data File in Agricultural Lands Main Data File must be specified!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Irrigation Period Data File in Agricultural Lands Main Data File must be specified!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
     CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-    CALL AgLand%IrigPeriodFile%Init(cAbsPathFileName,'agricultural crops irrigation period data file',TimeStep%TrackTime,BlocksToSkip=1,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL ReadPointerData(AgDataFile,NSubregions,NCrops+1,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL AgLand%IrigPeriodFile%Init(cAbsPathFileName,cWorkingDirectory,'agricultural crops irrigation period data file',TimeStep%TrackTime,BlocksToSkip=1,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL ReadPointerData(AgDataFile,'irrigation period column pointers for agricultural crops','subregions',NSubregions,NCrops+1,iSubregionIDs,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    lProcessed = .FALSE.
     DO indxRegion=1,NSubregions
-        AgLand%iColIrigPeriod(:,indxRegion) = DummyIntArray(indxRegion,2:)
+        iRegion = DummyIntArray(indxRegion,1)
+        IF (lProcessed(iRegion)) THEN
+            ID = iSubregionIDs(iRegion)
+            CALL SetLastMessage('Irrigation period column pointers for agricultural crops at subregion '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iRegion)              = .TRUE.
+        AgLand%iColIrigPeriod(:,iRegion) = DummyIntArray(indxRegion,2:)
     END DO
     CALL AgLand%IrigPeriodFile%CheckColNum('irrigation period data file',PACK(AgLand%iColIrigPeriod,.TRUE.),.TRUE.,iStat)  
     IF (iStat .EQ. -1) RETURN
@@ -328,15 +361,24 @@ CONTAINS
     CALL CleanSpecialCharacters(ALine)
     ALine = ADJUSTL(ALine)
     IF (ALine .EQ. '') THEN
-        CALL SetLastMessage('Minimum Soil Moisture Data File in Agricultural Lands Main Data File must be specified!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Minimum Soil Moisture Data File in Agricultural Lands Main Data File must be specified!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
     CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-    CALL AgLand%MinSoilMFile%Init(cAbsPathFileName,'agricultural crops minimum soil moisture data file',TimeStep%TrackTime,BlocksToSkip=1,lFactorDefined=.FALSE.,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL ReadPointerData(AgDataFile,NSubregions,NCrops+1,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL AgLand%MinSoilMFile%Init(cAbsPathFileName,cWorkingDirectory,'agricultural crops minimum soil moisture data file',TimeStep%TrackTime,BlocksToSkip=1,lFactorDefined=.FALSE.,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL ReadPointerData(AgDataFile,'minimum soil moisture column pointers for agricultural crops','subregions',NSubregions,NCrops+1,iSubregionIDs,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    lProcessed = .FALSE.
     DO indxRegion=1,NSubregions
-        AgLand%iColMinSoilM(:,indxRegion) = DummyIntArray(indxRegion,2:)
+        iRegion = DummyIntArray(indxRegion,1)
+        IF (lProcessed(iRegion)) THEN
+            ID = iSubregionIDs(iRegion)
+            CALL SetLastMessage('Irrigation period column pointers for agricultural crops at subregion '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iRegion)            = .TRUE.
+        AgLand%iColMinSoilM(:,iRegion) = DummyIntArray(indxRegion,2:)
     END DO
     CALL AgLand%MinSoilMFile%CheckColNum('minimum soil moisture data file',PACK(AgLand%iColMinSoilM,.TRUE.),.TRUE.,iStat)  
     IF (iStat .EQ. -1) RETURN
@@ -347,9 +389,20 @@ CONTAINS
     CALL CleanSpecialCharacters(ALine)
     IF (ALine .NE. '') THEN
         CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-        CALL AgLand%TargetSoilMFile%Init(cAbsPathFileName,'irrigation target soil moisture data file',TimeStep%TrackTime,BlocksToSkip=1,lFactorDefined=.FALSE.,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-        CALL ReadPointerData(AgDataFile,NSubregions,NCrops+1,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
-        AgLand%iColTargetSoilM = DummyIntArray(:,2:)
+        CALL AgLand%TargetSoilMFile%Init(cAbsPathFileName,cWorkingDirectory,'irrigation target soil moisture data file',TimeStep%TrackTime,BlocksToSkip=1,lFactorDefined=.FALSE.,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL ReadPointerData(AgDataFile,'irrigation target soil moisture column pointers for agricultural crops','subregions',NSubregions,NCrops+1,iSubregionIDs,DummyIntArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        lProcessed = .FALSE.
+        DO indxRegion=1,NSubregions
+            iRegion = DummyIntArray(indxRegion,1)
+            IF (lProcessed(iRegion)) THEN
+                ID = iSubregionIDs(iRegion)
+                CALL SetLastMessage('Irrigation target soil moisture pointers for agricultural crops at subregion '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            lProcessed(iRegion)               = .TRUE.
+            AgLand%iColTargetSoilM(:,iRegion) = DummyIntArray(indxRegion,2:)
+        END DO
         CALL AgLand%TargetSoilMFile%CheckColNum('irrigation target soil moisture data file',PACK(AgLand%iColTargetSoilM,.TRUE.),.TRUE.,iStat)  
         IF (iStat .EQ. -1) RETURN
     ELSE
@@ -367,43 +420,55 @@ CONTAINS
     CALL CleanSpecialCharacters(ALine)
     IF (ALine .NE. '') THEN
         CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-        CALL AgLand%WaterDemandFile%Init(cAbsPathFileName,'agricultural supply requirement data file',TimeStep%TrackTime,BlocksToSkip=1,lFactorDefined=.TRUE.,Factor=Factor,RateTypeData=[.TRUE.],iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL AgLand%WaterDemandFile%Init(cAbsPathFileName,cWorkingDirectory,'agricultural supply requirement data file',TimeStep%TrackTime,BlocksToSkip=1,lFactorDefined=.TRUE.,Factor=Factor,RateTypeData=[.TRUE.],iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
         AgLand%WaterDemandFactor    = Factor(1)
         AgLand%lWaterDemand_Defined = .TRUE.
+        ALLOCATE (AgLand%iColWaterDemand(NSubregions))
     END IF
     
     !Flag to see if moisture at the beginning or at the end of time step will be used to compute water demand
     CALL AgDataFile%ReadData(AgLand%iDemandFromMoist,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    IF (AgLand%iDemandFromMoist .NE. iDemandFromMoistAtBegin  .AND.  &
-        AgLand%iDemandFromMoist .NE. iDemandFromMoistAtEnd         ) THEN
+    IF (AgLand%iDemandFromMoist .NE. f_iDemandFromMoistAtBegin  .AND.  &
+        AgLand%iDemandFromMoist .NE. f_iDemandFromMoistAtEnd         ) THEN
         MessageArray(1) = 'Flag for soil moisture to be used in the computation of agricultural '
         MessageArray(2) = 'crop water demand and irrigation timing is not recognized!'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
         
     !Water supply requirement, return flow and reuse factor pointers
-    CALL ReadRealData(AgDataFile,NSubregions,4,DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    AgLand%iColReturnFrac = INT(DummyArray(:,3))
-    AgLand%iColReuseFrac  = INT(DummyArray(:,4))
+    CALL ReadRealData(AgDataFile,'water supply, return flow and re-use factors for agricultural crops','subregions',NSubregions,4,iSubregionIDs,DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    lProcessed = .FALSE.
+    DO indxRegion=1,NSubregions
+        iRegion = INT(DummyArray(indxRegion,1))
+        IF (lProcessed(iRegion)) THEN
+            ID = iSubregionIDs(iRegion)
+            CALL SetLastMessage('Water supply requirements, return flow and re-use fractions for agricultural crops at subregion '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iRegion)            = .TRUE.
+        AgLand%iColReturnFrac(iRegion) = INT(DummyArray(indxRegion,3))
+        AgLand%iColReuseFrac(iRegion)  = INT(DummyArray(indxRegion,4))
+        IF (AgLand%lWaterDemand_Defined) &
+            AgLand%iColWaterDemand(iRegion) = INT(DummyArray(indxRegion,2))
+    END DO
     IF (AgLand%lWaterDemand_Defined) THEN
-        ALLOCATE (AgLand%iColWaterDemand(NSubregions))
-        AgLand%iColWaterDemand = INT(DummyArray(:,2))
         CALL AgLand%WaterDemandFile%CheckColNum('agricultural water supply requirement data file',AgLand%iColWaterDemand,.FALSE.,iStat)
         IF (iStat .EQ. -1) RETURN
     END IF
     
     !Initial conditions
     !------------------
-    CALL ReadRealData(AgDataFile,NSubregions,2*NSoils+1,DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL ReadRealData(AgDataFile,'initial conditions for agricultural crops','subregions',NSubregions,2*NSoils+1,iSubregionIDs,DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
     
     !Make sure fractions due to precipitation are between 0 and 1
     IF (MINVAL(DummyArray(:,2::2)) .LT. 0.0   .OR.  &
         MAXVAL(DummyArray(:,2::2)) .GT. 1.0         ) THEN
         MessageArray(1) = 'Some fractions of initial soil moisture due to precipitation is less '
         MessageArray(2) = 'than 0.0 or greater than 1.0 for agricultural areas!'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)      
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)      
         iStat = -1
         RETURN
     END IF
@@ -413,19 +478,28 @@ CONTAINS
         MAXVAL(DummyArray(:,3::2)) .GT. 1.0          ) THEN
         MessageArray(1) = 'Some or all initial root zone moisture contents are less than'
         MessageArray(2) = '0.0 or greater than 1.0 for agricultrural areas!'
-        CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)      
+        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)      
         iStat = -1
         RETURN
     END IF
     
     !Store data in persistent arrays
-    DO indxRegion=1,NSubregions        
-        AgLand%AgData(:,indxRegion)%SoilM_Precip                = DummyArray(indxRegion,2::2) * DummyArray(indxRegion,3::2)
-        AgLand%AgData(:,indxRegion)%SoilM_AW                    = (1d0 - DummyArray(indxRegion,2::2)) * DummyArray(indxRegion,3::2)
-        AgLand%AgData(:,indxRegion)%SoilM_Precip_P              = AgLand%AgData(:,indxRegion)%SoilM_Precip 
-        AgLand%AgData(:,indxRegion)%SoilM_AW_P                  = AgLand%AgData(:,indxRegion)%SoilM_AW
-        AgLand%AgData(:,indxRegion)%SoilM_Precip_P_BeforeUpdate = AgLand%AgData(:,indxRegion)%SoilM_Precip 
-        AgLand%AgData(:,indxRegion)%SoilM_AW_P_BeforeUpdate     = AgLand%AgData(:,indxRegion)%SoilM_AW
+    lProcessed = .FALSE.
+    DO indxRegion=1,NSubregions
+        iRegion = INT(DummyArray(indxRegion,1))
+        IF (lProcessed(iRegion)) THEN
+            ID = iSubregionIDs(iRegion)
+            CALL SetLastMessage('Initial conditions for agricultural crops at subregion '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed(iRegion)                                  = .TRUE.
+        AgLand%AgData(:,iRegion)%SoilM_Precip                = DummyArray(indxRegion,2::2) * DummyArray(indxRegion,3::2)
+        AgLand%AgData(:,iRegion)%SoilM_AW                    = DummyArray(indxRegion,3::2) - AgLand%AgData(:,iRegion)%SoilM_Precip
+        AgLand%AgData(:,iRegion)%SoilM_Precip_P              = AgLand%AgData(:,iRegion)%SoilM_Precip 
+        AgLand%AgData(:,iRegion)%SoilM_AW_P                  = AgLand%AgData(:,iRegion)%SoilM_AW
+        AgLand%AgData(:,iRegion)%SoilM_Precip_P_BeforeUpdate = AgLand%AgData(:,iRegion)%SoilM_Precip 
+        AgLand%AgData(:,iRegion)%SoilM_AW_P_BeforeUpdate     = AgLand%AgData(:,iRegion)%SoilM_AW
     END DO
     
     !Close ag data file
@@ -497,6 +571,65 @@ CONTAINS
   
   
   
+  
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+! ***
+! *** GETTERS
+! ***
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+
+  ! -------------------------------------------------------------
+  ! --- GET MIN AND MAX NET RETURN FLOW FRACTIONS THROUGH THE ENTITE SIMULATION PERIOD
+  ! -------------------------------------------------------------
+  SUBROUTINE GetMaxAndMinNetReturnFlowFrac(AgLand,ReturnFracFile,ReuseFracFile,FirstTimeStep,rMaxFrac,rMinFrac,iStat)
+    CLASS(AgDatabase_v50_Type),INTENT(IN) :: AgLand
+    TYPE(RealTSDataInFileType)            :: ReturnFracFile,ReuseFracFile
+    TYPE(TimeStepType),INTENT(IN)         :: FirstTimeStep
+    REAL(8),INTENT(OUT)                   :: rMaxFrac,rMinFrac
+    INTEGER,INTENT(OUT)                   :: iStat
+    
+    !Local variables
+    TYPE(TimeStepType) :: TimeStep
+    INTEGER            :: FileReadCode_Return,FileReadCode_Reuse,indx
+    REAL(8)            :: rRT,rRU
+    
+    !Initialize
+    TimeStep = FirstTimeStep
+    rMaxFrac = 0.0
+    rMinFrac = 1.0
+    
+    !Loop through timesteps and read return flow fractions
+    DO
+        !Read data
+        CALL TSDataFile_ReadData(TimeStep,'Return flow fractions data',ReturnFracFile,FileReadCode_Return,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL TSDataFile_ReadData(TimeStep,'Reuse fractions data',ReuseFracFile,FileReadCode_Reuse,iStat)          ;  IF (iStat .EQ. -1) RETURN
+        
+        !If new data is read, find min and max
+        IF (FileReadCode_Return.EQ.0  .OR.  FileReadCode_Reuse.EQ.0) THEN
+            DO indx=1,SIZE(AgLand%iColReturnFrac)
+                rRT      = ReturnFracFile%rValues(AgLand%iColReturnFrac(indx))
+                rRU      = ReuseFracFile%rValues(AgLand%iColReuseFrac(indx))
+                rMaxFrac = MAX(rMaxFrac , rRT-rRU)
+                rMinFrac = MIN(rMinFrac , rRT-rRU)
+            END DO
+        END IF
+        
+        !Advance time
+        TimeStep%CurrentDateAndTime = IncrementTimeStamp(TimeStep%CurrentDateAndTime,TimeStep%DELTAT_InMinutes)
+        
+        !Exit if past the simulation end date
+        IF (TimeStep%CurrentDateAndTime .TSGT. TimeStep%EndDateAndTime) EXIT
+
+    END DO
+      
+  END SUBROUTINE GetMaxAndMinNetReturnFlowFrac
+  
+  
+
   
 ! ******************************************************************
 ! ******************************************************************
@@ -578,10 +711,10 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ TIME SERIES DATA FOR AG LANDS
   ! -------------------------------------------------------------
-  SUBROUTINE ReadTSData(AgLand,NSoils,ElemSoilTypes,SoilRegionArea,WiltingPoint,FieldCapacity,lLakeElem,ETData,TimeStep,AppGrid,RegionCropAreas,iStat)
+  SUBROUTINE ReadTSData(AgLand,NSoils,ElemSoilTypes,iSubregionIDs,rRegionAreas,SoilRegionArea,WiltingPoint,FieldCapacity,lLakeElem,ETData,TimeStep,AppGrid,RegionCropAreas,iStat)
     CLASS(AgDatabase_v50_Type)    :: AgLand
-    INTEGER,INTENT(IN)            :: NSoils,ElemSoilTypes(:)
-    REAL(8),INTENT(IN)            :: SoilRegionArea(:,:),WiltingPoint(:,:),FieldCapacity(:,:)
+    INTEGER,INTENT(IN)            :: NSoils,ElemSoilTypes(:),iSubregionIDs(:)
+    REAL(8),INTENT(IN)            :: rRegionAreas(:),SoilRegionArea(:,:),WiltingPoint(:,:),FieldCapacity(:,:)
     LOGICAL,INTENT(IN)            :: lLakeElem(:)
     TYPE(ETType),INTENT(IN)       :: ETData
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
@@ -602,7 +735,7 @@ CONTAINS
     CALL EchoProgress('Reading time series data for agricultural lands')
     
     !Elemental ag areas
-    CALL AgLand%ElemAgAreaDataFile%ReadTSData('Elemental agricultural areas',TimeStep,AppGrid%AppElement%Area,iStat)
+    CALL AgLand%ElemAgAreaDataFile%ReadTSData('Elemental agricultural areas',TimeStep,rRegionAreas,iSubregionIDs,iStat)
     IF (iStat .EQ. -1) RETURN
     IF (AgLand%ElemAgAreaDataFile%lUpdated) THEN
         ASSOCIATE (pArea     => AgLand%AgData%Area   , &
@@ -626,8 +759,8 @@ CONTAINS
     IF (iStat .EQ. -1) RETURN
     IF (AgLand%IrigPeriodFile%lUpdated) THEN
         DO indxCol=1,AgLand%IrigPeriodFile%iSize
-            IF (LocateInList(AgLand%IrigPeriodFile%iValues(indxCol) , IrigPeriodFlags) .EQ. 0) THEN
-                CALL SetLastMessage('One or more irrigtaion period flags are not recognized!',iFatal,ThisProcedure)
+            IF (LocateInList(AgLand%IrigPeriodFile%iValues(indxCol) , f_iIrigPeriodFlags) .EQ. 0) THEN
+                CALL SetLastMessage('One or more irrigation period flags are not recognized!',f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
@@ -655,8 +788,8 @@ CONTAINS
                     MinSoilM    = WP + rFrac * TAW
                     IF (TargetSoilM .LT. MinSoilM) THEN
                         MessageArray(1) = 'Irrigation target soil moisture for agricultural crop' // TRIM(IntToText(indxCrop)) // ' is less than minimum '
-                        MessageArray(2) = 'soil moisture at subregion ' // TRIM(IntToText(indxRegion)) // '!'
-                        CALL SetLastMessage(MessageArray(:2),iFatal,ThisProcedure)
+                        MessageArray(2) = 'soil moisture at subregion ' // TRIM(IntToText(iSubregionIDs(indxRegion))) // '!'
+                        CALL SetLastMessage(MessageArray(:2),f_iFatal,ThisProcedure)
                         iStat = -1
                         RETURN
                     END IF 
@@ -675,10 +808,10 @@ CONTAINS
                 DO indxCrop=1,AgLand%NCrops
                     rFrac = AgLand%MinSoilMFile%rValues(AgLand%iColMinSoilM(indxCrop,indxRegion))
                     IF (WP+rFrac*(FC-WP) .LT. 0.5d0*FC) THEN
-                        MessageArray(1) = 'Deficit irrigation is being simulated for crop ID '//TRIM(IntToText(indxCrop))//' at soil type '//TRIM(IntToText(indxSoil))//' in subregion '//TRIM(IntToText(indxRegion))//'!'
+                        MessageArray(1) = 'Deficit irrigation is being simulated for crop ID '//TRIM(IntToText(indxCrop))//' at soil type '//TRIM(IntToText(indxSoil))//' in subregion '//TRIM(IntToText(iSubregionIDs(indxRegion)))//'!'
                         WRITE (MessageArray(2),'(A,F6.3)') 'Irrigation trigger minimum moisture = ' , WP + rFrac*(FC-WP)
                         WRITE (MessageArray(3),'(A,F6.3)') 'Half of field capacity              = ' , 0.5D0 * FC
-                        CALL LogMessage(MessageArray(1:3),iInfo,ThisProcedure)
+                        CALL LogMessage(MessageArray(1:3),f_iInfo,ThisProcedure)
                     END IF
                 END DO
             END DO
@@ -695,7 +828,7 @@ CONTAINS
                 !Make sure that ag area is non-zero when there is non-zero demand
                 IF (AgLand%SubregionalDemand(indxRegion) .GT. 0.0) THEN
                     IF (AgLand%SubregionalArea(indxRegion) .EQ. 0.0) THEN
-                        CALL SetLastMessage('Agricultural water supply requirement at subregion '//TRIM(IntToText(indxRegion))//' is greater than zero when agricultural area is zero!',iFatal,ThisProcedure) 
+                        CALL SetLastMessage('Agricultural water supply requirement at subregion '//TRIM(IntToText(iSubregionIDs(indxRegion)))//' is greater than zero when agricultural area is zero!',f_iFatal,ThisProcedure) 
                         iStat = -1
                         RETURN
                     END IF
@@ -707,7 +840,7 @@ CONTAINS
     !Subregional crop areas
     IF (PRESENT(RegionCropAreas)) THEN
         !Read out the data in file so that the pointer will be positioned properly
-        CALL AgLand%SubregionCropAreaDataFile%ReadTSData('Subregional agricultural crop areas',TimeStep,AppGrid%AppSubregion%Area,iStat)
+        CALL AgLand%SubregionCropAreaDataFile%ReadTSData('Subregional agricultural crop areas',TimeStep,rRegionAreas,iSubregionIDs,iStat)
         IF (iStat .EQ. -1) RETURN
         !Compute subregional crop area fractions
         DO indxRegion=1,AppGrid%NSubregions
@@ -717,14 +850,14 @@ CONTAINS
            !Make sure crop fractions are non-zero if there is specified elemental ag 
            IF (SUM(AgLand%SubregionalCropAreaFrac(:,indxRegion)) .EQ. 0.0) THEN
                IF (AgLand%SubregionalArea(indxRegion) .GT. 0.0) THEN
-                   CALL SetLastMessage('Subregional crop areas cannot be all zero in subregion '//TRIM(IntToText(indxRegion))//' when elemental agricultural areas are non-zero!',iFatal,ThisProcedure)
+                   CALL SetLastMessage('Subregional crop areas cannot be all zero in subregion '//TRIM(IntToText(iSubregionIDs(indxRegion)))//' when elemental agricultural areas are non-zero!',f_iFatal,ThisProcedure)
                    iStat = -1
                    RETURN
                END IF
            END IF 
         END DO
     ELSE
-        CALL AgLand%SubregionCropAreaDataFile%ReadTSData('Subregional agricultural crop areas',TimeStep,AppGrid%AppSubregion%Area,iStat)
+        CALL AgLand%SubregionCropAreaDataFile%ReadTSData('Subregional agricultural crop areas',TimeStep,rRegionAreas,iSubregionIDs,iStat)
         IF (iStat .EQ. -1) RETURN
         IF (AgLand%SubregionCropAreaDataFile%lUpdated) THEN
             
@@ -736,7 +869,7 @@ CONTAINS
                !Make sure crop fractions are non-zero if there is specified elemental ag 
                IF (SUM(AgLand%SubregionalCropAreaFrac(:,indxRegion)) .EQ. 0.0) THEN
                    IF (AgLand%SubregionalArea(indxRegion) .GT. 0.0) THEN
-                       CALL SetLastMessage('Subregional crop areas cannot be all zero in subregion '//TRIM(IntToText(indxRegion))//' when elemental agricultural areas are non-zero!',iFatal,ThisProcedure)
+                       CALL SetLastMessage('Subregional crop areas cannot be all zero in subregion '//TRIM(IntToText(iSubregionIDs(indxRegion)))//' when elemental agricultural areas are non-zero!',f_iFatal,ThisProcedure)
                        iStat = -1
                        RETURN
                    END IF
@@ -854,8 +987,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- SIMULATE FLOW PROCESSES AT AG LANDS
   ! -------------------------------------------------------------
-  SUBROUTINE Simulate(AgLand,DeltaT,Precip,GenericMoisture,SubregionSoilsData,WaterSupply,ReuseFrac,ReturnFrac,SolverData,iStat)
+  SUBROUTINE Simulate(AgLand,iSubregionIDs,DeltaT,Precip,GenericMoisture,SubregionSoilsData,WaterSupply,ReuseFrac,ReturnFrac,SolverData,iStat)
     CLASS(AgDatabase_v50_Type)        :: AgLand
+    INTEGER,INTENT(IN)                :: iSubregionIDs(:)
     TYPE(RootZoneSoilType),INTENT(IN) :: SubregionSoilsData(:,:)
     REAL(8),INTENT(IN)                :: DeltaT,Precip(:,:),GenericMoisture(:,:),WaterSupply(:),ReuseFrac(:),ReturnFrac(:)
     TYPE(SolverDataType),INTENT(IN)   :: SolverData
@@ -938,10 +1072,10 @@ CONTAINS
                     IF (AchievedConv .NE. 0.0) THEN
                         MessageArray(1) = 'Convergence error in soil moisture routing for agricultural lands!'
                         MessageArray(2) =                   'Soil type            = '//TRIM(IntToText(indxSoil))
-                        MessageArray(3) =                   'Subregion            = '//TRIM(IntToText(indxRegion))
+                        MessageArray(3) =                   'Subregion            = '//TRIM(IntToText(iSubregionIDs(indxRegion)))
                         WRITE (MessageArray(4),'(A,F11.8)') 'Desired convergence  = ',SolverData%Tolerance*TotalPorosity
                         WRITE (MessageArray(5),'(A,F11.8)') 'Achieved convergence = ',ABS(AchievedConv)
-                        CALL SetLastMessage(MessageArray(1:5),iFatal,ThisProcedure)
+                        CALL SetLastMessage(MessageArray(1:5),f_iFatal,ThisProcedure)
                         iStat = -1
                         RETURN
                     END IF
@@ -983,11 +1117,11 @@ CONTAINS
                     IF (pAg%SoilM_AW     .LT. 0.0) lNegativeMoist = .TRUE.
                     IF (pAg%SoilM_Oth    .LT. 0.0) lNegativeMoist = .TRUE.
                     IF (lNegativeMoist) THEN
-                        MessageArray(1) = 'Soil moisture content becomes negative at subregion '//TRIM(IntToText(indxRegion))//'.'
+                        MessageArray(1) = 'Soil moisture content becomes negative at subregion '//TRIM(IntToText(iSubregionIDs(indxRegion)))//'.'
                         MessageArray(2) = 'This may be due to a too high convergence criteria set for the iterative solution.'
                         MessageArray(3) = 'Try using a smaller value for RZCONV and a higher value for RZITERMX parameters'
                         MessageArray(4) = 'in the Root Zone Main Input File.'
-                        CALL SetLastMessage(MessageArray(1:4),iFatal,ThisProcedure)
+                        CALL SetLastMessage(MessageArray(1:4),f_iFatal,ThisProcedure)
                         iStat = -1
                         RETURN
                     END IF
@@ -1004,8 +1138,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- COMPUTE  AG WATER DEMAND
   ! -------------------------------------------------------------
-  SUBROUTINE ComputeWaterDemand(AgLand,DeltaT,Precip,GenericMoisture,SoilsData,ReuseFrac,ReturnFrac,SolverData,iStat)
+  SUBROUTINE ComputeWaterDemand(AgLand,iSubregionIDs,DeltaT,Precip,GenericMoisture,SoilsData,ReuseFrac,ReturnFrac,SolverData,iStat)
     CLASS(AgDatabase_v50_Type)        :: AgLand
+    INTEGER,INTENT(IN)                :: iSubregionIDs(:)
     REAL(8),INTENT(IN)                :: DeltaT,Precip(:,:),GenericMoisture(:,:),ReuseFrac(:),ReturnFrac(:)
     TYPE(RootZoneSoilType),INTENT(IN) :: SoilsData(:,:)
     TYPE(SolverDataType),INTENT(IN)   :: SolverData
@@ -1032,7 +1167,7 @@ CONTAINS
             END IF
             
             !Cycle if it is not an irrigation period
-            IF (pAvgCrop(indxRegion)%IrigPeriod .EQ. NoIrigPeriod) THEN
+            IF (pAvgCrop(indxRegion)%IrigPeriod .EQ. f_iNoIrigPeriod) THEN
                 pAgData(:,indxRegion)%DemandRaw = 0.0
                 pAgData(:,indxRegion)%Demand    = 0.0
                 CYCLE
@@ -1070,14 +1205,14 @@ CONTAINS
                     
                     !Check if there is a need to compute water demand
                     SELECT CASE (AgLand%iDemandFromMoist)
-                        CASE (iDemandFromMoistAtBegin)
+                        CASE (f_iDemandFromMoistAtBegin)
                             IF (SoilM_P  .GE.  MinSoilM*TAW + WiltingPoint) THEN
                                 pAg%DemandRaw = 0.0
                                 pAg%Demand    = 0.0
                                 CYCLE
                             END IF
 
-                        CASE (iDemandFromMoistAtEnd)
+                        CASE (f_iDemandFromMoistAtEnd)
                             CALL NonPondedLUMoistureRouter(PrecipD                                ,  &
                                                            pAg%SMax                               ,  &
                                                            SoilM_P                                ,  &
@@ -1102,10 +1237,10 @@ CONTAINS
                             IF (AchievedConv .NE. 0.0) THEN
                                 MessageArray(1) = 'Convergence error in water demand calculations for agricultural crops!'
                                 MessageArray(2) =                   'Soil type            = '//TRIM(IntToText(indxSoil))
-                                MessageArray(3) =                   'Subregion            = '//TRIM(IntToText(indxRegion))
+                                MessageArray(3) =                   'Subregion            = '//TRIM(IntToText(iSubregionIDs(indxRegion)))
                                 WRITE (MessageArray(4),'(A,F11.8)') 'Desired convergence  = ',SolverData%Tolerance*TotalPorosity
                                 WRITE (MessageArray(5),'(A,F11.8)') 'Achieved convergence = ',ABS(AchievedConv)
-                                CALL SetLastMessage(MessageArray(1:5),iFatal,ThisProcedure)
+                                CALL SetLastMessage(MessageArray(1:5),f_iFatal,ThisProcedure)
                                 iStat = -1
                                 RETURN
                             END IF
@@ -1118,7 +1253,7 @@ CONTAINS
                     END SELECT
                         
                     !Compute demand
-                    SoilM            = pAg%SoilM_Precip + pAg%SoilM_AW + pAg%SoilM_Oth
+                    SoilM            = pAg%SoilM_Precip_P + pAg%SoilM_AW_P + pAg%SoilM_Oth_P
                     TargetSoilM_Soil = MIN(FieldCapacity * TargetSoilM , TotalPorosity)
                     CALL NonPondedCropDemand(PrecipD                               ,  &
                                              pAg%SMax                              ,  &
@@ -1144,10 +1279,10 @@ CONTAINS
                     !Generate error if convergence is not achieved
                     IF (AchievedConv .NE. 0.0) THEN
                         MessageArray(1) = 'Convergence error in calculating agricultural water demand '
-                        MessageArray(2) = 'for soil type '//TRIM(IntToText(indxSoil))//' in subregion '//TRIM(IntToText(indxRegion))//'!'
+                        MessageArray(2) = 'for soil type '//TRIM(IntToText(indxSoil))//' in subregion '//TRIM(IntToText(iSubregionIDs(indxRegion)))//'!'
                         WRITE (MessageArray(3),'(A,F11.8)') 'Desired convergence  = ',SolverData%Tolerance*TotalPorosity
                         WRITE (MessageArray(4),'(A,F11.8)') 'Achieved convergence = ',ABS(AchievedConv)
-                        CALL SetLastMessage(MessageArray(1:4),iFatal,ThisProcedure)
+                        CALL SetLastMessage(MessageArray(1:4),f_iFatal,ThisProcedure)
                         iStat = -1
                         RETURN
                     END IF
@@ -1171,9 +1306,9 @@ CONTAINS
   ! --- CONVERT SOIL INITIAL MOISTURE CONTENTS TO DEPTHS
   ! ---  Note: Called only once at the beginning of simulation
   ! -------------------------------------------------------------
-  SUBROUTINE SoilMContent_To_Depth(AgLand,NSoils,NRegions,TotalPorosity,iStat)
+  SUBROUTINE SoilMContent_To_Depth(AgLand,NSoils,NRegions,iSubregionIDs,TotalPorosity,iStat)
     CLASS(AgDatabase_v50_Type) :: AgLand
-    INTEGER,INTENT(IN)         :: NSoils,NRegions
+    INTEGER,INTENT(IN)         :: NSoils,NRegions,iSubregionIDs(NRegions)
     REAL(8),INTENT(IN)         :: TotalPorosity(NSoils,NRegions)
     INTEGER,INTENT(OUT)        :: iStat
     
@@ -1196,7 +1331,7 @@ CONTAINS
         DO indxRegion=1,NRegions
             DO indxSoil=1,NSoils
                 IF ((pAgData(indxSoil,indxRegion)%SoilM_Precip + pAgData(indxSoil,indxRegion)%SoilM_AW + pAgData(indxSoil,indxRegion)%SoilM_Oth) .GT. TotalPorosity(indxSoil,indxRegion)) THEN
-                    CALL SetLastMessage('Initial moisture content for agricultural lands with soil type ' // TRIM(IntToText(indxSoil)) // ' at subregion ' // TRIM(IntToText(indxRegion)) // ' is greater than total porosity!',iFatal,ThisProcedure)
+                    CALL SetLastMessage('Initial moisture content for agricultural lands with soil type ' // TRIM(IntToText(indxSoil)) // ' at subregion ' // TRIM(IntToText(iSubregionIDs(indxRegion))) // ' is greater than total porosity!',f_iFatal,ThisProcedure)
                     iStat = -1
                     RETURN
                 END IF
@@ -1347,15 +1482,15 @@ CONTAINS
     
         DO indxRegion=1,NSubregions           
             !Initialize average crop irrigtaion period
-            pAvgCrop(indxRegion)%IrigPeriod = NoIrigPeriod
+            pAvgCrop(indxRegion)%IrigPeriod = f_iNoIrigPeriod
             
             !Update crop area fractions based on only irrigated crops
             DO indxCrop=1,AgLand%NCrops
-                IF (AgLand%IrigPeriodFile%iValues(AgLand%iColIrigPeriod(indxCrop,indxRegion)) .EQ. NoIrigPeriod) THEN
+                IF (AgLand%IrigPeriodFile%iValues(AgLand%iColIrigPeriod(indxCrop,indxRegion)) .EQ. f_iNoIrigPeriod) THEN
                     ModifiedCropFracs(indxCrop) = 0.0
                 ELSE
                     ModifiedCropFracs(indxCrop)     = pCropFracs(indxCrop,indxRegion)
-                    pAvgCrop(indxRegion)%IrigPeriod = IrigPeriod
+                    pAvgCrop(indxRegion)%IrigPeriod = f_iIrigPeriod
                 END IF
             END DO
             IF (SUM(ModifiedCropFracs) .GT. 0.0) CALL NormalizeArray(ModifiedCropFracs)
@@ -1377,5 +1512,44 @@ CONTAINS
     END ASSOCIATE
           
   END SUBROUTINE ComputeAvgCropCharacteristics
+    
   
+  ! -------------------------------------------------------------
+  ! --- REWIND TIMESERIES INPUT FILES TO A SPECIFIED TIME STAMP
+  ! -------------------------------------------------------------
+  SUBROUTINE RewindTSInputFilesToTimeStamp(AgLand,iSubregionIDs,rRegionAreas,TimeStep,iStat)
+    CLASS(AgDatabase_v50_Type)    :: AgLand
+    INTEGER,INTENT(IN)            :: iSubregionIDs(:)
+    REAL(8),INTENT(IN)            :: rRegionAreas(:)
+    TYPE(TimeStepType),INTENT(IN) :: TimeStep 
+    INTEGER,INTENT(OUT)           :: iStat
+    
+    !Local variables
+    INTEGER :: iFileReadCode
+    
+    !Rewind files to beginning and read data until specified time stamp
+    CALL AgLand%ElemAgAreaDataFile%File%RewindFile_To_BeginningOfTSData(iStat)                                            ;  IF (iStat .NE. 0) RETURN
+    CALL AgLand%ElemAgAreaDataFile%ReadTSData('Elemental agricultural areas',TimeStep,rRegionAreas,iSubregionIDs,iStat)   ;  IF (iStat .NE. 0) RETURN
+
+    CALL AgLand%IrigPeriodFile%File%RewindFile_To_BeginningOfTSData(iStat)                                      ;  IF (iStat .NE. 0) RETURN
+    CALL TSDataFile_ReadData(TimeStep,'Crop irrigation period data',AgLand%IrigPeriodFile,iFileReadCode,iStat)  ;  IF (iStat .NE. 0) RETURN
+
+    CALL AgLand%MinSoilMFile%File%RewindFile_To_BeginningOfTSData(iStat)                                                 ;  IF (iStat .NE. 0) RETURN
+    CALL TSDataFile_ReadData(TimeStep,'Minimum soil moisture requirement data',AgLand%MinSoilMFile,iFileReadCode,iStat)  ;  IF (iStat .NE. 0) RETURN
+
+    IF (AgLand%TargetSoilMFile%File%iGetFileType() .NE. f_iUNKNOWN) THEN
+        CALL AgLand%TargetSoilMFile%File%RewindFile_To_BeginningOfTSData(iStat)                                               ;  IF (iStat .NE. 0) RETURN
+        CALL TSDataFile_ReadData(TimeStep,'Irrigation target soil moisture data',AgLand%TargetSoilMFile,iFileReadCode,iStat)  ;  IF (iStat .NE. 0) RETURN
+    END IF
+    
+    IF (AgLand%lWaterDemand_Defined) THEN
+        CALL AgLand%WaterDemandFile%File%RewindFile_To_BeginningOfTSData(iStat)                                                     ;  IF (iStat .NE. 0) RETURN
+        CALL TSDataFile_ReadData(TimeStep,'Agricultural water supply requirement data',AgLand%WaterDemandFile,iFileReadCode,iStat)  ;  IF (iStat .NE. 0) RETURN
+    END IF
+    
+    CALL AgLand%SubregionCropAreaDataFile%File%RewindFile_To_BeginningOfTSData(iStat)                                                  ;  IF (iStat .NE. 0) RETURN
+    CALL AgLand%SubregionCropAreaDataFile%ReadTSData('Subregional agricultural crop areas',TimeStep,rRegionAreas,iSubregionIDs,iStat)  ;  IF (iStat .NE. 0) RETURN
+    
+  END SUBROUTINE RewindTSInputFilesToTimeStamp
+
 END MODULE

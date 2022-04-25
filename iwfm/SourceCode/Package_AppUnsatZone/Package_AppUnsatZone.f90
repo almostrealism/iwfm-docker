@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,37 +21,51 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Package_AppUnsatZone
-  USE MessageLogger          , ONLY: SetLastMessage           , &
-                                     EchoProgress             , &
-                                     MessageArray             , &
-                                     iFatal
-  USE GeneralUtilities
-  USE TimeSeriesUtilities
-  USE IOInterface 
-  USE Package_Misc           , ONLY: SolverDataType           , &
-                                     iLocationType_Subregion  , &
-                                     iLocationType_Zone       , &
-                                     iAllLocationIDsListed
-  USE Package_Discretization
-  USE Package_Budget         , ONLY: BudgetType               , &
-                                     BudgetHeaderType         , &
-                                     VolumeUnitMarker         , &
-                                     AreaUnitMarker           , &
-                                     LocationNameMarker       , &
-                                     AreaMarker               , &
-                                     VLB                      , &
-                                     VLE                      , &
-                                     VR                       , &
-                                     PER_CUM
-  USE Package_ZBudget        , ONLY: ZBudgetType              , &
-                                     ZBudgetHeaderType        , &
-                                     ZoneListType             , &
-                                     SystemDataType           , &
-                                     iElemDataType            , &
-                                     iVerticalFlowType
-  USE Package_UnsatZone      , ONLY: SoilType                 , &
-                                     KunsatMethodList         , &
-                                     VadoseZoneMoistureRouter
+  USE MessageLogger          , ONLY: SetLastMessage                , &
+                                     EchoProgress                  , &
+                                     MessageArray                  , &
+                                     f_iFatal                        
+  USE GeneralUtilities       , ONLY: StripTextUntilCharacter       , &
+                                     IntToText                     , &
+                                     ArrangeText                   , &
+                                     UpperCase                     , &
+                                     CleanSpecialCharacters        , &
+                                     EstablishAbsolutePathFilename , &
+                                     ConvertID_To_Index
+  USE TimeSeriesUtilities    , ONLY: TimeStepType                  , &
+                                     IncrementTimeStamp            , &
+                                     IsTimeIntervalValid           , &
+                                     TimeIntervalConversion        
+  USE IOInterface            , ONLY: GenericFileType               , &
+                                     f_iTXT                           
+  USE Package_Misc           , ONLY: SolverDataType                , &
+                                     f_iLocationType_Subregion     , &
+                                     f_iLocationType_Zone          , &
+                                     f_iAllLocationIDsListed       , &
+                                     f_iUnsatZoneComp
+  USE Package_Discretization , ONLY: AppGridType                   , &
+                                     StratigraphyType              , &
+                                     GetValuesFromParametricGrid
+  USE Package_Budget         , ONLY: BudgetType                    , &
+                                     BudgetHeaderType              , &
+                                     f_cVolumeUnitMarker           , &
+                                     f_cAreaUnitMarker             , &
+                                     f_cLocationNameMarker         , &
+                                     f_cAreaMarker                 , &
+                                     f_iVLB                        , &
+                                     f_iVLE                        , &
+                                     f_iVR                         , &
+                                     f_iPER_CUM                      
+  USE Package_ZBudget        , ONLY: ZBudgetType                   , &
+                                     ZBudgetHeaderType             , &
+                                     ZoneListType                  , &
+                                     SystemDataType                , &
+                                     f_iColumnHeaderLen            , &
+                                     f_iElemDataType               , &
+                                     f_iVerticalFlowType            
+  USE Package_UnsatZone      , ONLY: SoilType                      , &
+                                     VadoseZoneMoistureRouter      , &
+                                     f_iKunsatMethodList           
   IMPLICIT NONE
   
   
@@ -70,7 +84,9 @@ MODULE Package_AppUnsatZone
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC :: AppUnsatZoneType       
+  PUBLIC :: AppUnsatZoneType          , &
+            f_iBudgetType_UnsatZone   , &
+            f_iZBudgetType_UnsatZone
   
   
   ! -------------------------------------------------------------
@@ -105,47 +121,60 @@ MODULE Package_AppUnsatZone
       TYPE(ZBudgetType),ALLOCATABLE     :: ZBudgetRawFile                  !Z-Budget HDF5 output file
       TYPE(GenericFileType),ALLOCATABLE :: FinSimResultsFile               !File to print final simulation results
   CONTAINS
-      PROCEDURE,PASS :: New              
-      PROCEDURE,PASS :: Kill  
-      PROCEDURE,PASS :: GetNLayers
-      PROCEDURE,PASS :: GetNDataList_AtLocationType
-      PROCEDURE,PASS :: GetDataList_AtLocationType
-      PROCEDURE,PASS :: GetLocationsWithData
-      PROCEDURE,PASS :: GetSubDataList_AtLocation
-      PROCEDURE,PASS :: GetModelData_AtLocation
-      PROCEDURE,PASS :: GetDeepPerc   
-      PROCEDURE,PASS :: IsDefined        
-      PROCEDURE,PASS :: AdvanceState     
-      PROCEDURE,PASS :: ConvertTimeUnit 
-      PROCEDURE,PASS :: ReadRestartData
-      PROCEDURE,PASS :: PrintResults 
-      PROCEDURE,PASS :: PrintRestartData
-      PROCEDURE,PASS :: Simulate         
-      PROCEDURE,PASS :: UpdateStorage
+      PROCEDURE,PASS   :: New              
+      PROCEDURE,PASS   :: Kill  
+      PROCEDURE,PASS   :: GetNLayers
+      PROCEDURE,PASS   :: GetBudget_List
+      PROCEDURE,PASS   :: GetBudget_NColumns
+      PROCEDURE,PASS   :: GetBudget_ColumnTitles
+      PROCEDURE,PASS   :: GetBudget_MonthlyFlows_GivenAppUnsatZone
+      PROCEDURE,NOPASS :: GetBudget_MonthlyFlows_GivenFile
+      PROCEDURE,PASS   :: GetBudget_TSData
+      PROCEDURE,PASS   :: GetZBudget_List
+      PROCEDURE,NOPASS :: GetZBudget_NColumns
+      PROCEDURE,PASS   :: GetZBudget_ColumnTitles
+      PROCEDURE,PASS   :: GetZBudget_MonthlyFlows_GivenAppUnsatZone
+      PROCEDURE,NOPASS :: GetZBudget_MonthlyFlows_GivenFile
+      PROCEDURE,PASS   :: GetZBudget_TSData
+      PROCEDURE,PASS   :: GetDeepPerc   
+      PROCEDURE,PASS   :: IsDefined        
+      PROCEDURE,PASS   :: AdvanceState     
+      PROCEDURE,PASS   :: ConvertTimeUnit 
+      PROCEDURE,PASS   :: ReadRestartData
+      PROCEDURE,PASS   :: PrintResults 
+      PROCEDURE,PASS   :: PrintRestartData
+      PROCEDURE,PASS   :: Simulate         
+      PROCEDURE,PASS   :: UpdateStorage
+      GENERIC          :: GetBudget_MonthlyFlows            => GetBudget_MonthlyFlows_GivenFile          , &
+                                                               GetBudget_MonthlyFlows_GivenAppUnsatZone
+      GENERIC          :: GetZBudget_MonthlyFlows           => GetZBudget_MonthlyFlows_GivenFile         , &
+                                                               GetZBudget_MonthlyFlows_GivenAppUnsatZone
   END TYPE AppUnsatZoneType
       
 
   ! -------------------------------------------------------------
   ! --- DATA TYPES FOR POST-PROCESSING
   ! -------------------------------------------------------------
-  CHARACTER(LEN=23),PARAMETER :: cDataList_AtSubregion = 'Unsaturated zone budget'
-  CHARACTER(LEN=28),PARAMETER :: cDataList_AtZone = 'Unsaturated zone zone budget'
+  INTEGER,PARAMETER           :: f_iBudgetType_UnsatZone         = f_iUnsatZoneComp*1000 + 1 , &
+                                 f_iZBudgetType_UnsatZone        = f_iUnsatZoneComp*1000 + 1
+  CHARACTER(LEN=23),PARAMETER :: f_cDescription_UnsatZoneBudget  = 'Unsaturated zone budget'           
+  CHARACTER(LEN=28),PARAMETER :: f_cDescription_UnsatZoneZBudget = 'Unsaturated zone zone budget'           
 
   
   ! -------------------------------------------------------------
   ! --- BUDGET RELATED DATA
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER           :: NBudColumns  = 5  , &
-                                 NZBudColumns = 4
-  CHARACTER(LEN=24),PARAMETER :: cBudgetColumnTitles(NBudColumns)   = ['Beginning Storage (+)'      , &
-                                                                       'Ending Storage (-)'         , &
-                                                                       'Percolation (+)'            , &
-                                                                       'Deep Percolation (-)'       , &
-                                                                       'Discrepancy (=)'            ]
-  CHARACTER(LEN=24),PARAMETER :: cZBudgetColumnTitles(NZBudColumns) = ['Beginning Storage (+)'      , &
-                                                                       'Ending Storage (-)'         , &
-                                                                       'Percolation (+)'            , &
-                                                                       'Deep Percolation (-)'       ]
+  INTEGER,PARAMETER           :: f_iNBudColumns  = 5  , &
+                                 f_iNZBudColumns = 4
+  CHARACTER(LEN=24),PARAMETER :: f_cBudgetColumnTitles(f_iNBudColumns)   = ['Beginning Storage (+)'      , &
+                                                                            'Ending Storage (-)'         , &
+                                                                            'Percolation (+)'            , &
+                                                                            'Deep Percolation (-)'       , &
+                                                                            'Discrepancy (=)'            ]
+  CHARACTER(LEN=24),PARAMETER :: f_cZBudgetColumnTitles(f_iNZBudColumns) = ['Beginning Storage (+)'      , &
+                                                                            'Ending Storage (-)'         , &
+                                                                            'Percolation (+)'            , &
+                                                                            'Deep Percolation (-)'       ]
 
   
   ! -------------------------------------------------------------
@@ -262,8 +291,8 @@ CONTAINS
             CALL AppUnsatZone%FinSimResultsFile%New(FileName=cAbsPathFileName,InputFile=.FALSE.,Descriptor='final unsaturated zone moisture output',iStat=iStat)  
         END IF
         IF (iStat .EQ. -1) RETURN
-        IF (AppUnsatZone%FinSimResultsFile%iGetFileType() .NE. TXT) THEN
-            CALL SetLastMessage('End-of-simulation unsaturated zone moisture output file must be a text file!',iFatal,ThisProcedure)
+        IF (AppUnsatZone%FinSimResultsFile%iGetFileType() .NE. f_iTXT) THEN
+            CALL SetLastMessage('End-of-simulation unsaturated zone moisture output file must be a text file!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -276,7 +305,7 @@ CONTAINS
               AppUnsatZone%RegionalStorage_P(NSubregions+1),  &
               STAT=ErrorCode ,ERRMSG=cErrorMsg             )
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error allocating memory for unsaturated zone component!'//NEW_LINE('x')//TRIM(cErrorMsg),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error allocating memory for unsaturated zone component!'//NEW_LINE('x')//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -292,7 +321,7 @@ CONTAINS
     AppUnsatZone%UnsatElems%SoilM_To_GW = 0.0  !Over-write the soil moisture contribution to rising groundwater for the initial case
     
     !Read initial conditions
-    CALL ReadInitialConditions(UnsatZoneFile,NUZLayers,AppUnsatZone%UnsatElems,iStat)
+    CALL ReadInitialConditions(UnsatZoneFile,AppGrid%AppElement%ID,NUZLayers,AppUnsatZone%UnsatElems,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Calculate initial regional storage
@@ -347,31 +376,33 @@ CONTAINS
     SystemData%NElements = AppGrid%NElements
     SystemData%NLayers   = NUZLayers
     SystemData%NFaces    = AppGrid%NFaces
-    ALLOCATE (SystemData%iElementNNodes(AppGrid%NElements)                , &
+    ALLOCATE (SystemData%iElementIDs(AppGrid%NElements)                   , &
+              SystemData%iElementNNodes(AppGrid%NElements)                , &
               SystemData%iElementNodes(4,AppGrid%NElements)               , &
               SystemData%iFaceElems(2,AppGrid%NFaces)                     , &
               SystemData%lBoundaryFace(AppGrid%NFaces)                    , &
-              SystemData%lActiveNode(AppGrid%NNodes,1)                    , &
+              SystemData%lActiveNode(AppGrid%NNodes,NUZLayers)            , &
               SystemData%rNodeAreas(AppGrid%NNodes)                       , &
               SystemData%rElementAreas(AppGrid%NElements)                 , &
               SystemData%rElementNodeAreas(4,AppGrid%NElements)           , &
               SystemData%rElementNodeAreaFractions(4,AppGrid%NElements)   )
+    SystemData%iElementIDs    = AppGrid%AppElement%ID
     SystemData%rNodeAreas     = AppGrid%AppNode%Area
     SystemData%rElementAreas  = AppGrid%AppElement%Area
-    SystemData%iElementNNodes = AppGrid%Element%NVertex
+    SystemData%iElementNNodes = AppGrid%NVertex
     DO indxElem=1,AppGrid%NElements
-        SystemData%iElementNodes(:,indxElem) = AppGrid%Element(indxElem)%Vertex
-        DO indxVertex=1,AppGrid%Element(indxElem)%NVertex
+        SystemData%iElementNodes(:,indxElem) = AppGrid%Vertex(:,indxElem)
+        DO indxVertex=1,AppGrid%NVertex(indxElem)
             SystemData%rElementNodeAreas(indxVertex,indxElem)         = AppGrid%AppElement(indxElem)%VertexArea(indxVertex)
             SystemData%rElementNodeAreaFractions(indxVertex,indxElem) = AppGrid%AppElement(indxElem)%VertexAreaFraction(indxVertex)
         END DO
-        IF (AppGrid%Element(indxElem)%NVertex .EQ. 3) THEN
+        IF (AppGrid%NVertex(indxElem) .EQ. 3) THEN
             SystemData%rElementNodeAreas(4,indxElem)         = 0.0
             SystemData%rElementNodeAreaFractions(4,indxElem) = 0.0
         END IF
     END DO
     DO indxFace=1,AppGrid%NFaces
-        SystemData%iFaceElems(:,indxFace) = AppGrid%AppFace(indxFace)%Element
+        SystemData%iFaceElems(:,indxFace) = AppGrid%AppFace%Element(:,indxFace)
     END DO
     SystemData%lBoundaryFace = AppGrid%AppFace%BoundaryFace
     SystemData%lActiveNode   = .TRUE.
@@ -383,28 +414,28 @@ CONTAINS
     Header%lFaceFlows_Defined       = .FALSE.
     Header%lStorages_Defined        = .FALSE.
     Header%lComputeError            = .TRUE.
-    Header%iNData                   = NZBudColumns
-    ALLOCATE (Header%iDataTypes(NZBudColumns)                                   , &
-              Header%cFullDataNames(NZBudColumns)                               , &
-              Header%cDataHDFPaths(NZBudColumns)                                , &
-              Header%iNDataElems(NZBudColumns,NUZLayers)                        , &
-              Header%iElemDataColumns(AppGrid%NElements,NZBudColumns,NUZLayers) , &
-              Header%iErrorInCols(NZBudColumns/2)                               , &  
-              Header%iErrorOutCols(NZBudColumns/2)                              , &  
-              Header%cDSSFParts(NZBudColumns)                                   , &
-              Header%ASCIIOutput%cColumnTitles(3)                               , &
-              STAT = ErrorCode                                                  )
+    Header%iNData                   = f_iNZBudColumns
+    ALLOCATE (Header%iDataTypes(f_iNZBudColumns)                                   , &
+              Header%cFullDataNames(f_iNZBudColumns)                               , &
+              Header%cDataHDFPaths(f_iNZBudColumns)                                , &
+              Header%iNDataElems(f_iNZBudColumns,NUZLayers)                        , &
+              Header%iElemDataColumns(AppGrid%NElements,f_iNZBudColumns,NUZLayers) , &
+              Header%iErrorInCols(f_iNZBudColumns/2)                               , &  
+              Header%iErrorOutCols(f_iNZBudColumns/2)                              , &  
+              Header%cDSSFParts(f_iNZBudColumns)                                   , &
+              Header%ASCIIOutput%cColumnTitles(3)                                  , &
+              STAT = ErrorCode                                                     )
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error allocating memory for unsaturated zone Z-Budget file!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error allocating memory for unsaturated zone Z-Budget file!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
-    Header%iDataTypes = [VLB,&  !Beginning storage
-                         VLE,&  !Ending storage
-                         VR ,&  !Deep perc
-                         VR ]   !Net deep perc
-    Header%cFullDataNames     = cZBudgetColumnTitles
-    Header%cDataHDFPaths      = cZBudgetColumnTitles
+    Header%iDataTypes = [f_iVLB,&  !Beginning storage
+                         f_iVLE,&  !Ending storage
+                         f_iVR ,&  !Deep perc
+                         f_iVR ]   !Net deep perc
+    Header%cFullDataNames     = f_cZBudgetColumnTitles
+    Header%cDataHDFPaths      = f_cZBudgetColumnTitles
     
     !Number of elements associated for each z-budget column in each layer
     Header%iNDataElems(1:2,:) = AppGrid%NElements
@@ -522,197 +553,73 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
-  ! --- GET NUMBER OF DATA TYPES FOR POST-PROCESSING AT A LOCATION TYPE
+  ! --- GET Z-BUDGET LIST 
   ! -------------------------------------------------------------
-  FUNCTION GetNDataList_AtLocationType(AppUnsatZone,iLocationType) RESULT(NData) 
-    CLASS(AppUnsatZoneType),INTENT(IN) :: AppUnsatZone
-    INTEGER,INTENT(IN)                 :: iLocationType
-    INTEGER                            :: NData
-    
-    !Initialize
-    NData = 0
-    
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_Subregion)
-            !Is unsaturated zone budget defined?
-            IF (ALLOCATED(AppUnsatZone%BudRawFile)) NData = 1
-            
-        CASE (iLocationType_Zone)
-            !Is unsaturated zone zone budget defined?
-            IF (ALLOCATED(AppUnsatZone%ZBudgetRawFile)) NData = NData + 1
-
-        END SELECT
-    
-  END FUNCTION GetNDataList_AtLocationType
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET A LIST OF DATA TYPES FOR POST-PROCESSING AT A LOCATION TYPE
-  ! -------------------------------------------------------------
-  SUBROUTINE GetDataList_AtLocationType(AppUnsatZone,iLocationType,cDataList,cFileList,lBudgetType) 
-    CLASS(AppUnsatZoneType),INTENT(IN) :: AppUnsatZone
-    INTEGER,INTENT(IN)                 :: iLocationType
-    CHARACTER(LEN=*),ALLOCATABLE       :: cDataList(:),cFileList(:)
-    LOGICAL,ALLOCATABLE                :: lBudgetType(:)
-    
-    !Local variables
-    INTEGER                  :: ErrorCode
-    CHARACTER(:),ALLOCATABLE :: cFileName
-    
-    !Initialize
-    DEALLOCATE (cDataList , cFileList , lBudgetType , STAT=ErrorCode)
-    
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_Subregion)
-            !Is unsaturated zone budget defined?
-            IF (ALLOCATED(AppUnsatZone%BudRawFile)) THEN
-                ALLOCATE (cDataList(1) , cFileList(1) , lBudgetType(1))
-                cDataList   = cDataList_AtSubregion
-                lBudgetType = .TRUE.
-                CALL AppUnsatZone%BudRawFile%GetFileName(cFileName)
-                cFileList = ''
-                cFileList = cFileName
-            END IF
-            
-        CASE (iLocationType_Zone)
-            !Is unsaturated zone zone budget defined?
-            IF (ALLOCATED(AppUnsatZone%ZBudgetRawFile)) THEN
-                ALLOCATE (cDataList(1) , cFileList(1) , lBudgetType(1))
-                cDataList   = cDataList_AtZone
-                lBudgetType = .TRUE.
-                CALL AppUnsatZone%ZBudgetRawFile%GetFileName(cFileName)
-                cFileList = ''
-                cFileList = cFileName
-            END IF
-
-    END SELECT
-    
-  END SUBROUTINE GetDataList_AtLocationType
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET THE LIST OF LOCATIONS THAT HAVE A DATA TYPE FOR POST-PROCESSING
-  ! -------------------------------------------------------------
-  SUBROUTINE GetLocationsWithData(AppUnsatZone,iLocationType,cDataType,iLocations)
-     CLASS(AppUnsatZoneType),INTENT(IN) :: AppUnsatZone
-     INTEGER,INTENT(IN)                 :: iLocationType
-     CHARACTER(LEN=*),INTENT(IN)        :: cDataType    
-     INTEGER,ALLOCATABLE,INTENT(OUT)    :: iLocations(:)
+  SUBROUTINE GetZBudget_List(AppUnsatZone,iZBudgetTypeList,cZBudgetDescriptions,cZBudgetFiles)
+     CLASS(AppUnsatZoneType),INTENT(IN)       :: AppUnsatZone
+     INTEGER,ALLOCATABLE,INTENT(OUT)          :: iZBudgetTypeList(:)          
+     CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cZBudgetDescriptions(:),cZBudgetFiles(:)
      
-     SELECT CASE (iLocationType)
-         CASE (iLocationType_Subregion)
-             IF (ALLOCATED(AppUnsatZone%BudRawFile)) THEN
-                 IF (TRIM(cDataType) .EQ. cDataList_AtSubregion) THEN
-                     ALLOCATE (iLocations(1))
-                     iLocations = iAllLocationIDsListed
-                 END IF
-             END IF
-
-        CASE (iLocationType_Zone)
-             IF (ALLOCATED(AppUnsatZone%ZBudgetRawFile)) THEN
-                 IF (TRIM(cDataType) .EQ. cDataList_AtZone) THEN
-                     ALLOCATE (iLocations(1))
-                     iLocations = iAllLocationIDsListed
-                 END IF
-             END IF
-     END SELECT
+     !Local variables
+     INTEGER                  :: iErrorCode
+     CHARACTER(:),ALLOCATABLE :: cFileName
      
-  END SUBROUTINE GetLocationsWithData
-  
-  
+     !Initialize
+     DEALLOCATE (iZBudgetTypeList , cZBudgetDescriptions , cZBudgetFiles , STAT=iErrorCode)
+          
+     !Get the list if there is a Z-Budget generated
+     IF (ALLOCATED(AppUnsatZone%ZBudgetRawFile)) THEN
+         ALLOCATE (iZBudgetTypeList(1) , cZBudgetDescriptions(1) , cZBudgetFiles(1))
+         CALL AppUnsatZone%ZBudgetRawFile%GetFileName(cFileName)
+         cZBudgetFiles(1)        = cFileName
+         iZBudgetTypeList(1)     = f_iZBudgetType_UnsatZone
+         cZBudgetDescriptions(1) = f_cDescription_UnsatZoneZBudget
+     ELSE
+         ALLOCATE (iZBudgetTypeList(0) , cZBudgetDescriptions(0) , cZBudgetFiles(0))
+     END IF
+     
+  END SUBROUTINE GetZBudget_List
+
+
   ! -------------------------------------------------------------
-  ! --- GET SUB-COMPONENTS OF A DATA TYPE FOR POST-PROCESSING AT A LOCATION TYPE
+  ! --- GET THE NUMBER OF Z-BUDGET COLUMNS (EXCLUDES TIME COLUMN)
   ! -------------------------------------------------------------
-  SUBROUTINE GetSubDataList_AtLocation(AppUnsatZone,iLocationType,cDataType,cSubDataList)
+  FUNCTION GetZBudget_NColumns() RESULT(iNCols)
+    INTEGER :: iNCols
+    
+    iNCols = f_iNZBudColumns
+    
+  END FUNCTION GetZBudget_NColumns
+    
+
+  ! -------------------------------------------------------------
+  ! --- GET Z-BUDGET COLUMN TITLES (EXCLUDES TIME COLUMN)
+  ! -------------------------------------------------------------
+  SUBROUTINE GetZBudget_ColumnTitles(AppUnsatZone,cUnitAR,cUnitVL,cColTitles,iStat)
     CLASS(AppUnsatZoneType),INTENT(IN)       :: AppUnsatZone
-    INTEGER,INTENT(IN)                       :: iLocationType
-    CHARACTER(LEN=*),INTENT(IN)              :: cDataType
-    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cSubDataList(:)
+    CHARACTER(LEN=*),INTENT(IN)              :: cUnitAR,cUnitVL
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cColTitles(:)
+    INTEGER,INTENT(OUT)                      :: iStat
     
     !Local variables
-    INTEGER :: ErrorCode
+    CHARACTER(LEN=f_iColumnHeaderLen),ALLOCATABLE :: cColTitles_Local(:)
     
-    !Initialize
-    DEALLOCATE (cSubDataList , STAT=ErrorCode)
+    !ZBudget file is defined
+    IF (ALLOCATED(AppUnsatZone%ZBudgetRawFile)) THEN
+        CALL AppUnsatZone%ZBudgetRawFile%GetFullColumnHeaders(cUnitAR,cUnitVL,cColTitles_Local,iStat)
+        IF (iStat .NE. 0) RETURN
+        ALLOCATE(cColTitles(SIZE(cColTitles_Local)-1))
+        cColTitles = ''
+        cColTitles = cColTitles_Local(2:)
+        RETURN
+    END IF
     
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_Subregion) 
-            IF (TRIM(cDataType) .EQ. cDataList_AtSubregion) THEN
-                IF (ALLOCATED(AppUnsatZone%BudRawFile)) THEN
-                    ALLOCATE (cSubDataList(NBudColumns))
-                    cSubDataList = cBudgetColumnTitles
-                END IF
-            END IF
+    !If ZBudget file is not defined
+    ALLOCATE (cColTitles(0))
+            
+  END SUBROUTINE GetZBudget_ColumnTitles
+    
 
-        CASE (iLocationType_Zone) 
-            IF (TRIM(cDataType) .EQ. cDataList_AtZone) THEN
-                IF (ALLOCATED(AppUnsatZone%ZBudgetRawFile)) THEN
-                    ALLOCATE (cSubDataList(NZBudColumns))
-                    cSubDataList = cZBudgetColumnTitles
-                END IF
-            END IF
-    END SELECT
-    
-  END SUBROUTINE GetSubDataList_AtLocation
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET MODEL DATA AT A LOCATION FOR POST-PROCESSING
-  ! -------------------------------------------------------------
-  SUBROUTINE GetModelData_AtLocation(AppUnsatZone,iZExtent,iElems,iLayers,iZones,iZonesWithNames,cZoneNames,iLocationType,iLocationID,cDataType,iCol,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-    CLASS(AppUnsatZoneType)     :: AppUnsatZone
-    INTEGER,INTENT(IN)          :: iZExtent,iElems(:),iLayers(:),iZones(:),iZonesWithNames(:),iLocationType,iLocationID,iCol
-    CHARACTER(LEN=*),INTENT(IN) :: cZoneNames(:),cDataType,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval
-    REAL(8),INTENT(IN)          :: rFact_LT,rFact_AR,rFact_VL
-    INTEGER,INTENT(OUT)         :: iDataUnitType,nActualOutput
-    REAL(8),INTENT(OUT)         :: rOutputDates(:),rOutputValues(:)
-    INTEGER,INTENT(OUT)         :: iStat
-    
-    !Local variables
-    INTEGER            :: iReadCols(1),iDataUnitTypeArray(1)
-    REAL(8)            :: rValues(2,SIZE(rOutputDates))
-    TYPE(ZoneListType) :: ZoneList
-    
-    !Initialize
-    iStat         = 0
-    nActualOutput = 0
-    
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_Subregion)
-            IF (TRIM(cDataType) .EQ. cDataList_AtSubregion) THEN
-                IF (ALLOCATED(AppUnsatZone%BudRawFile)) THEN
-                    CALL AppUnsatZone%BudRawFile%ReadData(iLocationID,iCol,cOutputInterval,cOutputBeginDateAndTime,cOutputEndDateAndTime,1d0,0d0,0d0,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-                END IF
-            END IF
-
-        CASE (iLocationType_Zone)
-            IF (TRIM(cDataType) .EQ. cDataList_AtZone) THEN
-                IF (ALLOCATED(AppUnsatZone%ZBudgetRawFile)) THEN
-                    iReadCols = iCol
-                    !Generate zone list
-                    CALL ZoneList%New(AppUnsatZone%ZBudgetRawFile%Header%iNData,AppUnsatZone%ZBudgetRawFile%Header%lFaceFlows_Defined,AppUnsatZone%ZBudgetRawFile%SystemData,iZExtent,iElems,iLayers,iZones,iZonesWithNames,cZoneNames,iStat)  ;  IF (iStat .EQ. -1) RETURN
-                    !Read data
-                    CALL AppUnsatZone%ZBudgetRawFile%ReadData(ZoneList,iLocationID,iReadCols,cOutputInterval,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_AR,rFact_VL,iDataUnitTypeArray,nActualOutput,rValues,iStat)  ;  IF (iStat .EQ. -1) RETURN
-                    !Populate return variables
-                    rOutputDates(1:nActualOutput)  = rValues(1,1:nActualOutput)
-                    rOutputValues(1:nActualOutput) = rValues(2,1:nActualOutput)
-                    iDataUnitType                  = iDataUnitTypeArray(1)
-                END IF
-            END IF
-    END SELECT
-    
-    !Only unsaturated zone budget data at subregional level can be returned
-    IF (.NOT. (iLocationType.EQ.iLocationType_Subregion  .AND.  TRIM(cDataType).EQ.cDataList_AtSubregion)) RETURN
-    
-    !If unsaturated zone budget output is not defined return
-    IF (.NOT. ALLOCATED(AppUnsatZone%BudRawFile)) RETURN
-    
-    !Get the data for the specified budget column for the specified period with specified interval
-    CALL AppUnsatZone%BudRawFile%ReadData(iLocationID,iCol,cOutputInterval,cOutputBeginDateAndTime,cOutputEndDateAndTime,1d0,0d0,0d0,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-    
-  END SUBROUTINE GetModelData_AtLocation
-  
-  
   ! -------------------------------------------------------------
   ! --- GET DEEP PERC
   ! -------------------------------------------------------------
@@ -787,59 +694,57 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ UNSAT ZONE INITIAL MOISTURE CONDITIONS
   ! -------------------------------------------------------------
-  SUBROUTINE ReadInitialConditions(InFile,NUZLayers,UnsatElems,iStat) 
+  SUBROUTINE ReadInitialConditions(InFile,iElemIDs,NUZLayers,UnsatElems,iStat) 
     TYPE(GenericFileType) :: InFile
-    INTEGER,INTENT(IN)    :: NUZLayers
+    INTEGER,INTENT(IN)    :: iElemIDs(:),NUZLayers
     TYPE(UnsatElemType)   :: UnsatElems(:,:)
     INTEGER,INTENT(OUT)   :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+21) :: ThisProcedure = ModName // 'ReadInitialConditions'
-    INTEGER                      :: indxElem,ID,indxLayer
+    INTEGER                      :: indxElem,ID,indxLayer,iElem
     REAL(8)                      :: rDummyArray(1+NUZLayers)
+    LOGICAL                      :: lProcessed(SIZE(iElemIDs))
     
     !Read for first element
     CALL InFile%ReadData(rDummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    UnsatElems(:,1)%SoilM   = rDummyArray(2:)
-    UnsatElems(:,1)%SoilM_P = rDummyArray(2:)
-    
-    !Make sure data is entered for the first element
-    ID  = INT(rDummyArray(1))
-    IF (ID.NE.0   .AND.  ID.NE.1) THEN
-        MessageArray(1) = 'Initial conditions for unsaturated zone must be entered sequentially for each element!'
-        MessageArray(2) = 'Expected element ID = '//TRIM(IntToText(1))
-        MessageArray(3) = 'Entered element ID  = '//TRIM(IntToText(ID))
-        CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-        iStat = -1
-        RETURN
-    END IF
     
     !If same values are to be used for all elements, process and exit
+    ID = INT(rDummyArray(1))
     IF (ID .EQ. 0) THEN
-        DO indxElem=2,SIZE(UnsatElems,DIM=2)
+        DO indxElem=1,SIZE(UnsatElems,DIM=2)
            UnsatElems(:,indxElem)%SoilM   = rDummyArray(2:)
            UnsatElems(:,indxElem)%SoilM_P = rDummyArray(2:)
         END DO
     
     !Otherwise read the rest of the initial conditions data
     ELSE
-        DO indxElem=2,SIZE(UnsatElems,DIM=2)
+        CALL InFile%BackspaceFile()
+        lProcessed = .FALSE.
+        DO indxElem=1,SIZE(UnsatElems,DIM=2)
             CALL InFile%ReadData(rDummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
                 
-            !Make sure data is entered sequentially
-            ID  = INT(rDummyArray(1))
-            IF (ID .NE. indxElem) THEN
-                MessageArray(1) = 'Initial conditions for unsaturated zone must be entered sequentially for each element!'
-                MessageArray(2) = 'Expected element ID = '//TRIM(IntToText(indxElem))
-                MessageArray(3) = 'Entered element ID  = '//TRIM(IntToText(ID))
-                CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+            ID = INT(rDummyArray(1))
+            CALL ConvertID_To_Index(ID,iElemIDs,iElem)
+            
+            !Make sure element is modeled
+            IF (iElem .EQ. 0) THEN
+                CALL SetLastMessage('Element '//TRIM(IntToText(ID))//' listed for unsaturated zone initial conditions is not in the model!',f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
+            
+            !Make sure same element is not listed more than once
+            IF (lProcessed(iElem)) THEN
+                CALL SetLastMessage('Element '//TRIM(IntToText(ID))//' specified for unsaturated zone initail conditions is listed more than once!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            lProcessed(iElem) = .TRUE.
         
             !Assign initial conditions
-            UnsatElems(:,indxElem)%SoilM   = rDummyArray(2:)
-            UnsatElems(:,indxElem)%SoilM_P = rDummyArray(2:)        
+            UnsatElems(:,iElem)%SoilM   = rDummyArray(2:)
+            UnsatElems(:,iElem)%SoilM_P = rDummyArray(2:)        
         END DO
     END IF
 
@@ -847,11 +752,11 @@ CONTAINS
     DO indxElem=1,SIZE(UnsatElems,DIM=2)
         DO indxLayer=1,SIZE(UnsatElems,DIM=1)
             IF (UnsatElems(indxLayer,indxElem)%SoilM .GT. UnsatElems(indxLayer,indxElem)%TotalPorosity) THEN
-                MessageArray(1) = 'Initial unsaturated zone moisture content at element '//TRIM(IntToText(indxElem))// ' and layer '//TRIM(IntToText(indxLayer))
+                MessageArray(1) = 'Initial unsaturated zone moisture content at element '//TRIM(IntToText(iElemIDs(indxElem)))// ' and layer '//TRIM(IntToText(indxLayer))
                 MessageArray(2) = ' is larger than the total porosity!'
                 WRITE(MessageArray(3),'(A27,F8.6)') 'Total porosity           = ',UnsatElems(indxLayer,indxElem)%TotalPorosity
                 WRITE(MessageArray(4),'(A27,F8.6)') 'Initial moisture content = ',UnsatElems(indxLayer,indxElem)%SoilM
-                CALL SetLastMessage(MessageArray(1:4),iFatal,ThisProcedure)
+                CALL SetLastMessage(MessageArray(1:4),f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
@@ -876,13 +781,15 @@ CONTAINS
     
     !Local variables
     CHARACTER(LEN=ModNameLen+23) :: ThisProcedure = ModName // 'ReadUnsatZoneParameters'
-    INTEGER                      :: NGroup,NElements,ID,indxElem,indxLayer,indxNode,iLayer
+    INTEGER                      :: NGroup,NElements,ID,indxElem,indxLayer,indxNode,iLayer,iElemIDs(AppGrid%NElements),iElem
     REAL(8)                      :: rFactors(3),rDummyArray(1+5*NUZLayers),rDummy3DArray(AppGrid%NElements,NUZLayers,5),  &
                                     ElemDepthToBottom(AppGrid%NElements),NodeDepthToBottom(AppGrid%NNodes)
     CHARACTER                    :: ALine*500
+    LOGICAL                      :: lProcessed(AppGrid%NElements)
     
     !Initialize
     NElements = AppGrid%NElements
+    iElemIDs  = AppGrid%AppElement%ID
     
     !Read number of parameteric grids
     CALL InFile%ReadData(NGroup,iStat)  ;  IF (iStat .EQ. -1) RETURN
@@ -900,7 +807,7 @@ CONTAINS
     !Make sure time units are valid if time tracking simulation
     IF (TimeStep%TrackTime) THEN
         IF (IsTimeIntervalValid(VarTimeUnit) .EQ. 0) THEN
-            CALL SetLastMessage('Time unit for unsaturated zone hydraulic conductivity is not valid!',iFatal,ThisProcedure)
+            CALL SetLastMessage('Time unit for unsaturated zone hydraulic conductivity is not valid!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
@@ -908,22 +815,33 @@ CONTAINS
 
     !Non-parametric data input
     IF (NGroup .EQ. 0) THEN
+        lProcessed = .FALSE.
         DO indxElem=1,NElements
             CALL InFile%ReadData(rDummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+            
+            !Make sure element is in the model
             ID = INT(rDummyArray(1))
-            IF (ID .NE. indxElem) THEN 
-                MessageArray(1) = 'Unsaturated zone parameters should be entered sequentially for each element.'
-                MessageArray(2) = 'Expected element ID = '//TRIM(IntToText(indxElem))
-                MessageArray(3) = 'Entered element ID  = '//TRIM(IntToText(ID))
-                CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+            CALL ConvertID_To_Index(ID,iElemIDs,iElem)
+            IF (iElem .EQ. 0) THEN 
+                CALL SetLastMessage('Element '//TRIM(IntToText(ID))//' listed for unsaturated zone parameters is not in the model!',f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
-            UnsatElems(:,indxElem)%ThicknessMax  = rDummyArray(2::5) * rFactors(2)
-            UnsatElems(:,indxElem)%TotalPorosity = rDummyArray(3::5) 
-            UnsatElems(:,indxElem)%Lambda        = rDummyArray(4::5) 
-            UnsatElems(:,indxElem)%HydCond       = rDummyArray(5::5) * rFactors(3)
-            UnsatElems(:,indxElem)%KunsatMethod  = rDummyArray(6::5) 
+            
+            !Make sure same element is not specified more than once
+            IF (lProcessed(iElem)) THEN
+                CALL SetLastMessage('Element '//TRIM(IntToText(ID))//' specified for unsatuarted zone parameters is listed more than once!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            
+            !Process data
+            lProcessed(iElem)                 = .TRUE.
+            UnsatElems(:,iElem)%ThicknessMax  = rDummyArray(2::5) * rFactors(2)
+            UnsatElems(:,iElem)%TotalPorosity = rDummyArray(3::5) 
+            UnsatElems(:,iElem)%Lambda        = rDummyArray(4::5) 
+            UnsatElems(:,iElem)%HydCond       = rDummyArray(5::5) * rFactors(3)
+            UnsatElems(:,iElem)%KunsatMethod  = rDummyArray(6::5) 
         END DO
     END IF
     
@@ -931,7 +849,7 @@ CONTAINS
     IF (NGroup .GT. 0) THEN
 
         !Read the parameter values at parametric nodes and compute the interpolation coefficients for grid elements
-        CALL GetValuesFromParametricGrid(InFile,AppGrid%GridType,NGroup,rFactors,.TRUE.,rDummy3DArray,iStat)
+        CALL GetValuesFromParametricGrid(InFile,AppGrid%GridType,iElemIDs,NGroup,rFactors,.TRUE.,'unsaturated zone',rDummy3DArray,iStat)
         IF (iStat .EQ. -1) RETURN
 
         !Initialize parameter values
@@ -966,17 +884,17 @@ CONTAINS
             !Porosity cannot be less than zero
             IF (UnsatElems(indxLayer,indxElem)%TotalPorosity .LE. 0.0) THEN
                 MessageArray(1) = 'Unsaturated zone porosity becomes less than zero'
-                WRITE (MessageArray(2),'(A,F9.3,A)') 'at element '//TRIM(IntToText(indxElem))//', layer '//TRIM(IntToText(indxLayer))//' (',UnsatElems(indxLayer,indxElem)%TotalPorosity,')'
-                CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)
+                WRITE (MessageArray(2),'(A,F9.3,A)') 'at element '//TRIM(IntToText(iElemIDs(indxElem)))//', layer '//TRIM(IntToText(indxLayer))//' (',UnsatElems(indxLayer,indxElem)%TotalPorosity,')'
+                CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
             
             !KunsatMethod must be recognized
-            IF (.NOT. ANY(UnsatElems(indxLayer,indxElem)%KunsatMethod.EQ.KunsatMethodList)) THEN
+            IF (.NOT. ANY(UnsatElems(indxLayer,indxElem)%KunsatMethod.EQ.f_iKunsatMethodList)) THEN
                 MessageArray(1) = 'Method to compute unsaturated hydraulic conductivity for unsaturated'
-                MessageArray(2) = 'zone at element '//TRIM(IntToText(indxElem))//' and layer '//TRIM(IntToText(indxLayer))//' is not recognized!'
-                CALL SetLastMessage(MessageArray(1:2) ,iFatal,ThisProcedure)
+                MessageArray(2) = 'zone at element '//TRIM(IntToText(iElemIDs(indxElem)))//' and layer '//TRIM(IntToText(indxLayer))//' is not recognized!'
+                CALL SetLastMessage(MessageArray(1:2) ,f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
@@ -1039,7 +957,7 @@ CONTAINS
     !Check if end-of-simulation 
     IF (lEndOfSimulation) THEN
         IF (ALLOCATED(AppUnsatZone%FinSimResultsFile))   &
-            CALL PrintFinalResults(TimeStep,AppUnsatZone%NUnsatLayers,AppUnsatZone%UnsatElems,AppUnsatZone%FinSimResultsFile)
+            CALL PrintFinalResults(TimeStep,AppGrid%AppElement%ID,AppUnsatZone%NUnsatLayers,AppUnsatZone%UnsatElems,AppUnsatZone%FinSimResultsFile)
     END IF
         
   END SUBROUTINE PrintResults
@@ -1065,16 +983,16 @@ CONTAINS
     DO indxLayer=1,NUZLayers
         !Previous storage
         rData_Pass(:,1) = AppUnsatZone%UnsatElems(indxLayer,:)%SoilM_P * AppUnsatZone%UnsatElems(indxLayer,:)%Thickness_P * AppGrid%AppElement%Area
-        CALL AppUnsatZone%ZBudgetRawFile%WriteData(AppUnsatZone%NUnsatLayers,iElemDataType,1,indxLayer,rData_Pass)
+        CALL AppUnsatZone%ZBudgetRawFile%WriteData(AppUnsatZone%NUnsatLayers,f_iElemDataType,1,indxLayer,rData_Pass)
         
         !Current storage
         rData_Pass(:,1)   = AppUnsatZone%UnsatElems(indxLayer,:)%SoilM * AppUnsatZone%UnsatElems(indxLayer,:)%Thickness * AppGrid%AppElement%Area
-        CALL AppUnsatZone%ZBudgetRawFile%WriteData(AppUnsatZone%NUnsatLayers,iElemDataType,2,indxLayer,rData_Pass)
+        CALL AppUnsatZone%ZBudgetRawFile%WriteData(AppUnsatZone%NUnsatLayers,f_iElemDataType,2,indxLayer,rData_Pass)
         
         !Percolation
         IF (indxLayer .EQ. 1) THEN
             rData_Pass(:,1) = Perc
-            CALL AppUnsatZone%ZBudgetRawFile%WriteData(AppUnsatZone%NUnsatLayers,iElemDataType,3,indxLayer,rData_Pass)
+            CALL AppUnsatZone%ZBudgetRawFile%WriteData(AppUnsatZone%NUnsatLayers,f_iElemDataType,3,indxLayer,rData_Pass)
         END IF
         
     END DO
@@ -1108,12 +1026,12 @@ CONTAINS
     !Write out deep perc and vertical flows
     DO indxLayer=1,NUZLayers-1
         rData_Pass(:,1) = rDeepPerc(indxLayer,:)
-        CALL AppUnsatZone%ZBudgetRawFile%WriteData(NUZLayers,iElemDataType,4,indxLayer,rData_Pass)
+        CALL AppUnsatZone%ZBudgetRawFile%WriteData(NUZLayers,f_iElemDataType,4,indxLayer,rData_Pass)
         rData_Pass(:,1) = rVertFlow(indxLayer,:)
-        CALL AppUnsatZone%ZBudgetRawFile%WriteData(NUZLayers,iVerticalFlowType,0,indxLayer,rData_Pass)
+        CALL AppUnsatZone%ZBudgetRawFile%WriteData(NUZLayers,f_iVerticalFlowType,0,indxLayer,rData_Pass)
     END DO 
     rData_Pass(:,1) = rDeepPerc(NUZLayers,:)
-    CALL AppUnsatZone%ZBudgetRawFile%WriteData(NUZLayers,iElemDataType,4,NUZLayers,rData_Pass)
+    CALL AppUnsatZone%ZBudgetRawFile%WriteData(NUZLayers,f_iElemDataType,4,NUZLayers,rData_Pass)
     
   END SUBROUTINE PrintResultsToZBudgetFile
   
@@ -1128,7 +1046,7 @@ CONTAINS
     
     !Local variables
     INTEGER                                  :: NRegions
-    REAL(8)                                  :: DummyArray(NBudColumns,(AppGrid%NSubregions+1))
+    REAL(8)                                  :: DummyArray(f_iNBudColumns,(AppGrid%NSubregions+1))
     REAL(8),DIMENSION(AppGrid%NSubregions+1) :: RPerc,RDeepPerc,RError
     
     !Initialize
@@ -1164,9 +1082,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- PRINT OUT END-OF-SIMULATION RESULTS
   ! -------------------------------------------------------------
-  SUBROUTINE PrintFinalResults(TimeStep,NUZLayers,UnsatElems,OutFile)
+  SUBROUTINE PrintFinalResults(TimeStep,iElemIDs,NUZLayers,UnsatElems,OutFile)
     TYPE(TimeStepType),INTENT(IN)  :: TimeStep
-    INTEGER,INTENT(IN)             :: NUZLayers
+    INTEGER,INTENT(IN)             :: iElemIDs(:),NUZLayers
     TYPE(UnsatElemType),INTENT(IN) :: UnsatElems(:,:)
     TYPE(GenericFileType)          :: OutFile
     
@@ -1198,7 +1116,7 @@ CONTAINS
     
     !Print end-of-simulation values
     DO indxElem=1,SIZE(UnsatElems,DIM=2)
-        WRITE (Text,'(I7,1X,500F12.4)') indxElem,UnsatElems(:,indxElem)%SoilM
+        WRITE (Text,'(I7,1X,500F12.4)') iElemIDs(indxElem),UnsatElems(:,indxElem)%SoilM
         CALL OutFile%WriteData(TRIM(Text))
     END DO
     
@@ -1276,11 +1194,11 @@ CONTAINS
     TYPE(TimeStepType)          :: TimeStepLocal
     CHARACTER                   :: UnitT*10,TextTime*17
     INTEGER                     :: iCount,indxLocation,indxCol,NRegions,I
-    CHARACTER(LEN=18),PARAMETER :: FParts(NBudColumns) = ['BEGIN_STORAGE'      ,& 
-                                                          'END_STORAGE'        ,& 
-                                                          'PERC'               ,&                                                           
-                                                          'DEEP_PERC'          ,& 
-                                                          'DISCREPANCY'        ]
+    CHARACTER(LEN=18),PARAMETER :: FParts(f_iNBudColumns) = ['BEGIN_STORAGE'      ,& 
+                                                             'END_STORAGE'        ,& 
+                                                             'PERC'               ,&                                                           
+                                                             'DEEP_PERC'          ,& 
+                                                             'DISCREPANCY'        ]
     
     !Initialize
     NRegions = AppGrid%NSubregions
@@ -1315,8 +1233,8 @@ CONTAINS
       pASCIIOutput%NTitles  = NTitles
       ALLOCATE(pASCIIOutput%cTitles(NTitles) , pASCIIOutput%lTitlePersist(NTitles))
         pASCIIOutput%cTitles(1)         = ArrangeText('IWFM (v'//TRIM(cIWFMVersion)//')' , pASCIIOutput%TitleLen)
-        pASCIIOutput%cTitles(2)         = ArrangeText('UNSATURATED ZONE BUDGET IN '//VolumeUnitMarker//' FOR '//LocationNameMarker , pASCIIOutput%TitleLen)
-        pASCIIOutput%cTitles(3)         = ArrangeText('SUBREGION AREA: '//AreaMarker//' '//AreaUnitMarker , pASCIIOutput%TitleLen)
+        pASCIIOutput%cTitles(2)         = ArrangeText('UNSATURATED ZONE BUDGET IN '//f_cVolumeUnitMarker//' FOR '//f_cLocationNameMarker , pASCIIOutput%TitleLen)
+        pASCIIOutput%cTitles(3)         = ArrangeText('SUBREGION AREA: '//f_cAreaMarker//' '//f_cAreaUnitMarker , pASCIIOutput%TitleLen)
         pASCIIOutput%cTitles(4)         = REPEAT('-',pASCIIOutput%TitleLen)
         pASCIIOutput%lTitlePersist(1:3) = .TRUE.
         pASCIIOutput%lTitlePersist(4)   = .FALSE.
@@ -1331,22 +1249,22 @@ CONTAINS
     Header%cLocationNames(NRegions+1) = 'ENTIRE MODEL AREA'
 
     !Locations
-    ALLOCATE (Header%Locations(1)                                                        , &
-              Header%Locations(1)%cFullColumnHeaders(NBudColumns+1)                      , &
-              Header%Locations(1)%iDataColumnTypes(NBudColumns)                          , &
-              Header%Locations(1)%iColWidth(NBudColumns+1)                               , &
-              Header%Locations(1)%cColumnHeaders(NBudColumns+1,NColumnHeaderLines)       , &
-              Header%Locations(1)%cColumnHeadersFormatSpec(NColumnHeaderLines)             )  
+    ALLOCATE (Header%Locations(1)                                                           , &
+              Header%Locations(1)%cFullColumnHeaders(f_iNBudColumns+1)                      , &
+              Header%Locations(1)%iDataColumnTypes(f_iNBudColumns)                          , &
+              Header%Locations(1)%iColWidth(f_iNBudColumns+1)                               , &
+              Header%Locations(1)%cColumnHeaders(f_iNBudColumns+1,NColumnHeaderLines)       , &
+              Header%Locations(1)%cColumnHeadersFormatSpec(NColumnHeaderLines)              )  
     ASSOCIATE (pLocation => Header%Locations(1))
-      pLocation%NDataColumns           = NBudColumns
+      pLocation%NDataColumns           = f_iNBudColumns
       pLocation%cFullColumnHeaders(1)  = 'Time'                       
-      pLocation%cFullColumnHeaders(2:) = cBudgetColumnTitles                               
-      pLocation%iDataColumnTypes       = [VLB,&  !Beginning storage
-                                          VLE,&  !Ending storage
-                                          VR ,&  !Percolation
-                                          VR ,&  !Deep perc
-                                          VR ]   !Discrepancy
-      pLocation%iColWidth              = [17,(13,I=1,NBudColumns)]
+      pLocation%cFullColumnHeaders(2:) = f_cBudgetColumnTitles                               
+      pLocation%iDataColumnTypes       = [f_iVLB,&  !Beginning storage
+                                          f_iVLE,&  !Ending storage
+                                          f_iVR ,&  !Percolation
+                                          f_iVR ,&  !Deep perc
+                                          f_iVR ]   !Discrepancy
+      pLocation%iColWidth              = [17,(13,I=1,f_iNBudColumns)]
       ASSOCIATE (pColumnHeaders => pLocation%cColumnHeaders           , &
                  pFormatSpecs   => pLocation%cColumnHeadersFormatSpec )
         pColumnHeaders(:,1) = ['                 ','     Beginning','       Ending ','              ','      Deep    ','              ']
@@ -1356,16 +1274,16 @@ CONTAINS
         pFormatSpecs(1)     = '(A17,15A14)'
         pFormatSpecs(2)     = '(A17,15A14)'
         pFormatSpecs(3)     = '(A17,15A14)'
-        pFormatSpecs(4)     = '('//TRIM(IntToText(TitleLen))//'(1H-),'//TRIM(IntToText(NBudColumns+1))//'A0)'
+        pFormatSpecs(4)     = '('//TRIM(IntToText(TitleLen))//'(1H-),'//TRIM(IntToText(f_iNBudColumns+1))//'A0)'
       END ASSOCIATE
     END ASSOCIATE
 
     !Data for DSS output  
     ASSOCIATE (pDSSOutput => Header%DSSOutput)
-      ALLOCATE (pDSSOutput%cPathNames(NBudColumns*(NRegions+1)) , pDSSOutput%iDataTypes(1))
+      ALLOCATE (pDSSOutput%cPathNames(f_iNBudColumns*(NRegions+1)) , pDSSOutput%iDataTypes(1))
       iCount = 1
       DO indxLocation=1,NRegions+1
-        DO indxCol=1,NBudColumns
+        DO indxCol=1,f_iNBudColumns
           pDSSOutput%cPathNames(iCount) = '/IWFM_UNSATZONE_BUD/'                                         //  &  !A part
                                           TRIM(UpperCase(Header%cLocationNames(indxLocation)))//'/'      //  &  !B part
                                           'VOLUME/'                                                      //  &  !C part
@@ -1375,7 +1293,7 @@ CONTAINS
           iCount = iCount+1
         END DO
       END DO
-      pDSSOutput%iDataTypes = PER_CUM
+      pDSSOutput%iDataTypes = f_iPER_CUM
     END ASSOCIATE
 
   END FUNCTION PrepareBudgetHeader
@@ -1430,7 +1348,7 @@ CONTAINS
     
     !Local variables
     CHARACTER(LEN=ModNameLen+8) :: ThisProcedure = ModName // 'Simulate'
-    INTEGER                     :: indxElem,indxLayer,NUZLayers
+    INTEGER                     :: indxElem,indxLayer,NUZLayers,iElemID
     REAL(8)                     :: Inflow,D,TotalPorosity,Excess,Outflow,AchievedConv,Area,D_P,SoilM_P,Toler
     
     !Initialize
@@ -1483,10 +1401,11 @@ CONTAINS
                                                   AchievedConv                                 )
                     !Generate error if convergence is not achieved
                     IF (AchievedConv .NE. 0.0) THEN
-                        MessageArray(1) = 'Convergence error in routing moisture through unsaturated zone at element '//TRIM(IntToText(indxElem))//', layer '//TRIM(IntToText(indxLayer))//'!'
+                        iElemID         = AppGrid%AppElement(indxElem)%ID
+                        MessageArray(1) = 'Convergence error in routing moisture through unsaturated zone at element '//TRIM(IntToText(iElemID))//', layer '//TRIM(IntToText(indxLayer))//'!'
                         WRITE (MessageArray(2),'(A,F11.8)') 'Desired convergence  = ',Toler
                         WRITE (MessageArray(3),'(A,F11.8)') 'Achieved convergence = ',ABS(AchievedConv)
-                        CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+                        CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
                         iStat = -1
                         RETURN
                     END IF
@@ -1534,7 +1453,7 @@ CONTAINS
                 IF (indxLayer .EQ. NUZLayers) THEN
                     UnsatElems(indxLayer,indxElem)%Thickness = DepthToGW(indxElem) - (DT-ThickMax)
                 ELSE
-                    UnsatElems(indxLayer,indxElem)%Thickness = DT
+                    UnsatElems(indxLayer,indxElem)%Thickness = ThickMax
                 END IF
             ELSE
                 UnsatElems(indxLayer,indxElem)%Thickness = MAX(DepthToGW(indxElem) - (DT-ThickMax)  ,  0.0)
@@ -1551,5 +1470,314 @@ CONTAINS
     END DO
     
   END SUBROUTINE ComputeLayerThickness
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET LIST 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_List(AppUnsatZone,iBudgetTypeList,iBudgetLocationTypeList,cBudgetDescriptions,cBudgetFiles)
+    CLASS(AppUnsatZoneType),INTENT(IN)       :: AppUnsatZone
+    INTEGER,ALLOCATABLE,INTENT(OUT)          :: iBudgetTypeList(:),iBudgetLocationTypeList(:)          
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cBudgetDescriptions(:),cBudgetFiles(:)
+    
+    !Local variables
+    INTEGER                  :: iErrorCode
+    CHARACTER(:),ALLOCATABLE :: cFileName
+    
+    !Initialize
+    DEALLOCATE (iBudgetTypeList , iBudgetLocationTypeList , cBudgetDescriptions , cBudgetFiles , STAT=iErrorCode)
+         
+    !Get the list if there is a Budget generated
+    IF (ALLOCATED(AppUnsatZone%BudRawFile)) THEN
+        ALLOCATE (iBudgetTypeList(1) , iBudgetLocationTypeList(1) , cBudgetDescriptions(1) , cBudgetFiles(1))
+        CALL AppUnsatZone%BudRawFile%GetFileName(cFileName)
+        cBudgetFiles(1)            = cFileName
+        iBudgetTypeList(1)         = f_iBudgetType_UnsatZone
+        iBudgetLocationTypeList(1) = f_iLocationType_Subregion
+        cBudgetDescriptions(1)     = f_cDescription_UnsatZoneBudget
+    ELSE
+        ALLOCATE (iBudgetTypeList(0) , iBudgetLocationTypeList(0) , cBudgetDescriptions(0) , cBudgetFiles(0))
+    END IF
+     
+  END SUBROUTINE GetBudget_List
 
+
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF BUDGET FILE COLUMNS
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_NColumns(AppUnsatZone,iLocationIndex,iNCols,iStat)
+    CLASS(AppUnsatZoneType),INTENT(IN) :: AppUnsatZone
+    INTEGER,INTENT(IN)                 :: iLocationIndex
+    INTEGER,INTENT(OUT)                :: iNCols,iStat
+    
+    IF (ALLOCATED(AppUnsatZone%BudRawFile)) THEN
+        CALL AppUnsatZone%BudRawFile%GetNDataColumns(iLocationIndex,iNCols,iStat)  
+        iNCols = iNCols - 1  !Exclude Time column
+    ELSE
+        iStat  = 0
+        iNCols = 0
+    END IF
+            
+  END SUBROUTINE GetBudget_NColumns
+     
+     
+  ! -------------------------------------------------------------
+  ! --- GET COLUMN TITLES IN BUDGET FILE (EXCLUDING TIME COLUMN) 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_ColumnTitles(AppUnsatZone,iLocationIndex,cUnitLT,cUnitAR,cUnitVL,cColTitles,iStat)
+    CLASS(AppUnsatZoneType),INTENT(IN)       :: AppUnsatZone
+    INTEGER,INTENT(IN)                       :: iLocationIndex
+    CHARACTER(LEN=*),INTENT(IN)              :: cUnitLT,cUnitAR,cUnitVL
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cColTitles(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    !Local variables
+    INTEGER                                       :: iNCols,iErrorCode
+    CHARACTER(LEN=f_iColumnHeaderLen),ALLOCATABLE :: cColTitles_Local(:)
+    
+    IF (ALLOCATED(AppUnsatZone%BudRawFile)) THEN
+        !Get number of columns (includes Time column)
+        CALL AppUnsatZone%BudRawFile%GetNDataColumns(iLocationIndex,iNCols,iStat)  
+        IF (iStat .NE. 0) RETURN
+        
+        !Get column titles (includes (Time column)
+        ALLOCATE (cColTitles_Local(iNCols))
+        cColTitles_Local = AppUnsatZone%BudRawFile%GetFullColumnHeaders(iLocationIndex,iNCols)
+        
+        !Insert units
+        CALL AppUnsatZone%BudRawFile%ModifyFullColumnHeaders(cUnitLT,cUnitAR,cUnitVL,cColTitles_Local)
+        
+        !Remove time column
+        iNCols = iNCols - 1
+        ALLOCATE (cColTitles(iNCols))
+        cColTitles = ADJUSTL(cColTitles_Local(2:))
+        
+        !Clear memory
+        DEALLOCATE (cColTitles_Local , STAT=iErrorCode)
+    ELSE
+        iStat = 0
+        ALLOCATE (cColTitles(0))
+    END IF
+     
+  END SUBROUTINE GetBudget_ColumnTitles
+
+
+  ! -------------------------------------------------------------
+  ! --- GET MONTHLY BUDGET FLOWS FROM AppUnsatZone OBJECT FOR A SPECIFED SUBREGION
+  ! --- (Assumes cBeginDate and cEndDate are adjusted properly)
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_MonthlyFlows_GivenAppUnsatZone(AppUnsatZone,iSubregionID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    CLASS(AppUnsatZoneType),INTENT(IN)       :: AppUnsatZone      
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate
+    INTEGER,INTENT(IN)                       :: iSubregionID
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)      !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    IF (ALLOCATED(AppUnsatZone%BudRawFile)) THEN
+        CALL GetBudget_MonthlyFlows_GivenFile(AppUnsatZone%BudRawFile,iSubregionID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    ELSE
+        ALLOCATE (rFlows(0,0) , cFlowNames(0))
+        iStat = 0
+    END IF
+    
+  END SUBROUTINE GetBudget_MonthlyFlows_GivenAppUnsatZone
+
+
+  ! -------------------------------------------------------------
+  ! --- GET MONTHLY BUDGET FLOWS FROM A DEFINED BUDGET FILE FOR A SPECIFED SUBREGION
+  ! --- (Assumes cBeginDate and cEndDate are adjusted properly)
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_MonthlyFlows_GivenFile(Budget,iSubregionID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    TYPE(BudgetType),INTENT(IN)              :: Budget      !Assumes Budget file is already open
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate
+    INTEGER,INTENT(IN)                       :: iSubregionID
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)  !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    !Local variables
+    INTEGER,PARAMETER   :: iReadCols(4) = [1,2,3,4]
+    INTEGER             :: iDimActual,iNTimeSteps
+    REAL(8),ALLOCATABLE :: rValues(:,:)
+    
+    !Get simulation time steps and allocate array to read data
+    iNTimeSteps = Budget%GetNTimeSteps()
+    ALLOCATE (rValues(5,iNTimeSteps)) !Adding 1 to the first dimension for Time column; it will be removed later
+    
+    !Read data
+    CALL Budget%ReadData(iSubregionID,iReadCols,'1MON',cBeginDate,cEndDate,0d0,0d0,0d0,1d0,1d0,rFactVL,iDimActual,rValues,iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Store values in return argument
+    ALLOCATE (rFlows(3,iDimActual) , cFlowNames(3))
+    rFlows(1,:)  = rValues(2,1:iDimActual) - rValues(3,1:iDimActual)   !Change in storage
+    rFlows(2,:)  = rValues(4,1:iDimActual)                             !Percolation       
+    rFlows(3,:)  = -rValues(5,1:iDimActual)                            !Deep Percolation       
+    
+    !Flow names
+    cFlowNames     = ''
+    cFlowNames(1)  = 'Change in Storage'      
+    cFlowNames(2)  = 'Percolation'       
+    cFlowNames(3)  = 'Deep Percolation'         
+    
+  END SUBROUTINE GetBudget_MonthlyFlows_GivenFile
+
+
+  ! -------------------------------------------------------------
+  ! --- GET BUDGET TIME SERIES DATA FOR A SET OF COLUMNS 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetBudget_TSData(AppUnsatZone,iSubregionID,iCols,cBeginDate,cEndDate,cInterval,rFactLT,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+    CLASS(AppUnsatZoneType),INTENT(IN) :: AppUnsatZone
+    INTEGER,INTENT(IN)                 :: iSubregionID,iCols(:)
+    CHARACTER(LEN=*),INTENT(IN)        :: cBeginDate,cEndDate,cInterval
+    REAL(8),INTENT(IN)                 :: rFactLT,rFactAR,rFactVL
+    REAL(8),INTENT(OUT)                :: rOutputDates(:),rOutputValues(:,:)    !rOutputValues is in (timestep,column) format
+    INTEGER,INTENT(OUT)                :: iDataTypes(:),inActualOutput,iStat
+    
+    !Local variables
+    INTEGER :: indx
+    
+    IF (ALLOCATED(AppUnsatZone%BudRawFile)) THEN
+        !Read data
+        DO indx=1,SIZE(iCols)
+            CALL AppUnsatZone%BudRawFile%ReadData(iSubregionID,iCols(indx),cInterval,cBeginDate,cEndDate,1d0,0d0,0d0,rFactLT,rFactAR,rFactVL,iDataTypes(indx),inActualOutput,rOutputDates,rOutputValues(:,indx),iStat)
+        END DO
+    ELSE
+        inActualOutput = 0
+        iDataTypes     = -1
+        rOutputDates   = 0.0
+        rOutputValues  = 0.0
+    END IF
+    
+  END SUBROUTINE GetBudget_TSData
+  
+  
+  ! -------------------------------------------------------------
+  ! --- RETRIEVE MONTHLY FLOW TERMS FROM AppUnsatZone OBJECT
+  ! -------------------------------------------------------------
+  SUBROUTINE GetZBudget_MonthlyFlows_GivenAppUnsatZone(AppUnsatZone,iZoneID,iZExtent,iElems,iLayers,iZoneIDs,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    CLASS(AppUnsatZoneType),INTENT(IN)       :: AppUnsatZone              
+    INTEGER,INTENT(IN)                       :: iZoneID,iZExtent,iElems(:),iLayers(:),iZoneIDs(:)
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate  !Assumes cBeginDate and cEndDate are properly set for monthly average values
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)          !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    !Local variables
+    INTEGER            :: iZonesWithNames(0)  
+    CHARACTER          :: cZoneNames(0)*1   
+    TYPE(ZoneListType) :: ZoneList
+    
+    !Is ZBudget output defined?
+    IF (.NOT. ALLOCATED(AppUnsatZone%ZBudgetRawFile)) THEN
+        iStat = 0
+        ALLOCATE (rFlows(0,0) , cFlowNames(0))
+        RETURN
+    END IF
+    
+    !Retrieve data
+    ASSOCIATE (pZBudget => AppUnsatZone%ZBudgetRawFile)
+        !Generate zone list
+        CALL ZoneList%New(pZBudget%Header%iNData,pZBudget%Header%lFaceFlows_Defined,pZBudget%SystemData,iZExtent,iElems,iLayers,iZoneIDs,iZonesWithNames,cZoneNames,iStat)
+        IF (iStat .NE. 0) RETURN
+        
+        !Retrieve data
+        CALL GetZBudget_MonthlyFlows_GivenFile(pZBudget,ZoneList,iZoneID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    END ASSOCIATE
+
+    
+  END SUBROUTINE GetZBudget_MonthlyFlows_GivenAppUnsatZone
+
+
+  ! -------------------------------------------------------------
+  ! --- RETRIEVE MONTHLY FLOW TERMS FROM ZBUDGET FILE
+  ! -------------------------------------------------------------
+  SUBROUTINE GetZBudget_MonthlyFlows_GivenFile(ZBudget,ZoneList,iZoneID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    TYPE(ZBudgetType),INTENT(IN)             :: ZBudget              !Assumes ZBudget file is already open 
+    TYPE(ZoneListType),INTENT(IN)            :: ZoneList
+    INTEGER,INTENT(IN)                       :: iZoneID
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate  !Assumes cBeginDate and cEndDate are properly set for monthly average values
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)          !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    !Local variables
+    INTEGER             :: iNPopulatedValues,iDataUnitTypes(f_iNZBudColumns),iNTimeSteps,iColList(f_iNZBudColumns),indx,indxTime
+    REAL(8),ALLOCATABLE :: rValues(:,:)
+    TYPE(TimeStepType)  :: TimeStep
+    
+    !Get number of time steps stored in the ZBudget file
+    CALL ZBudget%GetTimeStepRelatedData(iNTimeSteps,TimeStep)
+    
+    !Allocate array that will be used to retrieve flows; add 1 to column numbers for Time column
+    ALLOCATE (rValues(f_iNZBudColumns+1,iNTimeSteps))
+    
+    !Read data for the interval
+    iColList = [(indx,indx=1,f_iNZBudColumns)]
+    CALL ZBudget%ReadData(ZoneList,iZoneID,iColList,'1MON',cBeginDate,cEndDate,1d0,rFactVL,iDataUnitTypes,iNPopulatedValues,rValues,iStat)
+    IF (iStat .NE. 0) RETURN
+         
+    !Allocate memory for return arrays and compile them 
+    ALLOCATE (rFlows(3,iNPopulatedValues) , cFlowNames(3))
+    cFlowNames(1) = 'Change in Storage'
+    cFlowNames(2) = 'Percolation'
+    cFlowNames(3) = 'Deep percolation'
+    
+    !Compile monthly flows
+    DO indxTime=1,iNPopulatedValues
+        rFlows(1,indxTime) = rValues(2,indxTime) - rValues(3,indxTime) 
+        rFlows(2,indxTime) = rValues(4,indxTime) 
+        rFlows(3,indxTime) = -rValues(5,indxTime)
+    END DO
+    
+  END SUBROUTINE GetZBudget_MonthlyFlows_GivenFile
+
+  
+  ! -------------------------------------------------------------
+  ! --- GET TIME SERIES DATA FROM ZBUDGET FILE FOR A SELECTED ZONE AND SELECTED COLUMNS
+  ! -------------------------------------------------------------
+  SUBROUTINE GetZBudget_TSData(AppUnsatZone,iZoneID,iCols,iZExtent,iElems,iLayers,iZoneIDs,cBeginDate,cEndDate,cInterval,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+    CLASS(AppUnsatZoneType),INTENT(IN) :: AppUnsatZone
+    INTEGER,INTENT(IN)                 :: iZoneID,iCols(:),iZExtent,iElems(:),iLayers(:),iZoneIDs(:)
+    CHARACTER(LEN=*),INTENT(IN)        :: cBeginDate,cEndDate,cInterval
+    REAL(8),INTENT(IN)                 :: rFactAR,rFactVL
+    REAL(8),INTENT(OUT)                :: rOutputDates(:),rOutputValues(:,:)    !rOutputValues is in (timestep,column) format
+    INTEGER,INTENT(OUT)                :: iDataTypes(:),inActualOutput,iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+17) :: ThisProcedure = ModName // 'GetZBudget_TSData'
+    INTEGER                      :: indx,iZonesWithNames(0)
+    REAL(8)                      :: rValues(SIZE(iCols)+1,SIZE(rOutputDates))
+    CHARACTER(LEN=0)             :: cZoneNames(0)
+    TYPE(ZoneListType)           :: ZoneList
+
+    IF (.NOT. ALLOCATED(AppUnsatZone%ZBudgetRawFile)) THEN
+        CALL SetLastMessage('Unsaturated zone zone budget is not part of the model output to retrieve data!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
+            
+    ASSOCIATE (pZBudget => AppUnsatZone%ZBudgetRawFile)
+        !Generate zone list
+        CALL ZoneList%New(pZBudget%Header%iNData,pZBudget%Header%lFaceFlows_Defined,pZBudget%SystemData,iZExtent,iElems,iLayers,iZoneIDs,iZonesWithNames,cZoneNames,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        
+        !Read data
+        CALL pZBudget%ReadData(ZoneList,iZoneID,iCols,cInterval,cBeginDate,cEndDate,rFactAR,rFactVL,iDataTypes,inActualOutput,rValues,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        DO indx=1,inActualOutput
+            rOutputDates(indx)    = rValues(1,indx)
+            rOutputValues(indx,:) = rValues(2:,indx)
+        END DO
+    END ASSOCIATE
+    
+    !Delete zone list
+    CALL ZoneList%Kill()
+    
+  END SUBROUTINE GetZBudget_TSData
+  
+  
 END MODULE

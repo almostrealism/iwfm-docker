@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -23,8 +23,8 @@
 MODULE ZBudget_Util
   USE IOInterface        , ONLY: GenericFileType       , &
                                  iGetFileType_FromName , &
-                                 HDF
-  USE ZBudget_Parameters , ONLY: cAttributesDir
+                                 f_iHDF
+  USE ZBudget_Parameters , ONLY: f_cAttributesDir
   IMPLICIT NONE
 
   ! -------------------------------------------------------------
@@ -64,14 +64,14 @@ CONTAINS
     IsTrue = .FALSE.
     
     !Make sure that file is an HDF5 file
-    IF (iGetFileType_FromName(cFileName) .NE. HDF) RETURN
+    IF (iGetFileType_FromName(cFileName) .NE. f_iHDF) RETURN
     
     !Open file
     CALL CheckFile%New(FileName=cFileName,InputFile=.TRUE.,iStat=iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Check that this is indeed Z-Budget data file by checking if an object that Budget file doesn't have exist
-    IF (CheckFile%DoesHDFObjectExist(cAttributesDir//'/DataHDFPaths')) IsTrue = .TRUE.
+    IF (CheckFile%DoesHDFObjectExist(f_cAttributesDir//'/DataHDFPaths')) IsTrue = .TRUE.
 
     !Close file
     CALL CheckFile%Kill()
@@ -90,10 +90,10 @@ CONTAINS
     IsTrue = .FALSE.
     
     !Make sure that file is an HDF5 file
-    IF (CheckFile%iGetFileType() .NE. HDF) RETURN
+    IF (CheckFile%iGetFileType() .NE. f_iHDF) RETURN
     
     !Check that this is indeed Z-Budget data file by checking if an object that Budget file doesn't have exist
-    IF (CheckFile%DoesHDFObjectExist(cAttributesDir//'/DataHDFPaths')) IsTrue = .TRUE.
+    IF (CheckFile%DoesHDFObjectExist(f_cAttributesDir//'/DataHDFPaths')) IsTrue = .TRUE.
 
   END FUNCTION IsZBudgetFile_FromOpenFile
 

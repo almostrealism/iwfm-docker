@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,14 +21,26 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Package_Supply
-  USE MessageLogger
-  USE Package_Misc
-  USE Package_Discretization
+  USE MessageLogger               , ONLY: EchoProgress
+  USE Package_Misc                , ONLY: f_iFlowDest_Element               , &
+                                          f_iSupply_Diversion               , &
+                                          f_iSupply_Pumping                 , &
+                                          f_iAg                             , &
+                                          f_iUrb
+  USE Package_Discretization      , ONLY: AppGridType
   USE Package_AppGW               , ONLY: AppGWType
   USE Package_AppStream           , ONLY: AppStreamType
-  USE Package_RootZone
-  USE Class_IrigFracFile
-  USE SupplyAdjustment
+  USE Package_RootZone            , ONLY: RootZoneType
+  USE Class_IrigFracFile          , ONLY: IrigFracFileType
+  USE SupplyAdjustment            , ONLY: SupplyAdjustmentType              , &
+                                          f_iAdjustNone                     , &
+                                          f_iAdjustPump                     , &
+                                          f_iAdjustDiver                    , &
+                                          f_iAdjustPumpDiver                , &
+                                          f_iAdjustForNone                  , &
+                                          f_iAdjustForAg                    , &
+                                          f_iAdjustForUrb                   , &
+                                          f_iAdjustForAgUrb                            
   USE Package_ComponentConnectors , ONLY: SupplyDestinationConnectorType
   IMPLICIT NONE
   
@@ -38,14 +50,14 @@ MODULE Package_Supply
             IrigFracFileType                           ,  &
             
             SupplyAdjustmentType                       ,  &
-            iAdjustNone                                ,  &
-            iAdjustPump                                ,  &
-            iAdjustDiver                               ,  &
-            iAdjustPumpDiver                           ,  &
-            iAdjustForNone                             ,  &
-            iAdjustForAg                               ,  &
-            iAdjustForUrb                              ,  &
-            iAdjustForAgUrb                            
+            f_iAdjustNone                              ,  &
+            f_iAdjustPump                              ,  &
+            f_iAdjustDiver                             ,  &
+            f_iAdjustPumpDiver                         ,  &
+            f_iAdjustForNone                           ,  &
+            f_iAdjustForAg                             ,  &
+            f_iAdjustForUrb                            ,  &
+            f_iAdjustForAgUrb                            
   
            
             
@@ -78,7 +90,7 @@ CONTAINS
     !Initialize 
     iDemandCalcLocation = RootZone%GetDemandCalcLocation()
     CALL RootZone%ZeroSupply()
-    IF (iDemandCalcLocation .EQ. FlowDest_Element) THEN
+    IF (iDemandCalcLocation .EQ. f_iFlowDest_Element) THEN
         pDiver_Ag  => DiverToElem_Ag
         pDiver_Urb => DiverToElem_Urb
         pPump_Ag   => PumpToElem_Ag
@@ -95,15 +107,15 @@ CONTAINS
     !      since deliveries, fractions, etc do change during adjustment.
     IF (AppStream%GetNDiver() .GT. 0) THEN
       CALL AppStream%GetSupply(DiverDestConnector,pDiver_Ag,pDiver_Urb)
-      CALL RootZone%SetSupply(pDiver_Ag,Supply_Diversion_Ag) 
-      CALL RootZone%SetSupply(pDiver_Urb,Supply_Diversion_Urb) 
+      CALL RootZone%SetSupply(pDiver_Ag,f_iSupply_Diversion,f_iAg) 
+      CALL RootZone%SetSupply(pDiver_Urb,f_iSupply_Diversion,f_iUrb) 
     END IF
     
     !Applied water due to pumping
     IF (AppGW%IsPumpingDefined()) THEN
       CALL AppGW%GetSupply(WellDestConnector,ElemPumpDestConnector,pPump_Ag,pPump_Urb)
-      CALL RootZone%SetSupply(pPump_Ag,Supply_Pumping_Ag) 
-      CALL RootZone%SetSupply(pPump_Urb,Supply_Pumping_Urb) 
+      CALL RootZone%SetSupply(pPump_Ag,f_iSupply_Pumping,f_iAg) 
+      CALL RootZone%SetSupply(pPump_Urb,f_iSupply_Pumping,f_iUrb) 
     END IF
   
   END SUBROUTINE Supply

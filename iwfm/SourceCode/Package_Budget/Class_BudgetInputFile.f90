@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -22,16 +22,16 @@
 !***********************************************************************
 MODULE Class_BudgetInputFile
   USE MessageLogger           , ONLY: SetLastMessage        , &
-                                      iFatal
-  USE TimeSeriesUtilities
+                                      f_iFatal
+  USE TimeSeriesUtilities     , ONLY: TimeStepType 
   USE GeneralUtilities        , ONLY: IntToText             , &
                                       UpperCase             , &
                                       ReplaceString         , &
                                       AllocArray
   USE IOInterface             , ONLY: GenericFileType       , &
                                       iGetFileType_FromName , &
-                                      HDF                   , &
-                                      iGroup
+                                      f_iHDF                , &
+                                      f_iGroup
   USE Budget_Parameters
   IMPLICIT NONE
   
@@ -74,12 +74,12 @@ MODULE Class_BudgetInputFile
   ! --- ASCII OUTPUT RELATED DATA
   ! -------------------------------------------------------------
   TYPE ASCIIOutputType
-    INTEGER                                :: TitleLen                = 0       
-    INTEGER                                :: NTitles                 = 0       
-    CHARACTER(LEN=MaxTitleLen),ALLOCATABLE :: cTitles(:)              
-    LOGICAL,ALLOCATABLE                    :: lTitlePersist(:)             !Flag to check if a title is to be generated in all occasions (i.e. ASCII or GUI output)
-    CHARACTER(LEN=FormatSpecLen)           :: cFormatSpec             = ''  
-    INTEGER                                :: NColumnHeaderLines      = 0
+    INTEGER                                   :: TitleLen                = 0       
+    INTEGER                                   :: NTitles                 = 0       
+    CHARACTER(LEN=f_iMaxTitleLen),ALLOCATABLE :: cTitles(:)              
+    LOGICAL,ALLOCATABLE                       :: lTitlePersist(:)             !Flag to check if a title is to be generated in all occasions (i.e. ASCII or GUI output)
+    CHARACTER(LEN=f_iFormatSpecLen)           :: cFormatSpec             = ''  
+    INTEGER                                   :: NColumnHeaderLines      = 0
   END TYPE ASCIIOutputType
             
   
@@ -87,8 +87,8 @@ MODULE Class_BudgetInputFile
   ! --- DSS OUTPUT DATA TYPE
   ! -------------------------------------------------------------
   TYPE DSSOutputType
-    CHARACTER(LEN=PathNameLen),ALLOCATABLE :: cPathNames(:)
-    INTEGER,ALLOCATABLE                    :: iDataTypes(:)
+    CHARACTER(LEN=f_iPathNameLen),ALLOCATABLE :: cPathNames(:)
+    INTEGER,ALLOCATABLE                       :: iDataTypes(:)
   END TYPE DSSOutputType
   
   
@@ -96,13 +96,13 @@ MODULE Class_BudgetInputFile
   ! --- LOCATION DATA
   ! -------------------------------------------------------------
   TYPE LocationDataType
-    INTEGER                                    :: NDataColumns                = 0  !Number of data columns excluding Time column
-    INTEGER                                    :: iStorUnitsInFile            = 0  !Number of storage units (bytes, words, etc) each set of output for the location occupies in the binary file
-    CHARACTER(LEN=ColumnHeaderLen),ALLOCATABLE :: cFullColumnHeaders(:)            !For undefined output for each (column+1); +1 is for Time column
-    INTEGER,ALLOCATABLE                        :: iDataColumnTypes(:)              !For each (column)
-    INTEGER,ALLOCATABLE                        :: iColWidth(:)                     !For each (column+1); +1 is for Time column
-    CHARACTER(LEN=ColumnHeaderLen),ALLOCATABLE :: cColumnHeaders(:,:)              !For ASCII output for each (column+1,line); +1 is for Time column
-    CHARACTER(LEN=FormatSpecLen),ALLOCATABLE   :: cColumnHeadersFormatSpec(:)      !For ASCII output for each (line)       
+    INTEGER                                       :: NDataColumns                = 0  !Number of data columns excluding Time column
+    INTEGER                                       :: iStorUnitsInFile            = 0  !Number of storage units (bytes, words, etc) each set of output for the location occupies in the binary file
+    CHARACTER(LEN=f_iColumnHeaderLen),ALLOCATABLE :: cFullColumnHeaders(:)            !For undefined output for each (column+1); +1 is for Time column
+    INTEGER,ALLOCATABLE                           :: iDataColumnTypes(:)              !For each (column)
+    INTEGER,ALLOCATABLE                           :: iColWidth(:)                     !For each (column+1); +1 is for Time column
+    CHARACTER(LEN=f_iColumnHeaderLen),ALLOCATABLE :: cColumnHeaders(:,:)              !For ASCII output for each (column+1,line); +1 is for Time column
+    CHARACTER(LEN=f_iFormatSpecLen),ALLOCATABLE   :: cColumnHeadersFormatSpec(:)      !For ASCII output for each (line)       
   END TYPE LocationDataType
   
 
@@ -110,17 +110,17 @@ MODULE Class_BudgetInputFile
   ! --- BUDGET OUTPUT DATA TYPE
   ! -------------------------------------------------------------
   TYPE BudgetHeaderType
-    CHARACTER(LEN=BudgetDescriptorLen)            :: cBudgetDescriptor = ''
-    INTEGER                                       :: NTimeSteps        = 0
-    TYPE(TimeStepType)                            :: TimeStep
-    INTEGER                                       :: NAreas            = 0
-    REAL(8),ALLOCATABLE                           :: Areas(:)
-    TYPE(ASCIIOutputType)                         :: ASCIIOutput
-    INTEGER                                       :: NLocations        = 0
-    CHARACTER(LEN=MaxLocationNameLen),ALLOCATABLE :: cLocationNames(:)
-    TYPE(LocationDataType),ALLOCATABLE            :: Locations(:)
-    TYPE(DSSOutputType)                           :: DSSOutput
-    INTEGER(KIND=8)                               :: iPosition         = -1      !Position in file after Header
+    CHARACTER(LEN=f_iBudgetDescriptorLen)            :: cBudgetDescriptor = ''
+    INTEGER                                          :: NTimeSteps        = 0
+    TYPE(TimeStepType)                               :: TimeStep
+    INTEGER                                          :: NAreas            = 0
+    REAL(8),ALLOCATABLE                              :: Areas(:)
+    TYPE(ASCIIOutputType)                            :: ASCIIOutput
+    INTEGER                                          :: NLocations        = 0
+    CHARACTER(LEN=f_iMaxLocationNameLen),ALLOCATABLE :: cLocationNames(:)
+    TYPE(LocationDataType),ALLOCATABLE               :: Locations(:)
+    TYPE(DSSOutputType)                              :: DSSOutput
+    INTEGER(KIND=8)                                  :: iPosition         = -1      !Position in file after Header
   CONTAINS
     PROCEDURE,PASS :: Kill
   END TYPE BudgetHeaderType
@@ -167,8 +167,8 @@ CONTAINS
     iStat = 0
     
     !Make sure that file is an HDF5 file
-    IF (iGetFileType_FromName(cFileName) .NE. HDF) THEN
-        CALL SetLastMessage('File '//TRIM(ADJUSTL(cFileName))//' must be an HDF5 file for budget output!',iFatal,ThisProcedure)
+    IF (iGetFileType_FromName(cFileName) .NE. f_iHDF) THEN
+        CALL SetLastMessage('File '//TRIM(ADJUSTL(cFileName))//' must be an HDF5 file for budget output!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -287,7 +287,7 @@ CONTAINS
     CALL File%CreateHDFGroup(cHeaderDir1)
     
     !Budget descriptor
-    CALL File%WriteData(iGroup,cHeaderDir1,'Descriptor',ScalarAttrData=Header%cBudgetDescriptor)
+    CALL File%WriteData(f_iGroup,cHeaderDir1,'Descriptor',ScalarAttrData=Header%cBudgetDescriptor)
     
     !Simulation time related data (do not write these; they are written as part of HDF5 file class)
     !CALL File%WriteData(iGroup,cHeaderDir1,'NTimeSteps',ScalarAttrData=Header%NTimeSteps)
@@ -299,42 +299,42 @@ CONTAINS
     !CALL File%WriteData(iGroup,cHeaderDir1,'TimeStep%CurrentTime',ScalarAttrData=Header%TimeStep%CurrentTime)
     
     !Areas
-    CALL File%WriteData(iGroup,cHeaderDir1,'NAreas',ScalarAttrData=Header%NAreas)
+    CALL File%WriteData(f_iGroup,cHeaderDir1,'NAreas',ScalarAttrData=Header%NAreas)
     IF (Header%NAreas .GT. 0) THEN
-        CALL File%WriteData(iGroup,cHeaderDir1,'Areas',ArrayAttrData=Header%Areas)
+        CALL File%WriteData(Header%Areas,cHDFPath=cHeaderDir1//'/Areas')                   
     END IF
     
     !Data for ASCII output
-    CALL File%WriteData(iGroup,cHeaderDir1,'ASCIIOutput%TitleLen',ScalarAttrData=Header%ASCIIOutput%TitleLen)                      
-    CALL File%WriteData(iGroup,cHeaderDir1,'ASCIIOutput%NTitles',ScalarAttrData=Header%ASCIIOutput%NTitles)                           
-    CALL File%WriteData(iGroup,cHeaderDir1,'ASCIIOutput%cTitles',ArrayAttrData=Header%ASCIIOutput%cTitles)                         
-    CALL File%WriteData(iGroup,cHeaderDir1,'ASCIIOutput%lTitlePersist',ArrayAttrData=Header%ASCIIOutput%lTitlePersist)             
-    CALL File%WriteData(iGroup,cHeaderDir1,'ASCIIOutput%cFormatSpec',ScalarAttrData=Header%ASCIIOutput%cFormatSpec)                
-    CALL File%WriteData(iGroup,cHeaderDir1,'ASCIIOutput%NColumnHeaderLines',ScalarAttrData=Header%ASCIIOutput%NColumnHeaderLines)  
+    CALL File%WriteData(f_iGroup,cHeaderDir1,'ASCIIOutput%TitleLen',ScalarAttrData=Header%ASCIIOutput%TitleLen)                      
+    CALL File%WriteData(f_iGroup,cHeaderDir1,'ASCIIOutput%NTitles',ScalarAttrData=Header%ASCIIOutput%NTitles)                           
+    CALL File%WriteData(f_iGroup,cHeaderDir1,'ASCIIOutput%cTitles',ArrayAttrData=Header%ASCIIOutput%cTitles)                         
+    CALL File%WriteData(f_iGroup,cHeaderDir1,'ASCIIOutput%lTitlePersist',ArrayAttrData=Header%ASCIIOutput%lTitlePersist)             
+    CALL File%WriteData(f_iGroup,cHeaderDir1,'ASCIIOutput%cFormatSpec',ScalarAttrData=Header%ASCIIOutput%cFormatSpec)                
+    CALL File%WriteData(f_iGroup,cHeaderDir1,'ASCIIOutput%NColumnHeaderLines',ScalarAttrData=Header%ASCIIOutput%NColumnHeaderLines)  
     
     !Location names (do not write these; they are written as part of an HDF5 file class)
     !CALL File%WriteData(iGroup,cHeaderDir1,'NLocations',ScalarAttrData=Header%NLocations)
     !CALL File%WriteData(iGroup,cHeaderDir1,'cLocationNames',ArrayAttrData=Header%cLocationNames)
     
     !Location data
-    CALL File%WriteData(iGroup,cHeaderDir1,'NLocationData',ScalarAttrData=SIZE(Header%Locations))
+    CALL File%WriteData(f_iGroup,cHeaderDir1,'NLocationData',ScalarAttrData=SIZE(Header%Locations))
     DO indx=1,SIZE(Header%Locations) 
         cLocation = 'LocationData'//TRIM(IntToText(indx))//'%'
-        CALL File%WriteData(iGroup,cHeaderDir1,TRIM(cLocation)//'NDataColumns',ScalarAttrData=Header%Locations(indx)%NDataColumns)             
-        CALL File%WriteData(iGroup,cHeaderDir1,TRIM(cLocation)//'cFullColumnHeaders',ArrayAttrData=Header%Locations(indx)%cFullColumnHeaders)  
-        CALL File%WriteData(iGroup,cHeaderDir1,TRIM(cLocation)//'iDataColumnTypes',ArrayAttrData=Header%Locations(indx)%iDataColumnTypes)      
-        CALL File%WriteData(iGroup,cHeaderDir1,TRIM(cLocation)//'iColWidth',ArrayAttrData=Header%Locations(indx)%iColWidth)                    
+        CALL File%WriteData(f_iGroup,cHeaderDir1,TRIM(cLocation)//'NDataColumns',ScalarAttrData=Header%Locations(indx)%NDataColumns)             
+        CALL File%WriteData(f_iGroup,cHeaderDir1,TRIM(cLocation)//'cFullColumnHeaders',ArrayAttrData=Header%Locations(indx)%cFullColumnHeaders)  
+        CALL File%WriteData(f_iGroup,cHeaderDir1,TRIM(cLocation)//'iDataColumnTypes',ArrayAttrData=Header%Locations(indx)%iDataColumnTypes)      
+        CALL File%WriteData(f_iGroup,cHeaderDir1,TRIM(cLocation)//'iColWidth',ArrayAttrData=Header%Locations(indx)%iColWidth)                    
         DO indx1=1,Header%ASCIIOutput%NColumnHeaderLines
-            CALL File%WriteData(iGroup,cHeaderDir1,TRIM(cLocation)//'L'//TRIM(IntToText(indx1))//'_cColumnHeaders',ArrayAttrData=Header%Locations(indx)%cColumnHeaders(:,indx1))  
+            CALL File%WriteData(f_iGroup,cHeaderDir1,TRIM(cLocation)//'L'//TRIM(IntToText(indx1))//'_cColumnHeaders',ArrayAttrData=Header%Locations(indx)%cColumnHeaders(:,indx1))  
         END DO              
-        CALL File%WriteData(iGroup,cHeaderDir1,TRIM(cLocation)//'cColumnHeadersFormatSpec',ArrayAttrData=Header%Locations(indx)%cColumnHeadersFormatSpec)  
+        CALL File%WriteData(f_iGroup,cHeaderDir1,TRIM(cLocation)//'cColumnHeadersFormatSpec',ArrayAttrData=Header%Locations(indx)%cColumnHeadersFormatSpec)  
     END DO
     
     !DSS output data (write pathnames one by one instead of as an array to avoid memory errors from HDF5 API)
-    CALL File%WriteData(iGroup,cHeaderDir1,'DSSOutput%NPathNames',ScalarAttrData=SIZE(Header%DSSOutput%cPathNames))  
+    CALL File%WriteData(f_iGroup,cHeaderDir1,'DSSOutput%NPathNames',ScalarAttrData=SIZE(Header%DSSOutput%cPathNames))  
     CALL File%WriteData(Header%DSSOutput%cPathNames,cHDFPath=cHeaderDir1//'/DSSOutput%cPathNames')                   
-    CALL File%WriteData(iGroup,cHeaderDir1,'DSSOutput%NDataTypes',ScalarAttrData=SIZE(Header%DSSOutput%iDataTypes))  
-    CALL File%WriteData(iGroup,cHeaderDir1,'DSSOutput%iDataTypes',ArrayAttrData=Header%DSSOutput%iDataTypes)         
+    CALL File%WriteData(f_iGroup,cHeaderDir1,'DSSOutput%NDataTypes',ScalarAttrData=SIZE(Header%DSSOutput%iDataTypes))  
+    CALL File%WriteData(f_iGroup,cHeaderDir1,'DSSOutput%iDataTypes',ArrayAttrData=Header%DSSOutput%iDataTypes)         
     
   END SUBROUTINE WriteHeader
   
@@ -359,7 +359,7 @@ CONTAINS
     TYPE(BudgetHeaderType),INTENT(OUT) :: Header
     INTEGER,INTENT(OUT)                :: iStat
     
-    IF (InputFile%iGetFileType() .EQ. HDF) THEN
+    IF (InputFile%iGetFileType() .EQ. f_iHDF) THEN
         CALL ReadHeader_FromHDFFile(InputFile,Header,iStat)
     ELSE
         CALL ReadHeader_FromBinFile(InputFile,Header,iStat)
@@ -399,7 +399,7 @@ CONTAINS
       !Make sure that this is inded a Budget file
       IF (.NOT. InputFile%DoesHDFObjectExist(cAttributesDir//'/DSSOutput%cPathNames')) THEN
           CALL InputFile%GetName(cFileName)
-          CALL SetLastMessage('File '//TRIM(cFileName)//' is not a Budget file type!',iFatal,ThisProcedure)
+          CALL SetLastMessage('File '//TRIM(cFileName)//' is not a Budget file type!',f_iFatal,ThisProcedure)
           iStat = -1
           RETURN
       END IF
@@ -415,7 +415,14 @@ CONTAINS
       CALL pFile%ReadData(cAttributesDir,'NAreas',ScalarAttrData=Header%NAreas,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
       IF (Header%NAreas .GT. 0) THEN
           CALL AllocArray(Header%Areas,Header%NAreas,ThisProcedure,iStat)                     ;  IF (iStat .EQ. -1) RETURN
-          CALL pFile%ReadData(cAttributesDir,'Areas',ArrayAttrData=Header%Areas,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+          !Backward compatibility: Check if the Areas is written as a dadaset or attribute
+          IF (pFile%DoesHDFObjectExist(cAttributesDir//'/Areas')) THEN
+             !Areas exist as a dataset
+             CALL pFile%ReadData(cAttributesDir//'/Areas',Header%Areas,iStat=iStat)  
+          ELSE
+             !Areas exist as an attribute 
+             CALL pFile%ReadData(cAttributesDir,'Areas',ArrayAttrData=Header%Areas,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+          END IF
       END IF
     
       !Data for ASCII output

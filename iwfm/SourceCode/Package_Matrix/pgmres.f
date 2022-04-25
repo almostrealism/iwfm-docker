@@ -1,7 +1,7 @@
 c----------------------------------------------------------------------c
-c   Name:    pgmres.f						                           c   
+c   Name:    pgmres.f						                           c
 c   Date:    6/30/09						                           c
-c   Version: 1.1						                               c	
+c   Version: 1.1						                               c
 c   Author:  mfdixon@ucdavis.edu				                       c
 c   File dependences: none					                           c
 c----------------------------------------------------------------------c
@@ -9,15 +9,15 @@ c
 c----------------------------------------------------------------------c
 c  This file has the following subroutines from SPARSKIT	           c
 c								                                       c
-c  GMRES: GMRES(m) -Generalized Minimum RESidual method with restart   c  
+c  GMRES: GMRES(m) -Generalized Minimum RESidual method with restart   c
 c  BISINT:GMRES initialization routine				                   c
 c  GIVENS:Givens rotation	 				                           c
-c  MGSRO: Modified Gram-Schmidt Algorithm			                   c	
+c  MGSRO: Modified Gram-Schmidt Algorithm			                   c
 c  ILUT : Incomplete LU factorization with dual truncation strategy    c
 c  QSPLIT:Quick split routine used by ilutp to sort out the k largest  c
 c         elements in absolute value				                   c
 c  AMUX:  CRS format Matrix Vector Multiplication	                   c
-c  LUSOL: LU solve						                               c	
+c  LUSOL: LU solve						                               c
 c  BLAS 1 Extras						                               c
 c     distdot:  ddot interface					                       c
 c     ddot:  vector dot product					                       c
@@ -47,14 +47,14 @@ c     ipar(5) <= 1.
 c-----------------------------------------------------------------------
       implicit none
       integer n, ipar(16)
-      real*8 rhs(n), sol(n), fpar(16), w(*)
+      real(8) rhs(n), sol(n), fpar(16), w(*)
 
 c     external functions used
 c
-      real*8 distdot
+      real(8) distdot
       external distdot
 c
-      real*8 one, zero
+      real(8) one, zero
       parameter(one=1.0D0, zero=0.0D0)
 c
 c     local variables, ptr and p2 are temporary pointers,
@@ -64,7 +64,7 @@ c     vrn points to the vectors of residual norms, more precisely
 c     the right hand side of the least square problem solved.
 c
       integer i,ii,idx,k,m,ptr,p2,hess,vc,vs,vrn
-      real*8 alpha, c, s
+      real(8) alpha, c, s
       logical lp, rp
       save
 c
@@ -331,18 +331,18 @@ c
       endif
       return
       end
-c-----end-of-gmres   
+c-----end-of-gmres
 
 c-----------------------------------------------------------------------
       subroutine givens(x,y,c,s)
       implicit none
-      real*8 x,y,c,s
+      real(8) x,y,c,s
 c-----------------------------------------------------------------------
 c     Given x and y, this subroutine generates a Givens' rotation c, s.
 c     And apply the rotation on (x,y) ==> (sqrt(x**2 + y**2), 0).
 c     (See P 202 of "matrix computation" by Golub and van Loan.)
 c-----------------------------------------------------------------------
-      real*8 t,one,zero
+      real(8) t,one,zero
       parameter (zero=0.0D0,one=1.0D0)
 c
       if (x.eq.zero .and. y.eq.zero) then
@@ -380,11 +380,11 @@ c-----------------------------------------------------------------------
       implicit none
       integer i,ipar(16),wksize,dsc
       logical lp,rp
-      real*8  fpar(16),wk(*)
+      real(8)  fpar(16),wk(*)
 c-----------------------------------------------------------------------
 c     some common initializations for the iterative solvers
 c-----------------------------------------------------------------------
-      real*8 zero, one
+      real(8) zero, one
       parameter(zero=0.0D0, one=1.0D0)
 c
 c     ipar(1) = -2 inidcate that there are not enough space in the work
@@ -452,7 +452,7 @@ c-----------------------------------------------------------------------
       implicit none
       logical full
       integer lda,m,n,ind,ierr
-      real*8  ops,hh(m),vec(lda,m)
+      real(8)  ops,hh(m),vec(lda,m)
 c-----------------------------------------------------------------------
 c     MGSRO  -- Modified Gram-Schmidt procedure with Selective Re-
 c               Orthogonalization
@@ -484,7 +484,7 @@ c
 c     External routines used: real*8 distdot
 c-----------------------------------------------------------------------
       integer i,k
-      real*8  nrm0, nrm1, fct, thr, distdot, zero, one, reorth
+      real(8)  nrm0, nrm1, fct, thr, distdot, zero, one, reorth
       parameter (zero=0.0D0, one=1.0D0, reorth=0.98D0)
       external distdot
 c
@@ -569,20 +569,22 @@ c     normal return
 c
       ierr = 0
       return
-c     
+c
       end
 c---------end mgsro-----------------------------------------------------
 
 c-----------------------------------------------------------------------
       subroutine ilut(n,a,ja,ia,lfil,droptol,alu,jlu,ju,iwk,w,jw,ierr)
-      implicit none 
-      integer n 
-      real*8 a(*),alu(*),w(n+1),droptol
-      integer ja(*),ia(n+1),jlu(*),ju(n),jw(2*n),lfil,iwk,ierr
+      implicit none
+      integer,intent(in)  :: n
+      real(8),intent(in)  :: a(*),droptol
+      integer,intent(in)  :: ja(*),ia(n+1),lfil,iwk
+      integer,intent(out) :: jlu(*),jw(2*n),ju(n),ierr 
+      real(8),intent(out) :: alu(*),w(n+1)
 c
 c     locals
-      integer ju0,k,j1,j2,j,ii,i,lenl,lenu,jj,jrow,jpos,len 
-      real*8 tnorm, t, s, fact 
+      integer ju0,k,j1,j2,j,ii,i,lenl,lenu,jj,jrow,jpos,len
+      real(8) tnorm, t, s, fact
       intrinsic          dabs
       if (lfil .lt. 0) goto 998
 c-----------------------------------------------------------------------
@@ -592,7 +594,7 @@ c-----------------------------------------------------------------------
       ju0 = n+2
       jlu(1) = ju0
 c
-c     initialize nonzero indicator array. 
+c     initialize nonzero indicator array.
 c
       do 1 j=1,n
          jw(n+j)  = 0
@@ -609,9 +611,9 @@ c-----------------------------------------------------------------------
  501     continue
          if (tnorm .eq. 0.0) goto 999
          tnorm = tnorm/real(j2-j1+1)
-c     
-c     unpack L-part and U-part of row of A in arrays w 
-c     
+c
+c     unpack L-part and U-part of row of A in arrays w
+c
          lenu = 1
          lenl = 0
          jw(ii) = ii
@@ -630,17 +632,17 @@ c
                w(ii) = t
             else
                lenu = lenu+1
-               jpos = ii+lenu-1 
+               jpos = ii+lenu-1
                jw(jpos) = k
                w(jpos) = t
                jw(n+k) = jpos
             endif
  170     continue
          jj = 0
-         len = 0 
-c     
+         len = 0
+c
 c     eliminate previous rows
-c     
+c
  150     jj = jj+1
          if (jj .gt. lenl) goto 160
 c-----------------------------------------------------------------------
@@ -649,9 +651,9 @@ c     the smallest column index among jw(k), k=jj+1, ..., lenl.
 c-----------------------------------------------------------------------
          jrow = jw(jj)
          k = jj
-c     
+c
 c     determine smallest column index
-c     
+c
          do 151 j=jj+1,lenl
             if (jw(j) .lt. jrow) then
                jrow = jw(j)
@@ -674,14 +676,14 @@ c     exchange in w
          endif
 c
 c     zero out element in row by setting jw(n+jrow) to zero.
-c     
+c
          jw(n+jrow) = 0
 c
 c     get the multiplier for row to be eliminated (jrow).
-c     
+c
          fact = w(jj)*alu(jrow)
          if (dabs(fact) .le. droptol) goto 150
-c     
+c
 c     combine current row and row jrow
 c
          do 203 k = ju(jrow), jlu(jrow+1)-1
@@ -689,13 +691,13 @@ c
             j = jlu(k)
             jpos = jw(n+j)
             if (j .ge. ii) then
-c     
+c
 c     dealing with upper part.
-c     
+c
                if (jpos .eq. 0) then
 c
 c     this is a fill-in element
-c     
+c
                   lenu = lenu+1
                   if (lenu .gt. n) goto 995
                   i = ii+lenu-1
@@ -704,78 +706,78 @@ c
                   w(i) = - s
                else
 c
-c     this is not a fill-in element 
+c     this is not a fill-in element
 c
                   w(jpos) = w(jpos) - s
 
                endif
             else
-c     
+c
 c     dealing  with lower part.
-c     
+c
                if (jpos .eq. 0) then
 c
 c     this is a fill-in element
-c     
+c
                   lenl = lenl+1
                   if (lenl .gt. n) goto 995
                   jw(lenl) = j
                   jw(n+j) = lenl
                   w(lenl) = - s
                else
-c     
-c     this is not a fill-in element 
-c     
+c
+c     this is not a fill-in element
+c
                   w(jpos) = w(jpos) - s
                endif
             endif
  203     continue
-c     
+c
 c     store this pivot element -- (from left to right -- no danger of
-c     overlap with the working elements in L (pivots). 
-c     
-         len = len+1 
+c     overlap with the working elements in L (pivots).
+c
+         len = len+1
          w(len) = fact
          jw(len)  = jrow
          goto 150
  160     continue
-c     
+c
 c     reset double-pointer to zero (U-part)
-c     
+c
          do 308 k=1, lenu
             jw(n+jw(ii+k-1)) = 0
  308     continue
-c     
+c
 c     update L-matrix
-c     
-         lenl = len 
+c
+         lenl = len
          len = min0(lenl,lfil)
-c     
+c
 c     sort by quick-split
 c
          call qsplit (w,jw,lenl,len)
 c
 c     store L-part
-c 
-         do 204 k=1, len 
+c
+         do 204 k=1, len
             if (ju0 .gt. iwk) goto 996
             alu(ju0) =  w(k)
             jlu(ju0) =  jw(k)
             ju0 = ju0+1
  204     continue
-c     
+c
 c     save pointer to beginning of row ii of U
-c     
+c
          ju(ii) = ju0
 c
-c     update U-matrix -- first apply dropping strategy 
+c     update U-matrix -- first apply dropping strategy
 c
          len = 0
          do k=1, lenu-1
-            if (dabs(w(ii+k)) .gt. droptol*tnorm) then 
+            if (dabs(w(ii+k)) .gt. droptol*tnorm) then
                len = len+1
-               w(ii+len) = w(ii+k) 
-               jw(ii+len) = jw(ii+k) 
+               w(ii+len) = w(ii+k)
+               jw(ii+len) = jw(ii+k)
             endif
          enddo
          lenu = len+1
@@ -784,24 +786,24 @@ c
          call qsplit (w(ii+1), jw(ii+1), lenu-1,len)
 c
 c     copy
-c 
+c
          t = dabs(w(ii))
          if (len + ju0 .gt. iwk) goto 997
-         do 302 k=ii+1,ii+len-1 
+         do 302 k=ii+1,ii+len-1
             jlu(ju0) = jw(k)
             alu(ju0) = w(k)
             t = t + dabs(w(k) )
             ju0 = ju0+1
  302     continue
-c     
+c
 c     store inverse of diagonal element of u
-c     
+c
          if (w(ii) .eq. 0.0) w(ii) = (0.0001 + droptol)*tnorm
-c     
-         alu(ii) = 1.0d0/ w(ii) 
-c     
+c
+         alu(ii) = 1.0d0/ w(ii)
+c
 c     update pointer to beginning of next row of U.
-c     
+c
          jlu(ii+1) = ju0
 c-----------------------------------------------------------------------
 c     end main loop
@@ -811,40 +813,40 @@ c-----------------------------------------------------------------------
       return
 c
 c     incomprehensible error. Matrix must be wrong.
-c     
+c
  995  ierr = -1
       return
-c     
+c
 c     insufficient storage in L.
-c     
+c
  996  ierr = -2
       return
-c     
+c
 c     insufficient storage in U.
-c     
+c
  997  ierr = -3
       return
-c     
+c
 c     illegal lfil entered.
-c     
+c
  998  ierr = -4
       return
-c     
+c
 c     zero row encountered
-c     
+c
  999  ierr = -5-ii
       return
       end
 c----------------end-of-ilut--------------------------------------------
 
 
- 
 
-c----------------------------------------------------------------------- 
+
+c-----------------------------------------------------------------------
         subroutine qsplit(a,ind,n,ncut)
         implicit none
-        real*8 a(n)
-        integer ind(n), n, ncut
+        integer :: n, ind(n), ncut
+        real(8) :: a(n)
 c-----------------------------------------------------------------------
 c     does a quick-sort split of a real array.
 c     on input a(1:n). is a real array
@@ -855,8 +857,8 @@ c     abs(a(i)) .le. abs(a(ncut)) for i .gt. ncut
 c
 c     ind(1:n) is an integer array which permuted in the same way as a(*).
 c-----------------------------------------------------------------------
-        real*8 tmp, abskey
-        integer itmp, first, last, j, mid
+        real(8) :: tmp, abskey
+        integer :: itmp, first, last, j, mid
         intrinsic dabs
 c-----
         first = 1
@@ -903,24 +905,24 @@ c----------------end-of-qsplit------------------------------------------
         end
 
 c-----------------------------------------------------------------------
-      subroutine amux (n, x, y, a,ja,ia) 
+      subroutine amux (n, x, y, a,ja,ia)
       implicit none
-      real*8, intent(in)::x(*), a(*) 
-      real*8, intent(out)::y(*) 
+      real(8), intent(in)::x(*), a(*)
+      real(8), intent(out)::y(*)
       integer, intent(in)::n, ja(*), ia(*)
-      real*8 t
+      real(8) t
       integer i, k
 
       do 100 i = 1,n
 c
 c     compute the inner product of row i with vector x
-c 
+c
          t = 0.0d0
          do 99 k=ia(i), ( ia(i+1)-1 )
-            t = t + a(k)*x(ja(k)) 
+            t = t + a(k)*x(ja(k))
  99      continue
 c
-c     store result in y(i) 
+c     store result in y(i)
 c
          y(i) = t
  100  continue
@@ -930,29 +932,29 @@ c
 c---------end-of-amux---------------------------------------------------
 
 c-----------------------------------------------------------------------
-	subroutine lusol(n, y, x, alu, jlu, ju)
+      subroutine lusol(n, y, x, alu, jlu, ju)
         implicit none
-        real*8 x(n), y(n), alu(*)
-	integer n, jlu(*), ju(*)
+        integer :: n, jlu(*), ju(*)
+        real(8) :: x(n), y(n), alu(*)
 c-----------------------------------------------------------------------
 c
-c This routine solves the system (LU) x = y, 
-c given an LU decomposition of a matrix stored in (alu, jlu, ju) 
-c modified sparse row format 
+c This routine solves the system (LU) x = y,
+c given an LU decomposition of a matrix stored in (alu, jlu, ju)
+c modified sparse row format
 c
 c-----------------------------------------------------------------------
 c on entry:
-c n   = dimension of system 
+c n   = dimension of system
 c y   = the right-hand-side vector
-c alu, jlu, ju 
-c     = the LU matrix as provided from the ILU routines. 
+c alu, jlu, ju
+c     = the LU matrix as provided from the ILU routines.
 c
 c on return
-c x   = solution of LU x = y.     
+c x   = solution of LU x = y.
 c-----------------------------------------------------------------------
-c 
-c Note: routine is in place: call lusol (n, x, x, alu, jlu, ju) 
-c       will solve the system with rhs x and overwrite the result on x . 
+c
+c Note: routine is in place: call lusol (n, x, x, alu, jlu, ju)
+c       will solve the system with rhs x and overwrite the result on x .
 c
 c-----------------------------------------------------------------------
 c local variables
@@ -970,22 +972,22 @@ c
 c
 c     backward solve.
 c
-	do 90 i = n, 1, -1
-	   do 91 k=ju(i),jlu(i+1)-1
+      do i = n, 1, -1
+         do k=ju(i),jlu(i+1)-1
               x(i) = x(i) - alu(k)*x(jlu(k))
- 91	   continue
-           x(i) = alu(i)*x(i)
- 90     continue
+         end do
+          x(i) = alu(i)*x(i)
+      end do
 c
-  	return
-	end
+      return
+      end
 c----------------end of lusol ------------------------------------------
 
 c-----------------------------------------------------------------------
       function distdot(n,x,ix,y,iy)
       implicit none
       integer n, ix, iy
-      real*8 distdot, x(*), y(*), ddot
+      real(8) distdot, x(*), y(*), ddot
       external ddot
       distdot = ddot(n,x,ix,y,iy)
       return
@@ -994,15 +996,15 @@ c-----end-of-distdot-----------------------------------------------------
 
 
 c-----------------------------------------------------------------------
-      real*8 function ddot(n,dx,incx,dy,incy)
+      real(8) function ddot(n,dx,incx,dy,incy)
       implicit none
 c
 c     forms the dot product of two vectors.
 c     uses unrolled loops for increments equal to one.
 c     jack dongarra, linpack, 3/11/78.
 c
-      real*8 dx(1),dy(1),dtemp
-      integer i,incx,incy,ix,iy,m,mp1,n
+      real(8) :: dx(1),dy(1),dtemp
+      integer :: i,incx,incy,ix,iy,m,mp1,n
 c
       ddot = 0.0d0
       dtemp = 0.0d0
@@ -1046,10 +1048,10 @@ c
 c---------end-of-ddot---------------------------------------------------
 
 c------------------------------------------------------------------
-      real*8 function dnrm2 ( n, dx, incx)
+      real(8) function dnrm2 ( n, dx, incx)
       implicit none
       integer          incx, next, n, nn, i, j
-      real*8   dx(1), cutlo, cuthi, hitest, sum, xmax,zero,one
+      real(8)   dx(1), cutlo, cuthi, hitest, sum, xmax,zero,one
       data   zero, one /0.0d0, 1.0d0/
 
       data cutlo, cuthi / 8.232d-11,  1.304d19 /
@@ -1114,9 +1116,10 @@ c
 c
 c                   phase 3.  sum is mid-range.  no scaling.
 c
-      do 95 j =i,nn,incx
-      if(dabs(dx(j)) .ge. hitest) go to 100
-   95    sum = sum + dx(j)**2
+      do j =i,nn,incx
+          if(dabs(dx(j)) .ge. hitest) go to 100
+          sum = sum + dx(j)**2
+      end do
       dnrm2 = dsqrt( sum )
       go to 300
 c

@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,8 +21,9 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_MaxLakeElevFile
-  USE TSDFileHandler
-  USE TimeSeriesUtilities
+  USE TSDFileHandler        , ONLY: RealTSDataInFileType  , &
+                                    ReadTSData
+  USE TimeSeriesUtilities   , ONLY: TimeStepType
   IMPLICIT NONE
   
   
@@ -81,14 +82,14 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW MAXIMUM LAKE ELEVATIONS DATA FILE
   ! -------------------------------------------------------------
-  SUBROUTINE New(MaxLakeElevFile,cFileName,TimeStep,iStat)
+  SUBROUTINE New(MaxLakeElevFile,cFileName,cWorkingDirectory,TimeStep,iStat)
     CLASS(MaxLakeElevFileType)    :: MaxLakeElevFile
-    CHARACTER(LEN=*),INTENT(IN)   :: cFileName
+    CHARACTER(LEN=*),INTENT(IN)   :: cFileName,cWorkingDirectory
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
     INTEGER,INTENT(OUT)           :: iStat
     
     REAL(8) :: Factor(1)
-    LOGICAL :: DummyArray(1) = (/.FALSE./)
+    LOGICAL :: DummyArray(1) = [.FALSE.]
     
     !Initialize
     iStat = 0
@@ -97,7 +98,7 @@ CONTAINS
     IF (cFileName .EQ. '') RETURN
 
     !Open file
-    CALL MaxLakeElevFile%Init(cFileName,'Maximum lake elevations data file',TimeStep%TrackTime,1,.TRUE.,Factor,DummyArray,iStat=iStat)
+    CALL MaxLakeElevFile%Init(cFileName,cWorkingDirectory,'Maximum lake elevations data file',TimeStep%TrackTime,1,.TRUE.,Factor,DummyArray,iStat=iStat)
     MaxLakeElevFile%Fact = Factor(1)
     
   END SUBROUTINE New

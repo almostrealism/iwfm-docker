@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018
+!  Copyright (C) 2005-2021
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -23,42 +23,49 @@
 MODULE Class_GWZBudget
   USE MessageLogger               , ONLY: SetLastMessage            , &
                                           EchoProgress              , &
-                                          iFatal                    
+                                          f_iFatal                    
   USE GeneralUtilities            , ONLY: IntToText                 , &
                                           AllocArray                , &
                                           LocateInList              , &
                                           ArrangeText               , &
+                                          StripTextUntilCharacter   , &
                                           ShellSort
   USE TimeSeriesUtilities         , ONLY: TimeStepType              , &
-                                          IncrementTimeStamp
-  USE Package_Misc                , ONLY: iAllLocationIDsListed     , &
-                                          iLocationType_Zone        , &
-                                          iDataUnitType_Volume
+                                          IncrementTimeStamp        , &
+                                          TimeStampToJulian         , &
+                                          CTimeStep_To_RTimeStep    , &
+                                          f_cRecognizedIntervals    , &
+                                          f_iTimeStampLength
+  USE IOInterface                 , ONLY: f_iUNKNOWN
+  USE Package_Misc                , ONLY: f_iAllLocationIDsListed   , &
+                                          f_iLocationType_Zone      , &
+                                          f_iDataUnitType_Volume    , &
+                                          f_iGWComp
   USE GWZBudget_Parameters         
-  USE Package_Budget              , ONLY: VR
+  USE Package_Budget              , ONLY: f_iVR
   USE Package_ZBudget             , ONLY: ZBudgetHeaderType         , &
                                           ZBudgetType               , &
                                           SystemDataType            , &
                                           ZoneListType              , &
-                                          iStorageType              , &
-                                          iVerticalFlowType         , &
-                                          iFaceFlowType             , &
-                                          iElemDataType             , &
-                                          ColumnHeaderLen
+                                          f_iStorageType            , &
+                                          f_iVerticalFlowType       , &
+                                          f_iFaceFlowType           , &
+                                          f_iElemDataType           , &
+                                          f_iColumnHeaderLen
   USE Package_Discretization      , ONLY: AppGridType               , &
                                           StratigraphyType          
   USE Package_AppGW               , ONLY: AppGWType                 , &
-                                          SpFlowBCID                , &
-                                          SpHeadBCID                , &
-                                          GHBCID                    , &
-                                          ConstrainedGHBCID         , &
-                                          iTileDrain                , &
-                                          iSubIrig                  , &
-                                          iPump_ElemPump            , &
-                                          iPump_Well                
+                                          f_iSpFlowBCID             , &
+                                          f_iSpHeadBCID             , &
+                                          f_iGHBCID                 , &
+                                          f_iConstrainedGHBCID      , &
+                                          f_iTileDrain              , &
+                                          f_iSubIrig                , &
+                                          f_iPump_ElemPump          , &
+                                          f_iPump_Well                
   USE Package_AppStream           , ONLY: AppStreamType             , &
-                                          iDiverRecvLoss            , &
-                                          iBypassRecvLoss           
+                                          f_iDiverRecvLoss          , &
+                                          f_iBypassRecvLoss           
   USE Package_AppLake             , ONLY: AppLakeType               
   USE Package_ComponentConnectors , ONLY: StrmGWConnectorType       , &
                                           LakeGWConnectorType       
@@ -121,15 +128,16 @@ MODULE Class_GWZBudget
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC :: GWZBudgetType 
+  PUBLIC :: GWZBudgetType     , &
+            f_iZBudgetType_GW
   
 
   ! -------------------------------------------------------------
   ! --- RHS VECTOR AT A NODE FOR FACE FLOW COMPUTATIONS
-  ! --- *Note: Assumes maximum 10 faces connecting at a node
+  ! --- *Note: Assumes maximum 20 faces connecting at a node
   ! -------------------------------------------------------------
     TYPE RHSVectorType
-        REAL(8) :: RHS(10)          
+        REAL(8) :: RHS(20)          
     END TYPE RHSVectorType
 
     
@@ -146,23 +154,33 @@ MODULE Class_GWZBudget
       INTEGER,ALLOCATABLE :: ActiveLayerBelow(:,:)             !Active layer below each node for (node,layer) combination except last layer
       INTEGER,ALLOCATABLE :: IDR(:)
   CONTAINS
-      PROCEDURE,PASS :: Create
-      PROCEDURE,PASS :: Kill
-      PROCEDURE,PASS :: GetNDataList_AtLocationType
-      PROCEDURE,PASS :: GetDataList_AtLocationType
-      PROCEDURE,PASS :: GetLocationsWithData
-      PROCEDURE,PASS :: GetSubDataList_AtLocation
-      PROCEDURE,PASS :: GetModelData_AtLocation
-      PROCEDURE,PASS :: IsComputed
-      PROCEDURE,PASS :: PrintResults
-      GENERIC        :: New                     => Create
+      PROCEDURE,PASS   :: Create
+      PROCEDURE,PASS   :: Kill
+      PROCEDURE,PASS   :: GetNColumns
+      PROCEDURE,PASS   :: GetColumnTitles
+      PROCEDURE,PASS   :: GetZBudget_List
+      PROCEDURE,PASS   :: GetMonthlyFlows_GivenGWZBudget
+      PROCEDURE,NOPASS :: GetMonthlyFlows_GivenFile
+      PROCEDURE,PASS   :: GetCumGWStorChange_GivenGWZBudget
+      PROCEDURE,NOPASS :: GetCumGWStorChange_GivenFile
+      PROCEDURE,PASS   :: GetTSData
+      PROCEDURE,PASS   :: GetOutFileName
+      PROCEDURE,PASS   :: IsComputed
+      PROCEDURE,PASS   :: IsOutFileDefined
+      PROCEDURE,PASS   :: PrintResults
+      GENERIC          :: New                     => Create
+      GENERIC          :: GetMonthlyFlows         => GetMonthlyFlows_GivenFile              , &
+                                                     GetMonthlyFlows_GivenGWZBudget
+      GENERIC          :: GetCumGWStorChange      => GetCumGWStorChange_GivenFile           , &
+                                                     GetCumGWStorChange_GivenGWZBudget
   END TYPE GWZBudgetType
   
   
   ! -------------------------------------------------------------
   ! --- DATA TYPES FOR POST-PROCESSING
   ! -------------------------------------------------------------
-  CHARACTER(LEN=23),PARAMETER :: cDataList_AtZone      = 'Groundwater zone budget'
+  INTEGER,PARAMETER           :: f_iZBudgetType_GW        = f_iGWComp*1000 + 1 
+  CHARACTER(LEN=23),PARAMETER :: f_cDescription_GWZBudget = 'Groundwater zone budget'
   
   
   ! -------------------------------------------------------------
@@ -312,160 +330,343 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
-  ! --- GET THE NUMBER OF DATA TYPES FOR POST-PROCESSING AT A LOCATION TYPE
+  ! --- GET Z-BUDGET LIST 
   ! -------------------------------------------------------------
-  FUNCTION GetNDataList_AtLocationType(ZBudget,iLocationType) RESULT(NData) 
-    CLASS(GWZBudgetType),INTENT(IN) :: ZBudget
-    INTEGER,INTENT(IN)              :: iLocationType
-    INTEGER                         :: NData
+  SUBROUTINE GetZBudget_List(ZBudget,iZBudgetTypeList,cZBudgetDescriptions,cZBudgetFiles)
+    CLASS(GWZBudgetType),INTENT(IN)           :: ZBudget
+    INTEGER,ALLOCATABLE,INTENT(OUT)          :: iZBudgetTypeList(:)          
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cZBudgetDescriptions(:),cZBudgetFiles(:)
     
     !Local variables
+    INTEGER                  :: iErrorCode
     CHARACTER(:),ALLOCATABLE :: cFileName
     
     !Initialize
-    NData = 0
-    
-    SELECT CASE (iLocationType)
-        CASE (iLocationType_Zone)
-            !Is groundwater z-budget defined?
-            CALL ZBudget%GetFileName(cFileName)
-            IF (ALLOCATED(cFileName)) NData = 1
-           
-    END SELECT
-    
-  END FUNCTION GetNDataList_AtLocationType
-  
-  
+    DEALLOCATE (iZBudgetTypeList , cZBudgetDescriptions , cZBudgetFiles , STAT=iErrorCode)
+         
+    !Get the list if there is a Z-Budget generated
+    IF (ZBudget%IsOutFileDefined()) THEN
+        ALLOCATE (iZBudgetTypeList(1) , cZBudgetDescriptions(1) , cZBudgetFiles(1))
+        CALL ZBudget%File%GetName(cFileName)
+        cZBudgetFiles(1)        = cFileName
+        iZBudgetTypeList(1)     = f_iZBudgetType_GW
+        cZBudgetDescriptions(1) = f_cDescription_GWZBudget
+    ELSE
+        ALLOCATE (iZBudgetTypeList(0) , cZBudgetDescriptions(0) , cZBudgetFiles(0))
+    END IF
+     
+  END SUBROUTINE GetZBudget_List
+
+
   ! -------------------------------------------------------------
-  ! --- GET A LIST OF DATA TYPES FOR POST-PROCESSING AT A LOCATION TYPE
+  ! --- GET NUMBER OF COLUMNS FOR A ZONE (EXCLUDE TIME COLUMN)
   ! -------------------------------------------------------------
-  SUBROUTINE GetDataList_AtLocationType(ZBudget,iLocationType,cDataList,cFileList,lBudgetType) 
+  SUBROUTINE GetNColumns(ZBudget,iZoneID,iZExtent,iElems,iLayers,iZoneIDs,iNCol,iStat)
     CLASS(GWZBudgetType),INTENT(IN) :: ZBudget
-    INTEGER,INTENT(IN)              :: iLocationType
-    CHARACTER(LEN=*),ALLOCATABLE    :: cDataList(:),cFileList(:)
-    LOGICAL,ALLOCATABLE             :: lBudgetType(:)
+    INTEGER,INTENT(IN)              :: iZoneID,iZExtent,iElems(:),iLayers(:),iZoneIDs(:)
+    INTEGER,INTENT(OUT)             :: iNCol,iStat
     
     !Local variables
-    INTEGER                  :: ErrorCode
-    CHARACTER(:),ALLOCATABLE :: cFileName
+    CHARACTER(LEN=f_iColumnHeaderLen),ALLOCATABLE :: cColumnHeaders(:)
+    INTEGER,ALLOCATABLE                           :: iColumnList(:) 
+    TYPE(ZoneListType)                            :: ZoneList
+    INTEGER                                       :: iZonesWithNames(0),indx
+    CHARACTER(LEN=1)                              :: cZoneNames(0)
     
-    !Initialize
-    DEALLOCATE (cDataList , cFileList , lBudgetType , STAT=ErrorCode)
+    !Compile zone information
+    CALL ZoneList%New(ZBudget%Header%iNData,ZBudget%Header%lFaceFlows_Defined,ZBudget%SystemData,iZExtent,iElems,iLayers,iZoneIDs,iZonesWithNames,cZoneNames,iStat)
+    IF (iStat .NE. 0) RETURN
     
-    !Return if the location type is not zone
-    IF (iLocationType .NE. iLocationType_Zone) RETURN
+    !Get the sub-data; first column will be Time so that will be eliminated later
+    CALL ZBudget%GetFullColumnHeaders('area units','volume units',cColumnHeaders,iStat)
+    IF (iStat .NE. 0) RETURN
+    iNCol = SIZE(cColumnHeaders)
+    ALLOCATE (iColumnList(iNCol))
+    iColumnList = [(indx,indx=1,iNCol)]
     
-    !Is groundwater Z-Budget output defined?
-    CALL ZBudget%GetFileName(cFileName)
-    IF (ALLOCATED(cFileName)) THEN
-        ALLOCATE (cDataList(1) , cFileList(1) , lBudgetType(1))
-        cDataList   = cDataList_AtZone
-        lBudgetType = .TRUE.
-        cFileList = ''
-        cFileList = cFileName               
-    END IF
+    !Now get the number of diversified columns
+    CALL ZBudget%GetNDiversifiedColumns(ZoneList,iZoneID,iColumnList,iNCol,iStat)
+    IF (iStat .NE. 0) RETURN
     
-  END SUBROUTINE GetDataList_AtLocationType
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET A LIST LOCATION IDs THAT HAS A SPECIFED DATA TYPE FOR POST-PROCESSING
-  ! -------------------------------------------------------------
-  SUBROUTINE GetLocationsWithData(ZBudget,iLocationType,cDataType,iLocations)
-    CLASS(GWZBudgetType),INTENT(IN) :: ZBudget
-    INTEGER,INTENT(IN)              :: iLocationType
-    CHARACTER(LEN=*),INTENT(IN)     :: cDataType     !Not used since each location type has one data type
-    INTEGER,ALLOCATABLE,INTENT(OUT) :: iLocations(:)
+    !Remove time column from the count
+    iNCol = iNCol - 1
     
-    !Local variables
-    CHARACTER(:),ALLOCATABLE :: cFileName
-    
-    !Return if the location type is not a zone
-    IF (iLocationType .NE. iLocationType_Zone) RETURN
-    
-    CALL ZBudget%GetFileName(cFileName)
-    IF (ALLOCATED(cFileName)) THEN
-        ALLOCATE (iLocations(1))
-        iLocations = iAllLocationIDsListed
-    END IF
-       
-  END SUBROUTINE GetLocationsWithData
-  
+  END SUBROUTINE GetNColumns
+
   
   ! -------------------------------------------------------------
-  ! --- GET SUB-COMPONENTS OF A DATA TYPE FOR POST-PROCESSING AT A LOCATION TYPE
+  ! --- GET COLUMN TITLES FOR A ZONE (EXCLUDE TIME COLUMN)
   ! -------------------------------------------------------------
-  SUBROUTINE GetSubDataList_AtLocation(ZBudget,iLocationType,iLocationID,cDataType,cSubDataList)
+  SUBROUTINE GetColumnTitles(ZBudget,iZoneID,iZExtent,iElems,iLayers,iZoneIDs,cUnitAR,cUnitVL,cColTitles,iStat)
     CLASS(GWZBudgetType),INTENT(IN)          :: ZBudget
-    INTEGER,INTENT(IN)                       :: iLocationType,iLocationID
-    CHARACTER(LEN=*),INTENT(IN)              :: cDataType     !Not used since each location type has one data type
-    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cSubDataList(:)
+    INTEGER,INTENT(IN)                       :: iZoneID,iZExtent,iElems(:),iLayers(:),iZoneIDs(:)
+    CHARACTER(LEN=*),INTENT(IN)              :: cUnitAR,cUnitVL
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cColTitles(:)
+    INTEGER,INTENT(OUT)                      :: iStat
     
     !Local variables
-    INTEGER                                    :: ErrorCode,iStat
-    CHARACTER(:),ALLOCATABLE                   :: cFileName
-    CHARACTER(LEN=ColumnHeaderLen),ALLOCATABLE :: cColumnHeaders(:)
+    INTEGER,ALLOCATABLE                           :: iColumnList(:),iDummyIntArray(:) 
+    TYPE(ZoneListType)                            :: ZoneList
+    INTEGER                                       :: iZonesWithNames(0),indx,iNCol
+    CHARACTER(LEN=1)                              :: cZoneNames(0)
+    CHARACTER(LEN=f_iColumnHeaderLen),ALLOCATABLE :: cColTitles_Local(:)
     
-    !Initialize
-    DEALLOCATE (cSubDataList , STAT=ErrorCode)
+    !Compile zone information
+    CALL ZoneList%New(ZBudget%Header%iNData,ZBudget%Header%lFaceFlows_Defined,ZBudget%SystemData,iZExtent,iElems,iLayers,iZoneIDs,iZonesWithNames,cZoneNames,iStat)
+    IF (iStat .NE. 0) RETURN
     
-    !Return if the location type is not a zone
-    IF (iLocationType .NE. iLocationType_Zone) RETURN
+    !Get the undiversified column titles; first column will be Time so that will be eliminated later
+    CALL ZBudget%GetFullColumnHeaders(cUnitAR,cUnitVL,cColTitles_Local,iStat)
+    IF (iStat .NE. 0) RETURN
+    iNCol = SIZE(cColTitles_Local)
+    ALLOCATE (iColumnList(iNCol))
+    iColumnList = [(indx,indx=1,iNCol)]
     
-    !Return if Z-Budget is not defined
-    CALL ZBudget%GetFileName(cFileName)
-    IF (.NOT. ALLOCATED(cFileName)) RETURN
+    !Now get the diversified column titles
+    CALL ZBudget%GetFullColumnHeaders(cUnitAR,cUnitVL,cColTitles_Local,iStat,ZoneList,iZoneID,iColumnList,iDummyIntArray)
+    IF (iStat .NE. 0) RETURN
     
-    !Get the sub-data; first column will be Time so that will be eliminated next
-    CALL ZBudget%GetFullColumnHeaders('area units','volume units',cColumnHeaders,iStat) 
+    !Remove time column from titles
+    iNCol = iNCol - 1
+    ALLOCATE(cColTitles(iNCol))
+    cColTitles = cColTitles_Local(2:)
     
-    !Eliminate the Time column and save the sub-data in the return argument
-    ALLOCATE (cSubDataList(SIZE(cColumnHeaders)-1))
-    cSubDataList = cColumnHeaders(2:)
-    
-  END SUBROUTINE GetSubDataList_AtLocation
-  
+  END SUBROUTINE GetColumnTitles
+
   
   ! -------------------------------------------------------------
-  ! --- GET MODEL DATA AT A LOCATION FOR POST-PROCESSING WHEN AppGW OBJECT IS FULLY INSTANTIATED
+  ! --- GET MONTHLY ZONE BUDGET FLOWS FOR AN INTERVAL FOR A SELECTED ZONE FROM A GWZBudget OBJECT
   ! -------------------------------------------------------------
-  SUBROUTINE GetModelData_AtLocation(ZBudget,iZExtent,iElems,iLayers,iZones,iZonesWithNames,cZoneNames,iLocationType,iLocationID,cDataType,iSubDataIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval,rFact_LT,rFact_AR,rFact_VL,iDataUnitType,nActualOutput,rOutputDates,rOutputValues,iStat)
-    CLASS(GWZBudgetType)          :: ZBudget
-    INTEGER,INTENT(IN)            :: iZExtent,iElems(:),iLayers(:),iZones(:),iZonesWithNames(:),iLocationType,iLocationID,iSubDataIndex
-    CHARACTER(LEN=*),INTENT(IN)   :: cZoneNames(:),cDataType,cOutputBeginDateAndTime,cOutputEndDateAndTime,cOutputInterval
-    REAL(8),INTENT(IN)            :: rFact_LT,rFact_AR,rFact_VL
-    INTEGER,INTENT(OUT)           :: iDataUnitType,nActualOutput                           !This is the actual number of elements of rOutputValues and rOutputDates arrays that are populated (can be less than or equal to the size of these arrays)
-    REAL(8),INTENT(OUT)           :: rOutputDates(:),rOutputValues(:)
-    INTEGER,INTENT(OUT)           :: iStat
+  SUBROUTINE GetMonthlyFlows_GivenGWZBudget(GWZBudget,iZoneID,iZExtent,iElems,iLayers,iZoneIDs,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    CLASS(GWZBudgetType),INTENT(IN)          :: GWZBudget 
+    INTEGER,INTENT(IN)                       :: iZoneID,iZExtent,iElems(:),iLayers(:),iZoneIDs(:)
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate    !Assumes cBeginDate and cEndDate are properly set for monthly average values
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)            !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat 
     
     !Local variables
-    INTEGER            :: iReadCols(1),iDataUnitTypeArray(1)
-    REAL(8)            :: rValues(2,SIZE(rOutputDates))
+    INTEGER            :: iZonesWithNames(0)  
+    CHARACTER          :: cZoneNames(0)*1   
     TYPE(ZoneListType) :: ZoneList
     
+    IF (GWZBudget%IsOutfileDefined()) THEN
+        !Generate zone list
+        CALL ZoneList%New(GWZBudget%Header%iNData,GWZBudget%Header%lFaceFlows_Defined,GWZBudget%SystemData,iZExtent,iElems,iLayers,iZoneIDs,iZonesWithNames,cZoneNames,iStat)
+        IF (iStat .NE. 0) RETURN
+        
+        !Retrieve data
+        CALL GetMonthlyFlows_GivenFile(GWZBudget%ZBudgetType,ZoneList,iZoneID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    ELSE
+        iStat = 0
+        ALLOCATE (rFlows(0,0) , cFlowNames(0))
+    END IF
+    
+  END SUBROUTINE GetMonthlyFlows_GivenGWZBudget
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET MONTHLY ZONE BUDGET FLOWS FOR AN INTERVAL FOR A SELECTED ZONE FROM A ZBUDGET FILE
+  ! -------------------------------------------------------------
+  SUBROUTINE GetMonthlyFlows_GivenFile(ZBudget,ZoneList,iZoneID,cBeginDate,cEndDate,rFactVL,rFlows,cFlowNames,iStat)
+    TYPE(ZBudgetType),INTENT(IN)             :: ZBudget                !Assumes ZBudget file is already open 
+    TYPE(ZoneListType),INTENT(IN)            :: ZoneList
+    INTEGER,INTENT(IN)                       :: iZoneID
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate    !Assumes cBeginDate and cEndDate are properly set for monthly average values
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rFlows(:,:)            !In (column,month) format
+    CHARACTER(LEN=*),ALLOCATABLE,INTENT(OUT) :: cFlowNames(:)
+    INTEGER,INTENT(OUT)                      :: iStat 
+    
+    !Local variables
+    INTEGER                                       :: indx,iNCols,iNTimeSteps,iNPopulatedValues,iNAdjZones,iDimFlows,indxTime
+    INTEGER,ALLOCATABLE                           :: iColList(:),iDummyArray(:),iDataUnitTypes(:),iInflowCols(:),iOutflowCols(:)
+    REAL(8),ALLOCATABLE                           :: rValues(:,:)
+    CHARACTER(LEN=f_iColumnHeaderLen),ALLOCATABLE :: cColumnHeaders(:)
+    TYPE(TimeStepType)                            :: TimeStep
+    
     !Initialize
-    iStat         = 0
-    nActualOutput = 0
+    iStat = 0
     
-    !Return if location type is not zone
-    IF (iLocationType .NE. iLocationType_Zone) RETURN
+    !Get number of time steps stored in the ZBudget file
+    CALL ZBudget%GetTimeStepRelatedData(iNTimeSteps,TimeStep)
     
-    !Return if data type is not gw zone budget data
-    IF (TRIM(cDataType) .NE. cDataList_AtZone) RETURN
+    !Get the diversified column titles first
+    CALL ZBudget%GetFullColumnHeaders('area units','volume units',cColumnHeaders,iStat)  ;  IF (iStat .NE. 0) RETURN
+    iNCols = SIZE(cColumnHeaders)
+    ALLOCATE (iColList(iNCols))
+    iColList = [(indx,indx=1,iNCols)]
+    DEALLOCATE (cColumnHeaders)
+    CALL ZBudget%GetFullColumnHeaders('area units','volume units',cColumnHeaders,iStat,ZoneList,iZoneID,iColList,iDummyArray)  
+    IF (iStat .NE. 0) RETURN
     
-    !Generate zone list
-    CALL ZoneList%New(ZBudget%Header%iNData,ZBudget%Header%lFaceFlows_Defined,ZBudget%SystemData,iZExtent,iElems,iLayers,iZones,iZonesWithNames,cZoneNames,iStat)  
-    IF (iStat .EQ. -1) RETURN
+    !Now get the number of diversified columns; subtract 1 to eliminate the Time column
+    iNCols = SIZE(cColumnHeaders) - 1
+    DEALLOCATE (iColList)
+    ALLOCATE (iColList(iNCols) , rValues(iNCols+1,iNTimeSteps) , iDataUnitTypes(iNCols))  !rValues need to include Time column so add 1 to iNCols
+    iColList = [(indx,indx=1,iNCols)]
+         
+    !Read data for the interval
+    CALL ZBudget%ReadData(ZoneList,iZoneID,iColList,'1MON',cBeginDate,cEndDate,1d0,rFactVL,iDataUnitTypes,iNPopulatedValues,rValues,iStat)
+    IF (iStat .NE. 0) RETURN
+    
+    !Compile inflow and outflow columns including those for adjacent zones
+    iNAdjZones = ZoneList%GetNAdjacentZones(iZoneID)
+    iDimFlows  = SIZE(ZBudget%Header%iErrorInCols) + iNAdjZones
+    ALLOCATE (rFlows(iDimFlows,iNPopulatedValues),iInflowCols(iDimFlows),iOutflowCols(iDimFlows),cFlowNames(iDimFlows))
+    iInflowCols  = [(indx,indx=2,2*iDimFlows,2)]
+    iOutflowCols = [(indx+1,indx=2,2*iDimFlows,2)]
+    
+    !Compile monthly z-budget flows
+    DO indxTime=1,iNPopulatedValues
+        rFlows(:,indxTime)  = rValues(iInflowCols,indxTime) - rValues(iOutflowCols,indxTime)
+    END DO 
 
-    !Read data
-    iReadCols = iSubDataIndex
-    CALL ZBudget%ReadData(ZoneList,iLocationID,iReadCols,cOutputInterval,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_AR,rFact_VL,iDataUnitTypeArray,nActualOutput,rValues,iStat)
-    IF (iStat .EQ. -1) RETURN
-    rOutputDates(1:nActualOutput)  = rValues(1,1:nActualOutput)
-    rOutputValues(1:nActualOutput) = rValues(2,1:nActualOutput)
-    iDataUnitType                  = iDataUnitTypeArray(1)
+    !Compile flow names
+    DO indx=1,iDimFlows-iNAdjZones
+        cFlowNames(indx) = StripTextUntilCharacter(cColumnHeaders(2*indx+1),'_')  !Skip Time column in cColumnHeaders
+    END DO
+    DO indx=iDimFlows-iNAdjZones+1,iDimFlows
+        cFlowNames(indx) = StripTextUntilCharacter(cColumnHeaders(2*indx),'(')
+    END DO   
     
-  END SUBROUTINE GetModelData_AtLocation
+    !Clear memory
+    CALL ZoneList%Kill()
+    
+  END SUBROUTINE GetMonthlyFlows_GivenFile
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET CUMULATIVE CHANGE IN STORAGE FOR A ZONE FROM GWZBudget OBJECT 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetCumGWStorChange_GivenGWZBudget(GWZBudget,iZoneID,iZExtent,iElems,iLayers,iZoneIDs,cBeginDate,cEndDate,cOutputInterval,rFactVL,rOutDates,rCumStorChange,iStat)
+    CLASS(GWZBudgetType),INTENT(IN)          :: GWZBudget     
+    INTEGER,INTENT(IN)                       :: iZoneID,iZExtent,iElems(:),iLayers(:),iZoneIDs(:)
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate,cOutputInterval
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rOutDates(:),rCumStorChange(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+33) :: ThisProcedure = ModName // 'GetCumGWStorChange_GivenGWZBudget'
+    INTEGER                      :: iZonesWithNames(0)  
+    CHARACTER                    :: cZoneNames(0)*1   
+    TYPE(ZoneListType)           :: ZoneList
+    
+    IF (GWZBudget%IsOutfileDefined()) THEN
+        !Generate zone list
+        CALL ZoneList%New(GWZBudget%Header%iNData,GWZBudget%Header%lFaceFlows_Defined,GWZBudget%SystemData,iZExtent,iElems,iLayers,iZoneIDs,iZonesWithNames,cZoneNames,iStat)
+        IF (iStat .NE. 0) RETURN
+        
+        !Retrieve data
+        CALL GetCumGWStorChange_GivenFile(GWZBudget%ZBudgetType,ZoneList,iZoneID,cBeginDate,cEndDate,cOutputInterval,rFactVL,rOutDates,rCumStorChange,iStat)
+    ELSE
+        CALL SetLastMessage('Groundwater ZBudget is not part of model output to retrieve zonal cumulative storage change!',f_iFatal,ThisProcedure)
+        iStat = -1
+    END IF
+    
+  END SUBROUTINE GetCumGWStorChange_GivenGWZBudget
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET CUMULATIVE CHANGE IN STORAGE FOR A ZONE FROM ZBUDGET OUTPUT 
+  ! -------------------------------------------------------------
+  SUBROUTINE GetCumGWStorChange_GivenFile(ZBudget,ZoneList,iZoneID,cBeginDate,cEndDate,cOutputInterval,rFactVL,rOutDates,rCumStorChange,iStat)
+    TYPE(ZBudgetType),INTENT(IN)             :: ZBudget      !Assumes ZBudget file is already open
+    TYPE(ZoneListType),INTENT(IN)            :: ZoneList     !Assumes zone list has already been compiled
+    INTEGER,INTENT(IN)                       :: iZoneID
+    CHARACTER(LEN=*),INTENT(IN)              :: cBeginDate,cEndDate,cOutputInterval
+    REAL(8),INTENT(IN)                       :: rFactVL
+    REAL(8),ALLOCATABLE,INTENT(OUT)          :: rOutDates(:),rCumStorChange(:)
+    INTEGER,INTENT(OUT)                      :: iStat
+    
+    !Local variables
+    INTEGER,PARAMETER                 :: iColList(2) = [1,2]             
+    INTEGER                           :: iDimActual,iNTimeSteps,indx,iInterval_InMinutes,iDataUnitTypes(2)
+    REAL(8)                           :: rDeltaT   
+    REAL(8),ALLOCATABLE               :: rValues(:,:)
+    CHARACTER(LEN=f_iTimeStampLength) :: cTimeZero
+    TYPE(TimeStepType)                :: TimeStep
+    
+    !Initialize
+    iStat = 0
+    
+    !Get number of time steps stored in the ZBudget file
+    CALL ZBudget%GetTimeStepRelatedData(iNTimeSteps,TimeStep)
+    
+    !Allocate array to read data
+    ALLOCATE (rValues(3,iNTimeSteps))  !Add 1 to the first domension for Time column
+    
+    !Read gw storage inflow and outflow data
+    CALL ZBudget%ReadData(ZoneList,iZoneID,iColList,cOutputInterval,cBeginDate,cEndDate,1d0,rFactVL,iDataUnitTypes,iDimActual,rValues,iStat)
+    
+    !Store values in return argument
+    ALLOCATE (rOutDates(iDimActual+1) , rCumStorChange(iDimActual+1))
+    rOutDates(2:iDimActual+1) = rValues(1,1:iDimActual)
+    rCumStorChange(1)         = 0.0
+    DO indx=1,iDimActual
+        rCumStorChange(indx+1) = rCumStorChange(indx) + rValues(3,indx) - rValues(2,indx) 
+    END DO
+    
+    !Calculate first date as t=0
+    CALL CTimeStep_To_RTimeStep(cOutputInterval,rDeltaT,iInterval_InMinutes,iStat)  ;  IF (iStat .NE. 0) RETURN
+    cTimeZero    = IncrementTimeStamp(cBeginDate,iInterval_InMinutes,-1)
+    rOutDates(1) = TimeStampToJulian(cTimeZero)
+    
+  END SUBROUTINE GetCumGWStorChange_GivenFile
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET TIME SERIES DATA FROM ZBUDGET FILE FOR A SELECTED ZONE AND SELECTED COLUMNS
+  ! -------------------------------------------------------------
+  SUBROUTINE GetTSData(GWZBudget,iZoneID,iCols,iZExtent,iElems,iLayers,iZoneIDs,cBeginDate,cEndDate,cInterval,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
+    CLASS(GWZBudgetType),INTENT(IN) :: GWZBudget
+    INTEGER,INTENT(IN)              :: iZoneID,iCols(:),iZExtent,iElems(:),iLayers(:),iZoneIDs(:)
+    CHARACTER(LEN=*),INTENT(IN)     :: cBeginDate,cEndDate,cInterval
+    REAL(8),INTENT(IN)              :: rFactAR,rFactVL
+    REAL(8),INTENT(OUT)             :: rOutputDates(:),rOutputValues(:,:)    !rOutputValues is in (timestep,column) format
+    INTEGER,INTENT(OUT)             :: iDataTypes(:),inActualOutput,iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+9) :: ThisProcedure = ModName // 'GetTSData'
+    INTEGER                     :: indx,iZonesWithNames(0)
+    REAL(8)                     :: rValues(SIZE(iCols)+1,SIZE(rOutputDates))
+    CHARACTER(LEN=0)            :: cZoneNames(0)
+    TYPE(ZoneListType)          :: ZoneList
+
+    IF (.NOT. GWZBudget%IsOutfileDefined()) THEN
+        CALL SetLastMessage('Groundwater zone budget is not part of the model output to retrieve data!',f_iFatal,ThisProcedure)
+        iStat = -1
+        RETURN
+    END IF
+            
+    !Generate zone list
+    CALL ZoneList%New(GWZBudget%Header%iNData,GWZBudget%Header%lFaceFlows_Defined,GWZBudget%SystemData,iZExtent,iElems,iLayers,iZoneIDs,iZonesWithNames,cZoneNames,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    
+    !Read data
+    CALL GWZBudget%ReadData(ZoneList,iZoneID,iCols,cInterval,cBeginDate,cEndDate,rFactAR,rFactVL,iDataTypes,inActualOutput,rValues,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    DO indx=1,inActualOutput
+        rOutputDates(indx)    = rValues(1,indx)
+        rOutputValues(indx,:) = rValues(2:,indx)
+    END DO
+    
+    !Delete zone list
+    CALL ZoneList%Kill()
+    
+  END SUBROUTINE GetTSData
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET Z-BUDGET FILENAME
+  ! -------------------------------------------------------------
+  SUBROUTINE GetOutFileName(ZBudget,cFileName)
+    CLASS(GWZBudgetType),INTENT(IN) :: ZBudget
+    CHARACTER(:),ALLOCATABLE        :: cFileName
+    
+    CALL ZBudget%File%GetName(cFileName)
+    
+  END SUBROUTINE GetOutFileName
   
   
     
@@ -514,31 +715,33 @@ CONTAINS
     SystemData%NElements = AppGrid%NElements
     SystemData%NLayers   = Stratigraphy%NLayers
     SystemData%NFaces    = AppGrid%NFaces
-    ALLOCATE (SystemData%iElementNNodes(AppGrid%NElements)                , &
+    ALLOCATE (SystemData%iElementIDs(AppGrid%NElements)                   , &
+              SystemData%iElementNNodes(AppGrid%NElements)                , &
               SystemData%iElementNodes(4,AppGrid%NElements)               , &
               SystemData%iFaceElems(2,AppGrid%NFaces)                     , &
               SystemData%lBoundaryFace(AppGrid%NFaces)                    , &
-              SystemData%lActiveNode(AppGrid%NNodes,stratigraphy%NLayers) , &
+              SystemData%lActiveNode(AppGrid%NNodes,Stratigraphy%NLayers) , &
               SystemData%rNodeAreas(AppGrid%NNodes)                       , &
               SystemData%rElementAreas(AppGrid%NElements)                 , &
               SystemData%rElementNodeAreas(4,AppGrid%NElements)           , &
               SystemData%rElementNodeAreaFractions(4,AppGrid%NElements)   )
     SystemData%rNodeAreas     = AppGrid%AppNode%Area
     SystemData%rElementAreas  = AppGrid%AppElement%Area
-    SystemData%iElementNNodes = AppGrid%Element%NVertex
+    SystemData%iElementNNodes = AppGrid%NVertex
     DO indxElem=1,AppGrid%NElements
-        SystemData%iElementNodes(:,indxElem)  = AppGrid%Element(indxElem)%Vertex
-        DO indxVertex=1,AppGrid%Element(indxElem)%NVertex
+        SystemData%iElementIDs(indxElem)     = AppGrid%AppElement(indxElem)%ID
+        SystemData%iElementNodes(:,indxElem) = AppGrid%Vertex(:,indxElem)
+        DO indxVertex=1,AppGrid%NVertex(indxElem)
             SystemData%rElementNodeAreas(indxVertex,indxElem)         = AppGrid%AppElement(indxElem)%VertexArea(indxVertex)
             SystemData%rElementNodeAreaFractions(indxVertex,indxElem) = AppGrid%AppElement(indxElem)%VertexAreaFraction(indxVertex)
         END DO
-        IF (AppGrid%Element(indxElem)%NVertex .EQ. 3) THEN
+        IF (AppGrid%NVertex(indxElem) .EQ. 3) THEN
             SystemData%rElementNodeAreas(4,indxElem)         = 0.0
             SystemData%rElementNodeAreaFractions(4,indxElem) = 0.0
         END IF
     END DO
     DO indxFace=1,AppGrid%NFaces
-        SystemData%iFaceElems(:,indxFace) = AppGrid%AppFace(indxFace)%Element
+        SystemData%iFaceElems(:,indxFace) = AppGrid%AppFace%Element(:,indxFace)
     END DO
     SystemData%lBoundaryFace = AppGrid%AppFace%BoundaryFace
     SystemData%lActiveNode   = Stratigraphy%ActiveNode
@@ -563,7 +766,7 @@ CONTAINS
     NModelFlowTypes = SIZE(ModelFlowTypes)
     Header%iNData   = 2 * NModelFlowTypes
     ALLOCATE (Header%iDataTypes(Header%iNData) , Header%cFullDataNames(Header%iNData) , Header%cDataHDFPaths(Header%iNData))
-    Header%iDataTypes = VR
+    Header%iDataTypes = f_iVR
     DO indxFlow=1,NModelFlowTypes
         Header%cFullDataNames(2*indxFlow-1) = TRIM(FlowNames(ModelFlowTypes(indxFlow))) // '_Inflow (+)'
         Header%cFullDataNames(2*indxFlow)   = TRIM(FlowNames(ModelFlowTypes(indxFlow))) // '_Outflow (-)'
@@ -660,7 +863,7 @@ CONTAINS
       
     !Flow ID for specified flow bc
     DO indxLayer=1,NLayers
-      IF (AppGW%GetNNodesWithBCType(indxLayer,SpFlowBCID) .GT. 0) THEN
+      IF (AppGW%GetNNodesWithBCType(indxLayer,f_iSpFlowBCID) .GT. 0) THEN
         TempFlowTypes(FlowBCID) = FlowBCID
         EXIT
       END IF
@@ -668,7 +871,7 @@ CONTAINS
       
     !Flow ID for specified head bc
     DO indxLayer=1,NLayers
-      IF (AppGW%GetNNodesWithBCType(indxLayer,SpHeadBCID) .GT. 0) THEN
+      IF (AppGW%GetNNodesWithBCType(indxLayer,f_iSpHeadBCID) .GT. 0) THEN
         TempFlowTypes(HeadBCID) = HeadBCID
         EXIT
       END IF
@@ -676,7 +879,7 @@ CONTAINS
       
     !Flow ID for general head bc
     DO indxLayer=1,NLayers
-      IF (AppGW%GetNNodesWithBCType(indxLayer,GHBCID) .GT. 0) THEN
+      IF (AppGW%GetNNodesWithBCType(indxLayer,f_iGHBCID) .GT. 0) THEN
         TempFlowTypes(GenHeadBCID) = GenHeadBCID
         EXIT
       END IF
@@ -684,7 +887,7 @@ CONTAINS
       
     !Flow ID for constrained general head bc
     DO indxLayer=1,NLayers
-      IF (AppGW%GetNNodesWithBCType(indxLayer,ConstrainedGHBCID) .GT. 0) THEN
+      IF (AppGW%GetNNodesWithBCType(indxLayer,f_iConstrainedGHBCID) .GT. 0) THEN
         TempFlowTypes(ConstGenHeadBCID) = ConstGenHeadBCID
         EXIT
       END IF
@@ -720,7 +923,7 @@ CONTAINS
     !Compile flow id numbers simulated in the model
     ALLOCATE (ModelFlowTypes(NFlowTypes) , STAT=ErrorCode)
     IF (ErrorCode.NE.0) THEN
-        CALL SetLastMessage('Error in allocating memory for groundwater Z-Budget flow types',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for groundwater Z-Budget flow types',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -757,8 +960,8 @@ CONTAINS
       NFlowTypeElems = 0
       NElemPumps     = AppGW%GetNElemPumps()
       NWells         = AppGW%GetNWells()
-      CALL AppStream%GetElemsWithRecvLoss(iDiverRecvLoss,ElemsWithDiverRecvLoss)
-      CALL AppStream%GetElemsWithRecvLoss(iBypassRecvLoss,ElemsWithBypassRecvLoss)
+      CALL AppStream%GetElemsWithRecvLoss(f_iDiverRecvLoss,ElemsWithDiverRecvLoss)
+      CALL AppStream%GetElemsWithRecvLoss(f_iBypassRecvLoss,ElemsWithBypassRecvLoss)
       
       ASSOCIATE (pAppNode        => AppGrid%AppNode             , &
                  pTopActiveLayer => Stratigraphy%TopActiveLayer )
@@ -792,14 +995,14 @@ CONTAINS
               
             !Tile drains
             CASE (TileDrainID)
-              CALL AppGW%GetTileDrainNodesLayers(iTileDrain,Nodes,Layers)
+              CALL AppGW%GetTileDrainNodesLayers(f_iTileDrain,Nodes,Layers)
               DO indxNode=1,NDrain
                 CALL AddFlowTypeToElements_ByNode(Nodes(indxNode),Layers(indxNode),TileDrainID,NFlowTypeElems,FlowTypeElems)
               END DO
               
             !Subsurface irrigation
             CASE (SubIrigID)
-              CALL AppGW%GetTileDrainNodesLayers(iSubIrig,Nodes,Layers)
+              CALL AppGW%GetTileDrainNodesLayers(f_iSubIrig,Nodes,Layers)
               DO indxNode=1,NSubIrig
                 CALL AddFlowTypeToElements_ByNode(Nodes(indxNode),Layers(indxNode),SubIrigID,NFlowTypeElems,FlowTypeElems)
               END DO
@@ -824,7 +1027,7 @@ CONTAINS
             !Specified flow BC
             CASE (FlowBCID)
               DO indxLayer=1,NLayers
-                CALL AppGW%GetNodesWithBCType(indxLayer,SpFlowBCID,iBCNodes)
+                CALL AppGW%GetNodesWithBCType(indxLayer,f_iSpFlowBCID,iBCNodes)
                 DO indxNode=1,SIZE(iBCNodes)
                   CALL AddFlowTypeToElements_ByNode(iBCNodes(indxNode),indxLayer,FlowBCID,NFlowTypeElems,FlowTypeElems)
                 END DO
@@ -833,7 +1036,7 @@ CONTAINS
             !Specified head BC
             CASE (HeadBCID)
               DO indxLayer=1,NLayers
-                CALL AppGW%GetNodesWithBCType(indxLayer,SpHeadBCID,iBCNodes)
+                CALL AppGW%GetNodesWithBCType(indxLayer,f_iSpHeadBCID,iBCNodes)
                 DO indxNode=1,SIZE(iBCNodes)
                   CALL AddFlowTypeToElements_ByNode(iBCNodes(indxNode),indxLayer,HeadBCID,NFlowTypeElems,FlowTypeElems)
                 END DO
@@ -842,7 +1045,7 @@ CONTAINS
             !General head BC
             CASE (GenHeadBCID)
               DO indxLayer=1,NLayers
-                CALL AppGW%GetNodesWithBCType(indxLayer,GHBCID,iBCNodes)
+                CALL AppGW%GetNodesWithBCType(indxLayer,f_iGHBCID,iBCNodes)
                 DO indxNode=1,SIZE(iBCNodes)
                     CALL AddFlowTypeToElements_ByNode(iBCNodes(indxNode),indxLayer,GenHeadBCID,NFlowTypeElems,FlowTypeElems)
                 END DO
@@ -851,7 +1054,7 @@ CONTAINS
             !Constrained general head BC
             CASE (ConstGenHeadBCID)
               DO indxLayer=1,NLayers
-                CALL AppGW%GetNodesWithBCType(indxLayer,ConstrainedGHBCID,iBCNodes)
+                CALL AppGW%GetNodesWithBCType(indxLayer,f_iConstrainedGHBCID,iBCNodes)
                 DO indxNode=1,SIZE(iBCNodes)
                     CALL AddFlowTypeToElements_ByNode(iBCNodes(indxNode),indxLayer,ConstGenHeadBCID,NFlowTypeElems,FlowTypeElems)
                 END DO
@@ -899,8 +1102,8 @@ CONTAINS
             !Element pumping
             CASE (ElemPumpID)
               DO indxPump=1,NElemPumps
-                iElem = AppGW%GetPumpElement(indxPump,iPump_ElemPump)
-                CALL AppGW%GetLayerPumpFactors(indxPump,iPump_ElemPump,rPumpLayerFactors)
+                iElem = AppGW%GetPumpElement(indxPump,f_iPump_ElemPump)
+                CALL AppGW%GetLayerPumpFactors(indxPump,f_iPump_ElemPump,rPumpLayerFactors)
                 DO iLayer=1,NLayers
                   IF (rPumpLayerFactors(iLayer) .GT. 0.0) &
                     CALL AddFlowTypeToElements_ByElement(iElem,iLayer,ElemPumpID,NFlowTypeElems,FlowTypeElems)
@@ -910,8 +1113,8 @@ CONTAINS
             !Well pumping
             CASE (WellPumpID)
               DO indxPump=1,NWells
-                iElem = AppGW%GetPumpElement(indxPump,iPump_Well)
-                CALL AppGW%GetLayerPumpFactors(indxPump,iPump_Well,rPumpLayerFactors)
+                iElem = AppGW%GetPumpElement(indxPump,f_iPump_Well)
+                CALL AppGW%GetLayerPumpFactors(indxPump,f_iPump_Well,rPumpLayerFactors)
                 DO iLayer=1,NLayers
                   IF (rPumpLayerFactors(iLayer) .GT. 0.0) &
                     CALL AddFlowTypeToElements_ByElement(iElem,iLayer,WellPumpID,NFlowTypeElems,FlowTypeElems)
@@ -990,8 +1193,8 @@ CONTAINS
       INTEGER :: N,indxNode,iNode,iLayerLocal(4),NVertex,Vertex(4),iL
       
       !Initialize
-      NVertex = AppGrid%Element(iElem)%NVertex
-      Vertex  = AppGrid%Element(iElem)%Vertex
+      NVertex = AppGrid%NVertex(iElem)
+      Vertex  = AppGrid%Vertex(:,iElem)
       
       !Layer numbers to be used in computations
       IF (iLayer .EQ. 0) THEN
@@ -1032,6 +1235,22 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
+  ! --- IS Z-BUDGET FILE DEFINED? 
+  ! -------------------------------------------------------------
+  PURE FUNCTION IsOutFileDefined(ZBudget) RESULT(lDefined)
+    CLASS(GWZBudgetType),INTENT(IN) :: ZBudget
+    LOGICAL                         :: lDefined
+    
+    IF (ZBudget%File%iGetFileType() .EQ. f_iUNKNOWN) THEN
+        lDefined = .FALSE.
+    ELSE
+        lDefined = .TRUE.
+    END IF
+    
+  END FUNCTION IsOutFileDefined
+  
+  
+  ! -------------------------------------------------------------
   ! --- PRINT Z-BUDGET DATA
   ! -------------------------------------------------------------
   SUBROUTINE PrintResults(GWZBudget,AppGrid,Stratigraphy,AppStream,AppGW,AppSWShed,StrmGWConnector,LakeGWConnector,QDEEPPERC,GWToRZFlows,TimeStep,FaceFlows)
@@ -1051,8 +1270,8 @@ CONTAINS
     INTEGER             :: indxLayer,indxNode,indxElem,iNode,indxFlowID,NVertex,iRHSRow,indx,I,J,iFlowID,iDataCol,      &
                            NNodes,NElements,NLayers,NEqns,indxFace,iFace,iElem,NFaces,iOffsetNode,idli,NStrmNodes,      &
                            indxVertex,Vertex(4),iOffsetElem,iLayerB,jNode,iMaxDataCol
-    REAL(8)             :: rValue,AreaFrac(4),LocalFaceFlows(50),VertexArea(4),VertexAreaFrac(4),                       &
-                           FaceFlowsPass(AppGrid%NFaces,1),Vx(AppGrid%NNodes,Stratigraphy%NLayers),                     &
+    REAL(8)             :: rValue,AreaFrac(4),LocalFaceFlows(50),VertexArea(4),VertexAreaFrac(4),rBottomElev_I,         &
+                           FaceFlowsPass(AppGrid%NFaces,1),Vx(AppGrid%NNodes,Stratigraphy%NLayers),rBottomElev_J,       &
                            Vy(AppGrid%NNodes,Stratigraphy%NLayers),Vz(AppGrid%NNodes,Stratigraphy%NLayers),             &
                            VzTemp(AppGrid%NNodes),VerticalFlow(AppGrid%NNodes,1),Storativity(AppGrid%NNodes),           &
                            ChangeInStorage(AppGrid%NNodes),GWHeads(AppGrid%NNodes,Stratigraphy%NLayers),                &
@@ -1089,13 +1308,13 @@ CONTAINS
         NodeRHS(indxNode,indxLayer)%RHS = 0.0
       END DO
     END DO
-    ElemDiverRecvLosses  = AppStream%GetElemRecvLosses(NElements,iDiverRecvLoss)
-    ElemBypassRecvLosses = AppStream%GetElemRecvLosses(NElements,iBypassRecvLoss)
-    CALL AppGW%GetTileDrainNodesLayers(iTileDrain,iTileDrainNodes,iTileDrainLayers)  ;  iTileDrainNodes = (iTileDrainLayers-1)*NNodes + iTileDrainNodes
-    CALL AppGW%GetTileDrainFlows(iTileDrain,rTileDrainFlows)
-    CALL AppGW%GetTileDrainNodesLayers(iSubIrig,iSubIrigNodes,iSubIrigLayers)  ;  iSubIrigNodes = (iSubIrigLayers-1)*NNodes + iSubIrigNodes
-    CALL AppGW%GetTileDrainFlows(iSubIrig,rSubIrigFlows)
-    CALL AppGW%GetHeads(.FALSE.,GWHeads)
+    ElemDiverRecvLosses  = AppStream%GetElemRecvLosses(NElements,f_iDiverRecvLoss)
+    ElemBypassRecvLosses = AppStream%GetElemRecvLosses(NElements,f_iBypassRecvLoss)
+    CALL AppGW%GetTileDrainNodesLayers(f_iTileDrain,iTileDrainNodes,iTileDrainLayers)  ;  iTileDrainNodes = (iTileDrainLayers-1)*NNodes + iTileDrainNodes
+    CALL AppGW%GetTileDrainFlows(f_iTileDrain,rTileDrainFlows)
+    CALL AppGW%GetTileDrainNodesLayers(f_iSubIrig,iSubIrigNodes,iSubIrigLayers)  ;  iSubIrigNodes = (iSubIrigLayers-1)*NNodes + iSubIrigNodes
+    CALL AppGW%GetTileDrainFlows(f_iSubIrig,rSubIrigFlows)
+    CALL AppGW%GetHeads_All(.FALSE.,GWHeads)
  
     !Compute
     Layer_Loop :DO indxLayer=1,NLayers
@@ -1125,8 +1344,8 @@ CONTAINS
                             IF (iDataCol .EQ. 0) CYCLE
                         
                             !Initialize relevant variables
-                            NVertex                   = AppGrid%Element(indxElem)%NVertex
-                            Vertex                    = AppGrid%Element(indxElem)%Vertex
+                            NVertex                   = AppGrid%NVertex(indxElem)
+                            Vertex                    = AppGrid%Vertex(:,indxElem)
                             VertexArea(1:NVertex)     = AppGrid%AppElement(indxElem)%VertexArea
                             VertexAreaFrac(1:NVertex) = AppGrid%AppElement(indxElem)%VertexAreaFraction
                             
@@ -1141,12 +1360,14 @@ CONTAINS
                                     iRHSRow       = LocateInList(indxElem,AppGrid%AppNode(iNode)%ElemID_OnCCWSide)
                                     lBoundaryNode = AppGrid%AppNode(iNode)%BoundaryNode
                                     NEqns         = AppGrid%AppNode(iNode)%NFaceID
+                                    rBottomElev_I = Stratigraphy%BottomElev(iNode,indxLayer)
                                     !Horizontal flows
                                     DO J=1,NVertex
                                         jNode = Vertex(J)
                                         IF (J .EQ. I) CYCLE
                                         IF (.NOT. Stratigraphy%ActiveNode(jNode,indxLayer)) CYCLE
-                                        NodeRHS(iNode,indxLayer)%RHS(iRHSRow) = NodeRHS(iNode,indxLayer)%RHS(iRHSRow) - AppGW%GetHorizontalFlow(I,J,indxElem,indxLayer,AppGrid)
+                                        rBottomElev_J = Stratigraphy%BottomElev(jNode,indxLayer)
+                                        NodeRHS(iNode,indxLayer)%RHS(iRHSRow) = NodeRHS(iNode,indxLayer)%RHS(iRHSRow) - AppGW%GetHorizontalFlow(I,J,indxElem,indxLayer,rBottomElev_I,rBottomElev_J,AppGrid)
                                         IF (lBoundaryNode) NodeRHS(iNode,indxLayer)%RHS(NEqns) = NodeRHS(iNode,indxLayer)%RHS(NEqns) - AppGW%GetRotation(I,J,indxElem,indxLayer,AppGrid)
                                     END DO
                                     !Vertical flows
@@ -1202,19 +1423,19 @@ CONTAINS
                                       
                                     !Specified flow b.c.
                                     CASE (FlowBCID)
-                                      CALL AppGW%GetBoundaryFlowAtElementNodeLayer(SpFlowBCID,indxElem,indxVertex,indxLayer,AppGrid,rValue,lAddToRHS)
+                                      CALL AppGW%GetBoundaryFlowAtElementNodeLayer(f_iSpFlowBCID,indxElem,indxVertex,indxLayer,AppGrid,rValue,lAddToRHS)
                                       
                                     !Specified head b.c.
                                     CASE (HeadBCID)
-                                      CALL AppGW%GetBoundaryFlowAtElementNodeLayer(SpHeadBCID,indxElem,indxVertex,indxLayer,AppGrid,rValue,lAddToRHS)
+                                      CALL AppGW%GetBoundaryFlowAtElementNodeLayer(f_iSpHeadBCID,indxElem,indxVertex,indxLayer,AppGrid,rValue,lAddToRHS)
                                       
                                     !General head b.c.
                                     CASE (GenHeadBCID)
-                                      CALL AppGW%GetBoundaryFlowAtElementNodeLayer(GHBCID,indxElem,indxVertex,indxLayer,AppGrid,rValue,lAddToRHS)
+                                      CALL AppGW%GetBoundaryFlowAtElementNodeLayer(f_iGHBCID,indxElem,indxVertex,indxLayer,AppGrid,rValue,lAddToRHS)
                                     
                                     !Constrained general head b.c.
                                     CASE (ConstGenHeadBCID)
-                                      CALL AppGW%GetBoundaryFlowAtElementNodeLayer(ConstrainedGHBCID,indxElem,indxVertex,indxLayer,AppGrid,rValue,lAddToRHS)
+                                      CALL AppGW%GetBoundaryFlowAtElementNodeLayer(f_iConstrainedGHBCID,indxElem,indxVertex,indxLayer,AppGrid,rValue,lAddToRHS)
                                     
                                     !Small watershed baseflow b.c.
                                     CASE (SmallWShedBaseFlowID)
@@ -1238,11 +1459,11 @@ CONTAINS
                                     
                                     !Element pumping
                                     CASE (ElemPumpID)
-                                      rValue = AppGW%GetPumpingAtElementLayerNode(indxElem,indxLayer,indxVertex,iPump_ElemPump) * TimeStep%DeltaT
+                                      rValue = AppGW%GetActualPumpingAtElementLayerNode(indxElem,indxLayer,indxVertex,f_iPump_ElemPump) * TimeStep%DeltaT
                                     
                                     !Well pumping
                                     CASE (WellPumpID)
-                                      rValue = AppGW%GetPumpingAtElementLayerNode(indxElem,indxLayer,indxVertex,iPump_Well) * TimeStep%DeltaT
+                                      rValue = AppGW%GetActualPumpingAtElementLayerNode(indxElem,indxLayer,indxVertex,f_iPump_Well) * TimeStep%DeltaT
                                     
                                     !Outflow to root zone
                                     CASE (FlowToRootZoneID)
@@ -1266,17 +1487,17 @@ CONTAINS
                             iMaxDataCol               = GWZBudget%Header%iNDataElems(2*indxFlowID,indxLayer) !Header keeps info for both inflow and outflow components of the flow term; we are pulling the number of elements from outflow info
                             !Inflow
                             FlowPass(1:iMaxDataCol,1) = FlowCollect_IN(1:iMaxDataCol,indxFlowID,indxLayer)
-                            CALL GWZBudget%WriteData(NLayers,iElemDataType,2*indxFlowID-1,indxLayer,FlowPass(1:iMaxDataCol,:))
+                            CALL GWZBudget%WriteData(NLayers,f_iElemDataType,2*indxFlowID-1,indxLayer,FlowPass(1:iMaxDataCol,:))
                             !Outflow
                             FlowPass(1:iMaxDataCol,1) = FlowCollect_OUT(1:iMaxDataCol,indxFlowID,indxLayer)
-                            CALL GWZBudget%WriteData(NLayers,iElemDataType,2*indxFlowID,indxLayer,FlowPass(1:iMaxDataCol,:))     
+                            CALL GWZBudget%WriteData(NLayers,f_iElemDataType,2*indxFlowID,indxLayer,FlowPass(1:iMaxDataCol,:))     
                         END IF
                         
                     END DO FlowID_Loop
     
                     !Print out vertical flows
                     IF (lComputeZBudgetFlows) THEN
-                        IF (indxLayer .LT. NLayers) CALL GWZBudget%WriteData(NLayers,iVerticalFlowType,0,indxLayer,VerticalFlow)
+                        IF (indxLayer .LT. NLayers) CALL GWZBudget%WriteData(NLayers,f_iVerticalFlowType,0,indxLayer,VerticalFlow)
                     END IF
                     
                 END DO Layer_Loop
@@ -1286,7 +1507,7 @@ CONTAINS
         !Storages
         DO indxLayer=1,NLayers
             CALL AppGW%GetElementStorageAtLayer(indxLayer,AppGrid,Stratigraphy,ElemStorages(:,1))
-            CALL GWZBudget%WriteData(NLayers,iStorageType,0,indxLayer,ElemStorages)        
+            CALL GWZBudget%WriteData(NLayers,f_iStorageType,0,indxLayer,ElemStorages)        
         END DO
     END IF
     
@@ -1313,9 +1534,9 @@ CONTAINS
             !Add nodal face flows to actual face flows
             DO indxFace=1,NEqns
                 iFace = AppGrid%AppNode(indxNode)%FaceID(indxFace)
-                IF (AppGrid%AppFace(iFace)%BoundaryFace) CYCLE
+                IF (AppGrid%AppFace%BoundaryFace(iFace)) CYCLE
                 iElem = AppGrid%AppNode(indxNode)%ElemID_OnCCWSide(indxFace)
-                IF (iElem .EQ. AppGrid%AppFace(iFace)%Element(1)) THEN
+                IF (iElem .EQ. AppGrid%AppFace%Element(1,iFace)) THEN
                     FaceFlows(iFace,indxLayer) = FaceFlows(iFace,indxLayer) + LocalFaceFlows(indxFace)
                 ELSE
                     FaceFlows(iFace,indxLayer) = FaceFlows(iFace,indxLayer) - LocalFaceFlows(indxFace)
@@ -1326,7 +1547,7 @@ CONTAINS
         !Print face flows for the layer
         IF (lComputeZBudgetFlows) THEN
             FaceFlowsPass(:,1) = FaceFlows(:,indxLayer)
-            CALL GWZBudget%WriteData(NLayers,iFaceFlowType,0,indxLayer,FaceFlowsPass)
+            CALL GWZBudget%WriteData(NLayers,f_iFaceFlowType,0,indxLayer,FaceFlowsPass)
         END IF
     END DO
     
@@ -1428,8 +1649,8 @@ CONTAINS
     IF (rDepth .EQ. 0.0) RETURN
     
     !Corrdinates of the node
-    x0 = AppGrid%Node(iNode0)%X
-    y0 = AppGrid%Node(iNode0)%Y
+    x0 = AppGrid%X(iNode0)
+    y0 = AppGrid%Y(iNode0)
     
     !Compute x- and y- component of velocity vector at node
     DO indxFace=1,AppGrid%AppNode(iNode0)%NFaceID
@@ -1437,18 +1658,18 @@ CONTAINS
         iFace = AppGrid%AppNode(iNode0)%FaceID(indxFace)
         
         !Face length
-        rLength = AppGrid%AppFace(iFace)%Length
+        rLength = AppGrid%AppFace%Length(iFace)
         
         !Connecting node 
-        IF (AppGrid%AppFace(iFace)%Node(1) .EQ. iNode0) THEN
-            iNode1 = AppGrid%AppFace(iFace)%Node(2)
+        IF (AppGrid%AppFace%Node(1,iFace) .EQ. iNode0) THEN
+            iNode1 = AppGrid%AppFace%Node(2,iFace)
         ELSE
-            iNode1 = AppGrid%AppFace(iFace)%Node(1)
+            iNode1 = AppGrid%AppFace%Node(1,iFace)
         END IF
         
         !Coordinates of connecting node
-        x1 = AppGrid%Node(iNode1)%X
-        y1 = AppGrid%Node(iNode1)%Y
+        x1 = AppGrid%X(iNode1)
+        y1 = AppGrid%Y(iNode1)
         
         !Magnitude of flow velocity
         rVelocity = 2D0 * FaceFlows(indxFace) / rLength / rDepth

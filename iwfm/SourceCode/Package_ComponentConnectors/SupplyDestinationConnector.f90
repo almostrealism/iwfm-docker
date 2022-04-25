@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,20 +21,20 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE SupplyDestinationConnector
-  USE MessageLogger          , ONLY: SetLastMessage      , &
-                                     EchoProgress        , &
-                                     MessageArray        , &
-                                     iFatal
-  USE GeneralUtilities       , ONLY: IntToText           , &
-                                     LowerCase           , &
-                                     NormalizeArray      , &
-                                     AllocArray
-  USE Package_Discretization , ONLY: AppGridType
-  USE Package_Misc           , ONLY: FlowDestinationType , &
-                                     FlowDest_Outside    , &
-                                     FlowDest_Element    , &
-                                     FlowDest_ElementSet , &
-                                     FlowDest_Subregion
+  USE MessageLogger          , ONLY: SetLastMessage         , &
+                                     EchoProgress           , &
+                                     MessageArray           , &
+                                     f_iFatal                 
+  USE GeneralUtilities       , ONLY: IntToText              , &
+                                     LowerCase              , &
+                                     NormalizeArray         , &
+                                     AllocArray             
+  USE Package_Discretization , ONLY: AppGridType            
+  USE Package_Misc           , ONLY: FlowDestinationType    , &
+                                     f_iFlowDest_Outside    , &
+                                     f_iFlowDest_Element    , &
+                                     f_iFlowDest_ElementSet , &
+                                     f_iFlowDest_Subregion
   IMPLICIT NONE
   
   
@@ -60,6 +60,7 @@ MODULE SupplyDestinationConnector
             Supply_New                              , &
             Supply_GetDestination                   , &
             Supply_GetSupply                        , &
+            Supply_GetPurpose                       , &
             Supply_SetIrigFracsRead                 , &
             Supply_CheckSupplyDestinationConnection , &
             Supply_ResetIrigFracs                   , &
@@ -69,9 +70,9 @@ MODULE SupplyDestinationConnector
   ! --- SUPPLY TO DESTINATION CONNECTOR TYPE
   ! -------------------------------------------------------------
   TYPE SupplyToDestinationType
-      INTEGER             :: iDestType            = FlowDest_Outside     !Supply destination type
+      INTEGER             :: iDestType            = f_iFlowDest_Outside  !Supply destination type
       INTEGER             :: nDest                = 0                    !Number of destinations that is served by a generic water supply
-      INTEGER,ALLOCATABLE :: iDestIDs(:)                                 !List of destination IDs served by a generic water supply
+      INTEGER,ALLOCATABLE :: iDests(:)                                   !List of destinationss served by a generic water supply
       REAL(8),ALLOCATABLE :: SupplyToDestFracs_Ag(:)                     !Fraction of the generic ag water supply that go to each destination to meet ag water demand
       REAL(8),ALLOCATABLE :: SupplyToDestFracs_Urb(:)                    !Fraction of the generic urban water supply that go to each destination to meet urban water demand
   CONTAINS
@@ -83,13 +84,14 @@ MODULE SupplyDestinationConnector
   ! --- SUPPLY DATA TYPE
   ! -------------------------------------------------------------
   TYPE SupplyType
-    REAL(8)                   :: SupplyRequired     = 0.0                  !Required amount of supply to meet a demand (either read from file or computed to meet a demand)
-    REAL(8)                   :: SupplyActual       = 0.0                  !Actual amount of supply that may be les than required due to some limiting condition
-    INTEGER                   :: iColIrigFrac       = 0                    !Pointer to irrigation fraction data column in the relevant file
-    REAL(8)                   :: IrigFracRead       = 0.0                  !Irrigtaion fraction as read from file
-    REAL(8)                   :: IrigFrac           = 0.0                  !Irrigtaion fraction that may be different than the read value due to supply adjustment
-    INTEGER                   :: iColAdjust         = 0                    !Pointer to the supply adjustment spec column in the relevant file
-    TYPE(FlowDestinationType) :: Destination                               !Destination information for supply
+      INTEGER                   :: ID                 = 0                    !Supply ID number
+      REAL(8)                   :: SupplyRequired     = 0.0                  !Required amount of supply to meet a demand (either read from file or computed to meet a demand)
+      REAL(8)                   :: SupplyActual       = 0.0                  !Actual amount of supply that may be les than required due to some limiting condition
+      INTEGER                   :: iColIrigFrac       = 0                    !Pointer to irrigation fraction data column in the relevant file
+      REAL(8)                   :: IrigFracRead       = 0.0                  !Irrigtaion fraction as read from file
+      REAL(8)                   :: IrigFrac           = 0.0                  !Irrigtaion fraction that may be different than the read value due to supply adjustment
+      INTEGER                   :: iColAdjust         = 0                    !Pointer to the supply adjustment spec column in the relevant file
+      TYPE(FlowDestinationType) :: Destination                               !Destination information for supply
   END TYPE SupplyType
   
 
@@ -117,6 +119,7 @@ MODULE SupplyDestinationConnector
       PROCEDURE,PASS :: New  => SupplyDestinationConnector_New
       PROCEDURE,PASS :: Kill => SupplyDestinationConnector_Kill
       PROCEDURE,PASS :: GetConnectionLists 
+      PROCEDURE,PASS :: GetServedElemList
       PROCEDURE,PASS :: InitSupplyToAgUrbanFracs         
   END TYPE SupplyDestinationConnectorType
   
@@ -163,12 +166,12 @@ CONTAINS
     NSupply     = SIZE(SupplyDest)
     NElements   = AppGrid%NElements
     NSubregions = AppGrid%NSubregions
-    IF (iDemandCalcLocation .EQ. FlowDest_Element) THEN
+    IF (iDemandCalcLocation .EQ. f_iFlowDest_Element) THEN
         NDestination = NElements
-    ELSEIF (iDemandCalcLocation .EQ. FlowDest_Subregion) THEN
+    ELSEIF (iDemandCalcLocation .EQ. f_iFlowDest_Subregion) THEN
         NDestination = NSubregions
     ELSE
-        CALL SetLastMessage('Computational unit for water demand calculations is not recognized!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Computational unit for water demand calculations is not recognized!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -180,13 +183,13 @@ CONTAINS
     
     !Compile SupplyToDestination connection list
     SELECT CASE (iDemandCalcLocation)
-        CASE (FlowDest_Element)
+        CASE (f_iFlowDest_Element)
             DO indxSupply=1,NSupply
                 CALL SupplyToElement_New(Connector%SupplyToDestination(indxSupply),cSupplyDescription,indxSupply,SupplyDest(indxSupply),AppGrid,iStat)
                 IF (iStat .EQ. -1) RETURN
             END DO
             
-        CASE (FlowDest_Subregion)
+        CASE (f_iFlowDest_Subregion)
             DO indxSupply=1,NSupply
                 CALL SupplyToSubregion_New(Connector%SupplyToDestination(indxSupply),cSupplyDescription,indxSupply,SupplyDest(indxSupply),AppGrid,iStat) 
                 IF (iStat .EQ. -1) RETURN
@@ -207,12 +210,19 @@ CONTAINS
     TYPE(FlowDestinationType),INTENT(IN) :: Dest(:)
     CLASS(SupplyType)                    :: Supply(:)
     
+    !Local variables
+    INTEGER :: indx
+    
     !Store iColIrigFrac and IColAdj values
-    Supply%iColIrigFrac = iColIrigFrac
-    Supply%iColAdjust   = iColAdjust
+    DO indx=1,SIZE(Supply)
+        Supply(indx)%iColIrigFrac = iColIrigFrac(indx)
+        Supply(indx)%iColAdjust   = iColAdjust(indx)
+    END DO
     
     !Store destination information
-    Supply%Destination = Dest
+    DO indx=1,SIZE(Dest)
+        Supply(indx)%Destination = Dest(indx)
+    END DO
     
   END SUBROUTINE Supply_New
   
@@ -240,33 +250,33 @@ CONTAINS
     
     SELECT CASE (Destination%iDestType)
         !Supply goes to outside model area
-        CASE (FlowDest_Outside)
-            Connector%iDestType = FlowDest_Outside
+        CASE (f_iFlowDest_Outside)
+            Connector%iDestType = f_iFlowDest_Outside
         
         !Supply goes to an element
-        CASE (FlowDest_Element)
+        CASE (f_iFlowDest_Element)
             !Make sure element is modeled
             IF (Destination%iDest.LT.1   .OR.   Destination%iDest.GT.AppGrid%NElements) THEN
                 MessageArray(1) = 'A ' // TRIM(LowerCase(cDescription)) //' is delivered to an element that is not in the model domain!'
                 MessageArray(2) = TRIM(cDescription) // ' number = ' //TRIM(IntToText(iSupply))
                 MessageArray(3) = 'Element delivered = ' // TRIM(IntToText(Destination%iDest))
-                CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+                CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
             
             !Store element info
-            Connector%iDestType = FlowDest_Element
+            Connector%iDestType = f_iFlowDest_Element
             Connector%nDest     = 1
-            ALLOCATE (Connector%iDestIDs(1)             , &
+            ALLOCATE (Connector%iDests(1)               , &
                       Connector%SupplyToDestFracs_Ag(1) , &
                       Connector%SupplyToDestFracs_Urb(1))
-            Connector%iDestIDs(1)              = Destination%iDest
+            Connector%iDests(1)                = Destination%iDest
             Connector%SupplyToDestFracs_Ag(1)  = 1.0
             Connector%SupplyToDestFracs_Urb(1) = 1.0
         
         !Supply goes to a group of elements
-        CASE (FlowDest_ElementSet)
+        CASE (f_iFlowDest_ElementSet)
             NElems = Destination%iDestElems%NElems
             !Make sure elements are modeled
             DO indxElem=1,NElems
@@ -275,41 +285,41 @@ CONTAINS
                     MessageArray(1) = 'A ' // TRIM(LowerCase(cDescription)) //' is delivered to an element that is not in the model domain!'
                     MessageArray(2) = TRIM(cDescription) // ' number = ' //TRIM(IntToText(iSupply))
                     MessageArray(3) = 'Element delivered = ' // TRIM(IntToText(iElem))
-                    CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+                    CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
                     iStat = -1
                     RETURN
                 END IF
             END DO
             
             !Store element data 
-            Connector%iDestType = FlowDest_Element
+            Connector%iDestType = f_iFlowDest_Element
             Connector%nDest     = NElems
-            ALLOCATE (Connector%iDestIDs(NElems)             , &
+            ALLOCATE (Connector%iDests(NElems)               , &
                       Connector%SupplyToDestFracs_Ag(NElems) , & 
                       Connector%SupplyToDestFracs_Urb(NElems))
-            Connector%iDestIDs              = Destination%iDestElems%iElems
+            Connector%iDests                = Destination%iDestElems%iElems
             Connector%SupplyToDestFracs_Ag  = 1d0 / REAL(NElems,8)  !This is an initialization
             Connector%SupplyToDestFracs_Urb = 1d0 / REAL(NElems,8)  !This is an initialization
         
         !Supply goes to a subregion
-        CASE (FlowDest_Subregion)
+        CASE (f_iFlowDest_Subregion)
             iRegion = Destination%iDest
             !Make sure subregion is modeled
             IF (iRegion.LT.1  .OR. iRegion.GT.AppGrid%NSubregions) THEN
                 MessageArray(1) = 'A ' // TRIM(LowerCase(cDescription)) //' is delivered to a subregion that is not in the model domain!'
                 MessageArray(2) = TRIM(cDescription) // ' number = ' //TRIM(IntToText(iSupply))
                 MessageArray(3) = 'Subregion delivered = ' // TRIM(IntToText(iRegion))
-                CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+                CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
             !Store in permanent arrays
-            Connector%iDestType = FlowDest_Element
+            Connector%iDestType = f_iFlowDest_Element
             Connector%nDest     = AppGrid%AppSubregion(iRegion)%NRegionElements
-            ALLOCATE (Connector%iDestIDs(Connector%nDest)             , &
+            ALLOCATE (Connector%iDests(Connector%nDest)               , &
                       Connector%SupplyToDestFracs_Ag(Connector%nDest) , & 
                       Connector%SupplyToDestFracs_Urb(Connector%nDest))
-            Connector%iDestIDs              = AppGrid%AppSubregion(iRegion)%RegionElements
+            Connector%iDests                = AppGrid%AppSubregion(iRegion)%RegionElements
             Connector%SupplyToDestFracs_Ag  = 1.0
             Connector%SupplyToDestFracs_Urb = 1.0
             
@@ -341,64 +351,64 @@ CONTAINS
     
     SELECT CASE (Destination%iDestType)
         !Supply goes to outside model area
-        CASE (FlowDest_Outside)
-            Connector%iDestType = FlowDest_Outside
+        CASE (f_iFlowDest_Outside)
+            Connector%iDestType = f_iFlowDest_Outside
         
         !Supply goes to an element
-        CASE (FlowDest_Element)
+        CASE (f_iFlowDest_Element)
             !Make sure element is modeled
             IF (Destination%iDest.LT.1   .OR.   Destination%iDest.GT.AppGrid%NElements) THEN
                 MessageArray(1) = 'A ' // TRIM(LowerCase(cDescription)) //' is delivered to an element that is not in the model domain!'
                 MessageArray(2) = TRIM(cDescription) // ' number = ' //TRIM(IntToText(iSupply))
                 MessageArray(3) = 'Element delivered = ' // TRIM(IntToText(Destination%iDest))
-                CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+                CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
             
             !Store subregion info
-            Connector%iDestType = FlowDest_Subregion
+            Connector%iDestType = f_iFlowDest_Subregion
             Connector%nDest     = 1
-            ALLOCATE (Connector%iDestIDs(1)             , &
+            ALLOCATE (Connector%iDests(1)               , &
                       Connector%SupplyToDestFracs_Ag(1) , &
                       Connector%SupplyToDestFracs_Urb(1))
-            Connector%iDestIDs(1)              = AppGrid%AppElement(Destination%iDest)%Subregion
+            Connector%iDests(1)                = AppGrid%AppElement(Destination%iDest)%Subregion
             Connector%SupplyToDestFracs_Ag(1)  = 1.0
             Connector%SupplyToDestFracs_Urb(1) = 1.0
         
         !Supply goes to a group of elements
         !*** Note: It is assumed all elements are in the same subregion and this is already checked
-        CASE (FlowDest_ElementSet)
+        CASE (f_iFlowDest_ElementSet)
             NElems = Destination%iDestElems%NElems
             !Store subregion data 
-            Connector%iDestType = FlowDest_Subregion
+            Connector%iDestType = f_iFlowDest_Subregion
             Connector%nDest     = 1
-            ALLOCATE (Connector%iDestIDs(1)             , &
+            ALLOCATE (Connector%iDests(1)               , &
                       Connector%SupplyToDestFracs_Ag(1) , & 
                       Connector%SupplyToDestFracs_Urb(1))
-            Connector%iDestIDs(1)              = AppGrid%AppElement(Destination%iDestElems%iElems(1))%Subregion
+            Connector%iDests(1)                = AppGrid%AppElement(Destination%iDestElems%iElems(1))%Subregion
             Connector%SupplyToDestFracs_Ag(1)  = 1.0
             Connector%SupplyToDestFracs_Urb(1) = 1.0
         
         !Supply goes to a subregion
-        CASE (FlowDest_Subregion)
+        CASE (f_iFlowDest_Subregion)
             iRegion = Destination%iDest
             !Make sure subregion is modeled
             IF (iRegion.LT.1  .OR. iRegion.GT.AppGrid%NSubregions) THEN
                 MessageArray(1) = 'A ' // TRIM(LowerCase(cDescription)) //' is delivered to a subregion that is not in the model domain!'
                 MessageArray(2) = TRIM(cDescription) // ' number = ' //TRIM(IntToText(iSupply))
                 MessageArray(3) = 'Subregion delivered = ' // TRIM(IntToText(iRegion))
-                CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
+                CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
             !Store in permanent arrays
-            Connector%iDestType = FlowDest_Subregion
+            Connector%iDestType = f_iFlowDest_Subregion
             Connector%nDest     = 1
-            ALLOCATE (Connector%iDestIDs(1)             , &
+            ALLOCATE (Connector%iDests(1)               , &
                       Connector%SupplyToDestFracs_Ag(1) , & 
                       Connector%SupplyToDestFracs_Urb(1))
-            Connector%iDestIDs(1)              = iRegion
+            Connector%iDests(1)                = iRegion
             Connector%SupplyToDestFracs_Ag(1)  = 1.0
             Connector%SupplyToDestFracs_Urb(1) = 1.0
             
@@ -419,7 +429,7 @@ CONTAINS
     
     DO indxSupply=1,SIZE(SupplyToDest)
         DO indxDest=1,SupplyToDest(indxSupply)%nDest
-            iDest = SupplyToDest(indxSupply)%iDestIDs(indxDest)
+            iDest = SupplyToDest(indxSupply)%iDests(indxDest)
             CALL AddData(indxSupply,indxDest,Connectors(iDest))
         END DO
     END DO
@@ -478,7 +488,7 @@ CONTAINS
     INTEGER                       :: ErrorCode
     TYPE(SupplyToDestinationType) :: Dummy
     
-    DEALLOCATE (SupplyToDest%iDestIDs              , &
+    DEALLOCATE (SupplyToDest%iDests                , &
                 SupplyToDest%SupplyToDestFracs_Ag  , &
                 SupplyToDest%SupplyToDestFracs_Urb , &
                 STAT=ErrorCode                     )
@@ -542,7 +552,29 @@ CONTAINS
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
+  
+  ! -------------------------------------------------------------
+  ! --- GET LIST OF ELEMENTS SERVED BY A SUPPLY
+  ! -------------------------------------------------------------
+  SUBROUTINE GetServedElemList(Connector,iSupply,iElemList)
+    CLASS(SupplyDestinationConnectorType),INTENT(IN) :: Connector
+    INTEGER,INTENT(IN)                               :: iSupply
+    INTEGER,ALLOCATABLE,INTENT(OUT)                  :: iElemList(:)
+    
+    ASSOCIATE (pDest => Connector%SupplyToDestination(iSupply))
+        SELECT CASE (pDest%iDestType)
+            CASE DEFAULT
+                ALLOCATE (iElemList(0))
+                
+            CASE (f_iFlowDest_Element)
+                ALLOCATE (iElemList(pDest%nDest))
+                iElemList = pDest%iDests
+        END SELECT
+    END ASSOCIATE
+    
+  END SUBROUTINE GetServedElemList
 
+  
   ! -------------------------------------------------------------
   ! --- GET DESTINATION-TO-SUPPLY AND SUPPLY-TO-DESTINATION CONNECTION DATA 
   ! -------------------------------------------------------------
@@ -565,14 +597,17 @@ CONTAINS
     TYPE(FlowDestinationType),ALLOCATABLE :: Destination(:)
     
     !Local variables
-    INTEGER :: ErrorCode
+    INTEGER :: ErrorCode,indx,iDim
     
     !Clean Destination
     DEALLOCATE (Destination , STAT=ErrorCode)
     
     !Allocate memeory and store data
-    ALLOCATE (Destination(SIZE(Supply)))
-    Destination = Supply%Destination
+    iDim = SIZE(Supply)
+    ALLOCATE (Destination(iDim))
+    DO indx=1,iDim
+        Destination(indx) = Supply(indx)%Destination
+    END DO
     
   END SUBROUTINE Supply_GetDestination
   
@@ -599,9 +634,9 @@ CONTAINS
         
         SupplyActual     = Supply(indx)%SupplyActual
         SupplyActual_Ag  = SupplyActual * Supply(indx)%IrigFrac
-        SupplyActual_Urb = SupplyActual - SupplyActual_Ag
+        SupplyActual_Urb = MAX(0.0 , SupplyActual - SupplyActual_Ag)
         DO indxDest=1,pServedDests%nDest
-          iDest             = pServedDests%iDestIDs(indxDest)
+          iDest             = pServedDests%iDests(indxDest)
           Supply_Ag(iDest)  = Supply_Ag(iDest)  + SupplyActual_Ag * pServedDests%SupplyToDestFracs_Ag(indxDest)
           Supply_Urb(iDest) = Supply_Urb(iDest) + SupplyActual_Urb * pServedDests%SupplyToDestFracs_Urb(indxDest)
         END DO
@@ -610,6 +645,31 @@ CONTAINS
     END DO
   
   END SUBROUTINE Supply_GetSupply
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET FLAGS FOR SUPPLIES IF THEY SERVE AG, URBAN OR BOTH BASED ON INITIAL READINGS OF INPUT DATA (BEFORE ANY ADJUSTMENT) 
+  ! -------------------------------------------------------------
+  SUBROUTINE Supply_GetPurpose(Supply,iAgOrUrban,iStat)
+    CLASS(SupplyType),INTENT(IN) :: Supply(:)
+    INTEGER,INTENT(OUT)          :: iAgOrUrban(:),iStat
+    
+    !Local variables
+    INTEGER :: indxSupply
+    
+    iStat = 0
+    
+    DO indxSupply=1,SIZE(Supply)
+        IF (Supply(indxSupply)%IrigFracRead .EQ. 1.0) THEN
+            iAgOrUrban(indxSupply) = 10
+        ELSEIF (Supply(indxSupply)%IrigFracRead .EQ. 0.0) THEN
+            iAgOrUrban(indxSupply) = 01
+        ELSE
+            iAgOrUrban(indxSupply) = 11
+        END IF
+    END DO
+    
+  END SUBROUTINE Supply_GetPurpose
   
   
   
@@ -693,29 +753,29 @@ CONTAINS
     
     DO indxSupply=1,Connector%NSupply
         !Update only if supply serves more than one location
-        IF (Connector%SupplyToDestination(indxSupply)%nDest .EQ. 1) CYCLE
+        IF (Connector%SupplyToDestination(indxSupply)%nDest .LE. 1) CYCLE
         
         !Ag supply fractions
-        Demand_Total  = SUM(AgDemand(Connector%SupplyToDestination(indxSupply)%iDestIDs))
+        Demand_Total  = SUM(AgDemand(Connector%SupplyToDestination(indxSupply)%iDests))
         IF (Demand_Total .GT. 0.0) THEN
-            Connector%SupplyToDestination(indxSupply)%SupplyToDestFracs_Ag = AgDemand(Connector%SupplyToDestination(indxSupply)%iDestIDs) / Demand_Total
+            Connector%SupplyToDestination(indxSupply)%SupplyToDestFracs_Ag = AgDemand(Connector%SupplyToDestination(indxSupply)%iDests) / Demand_Total
         ELSE
-            Area_Total = SUM(AgArea(Connector%SupplyToDestination(indxSupply)%iDestIDs))
+            Area_Total = SUM(AgArea(Connector%SupplyToDestination(indxSupply)%iDests))
             IF (Area_Total .GT. 0.0) THEN
-                Connector%SupplyToDestination(indxSupply)%SupplyToDestFracs_Ag = AgArea(Connector%SupplyToDestination(indxSupply)%iDestIDs) / Area_Total
+                Connector%SupplyToDestination(indxSupply)%SupplyToDestFracs_Ag = AgArea(Connector%SupplyToDestination(indxSupply)%iDests) / Area_Total
             ELSE
                 Connector%SupplyToDestination(indxSupply)%SupplyToDestFracs_Ag = 1.0 / REAL(Connector%SupplyToDestination(indxSupply)%nDest , 8)
             END IF
         END IF
         
         !Urban supply fractions
-        Demand_Total  = SUM(UrbDemand(Connector%SupplyToDestination(indxSupply)%iDestIDs))
+        Demand_Total  = SUM(UrbDemand(Connector%SupplyToDestination(indxSupply)%iDests))
         IF (Demand_Total .GT. 0.0) THEN
-            Connector%SupplyToDestination(indxSupply)%SupplyToDestFracs_Urb = UrbDemand(Connector%SupplyToDestination(indxSupply)%iDestIDs) / Demand_Total
+            Connector%SupplyToDestination(indxSupply)%SupplyToDestFracs_Urb = UrbDemand(Connector%SupplyToDestination(indxSupply)%iDests) / Demand_Total
         ELSE
-            Area_Total = SUM(UrbArea(Connector%SupplyToDestination(indxSupply)%iDestIDs))
+            Area_Total = SUM(UrbArea(Connector%SupplyToDestination(indxSupply)%iDests))
             IF (Area_Total .GT. 0.0) THEN
-                Connector%SupplyToDestination(indxSupply)%SupplyToDestFracs_Urb = UrbArea(Connector%SupplyToDestination(indxSupply)%iDestIDs) / Area_Total
+                Connector%SupplyToDestination(indxSupply)%SupplyToDestFracs_Urb = UrbArea(Connector%SupplyToDestination(indxSupply)%iDests) / Area_Total
             ELSE
                 Connector%SupplyToDestination(indxSupply)%SupplyToDestFracs_Urb = 1.0 / REAL(Connector%SupplyToDestination(indxSupply)%nDest , 8)
             END IF
@@ -731,7 +791,12 @@ CONTAINS
   SUBROUTINE Supply_ResetIrigFracs(Supply)
     CLASS(SupplyType) :: Supply(:)
     
-    Supply%IrigFrac = Supply%IrigFracRead
+    !Local variables
+    INTEGER :: indx
+    
+    DO indx=1,SIZE(Supply)
+        Supply(indx)%IrigFrac = Supply(indx)%IrigFracRead
+    END DO
 
   END SUBROUTINE Supply_ResetIrigFracs  
   
@@ -772,7 +837,7 @@ CONTAINS
         IF (Supply_Ag .GT. 0.0) THEN
             rFrac = SUM(pConnector%SupplyToDestFracs_Ag)
             IF (ABS(1d0-rFrac) .GT. 1d-2) THEN
-                CALL SetLastMessage('Not all agricultural water supply for '//TRIM(cSupplyDescription)//' '//TRIM(IntToText(indx))//' is going to the desired demand location!',iFatal,ThisProcedure)
+                CALL SetLastMessage('Not all agricultural water supply for '//TRIM(cSupplyDescription)//' '//TRIM(IntToText(indx))//' is going to the desired demand location!',f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF
@@ -783,7 +848,7 @@ CONTAINS
         IF (Supply_Urb .GT. 0.0) THEN
             rFrac = SUM(pConnector%SupplyToDestFracs_Urb)
             IF (ABS(1d0-rFrac) .GT. 1d-2) THEN
-                CALL SetLastMessage('Not all urban water supply for '//TRIM(cSupplyDescription)//' '//TRIM(IntToText(indx))//' is going to the desired demand location!',iFatal,ThisProcedure)
+                CALL SetLastMessage('Not all urban water supply for '//TRIM(cSupplyDescription)//' '//TRIM(IntToText(indx))//' is going to the desired demand location!',f_iFatal,ThisProcedure)
                 iStat = -1
                 RETURN
             END IF

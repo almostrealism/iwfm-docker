@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,8 +21,9 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_StrmNode_v50
-  USE IOInterface   , ONLY: GenericFileType  
-  USE Package_Misc  , ONLY: AbstractFunctionType
+  USE IOInterface    , ONLY: GenericFileType  
+  USE Package_Misc   , ONLY: AbstractFunctionType
+  USE Package_Matrix , ONLY: ConnectivityListType
   IMPLICIT NONE
   
   
@@ -60,15 +61,14 @@ MODULE Class_StrmNode_v50
   ! --- STREAM NODE DATA TYPE
   ! -------------------------------------------------------------
   TYPE,EXTENDS(AbstractFunctionType) :: StrmNode_v50_Type
-      REAL(8)                :: BottomElev         = 0.0        !Elevation of stream bottom
-      REAL(8)                :: MaxElev            = 0.0        !Maximum elevation for the stream surface (used only to limit the range of Newton-Raphson iterations to speed up convergence)
-      REAL(8)                :: Slope              = 0.0        !Slope of the stream bed
-      REAL(8)                :: DeltaX             = 0.0        !Distance between this stream node and the previous node
-      REAL(8)                :: Length             = 0.0        !Length of the stream segment that the node represents
-      REAL(8)                :: Area_P             = 0.0        !Flow area at previous time step
-      INTEGER                :: NUpstrmNodes       = 0          !Number of stream nodes whose flows directly flow into this node (non-zero only for upstream node for each reach)
-      INTEGER,ALLOCATABLE    :: UpstrmNodes(:)                  !List of stream nodes whose flows directly flow into this node (defined only for upstream node of each reach)
-      TYPE(CrossSectionType) :: CrossSection                    !Cross section related data
+      INTEGER                    :: ID                 = 0          !Node ID
+      REAL(8)                    :: BottomElev         = 0.0        !Elevation of stream bottom
+      REAL(8)                    :: MaxElev            = 0.0        !Maximum elevation for the stream surface (used only to limit the range of Newton-Raphson iterations to speed up convergence)
+      REAL(8)                    :: Slope              = 0.0        !Slope of the stream bed
+      REAL(8)                    :: Length             = 0.0        !Length of the stream reach associated with the node
+      REAL(8)                    :: Area_P             = 0.0        !Flow area at previous time step
+      TYPE(ConnectivityListType) :: Connectivity                    !Stream node connectivity (list of upstream nodes)
+      TYPE(CrossSectionType)     :: CrossSection                    !Cross section related data
   CONTAINS
       PROCEDURE,PASS :: Flow
       PROCEDURE,PASS :: Area
@@ -113,13 +113,14 @@ CONTAINS
     INTEGER,INTENT(OUT)                 :: iStat
     
     !Local variables
-    INTEGER :: indxNode,NUpstrmNodes
+    INTEGER :: indxNode,nConnectedNodes
     
     !Read data
     DO indxNode=1,SIZE(Nodes)
-      CALL InFile%ReadData(NUpstrmNodes,iStat)  ;  IF (iStat .EQ. -1) RETURN  ;  Nodes(indxNode)%NUpstrmNodes = NUpstrmNodes
-      ALLOCATE (Nodes(indxNode)%UpstrmNodes(NUpstrmNodes))
-      CALL InFile%ReadData(Nodes(indxNode)%UpstrmNodes,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL InFile%ReadData(Nodes(indxNode)%ID,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL InFile%ReadData(nConnectedNodes,iStat)     ;  IF (iStat .EQ. -1) RETURN  ;  Nodes(indxNode)%Connectivity%nConnectedNodes = nConnectedNodes
+        ALLOCATE (Nodes(indxNode)%Connectivity%ConnectedNodes(nConnectedNodes))
+        CALL InFile%ReadData(Nodes(indxNode)%Connectivity%ConnectedNodes,iStat)  ;  IF (iStat .EQ. -1) RETURN
     END DO
     
   END SUBROUTINE StrmNode_v50_ReadPreprocessedData
@@ -149,8 +150,9 @@ CONTAINS
     
     !Write data
     DO indxNode=1,SIZE(Nodes)
-      CALL OutFile%WriteData(Nodes(indxNode)%NUpstrmNodes)
-      CALL OutFile%WriteData(Nodes(indxNode)%UpstrmNodes)
+        CALL OutFile%WriteData(Nodes(indxNode)%ID)
+        CALL OutFile%WriteData(Nodes(indxNode)%Connectivity%nConnectedNodes)
+        CALL OutFile%WriteData(Nodes(indxNode)%Connectivity%ConnectedNodes)
     END DO
         
   END SUBROUTINE StrmNode_v50_WritePreprocessedData
@@ -257,7 +259,7 @@ CONTAINS
     REAL(8)                             :: H
     
     !Local variables
-    REAL(8)           :: B0,n,s,SQRSlope,R,HNew,Depth,BottomElev,C,Func,dFunc,FlowAtH,Delta
+    REAL(8)           :: B0,n,s,SQRSlope,BottomElev,C,Func,dFunc,FlowAtH,Delta
     INTEGER           :: Iter
     REAL(8),PARAMETER :: Toler = 1D-8
     INTEGER,PARAMETER :: MaxIter = 500

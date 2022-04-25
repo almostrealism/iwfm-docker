@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -23,13 +23,13 @@
 MODULE LakeGWConnector
   USE MessageLogger          , ONLY: SetLastMessage  , &
                                      EchoProgress    , &
-                                     iFatal
+                                     f_iFatal
   USE GeneralUtilities
   USE TimeSeriesUtilities
   USE IOInterface
   USE Package_Discretization
-  USE Package_Misc           , ONLY: iLakeComp       , &
-                                     iGWComp
+  USE Package_Misc           , ONLY: f_iLakeComp     , &
+                                     f_iGWComp
   USE Package_Matrix         , ONLY: MatrixType
   IMPLICIT NONE
   
@@ -146,7 +146,7 @@ CONTAINS
     iDim = SIZE(Connector%Lakes)
     IF (iLakeNo .GT. iDim) THEN
         ALLOCATE (Temp_LakeData(iLakeNo))
-        Temp_LakeData(1:iDim) = Connector%Lakes
+        IF (iDim .GT. 0) Temp_LakeData(1:iDim) = Connector%Lakes
         CALL MOVE_ALLOC(Temp_LakeData , Connector%Lakes)
     END IF
     
@@ -160,8 +160,8 @@ CONTAINS
       !Process elements
       DO indxElem=1,SIZE(iElems)
         iElem   = iElems(indxElem)
-        NVertex = AppGrid%Element(iElem)%NVertex
-        Vertex  = AppGrid%Element(iElem)%Vertex
+        NVertex = AppGrid%NVertex(iElem)
+        Vertex  = AppGrid%Vertex(:,iElem)
         ALLOCATE (pLake%ElemConnectors(indxElem)%iGWNode(NVertex)     , &
                   pLake%ElemConnectors(indxElem)%iLayer(NVertex)      , &
                   pLake%ElemConnectors(indxElem)%Conductance(NVertex) , &
@@ -420,7 +420,7 @@ CONTAINS
           !Make sure that time unit for conductance is consistent within all lakes
           IF (Connector%TimeUnitConductance .NE. '') THEN
               IF (TRIM(Connector%TimeUnitConductance) .NE. TRIM(ADJUSTL(UpperCase(TimeUnitConductance)))) THEN
-                  CALL SetLastMessage('Time unit for conductance between lakes is not consistent!',iFatal,ThisProcedure)
+                  CALL SetLastMessage('Time unit for conductance between lakes is not consistent!',f_iFatal,ThisProcedure)
                   iStat = -1
                   RETURN
               END IF
@@ -550,7 +550,7 @@ CONTAINS
                          iCompIDs_Connect(2),iNodeIDs_Connect(2),iGWNode,     &
                          iNodeIDs(2),NLakes
     REAL(8)           :: GSElev,rGWHead,rElev,rFlow,rConduc,rUpdateValues(2)
-    INTEGER,PARAMETER :: iCompIDs(2) = [iLakeComp,iGWComp]
+    INTEGER,PARAMETER :: iCompIDs(2) = [f_iLakeComp,f_iGWComp]
     
     !Initialize
     NNodes = SIZE(GSElevs)
@@ -578,34 +578,34 @@ CONTAINS
               IF (rElev .GE. GSElev) THEN
                 IF (rGWHead .GE. GSElev) THEN
                   rFlow               = rConduc * (rElev-rGWHead)
-                  iCompIDs_Connect(1) = iLakeComp
-                  iCompIDs_Connect(2) = iGWComp
+                  iCompIDs_Connect(1) = f_iLakeComp
+                  iCompIDs_Connect(2) = f_iGWComp
                   iNodeIDs_Connect(1) = indxLake
                   iNodeIDs_Connect(2) = iGWNode
                   rUpdateValues(1)    =  rConduc
                   rUpdateValues(2)    = -rConduc
-                  CALL Matrix%UpdateCOEFF(iLakeComp,indxLake,iCompIDs_Connect,iNodeIDs_Connect,rUpdateValues)
+                  CALL Matrix%UpdateCOEFF(f_iLakeComp,indxLake,2,iCompIDs_Connect,iNodeIDs_Connect,rUpdateValues)
                   rUpdateValues(1)    = -rConduc
                   rUpdateValues(2)    =  rConduc
-                  CALL Matrix%UpdateCOEFF(iGWComp,iGWNode,iCompIDs_Connect,iNodeIDs_Connect,rUpdateValues)
+                  CALL Matrix%UpdateCOEFF(f_iGWComp,iGWNode,2,iCompIDs_Connect,iNodeIDs_Connect,rUpdateValues)
                 ELSE
                   rFlow               = rConduc * (rElev-GSElev)
-                  iCompIDs_Connect(1) = iLakeComp
+                  iCompIDs_Connect(1) = f_iLakeComp
                   iNodeIDs_Connect(1) = indxLake
                   rUpdateValues(1)    =  rConduc
-                  CALL Matrix%UpdateCOEFF(iLakeComp,indxLake,iCompIDs_Connect(1:1),iNodeIDs_Connect(1:1),rUpdateValues(1:1))
+                  CALL Matrix%UpdateCOEFF(f_iLakeComp,indxLake,1,iCompIDs_Connect(1:1),iNodeIDs_Connect(1:1),rUpdateValues(1:1))
                   rUpdateValues(1)    = -rConduc
-                  CALL Matrix%UpdateCOEFF(iGWComp,iGWNode,iCompIDs_Connect(1:1),iNodeIDs_Connect(1:1),rUpdateValues(1:1))
+                  CALL Matrix%UpdateCOEFF(f_iGWComp,iGWNode,1,iCompIDs_Connect(1:1),iNodeIDs_Connect(1:1),rUpdateValues(1:1))
                 END IF
               ELSE
                 IF (rGWHead .GE. GSElev) THEN
                   rFlow                 = rConduc * (GSElev-rGWHead)
-                  iCompIDs_Connect(1) = iGWComp
+                  iCompIDs_Connect(1) = f_iGWComp
                   iNodeIDs_Connect(1) = iGWNode
                   rUpdateValues(1)    = -rConduc
-                  CALL Matrix%UpdateCOEFF(iLakeComp,indxLake,iCompIDs_Connect(1:1),iNodeIDs_Connect(1:1),rUpdateValues(1:1))
+                  CALL Matrix%UpdateCOEFF(f_iLakeComp,indxLake,1,iCompIDs_Connect(1:1),iNodeIDs_Connect(1:1),rUpdateValues(1:1))
                   rUpdateValues(1)    =  rConduc
-                  CALL Matrix%UpdateCOEFF(iGWComp,iGWNode,iCompIDs_Connect(1:1),iNodeIDs_Connect(1:1),rUpdateValues(1:1))
+                  CALL Matrix%UpdateCOEFF(f_iGWComp,iGWNode,1,iCompIDs_Connect(1:1),iNodeIDs_Connect(1:1),rUpdateValues(1:1))
                 ELSE
                   rFlow = 0.0
                 END IF
@@ -734,10 +734,10 @@ CONTAINS
                 CALL AllocArray(GWNodes,nGWNodes,ThisProcedure,iStat)  ;  IF (iStat .EQ. -1) RETURN
                 GWNodes = pLake%ElemConnectors(indxElem)%iGWNode
                 GWNodes = (pLake%ElemConnectors(indxElem)%iLayer-1)*NNodes + GWNodes
-                CALL Matrix%AddConnectivity(iLakeComp,indxLake,iGWComp,GWNodes,iStat)
+                CALL Matrix%AddConnectivity(f_iLakeComp,indxLake,f_iGWComp,GWNodes,iStat)
                 IF (iStat .EQ. -1) RETURN
                 DO indxNode=1,nGWNodes
-                    CALL Matrix%AddConnectivity(iGWComp,GWNodes(indxNode),iLakeComp,LakeID,iStat)
+                    CALL Matrix%AddConnectivity(f_iGWComp,GWNodes(indxNode),f_iLakeComp,LakeID,iStat)
                     IF (iStat .EQ. -1) RETURN
                 END DO
             END DO

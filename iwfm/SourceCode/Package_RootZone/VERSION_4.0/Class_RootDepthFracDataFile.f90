@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,10 +21,11 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_RootDepthFracDataFile
-  USE MessageLogger        , ONLY: SetLastMessage , &
-                                   iFatal
-  USE TSDFileHandler
-  USE TimeseriesUtilities
+  USE MessageLogger        , ONLY: SetLastMessage        , &
+                                   f_iFatal
+  USE Package_Misc         , ONLY: RealTSDataInFileType  , &
+                                   ReadTSData
+  USE TimeseriesUtilities  , ONLY: TimeStepType
   IMPLICIT NONE
   
   
@@ -75,8 +76,8 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW ROOT DEPTH FRACTIONS DATA FILE
   ! -------------------------------------------------------------
-  SUBROUTINE RootDepthFracDataFile_New(cFileName,TrackTime,RootDepthFracDataFile,iStat)
-    CHARACTER(LEN=*),INTENT(IN)     :: cFileName
+  SUBROUTINE RootDepthFracDataFile_New(cFileName,cWorkingDirectory,TrackTime,RootDepthFracDataFile,iStat)
+    CHARACTER(LEN=*),INTENT(IN)     :: cFileName,cWorkingDirectory
     LOGICAL,INTENT(IN)              :: TrackTime
     TYPE(RootDepthFracDataFileType) :: RootDepthFracDataFile
     INTEGER,INTENT(OUT)             :: iStat
@@ -91,7 +92,7 @@ CONTAINS
     IF (cFileName .EQ. '') RETURN
     
     !Instantiate
-    CALL RootDepthFracDataFile%Init(cFileName,'root depth fractions data',TrackTime,BlocksToSkip=1,lFactorDefined=.FALSE.,Factor=Factor,iStat=iStat)
+    CALL RootDepthFracDataFile%Init(cFileName,cWorkingDirectory,'root depth fractions data',TrackTime,BlocksToSkip=1,lFactorDefined=.FALSE.,Factor=Factor,iStat=iStat)
 
   END SUBROUTINE RootDepthFracDataFile_New
 
@@ -131,12 +132,12 @@ CONTAINS
     
     !Make sure all values are between 0.0 and 1.0
     IF (ANY(RootDepthFracDataFile%rValues .LT. 0.0))  THEN
-        CALL SetLastMessage('Root depth fractions cannot be less than zero!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Root depth fractions cannot be less than zero!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
     IF (ANY(RootDepthFracDataFile%rValues .GT. 1.0))  THEN
-        CALL SetLastMessage('Root depth fractions cannot be greater than zero!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Root depth fractions cannot be greater than zero!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF

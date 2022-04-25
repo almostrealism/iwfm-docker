@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -25,17 +25,26 @@ MODULE Package_AppTileDrain
   USE MessageLogger           , ONLY: SetLastMessage            , &
                                       EchoProgress              , &
                                       MessageArray              , &
-                                      iFatal                    
-  USE GeneralUtilities                                          
-  USE TimeSeriesUtilities                                       
-  USE IOInterface                                               
-  USE Package_Discretization                                    
-  USE Package_Misc            , ONLY: FlowDest_Outside          , &
-                                      FlowDest_StrmNode         , &
-                                      iGWComp                   , &
-                                      iLocationType_TileDrain
+                                      f_iFatal                    
+  USE GeneralUtilities        , ONLY: ConvertID_To_Index        , &
+                                      StripTextUntilCharacter   , &
+                                      CleanSpecialCharacters    , &
+                                      UpperCase                 , &
+                                      IntToText                 , &
+                                      LocateInList 
+  USE TimeSeriesUtilities     , ONLY: TimeStepType              , &
+                                      TimeIntervalConversion
+  USE IOInterface             , ONLY: GenericFileType                                  
+  USE Package_Discretization  , ONLY: AppGridType               , &
+                                      StratigraphyType          
+  USE Package_Misc            , ONLY: f_iFlowDest_Outside       , &
+                                      f_iFlowDest_StrmNode      , &
+                                      f_iGWComp                 , &
+                                      f_rSmoothMaxP
+  USE AppTileDrain_Parameters , ONLY: f_iTileDrain              , &
+                                      f_iSubIrig
   USE Class_BaseTileDrain     , ONLY: BaseTileDrainType
-  USE TileDrainHydrograph     , ONLY: TileDrainHydrographType
+  USE TileDrainHydrograph     , ONLY: TileDrainHydrographType   
   USE Package_Matrix          , ONLY: MatrixType
   IMPLICIT NONE
   
@@ -55,17 +64,11 @@ MODULE Package_AppTileDrain
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC :: AppTileDrainType                 , &
-            iTileDrain                       , &
-            iSubIrig
+  PUBLIC :: AppTileDrainType         , &
+            f_iTileDrain             , &
+            f_iSubIrig               , &
+            f_cDescription_TDHyd
   
-
-  ! -------------------------------------------------------------
-  ! --- FLAGS
-  ! -------------------------------------------------------------
-  INTEGER,PARAMETER :: iTileDrain = 1, &
-                       iSubIrig   = 2
-
 
   ! -------------------------------------------------------------
   ! --- TILE DRAIN DATA TYPE
@@ -90,13 +93,14 @@ MODULE Package_AppTileDrain
   CONTAINS
     PROCEDURE,PASS :: New                
     PROCEDURE,PASS :: Kill 
-    PROCEDURE,PASS :: GetNDataList_AtLocationType
-    PROCEDURE,PASS :: GetDataList_AtLocationType
-    PROCEDURE,PASS :: GetModelData_AtLocation
     PROCEDURE,PASS :: GetNDrain          
     PROCEDURE,PASS :: GetNSubIrig 
+    PROCEDURE,PASS :: GetDrainIDs
     PROCEDURE,PASS :: GetNHydrographs
+    PROCEDURE,PASS :: GetHydrographIDs
+    PROCEDURE,PASS :: GetHydrographCoordinates
     PROCEDURE,PASS :: GetHydrographNames
+    PROCEDURE,PASS :: GetHydOutputFileName
     PROCEDURE,PASS :: GetFlows           
     PROCEDURE,PASS :: GetFlowsToStreams  
     PROCEDURE,PASS :: GetGWNodesLayers    
@@ -113,9 +117,7 @@ MODULE Package_AppTileDrain
   ! -------------------------------------------------------------
   ! --- DATA TYPES FOR POST-PROCESSING
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER           :: nData_AtTileDrain                        = 1                          , &
-                                 iTileDrainHyd                            = 1                   
-  CHARACTER(LEN=21),PARAMETER :: cDataList_AtTileDrain(nData_AtTileDrain) = ['Tile drain hydrograph']
+  CHARACTER(LEN=21),PARAMETER :: f_cDescription_TDHyd = 'Tile drain hydrograph'
   
   
   ! -------------------------------------------------------------
@@ -145,11 +147,11 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW AppTileDrain DATA
   ! -------------------------------------------------------------
-  SUBROUTINE New(AppTileDrain,IsForInquiry,cFileName,cWorkingDirectory,NStrmNode,TimeStep,AppGrid,Stratigraphy,iStat) 
+  SUBROUTINE New(AppTileDrain,IsForInquiry,cFileName,cWorkingDirectory,iStrmNodeIDs,TimeStep,AppGrid,Stratigraphy,iStat) 
     CLASS(AppTileDrainType),INTENT(OUT) :: AppTileDrain
     LOGICAL,INTENT(IN)                  :: IsForInquiry
     CHARACTER(LEN=*),INTENT(IN)         :: cFileName,cWorkingDirectory
-    INTEGER,INTENT(IN)                  :: NStrmNode
+    INTEGER,INTENT(IN)                  :: iStrmNodeIDs(:)
     TYPE(TimeStepType),INTENT(IN)       :: TimeStep
     TYPE(AppGridType),INTENT(IN)        :: AppGrid
     TYPE(StratigraphyType),INTENT(IN)   :: Stratigraphy
@@ -157,7 +159,7 @@ CONTAINS
     
     !Local variables
     TYPE(GenericFileType)    :: TDFile
-    INTEGER                  :: NNodes,NDrain,NSubIrig
+    INTEGER                  :: NDrain,NSubIrig
     REAL(8)                  :: Factor
     CHARACTER                :: TimeUnitConductance_TD*6,TimeUnitConductance_SI*6
     CHARACTER(:),ALLOCATABLE :: cVersion
@@ -168,9 +170,6 @@ CONTAINS
     !If no FileName, return
     IF (cFileName .EQ. '') RETURN
     
-    !Initialize
-    NNodes = AppGrid%NNodes
-
     !Open file
     CALL TDFile%New(cFileName,InputFile=.TRUE.,IsTSFile=.FALSE.,Descriptor='Tile drain/subsurface irrigation data',iStat=iStat)  
     IF (iStat .EQ. -1) RETURN
@@ -180,13 +179,13 @@ CONTAINS
     IF (iStat .EQ. -1) RETURN
 
     !Read tile drain data
-    CALL TileDrain_New(TDFile,AppGrid,Stratigraphy,NNodes,NStrmNode,TimeUnitConductance_TD,AppTileDrain%TileDrains,iStat)
+    CALL TileDrain_New(TDFile,AppGrid,Stratigraphy,iStrmNodeIDs,TimeUnitConductance_TD,AppTileDrain%TileDrains,iStat)
     IF (iStat .EQ. -1) RETURN
     NDrain              = SIZE(AppTileDrain%TileDrains)
     AppTileDrain%NDrain = NDrain
     
     !Read subsurface irrigation data
-    CALL SubIrig_New(TDFile,AppGrid,Stratigraphy,NNodes,TimeUnitConductance_SI,AppTileDrain%SubIrigs,iStat) 
+    CALL SubIrig_New(TDFile,AppGrid,Stratigraphy,TimeUnitConductance_SI,AppTileDrain%SubIrigs,iStat) 
     IF (iStat .EQ. -1) RETURN
     NSubIrig              = SIZE(AppTileDrain%SubIrigs)
     AppTileDrain%NSubIrig = NSubIrig
@@ -210,7 +209,7 @@ CONTAINS
     END IF
        
     !Hydrograph print control data
-    CALL AppTileDrain%TileDrainHyd%New(IsForInquiry,cWorkingDirectory,AppTileDrain%SubIrigs%iGWNode,AppTileDrain%TileDrains%iGWNode,TimeStep,TDFile,iStat)
+    CALL AppTileDrain%TileDrainHyd%New(IsForInquiry,cWorkingDirectory,AppGrid%AppNode%ID,AppTileDrain%SubIrigs%ID,AppTileDrain%TileDrains%ID,AppTileDrain%SubIrigs%iGWNode,AppTileDrain%TileDrains%iGWNode,TimeStep,TDFile,iStat)
     IF (iStat .EQ. -1) RETURN
   
     !Close file
@@ -222,26 +221,31 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW TileDrain DATA
   ! -------------------------------------------------------------
-  SUBROUTINE TileDrain_New(InFile,AppGrid,Stratigraphy,NNodes,NStrmNode,TimeUnitConductance,TileDrains,iStat)
+  SUBROUTINE TileDrain_New(InFile,AppGrid,Stratigraphy,iStrmNodeIDs,TimeUnitConductance,TileDrains,iStat)
     TYPE(GenericFileType)                       :: InFile
     TYPE(AppGridType),INTENT(IN)                :: AppGrid
     TYPE(StratigraphyType),INTENT(IN)           :: Stratigraphy
-    INTEGER,INTENT(IN)                          :: NNodes,NStrmNode
+    INTEGER,INTENT(IN)                          :: iStrmNodeIDs(:)
     CHARACTER(LEN=6),INTENT(OUT)                :: TimeUnitConductance
     TYPE(TileDrainType),ALLOCATABLE,INTENT(OUT) :: TileDrains(:)
     INTEGER,INTENT(OUT)                         :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+13) :: ThisProcedure = ModName // 'TileDrain_New'
-    INTEGER                      :: NDrain,indx,iGWNode
+    INTEGER                      :: NDrain,indx,indx1,iStrmNode,iGWNodeID,iGWNode,NodeIDs(AppGrid%NNodes),ID,iNLayers
     REAL(8)                      :: FactH,FactCDC,DummyArray(6)
     CHARACTER                    :: ALine*1000
     
+    !Initialize
+    iStat    = 0
+    NodeIDS  = AppGrid%AppNode%ID
+    iNLayers = Stratigraphy%NLayers
+    
     !Read data
-    CALL InFile%ReadData(NDrain,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL InFile%ReadData(FactH,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL InFile%ReadData(NDrain,iStat)   ;  IF (iStat .EQ. -1) RETURN
+    CALL InFile%ReadData(FactH,iStat)    ;  IF (iStat .EQ. -1) RETURN
     CALL InFile%ReadData(FactCDC,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL InFile%ReadData(ALine,iStat)  ;  IF (iStat .EQ. -1) RETURN 
+    CALL InFile%ReadData(ALine,iStat)    ;  IF (iStat .EQ. -1) RETURN 
     CALL CleanSpecialCharacters(ALine)
     TimeUnitConductance = UpperCase(ADJUSTL(StripTextUntilCharacter(ALine,'/')))
    
@@ -253,53 +257,64 @@ CONTAINS
     
     !Read data
     DO indx=1,NDrain
-      CALL InFile%ReadData(DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
-      
-      !Make sure data is entered sequentially
-      IF (INT(DummyArray(1)) .NE. indx) THEN
-          MessageArray(1) = 'Tile drain data must entered sequentially!'
-          MessageArray(2) = 'Tile drain ID expected:'//TRIM(IntToText(indx))
-          MessageArray(3) = 'Tile drain ID entered :'//TRIM(IntToText(INT(DummyArray(1))))
-          CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-          iStat = -1
-          RETURN
-      END IF
-      
-      !Assign data to persistent arrays
-      iGWNode                       = INT(DummyArray(2))
-      TileDrains(indx)%iGWNode      = iGWNode
-      TileDrains(indx)%rElevation   = DummyArray(3) * FactH
-      TileDrains(indx)%rConductance = DummyArray(4) * FactCDC
-      TileDrains(indx)%iGWNodeLayer = Stratigraphy%GetLayerNumberForElevation(TileDrains(indx)%rElevation , &
-                                                                              AppGrid%Node(iGWNode)%X     , &
-                                                                              AppGrid%Node(iGWNode)%Y     , &
-                                                                              AppGrid                     )
-      TileDrains(indx)%iDestType    = INT(DummyArray(5))
-      TileDrains(indx)%iDest        = INT(DummyArray(6))
-      
-      !Make sure gw node number is valid
-      IF (TileDrains(indx)%iGWNode.LT.1  .OR. TileDrains(indx)%iGWNode.GT.NNodes) THEN
-          CALL SetLastMessage('Groundwater node number for tile drain '//TRIM(IntToText(indx))//' is not modeled!',iFatal,ThisProcedure)
-          iStat = -1
-          RETURN
-      END IF
-
-     !Make sure that destination type is exceptible
-      IF (TileDrains(indx)%iDestType.NE.FlowDest_Outside .AND. TileDrains(indx)%iDestType.NE.FlowDest_StrmNode) THEN
-          CALL SetLastMessage('Flow destination type for tile drain '//TRIM(IntToText(indx))//' is not recognized!',iFatal,ThisProcedure)
-          iStat = -1
-          RETURN
-      END IF
-      
-      !Make sure strm node number is valid
-      IF (TileDrains(indx)%iDestType .EQ. FlowDest_StrmNode) THEN
-          IF (TileDrains(indx)%iDest.LT.1  .OR. TileDrains(indx)%iDest.GT.NStrmNode) THEN
-              CALL SetLastMessage('Stream node number for tile drain '//TRIM(IntToText(indx))//' is not modeled!',iFatal,ThisProcedure)
-              iStat = -1
-              RETURN
-          END IF
-      END IF
-      
+        CALL InFile%ReadData(DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        
+        ID = INT(DummyArray(1))
+        
+        !Assign data to persistent arrays
+        iGWNodeID = INT(DummyArray(2))
+        CALL ConvertID_To_Index(iGWNodeID,NodeIDs,iGWNode)
+        IF (iGWNode .EQ. 0) THEN
+            CALL SetLastMessage('Groundwater node '//TRIM(IntTotext(iGWNodeID))//' listed for tile drain ID '//TRIM(IntToText(ID))//' is not in the model!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        TileDrains(indx)%ID           = ID
+        TileDrains(indx)%iGWNode      = iGWNode
+        TileDrains(indx)%rElevation   = DummyArray(3) * FactH
+        TileDrains(indx)%rConductance = DummyArray(4) * FactCDC
+        TileDrains(indx)%iGWNodeLayer = Stratigraphy%GetLayerNumberForElevation(TileDrains(indx)%rElevation , &
+                                                                                AppGrid%X(iGWNode)          , &
+                                                                                AppGrid%Y(iGWNode)          , &
+                                                                                AppGrid                     )
+        TileDrains(indx)%iDestType    = INT(DummyArray(5))
+        TileDrains(indx)%iDest        = INT(DummyArray(6))
+        
+        !Make sure that a proper aquifer layer is assigned to the tile drain
+        IF (TileDrains(indx)%iGWNodeLayer.LT.1  .OR.  TileDrains(indx)%iGWNodeLayer.GT.iNLayers) THEN
+            MessageArray(1) = 'Tile drain '//TRIM(IntToText(ID))//' cannot be assigned a valid aquifer layer!'
+            MessageArray(2) = 'Check its elevation.'
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        
+        !Make sure that destination type is exceptible
+        IF (TileDrains(indx)%iDestType.NE.f_iFlowDest_Outside .AND. TileDrains(indx)%iDestType.NE.f_iFlowDest_StrmNode) THEN
+            CALL SetLastMessage('Flow destination type for tile drain '//TRIM(IntToText(ID))//' is not recognized!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        
+        !Make sure stream node number is valid
+        IF (TileDrains(indx)%iDestType .EQ. f_iFlowDest_StrmNode) THEN
+            iStrmNode = LocateInList(TileDrains(indx)%iDest , iStrmNodeIDs)
+            IF (iStrmNode .LT. 1) THEN
+                CALL SetLastMessage('Stream node '//TRIM(IntToText(TileDrains(indx)%iDest))//' for tile drain '//TRIM(IntToText(ID))//' is not modeled!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            TileDrains(indx)%iDest = iStrmNode
+        END IF
+        
+        !Make sure tile drain IDs are not repeated
+        DO indx1=1,indx-1
+            IF (TileDrains(indx)%ID .EQ. TileDrains(indx1)%ID) THEN
+                CALL SetLastMessage('Tile drain ID number '//TRIM(IntToText(ID))//' is used more than once!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+        END DO
     END DO
     
   END SUBROUTINE TileDrain_New
@@ -308,20 +323,23 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW SubIrig DATA
   ! -------------------------------------------------------------
-  SUBROUTINE SubIrig_New(InFile,AppGrid,Stratigraphy,NNodes,TimeUnitConductance,SubIrigs,iStat)
+  SUBROUTINE SubIrig_New(InFile,AppGrid,Stratigraphy,TimeUnitConductance,SubIrigs,iStat)
     TYPE(GenericFileType)                           :: InFile
     TYPE(AppGridType),INTENT(IN)                    :: AppGrid
     TYPE(StratigraphyType),INTENT(IN)               :: Stratigraphy
-    INTEGER,INTENT(IN)                              :: NNodes
     CHARACTER(LEN=6),INTENT(OUT)                    :: TimeUnitConductance
     TYPE(BaseTileDrainType),ALLOCATABLE,INTENT(OUT) :: SubIrigs(:)
     INTEGER,INTENT(OUT)                             :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+11) :: ThisProcedure = ModName // 'SubIrig_New'
-    INTEGER                      :: NDrain,indx,iGWNode
+    INTEGER                      :: NDrain,indx,indx1,iGWNode,iGWNodeID,ID,NodeIDs(AppGrid%NNodes)
     REAL(8)                      :: FactH,FactCDC,DummyArray(4)
     CHARACTER                    :: ALine*1000
+    
+    !Initialize
+    iStat   = 0
+    NodeIDs = AppGrid%AppNode%ID
     
     !Read data
     CALL InFile%ReadData(NDrain,iStat)  ;  IF (iStat .EQ. -1) RETURN
@@ -339,35 +357,34 @@ CONTAINS
     
     !Read data
     DO indx=1,NDrain
-      CALL InFile%ReadData(DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
-      
-      !Make sure data is entered sequentially
-      IF (INT(DummyArray(1)) .NE. indx) THEN
-          MessageArray(1) = 'Subsurface irrigation data must entered sequentially!'
-          MessageArray(2) = 'Subsurface irrigation ID expected:'//TRIM(IntToText(indx))
-          MessageArray(3) = 'Subsurface irrigation ID entered :'//TRIM(IntToText(INT(DummyArray(1))))
-          CALL SetLastMessage(MessageArray(1:3),iFatal,ThisProcedure)
-          iStat = -1
-          RETURN
-      END IF
-      
-      !Assign data to persistent arrays
-      iGWNode                     = INT(DummyArray(2))
-      SubIrigs(indx)%iGWNode      = iGWNode
-      SubIrigs(indx)%rElevation   = DummyArray(3) * FactH
-      SubIrigs(indx)%rConductance = DummyArray(4) * FactCDC
-      SubIrigs(indx)%iGWNodeLayer = Stratigraphy%GetLayerNumberForElevation(SubIrigs(indx)%rElevation   , &
-                                                                            AppGrid%Node(iGWNode)%X     , &
-                                                                            AppGrid%Node(iGWNode)%Y     , &
-                                                                            AppGrid                     )
-      
-      !Make sure gw node number is valid
-      IF (SubIrigs(indx)%iGWNode.LT.1  .OR. SubIrigs(indx)%iGWNode.GT.NNodes) THEN
-          CALL SetLastMessage('Groundwater node number for subsurface irrigation '//TRIM(IntToText(indx))//' is not modeled!',iFatal,ThisProcedure)
-          iStat = -1
-          RETURN
-      END IF
-      
+        CALL InFile%ReadData(DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        
+        ID = INT(DummyArray(1))
+        
+        !Assign data to persistent arrays
+        iGWNodeID = INT(DummyArray(2))
+        CALL ConvertID_To_Index(iGWNodeID,NodeIDS,iGWNode)
+        IF (iGWNode .EQ. 0) THEN
+            CALL SetLastMessage('Groundwater node '//TRIM(IntTotext(iGWNodeID))//' listed for subsurface irrigation ID '//TRIM(IntToText(ID))//' is not in the model!',f_iFatal,ThisProcedure)
+            iStat = -1
+            RETURN
+        END IF
+        SubIrigs(indx)%iGWNode      = iGWNode
+        SubIrigs(indx)%rElevation   = DummyArray(3) * FactH
+        SubIrigs(indx)%rConductance = DummyArray(4) * FactCDC
+        SubIrigs(indx)%iGWNodeLayer = Stratigraphy%GetLayerNumberForElevation(SubIrigs(indx)%rElevation   , &
+                                                                              AppGrid%X(iGWNode)          , &
+                                                                              AppGrid%Y(iGWNode)          , &
+                                                                              AppGrid                     )
+              
+        !Make sure subsurface irrigation IDs are not repeated
+        DO indx1=1,indx-1
+            IF (SubIrigs(indx)%ID .EQ. SubIrigs(indx1)%ID) THEN
+                CALL SetLastMessage('Subsurface irrigation ID number '//TRIM(IntToText(ID))//' is used more than once!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+        END DO
     END DO
     
   END SUBROUTINE SubIrig_New
@@ -417,65 +434,19 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
-  ! --- GET THE NUMBER OF DATA TYPES FOR POST-PROCESSING
+  ! --- GET HYDROGRAPH OUTPUT FILE NAME
   ! -------------------------------------------------------------
-  FUNCTION GetNDataList_AtLocationType(AppTileDrain) RESULT(NData) 
-    CLASS(AppTileDrainType),INTENT(IN) :: AppTileDrain
-    INTEGER                            :: NData
-    
-    IF (AppTileDrain%TileDrainHyd%IsOutFileDefined()) THEN
-        NData = nData_AtTileDrain
-    ELSE
-        NData = 0
-    END IF
-    
-  END FUNCTION GetNDataList_AtLocationType
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET A LIST OF DATA TYPES FOR POST-PROCESSING
-  ! -------------------------------------------------------------
-  SUBROUTINE GetDataList_AtLocationType(AppTileDrain,cDataList,cFileList,lBudgetType) 
-    CLASS(AppTileDrainType),INTENT(IN) :: AppTileDrain
-    CHARACTER(LEN=*),ALLOCATABLE       :: cDataList(:),cFileList(:)
-    LOGICAL,ALLOCATABLE                :: lBudgetType(:)
+  SUBROUTINE GetHydOutputFileName(AppTileDrain,cFileName)
+    CLASS(AppTileDrainType),INTENT(IN)   :: AppTileDrain
+    CHARACTER(:),ALLOCATABLE,INTENT(OUT) :: cFileName
     
     !Local variables
-    CHARACTER(:),ALLOCATABLE :: cFileName
+    INTEGER :: ErrorCode
     
-    IF (AppTileDrain%TileDrainHyd%IsOutFileDefined()) THEN
-        ALLOCATE (cDataList(nData_AtTileDrain) , cFileList(nData_AtTileDrain) , lBudgetType(nData_AtTileDrain))
-        cDataList   = cDataList_AtTileDrain(iTileDrainHyd)
-        lBudgetType = .FALSE.
-        CALL AppTileDrain%TileDrainHyd%GetOutFileName(cFileName)
-        cFileList = ''
-        cFileList = TRIM(StripTextUntilCharacter(ADJUSTL(cFileName),'.',Back=.TRUE.)) // '.hdf'  !Before this method, all hydrographs must have copied into an HDF file
-    END IF
+    DEALLOCATE (cFileName , STAT=ErrorCode)
+    CALL AppTileDrain%TileDrainHyd%GetOutFileName(cFileName)
     
-  END SUBROUTINE GetDataList_AtLocationType
-  
-  
-  ! -------------------------------------------------------------
-  ! --- GET TILE DRAIN HYDROGRAPH FOR POST-PROCESSING AT A TILE DRAIN ID FROM FULL MODEL
-  ! -------------------------------------------------------------
-  SUBROUTINE GetModelData_AtLocation(AppTileDrain,iTDHydID,cDataType,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_VL,nActualOutput,rOutputDates,rOutputValues,iStat)
-    CLASS(AppTileDrainType)     :: AppTileDrain
-    INTEGER,INTENT(IN)          :: iTDHydID
-    CHARACTER(LEN=*),INTENT(IN) :: cDataType,cOutputBeginDateAndTime,cOutputEndDateAndTime
-    REAL(8),INTENT(IN)          :: rFact_VL
-    INTEGER,INTENT(OUT)         :: nActualOutput                           !This is the actual number of elements of rOutputValues and rOutputDates arrays that are populated (can be less than or equal to the size of these arrays)
-    REAL(8),INTENT(OUT)         :: rOutputDates(:),rOutputValues(:)
-    INTEGER,INTENT(OUT)         :: iStat
-    
-    !Initialize
-    iStat = 0
-    
-    !If data type is not recognized return
-    IF (TRIM(cDataType) .NE. TRIM(cDataList_AtTileDrain(iTileDrainHyd))) RETURN
-
-    CALL AppTileDrain%TileDrainHyd%ReadTDHyd_AtHydrographLocation(iTDHydID,cOutputBeginDateAndTime,cOutputEndDateAndTime,rFact_VL,nActualOutput,rOutputDates,rOutputValues,iStat)
-
-  END SUBROUTINE GetModelData_AtLocation
+  END SUBROUTINE GetHydOutputFileName
   
   
   ! -------------------------------------------------------------
@@ -493,7 +464,7 @@ CONTAINS
     
     !Compile flows to streams
     DO indx=1,AppTileDrain%NDrain
-      IF (AppTileDrain%TileDrains(indx)%iDestType .NE. FlowDest_StrmNode) CYCLE
+      IF (AppTileDrain%TileDrains(indx)%iDestType .NE. f_iFlowDest_StrmNode) CYCLE
       iDest = AppTileDrain%TileDrains(indx)%iDest
       QDrain(iDest) = QDrain(iDest) - AppTileDrain%TileDrains(indx)%rFlow
     END DO
@@ -512,7 +483,7 @@ CONTAINS
     
     SELECT CASE (iType)
       !Tile drains
-      CASE (iTileDrain)
+      CASE (f_iTileDrain)
         IF (AppTileDrain%NDrain .EQ. 0) THEN
           Flows = 0.0
         ELSE
@@ -520,7 +491,7 @@ CONTAINS
         END IF
       
       !Subsurface irrigation  
-      CASE (iSubIrig)
+      CASE (f_iSubIrig)
         IF (AppTileDrain%NSubirig .EQ. 0) THEN
           Flows = 0.0
         ELSE
@@ -545,6 +516,18 @@ CONTAINS
 
 
   ! -------------------------------------------------------------
+  ! --- GET TILE DRAIN IDS
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetDrainIDs(AppTileDrain,IDs)
+    CLASS(AppTileDrainType),INTENT(IN) :: AppTileDrain
+    INTEGER,INTENT(OUT)                :: IDs(:)
+    
+    IDs = AppTileDrain%TileDrains%ID
+    
+  END SUBROUTINE GetDrainIDs
+
+
+  ! -------------------------------------------------------------
   ! --- GET NUMBER OF HYDROGRAPHS
   ! -------------------------------------------------------------
   PURE FUNCTION GetNHydrographs(AppTileDrain,iHydType) RESULT(NHyd)
@@ -555,6 +538,61 @@ CONTAINS
     NHyd = AppTileDrain%TileDrainHyd%GetNHydrographs(iHydType)
     
   END FUNCTION GetNHydrographs
+
+
+  ! -------------------------------------------------------------
+  ! --- GET HYDROGRAPH IDS
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetHydrographIDs(AppTileDrain,iHydType,IDs)
+    CLASS(AppTileDrainType),INTENT(IN) :: AppTileDrain
+    INTEGER,INTENT(IN)                 :: iHydType   
+    INTEGER,INTENT(OUT)                :: IDs(:)
+    
+    !Local variables
+    INTEGER,ALLOCATABLE :: iAllIDs(:) 
+    
+    !Initialize
+    SELECT CASE (iHydType)
+        CASE (f_iTileDrain)
+            ALLOCATE (iAllIDs(AppTileDrain%NDrain))
+            iAllIDs = AppTileDrain%TileDrains%ID
+            
+        CASE (f_iSubIrig)
+            ALLOCATE (iAllIDs(AppTileDrain%NSubIrig))
+            iAllIDs = AppTileDrain%SubIrigs%ID
+    END SELECT
+    
+    CALL AppTileDrain%TileDrainHyd%GetHydrographIDs(iHydType,iAllIDs,IDs)
+    
+  END SUBROUTINE GetHydrographIDs
+
+
+  ! -------------------------------------------------------------
+  ! --- GET HYDROGRAPH COORDINATES
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetHydrographCoordinates(AppTileDrain,iHydType,GridX,GridY,XHyd,YHyd)
+    CLASS(AppTileDrainType),INTENT(IN) :: AppTileDrain
+    INTEGER,INTENT(IN)                 :: iHydType 
+    REAL(8),INTENT(IN)                 :: GridX(:),GridY(:)
+    REAL(8),INTENT(OUT)                :: XHyd(:),YHyd(:)
+    
+    !Local variables
+    INTEGER,ALLOCATABLE :: iNodes(:) 
+    
+    !Initialize
+    SELECT CASE (iHydType)
+        CASE (f_iTileDrain)
+            ALLOCATE (iNodes(AppTileDrain%NDrain))
+            iNodes = AppTileDrain%TileDrains%iGWNode
+            
+        CASE (f_iSubIrig)
+            ALLOCATE (iNodes(AppTileDrain%NSubIrig))
+            iNodes = AppTileDrain%SubIrigs%iGWNode
+    END SELECT
+    
+    CALL AppTileDrain%TileDrainHyd%GetHydrographCoordinates(iHydType,iNodes,GridX,GridY,XHyd,YHyd)
+    
+  END SUBROUTINE GetHydrographCoordinates
 
 
   ! -------------------------------------------------------------
@@ -597,11 +635,11 @@ CONTAINS
     
     !Get the nodes
     SELECT CASE (iType)
-      CASE (iTileDrain)
+      CASE (f_iTileDrain)
         ALLOCATE (rFlows(AppTileDrain%NDrain))
         rFlows = AppTileDrain%TileDrains%rFlow
         
-      CASE (iSubIrig)
+      CASE (f_iSubIrig)
         ALLOCATE (rFlows(AppTileDrain%NSubIrig))
         rFlows = AppTileDrain%SubIrigs%rFlow
         
@@ -626,13 +664,13 @@ CONTAINS
     
     !Get the nodes
     SELECT CASE (iType)
-    CASE (iTileDrain)
+    CASE (f_iTileDrain)
         iDim = AppTileDrain%NDrain
         ALLOCATE (iGWNodes(iDim) , iGWNodeLayers(iDim))
         iGWNodes      = AppTileDrain%TileDrains%iGWNode
         iGWNodeLayers = AppTileDrain%TileDrains%iGWNodeLayer
         
-    CASE (iSubIrig)
+    CASE (f_iSubIrig)
         iDim = AppTileDrain%NSubIrig
         ALLOCATE (iGWNodes(iDim) , iGWNodeLayers(iDim))
         iGWNodes      = AppTileDrain%SubIrigs%iGWNode
@@ -737,54 +775,56 @@ CONTAINS
 
     !Local variables
     INTEGER           :: indx,iNode,iLayer,iGWNode,iNodeIDs(1)
-    REAL(8)           :: rElevation,rConductance,rUpdateValues(1)
-    INTEGER,PARAMETER :: iCompIDs(1) = [iGWComp]
+    REAL(8)           :: rElevation,rConductance,rUpdateValues(1),rHeadDiff
+    INTEGER,PARAMETER :: iCompIDs(1) = [f_iGWComp]
 
     !Inform user
     CALL EchoProgress('Simulating tile drain/subsurface irrigation flows')
 
     !Tile drains
     ASSOCIATE (pTileDrains => AppTileDrain%TileDrains)
-      DO indx=1,AppTileDrain%NDrain
-        iNode                   = pTileDrains(indx)%iGWNode
-        iLayer                  = pTileDrains(indx)%iGWNodeLayer
-        iGWNode                 = (iLayer-1)*NNodes + iNode
-        rConductance            = pTileDrains(indx)%rConductance
-        rElevation              = pTileDrains(indx)%rElevation
-        pTileDrains(indx)%rFlow = rConductance * MIN(rElevation-HN(iNode,iLayer) , 0.0)
-        IF (rElevation .LT. HN(iNode,iLayer)) THEN
-            !Node in consideartion
-            iNodeIDs(1)      = iGWNode
-            !Update RHS vector
-            rUpdateValues(1) = -pTileDrains(indx)%rFlow
-            CALL Matrix%UpdateRHS(iCompIDs,iNodeIDs,rUpdateValues)
-            !Update COEFF matrix
-            rUpdateValues(1) = rConductance
-            CALL Matrix%UpdateCOEFF(iGWComp,iGWNode,iCompIDs,iNodeIDs,rUpdateValues)
-        END IF
-      END DO
+        DO indx=1,AppTileDrain%NDrain
+            iNode                   = pTileDrains(indx)%iGWNode
+            iLayer                  = pTileDrains(indx)%iGWNodeLayer
+            iGWNode                 = (iLayer-1)*NNodes + iNode
+            rConductance            = pTileDrains(indx)%rConductance
+            rElevation              = pTileDrains(indx)%rElevation
+            rHeadDiff               = HN(iNode,iLayer) - rElevation
+            pTileDrains(indx)%rFlow = -rConductance * MAX(0.0 , rHeadDiff)
+            IF (rElevation .LT. HN(iNode,iLayer)) THEN
+                !Node in consideartion
+                iNodeIDs(1)      = iGWNode
+                !Update RHS vector
+                rUpdateValues(1) = -pTileDrains(indx)%rFlow
+                CALL Matrix%UpdateRHS(iCompIDs,iNodeIDs,rUpdateValues)
+                !Update COEFF matrix
+                rUpdateValues(1) = 0.5d0 * rConductance * (1d0 + rHeadDiff/SQRT(rHeadDiff*rHeadDiff+f_rSmoothMaxP))
+                CALL Matrix%UpdateCOEFF(f_iGWComp,iGWNode,1,iCompIDs,iNodeIDs,rUpdateValues)
+            END IF
+        END DO
     END ASSOCIATE 
 
     !Subsurface irrigations 
     ASSOCIATE (pSubIrigs => AppTileDrain%SubIrigs)
-      DO indx=1,AppTileDrain%NSubIrig
-        iNode                 = pSubIrigs(indx)%iGWNode
-        iLayer                = pSubIrigs(indx)%iGWNodeLayer
-        iGWNode               = (iLayer-1)*NNodes + iNode
-        rConductance          = pSubIrigs(indx)%rConductance
-        rElevation            = pSubIrigs(indx)%rElevation
-        pSubIrigs(indx)%rFlow = rConductance * MAX(rElevation-HN(iNode,iLayer) , 0.0)
-        IF (rElevation .GT. HN(iNode,iLayer)) THEN
-            !Node in consideartion
-            iNodeIDs(1)      = iGWNode
-            !Update RHS vector
-            rUpdateValues(1) = -pSubIrigs(indx)%rFlow
-            CALL Matrix%UpdateRHS(iCompIDs,iNodeIDs,rUpdateValues)
-            !Update COEFF matrix
-            rUpdateValues(1) = rConductance
-            CALL Matrix%UpdateCOEFF(iGWComp,iGWNode,iCompIDs,iNodeIDs,rUpdateValues)
-        END IF
-      END DO
+        DO indx=1,AppTileDrain%NSubIrig
+            iNode                 = pSubIrigs(indx)%iGWNode
+            iLayer                = pSubIrigs(indx)%iGWNodeLayer
+            iGWNode               = (iLayer-1)*NNodes + iNode
+            rConductance          = pSubIrigs(indx)%rConductance
+            rElevation            = pSubIrigs(indx)%rElevation
+            rHeadDiff             = rElevation - HN(iNode,iLayer)
+            pSubIrigs(indx)%rFlow = rConductance * MAX(rHeadDiff , 0.0)
+            IF (rElevation .GT. HN(iNode,iLayer)) THEN
+                !Node in consideartion
+                iNodeIDs(1)      = iGWNode
+                !Update RHS vector
+                rUpdateValues(1) = -pSubIrigs(indx)%rFlow
+                CALL Matrix%UpdateRHS(iCompIDs,iNodeIDs,rUpdateValues)
+                !Update COEFF matrix
+                rUpdateValues(1) = 0.5d0 * rConductance * (1d0 + rHeadDiff/SQRT(rHeadDiff*rHeadDiff+f_rSmoothMaxP))
+                CALL Matrix%UpdateCOEFF(f_iGWComp,iGWNode,1,iCompIDs,iNodeIDs,rUpdateValues)
+            END IF
+        END DO
     END ASSOCIATE 
 
   END SUBROUTINE Simulate

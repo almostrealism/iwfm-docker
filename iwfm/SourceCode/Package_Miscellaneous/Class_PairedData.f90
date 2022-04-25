@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -22,7 +22,7 @@
 !***********************************************************************
 MODULE Class_PairedData
   USE MessageLogger     , ONLY: SetLastMessage        , &
-                                iFatal
+                                f_iFatal
   USE IOInterface
   USE AbstractFunction  , ONLY: AbstractFunctionType
   IMPLICIT NONE
@@ -118,7 +118,7 @@ CONTAINS
     
     ALLOCATE (PairedData%XPoint(NPoints) , PairedData%YPoint(NPoints) , STAT=ErrorCode , ERRMSG=cErrMessage)
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for paired data!'//NEW_LINE('x')//TRIM(cErrMessage),iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for paired data!'//NEW_LINE('x')//TRIM(cErrMessage),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF

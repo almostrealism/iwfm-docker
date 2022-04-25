@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -22,10 +22,10 @@
 !***********************************************************************
 MODULE Class_SystemData
   USE MessageLogger      , ONLY: SetLastMessage   , &
-                                 iFatal
+                                 f_iFatal
   USE IOInterface        , ONLY: GenericFileType  , &
-                                 iGroup
-  USE ZBudget_Parameters , ONLY: cAttributesDir
+                                 f_iGroup
+  USE ZBudget_Parameters , ONLY: f_cAttributesDir
   USE ZBudget_Util       , ONLY: IsZBudgetFile
   IMPLICIT NONE
   
@@ -58,6 +58,7 @@ MODULE Class_SystemData
       INTEGER             :: NLayers                  = 0    !Number of layers considred for the hydrologic system (not necessarily equal to the aquifer layers)
       INTEGER             :: NFaces                   = 0    !Number of element faces
       REAL(8),ALLOCATABLE :: rNodeAreas(:)                   !Nodal area at each (node)
+      INTEGER,ALLOCATABLE :: iElementIDs(:)                  !Element ID numbers
       REAL(8),ALLOCATABLE :: rElementAreas(:)                !Element area at each (element)
       INTEGER,ALLOCATABLE :: iElementNNodes(:)               !Number of nodes for each (element)
       INTEGER,ALLOCATABLE :: iElementNodes(:,:)              !Nodes for each element in counter-clockwise direction for (4,element) combination
@@ -106,22 +107,23 @@ CONTAINS
     
     !Local variables
     CHARACTER(LEN=ModNameLen+12),PARAMETER :: ThisProcedure = ModName // 'ReadFromFile'
-    INTEGER                                :: indxLayer,indxNode,indxLayerBelow
+    INTEGER                                :: indxLayer,indxNode,indxLayerBelow,indx
     CHARACTER(:),ALLOCATABLE               :: cFileName
     
     !Check that this is indeed Z-Budget data file by checking if an object that Budget file doesn't have exist
     IF (.NOT. IsZBudgetFile(HDFFile)) THEN
         CALL HDFFile%GetName(cFileName)
-        CALL SetLastMessage('File '//TRIM(cFileName)//' is not a Z-Budget file type!',iFatal,ThisProcedure)
+        CALL SetLastMessage('File '//TRIM(cFileName)//' is not a Z-Budget file type!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
     
-    CALL HDFFile%ReadData(cAttributesDir,'SystemData%NNodes',ScalarAttrData=SystemData%NNodes,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL HDFFile%ReadData(cAttributesDir,'SystemData%NElements',ScalarAttrData=SystemData%NElements,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL HDFFile%ReadData(cAttributesDir,'SystemData%NLayers',ScalarAttrData=SystemData%NLayers,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL HDFFile%ReadData(cAttributesDir,'SystemData%NFaces',ScalarAttrData=SystemData%NFaces,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL HDFFile%ReadData(f_cAttributesDir,'SystemData%NNodes',ScalarAttrData=SystemData%NNodes,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL HDFFile%ReadData(f_cAttributesDir,'SystemData%NElements',ScalarAttrData=SystemData%NElements,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL HDFFile%ReadData(f_cAttributesDir,'SystemData%NLayers',ScalarAttrData=SystemData%NLayers,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL HDFFile%ReadData(f_cAttributesDir,'SystemData%NFaces',ScalarAttrData=SystemData%NFaces,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
     ALLOCATE (SystemData%rNodeAreas(SystemData%NNodes)                           , &
+              SystemData%iElementIDs(SystemData%NElements)                       , &
               SystemData%rElementAreas(SystemData%NElements)                     , &
               SystemData%iElementNNodes(SystemData%NElements)                    , &
               SystemData%iElementNodes(4,SystemData%NElements)                   , &
@@ -130,17 +132,24 @@ CONTAINS
               SystemData%lActiveNode(SystemData%NNodes,SystemData%NLayers), &
               SystemData%rElementNodeAreas(4,SystemData%NElements)               , &
               SystemData%rElementNodeAreaFractions(4,SystemData%NElements)       )
-    CALL HDFFile%ReadData(cAttributesDir//'/SystemData%NodeAreas',SystemData%rNodeAreas,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL HDFFile%ReadData(cAttributesDir//'/SystemData%ElementAreas',SystemData%rElementAreas,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL HDFFile%ReadData(cAttributesDir//'/SystemData%ElementNNodes',SystemData%iElementNNodes,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL HDFFile%ReadData(cAttributesDir//'/SystemData%ElementNodes',SystemData%iElementNodes,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL HDFFile%ReadData(f_cAttributesDir//'/SystemData%NodeAreas',SystemData%rNodeAreas,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL HDFFile%ReadData(f_cAttributesDir//'/SystemData%ElementAreas',SystemData%rElementAreas,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL HDFFile%ReadData(f_cAttributesDir//'/SystemData%ElementNNodes',SystemData%iElementNNodes,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL HDFFile%ReadData(f_cAttributesDir//'/SystemData%ElementNodes',SystemData%iElementNodes,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
     IF (SystemData%NFaces .GT. 0) THEN
-        CALL HDFFile%ReadData(cAttributesDir//'/SystemData%FaceElements',SystemData%iFaceElems,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-        CALL HDFFile%ReadData(cAttributesDir//'/SystemData%BoundaryFace',SystemData%lBoundaryFace,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL HDFFile%ReadData(f_cAttributesDir//'/SystemData%FaceElements',SystemData%iFaceElems,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL HDFFile%ReadData(f_cAttributesDir//'/SystemData%BoundaryFace',SystemData%lBoundaryFace,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
     END IF
-    CALL HDFFile%ReadData(cAttributesDir//'/SystemData%ActiveNode',SystemData%lActiveNode,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL HDFFile%ReadData(cAttributesDir//'/SystemData%ElementNodeAreas',SystemData%rElementNodeAreas,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-    CALL HDFFile%ReadData(cAttributesDir//'/SystemData%ElementNodeAreaFractions',SystemData%rElementNodeAreaFractions,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL HDFFile%ReadData(f_cAttributesDir//'/SystemData%ActiveNode',SystemData%lActiveNode,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL HDFFile%ReadData(f_cAttributesDir//'/SystemData%ElementNodeAreas',SystemData%rElementNodeAreas,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL HDFFile%ReadData(f_cAttributesDir//'/SystemData%ElementNodeAreaFractions',SystemData%rElementNodeAreaFractions,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    
+    !Backward compatibility: Check if SystemData%ElementIDs object exists. Read if it does; otherwise create the data in memory as being equal to the element index
+    IF (HDFFile%DoesHDFObjectExist(f_cAttributesDir//'/SystemData%ElementIDs')) THEN
+        CALL HDFFile%ReadData(f_cAttributesDir//'/SystemData%ElementIDs',SystemData%iElementIDs,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+    ELSE
+        SystemData%iElementIDs = [(indx,indx=1,SystemData%NElements)]
+    END IF
     
     !Compile the array that holds active layer below each node
     ALLOCATE (SystemData%iActiveLayerBelow(SystemData%NNodes,SystemData%NLayers-1))
@@ -166,21 +175,22 @@ CONTAINS
     CLASS(SystemDataType),INTENT(IN) :: SystemData
     TYPE(GenericFileType)            :: HDFFile
     
-    CALL HDFFile%WriteData(iGroup,cAttributesDir,'SystemData%NNodes',ScalarAttrData=SystemData%NNodes)
-    CALL HDFFile%WriteData(iGroup,cAttributesDir,'SystemData%NElements',ScalarAttrData=SystemData%NElements)
-    CALL HDFFile%WriteData(iGroup,cAttributesDir,'SystemData%NLayers',ScalarAttrData=SystemData%NLayers)
-    CALL HDFFile%WriteData(iGroup,cAttributesDir,'SystemData%NFaces',ScalarAttrData=SystemData%NFaces)
-    CALL HDFFile%WriteData(SystemData%rNodeAreas,cHDFPath=cAttributesDir//'/SystemData%NodeAreas')
-    CALL HDFFile%WriteData(SystemData%rElementAreas,cHDFPath=cAttributesDir//'/SystemData%ElementAreas')
-    CALL HDFFile%WriteData(SystemData%iElementNNodes,cHDFPath=cAttributesDir//'/SystemData%ElementNNodes')
-    CALL HDFFile%WriteData(SystemData%iElementNodes,cHDFPath=cAttributesDir//'/SystemData%ElementNodes')
+    CALL HDFFile%WriteData(f_iGroup,f_cAttributesDir,'SystemData%NNodes',ScalarAttrData=SystemData%NNodes)
+    CALL HDFFile%WriteData(f_iGroup,f_cAttributesDir,'SystemData%NElements',ScalarAttrData=SystemData%NElements)
+    CALL HDFFile%WriteData(f_iGroup,f_cAttributesDir,'SystemData%NLayers',ScalarAttrData=SystemData%NLayers)
+    CALL HDFFile%WriteData(f_iGroup,f_cAttributesDir,'SystemData%NFaces',ScalarAttrData=SystemData%NFaces)
+    CALL HDFFile%WriteData(SystemData%rNodeAreas,cHDFPath=f_cAttributesDir//'/SystemData%NodeAreas')
+    CALL HDFFile%WriteData(SystemData%iElementIDs,cHDFPath=f_cAttributesDir//'/SystemData%ElementIDs')
+    CALL HDFFile%WriteData(SystemData%rElementAreas,cHDFPath=f_cAttributesDir//'/SystemData%ElementAreas')
+    CALL HDFFile%WriteData(SystemData%iElementNNodes,cHDFPath=f_cAttributesDir//'/SystemData%ElementNNodes')
+    CALL HDFFile%WriteData(SystemData%iElementNodes,cHDFPath=f_cAttributesDir//'/SystemData%ElementNodes')
     IF (SystemData%NFaces .GT. 0) THEN
-        CALL HDFFile%WriteData(SystemData%iFaceElems,cHDFPath=cAttributesDir//'/SystemData%FaceElements')
-        CALL HDFFile%WriteData(SystemData%lBoundaryFace,cHDFPath=cAttributesDir//'/SystemData%BoundaryFace')
+        CALL HDFFile%WriteData(SystemData%iFaceElems,cHDFPath=f_cAttributesDir//'/SystemData%FaceElements')
+        CALL HDFFile%WriteData(SystemData%lBoundaryFace,cHDFPath=f_cAttributesDir//'/SystemData%BoundaryFace')
     END IF
-    CALL HDFFile%WriteData(SystemData%lActiveNode,cHDFPath=cAttributesDir//'/SystemData%ActiveNode')
-    CALL HDFFile%WriteData(SystemData%rElementNodeAreas,cHDFPath=cAttributesDir//'/SystemData%ElementNodeAreas')
-    CALL HDFFile%WriteData(SystemData%rElementNodeAreas,cHDFPath=cAttributesDir//'/SystemData%ElementNodeAreaFractions')
+    CALL HDFFile%WriteData(SystemData%lActiveNode,cHDFPath=f_cAttributesDir//'/SystemData%ActiveNode')
+    CALL HDFFile%WriteData(SystemData%rElementNodeAreas,cHDFPath=f_cAttributesDir//'/SystemData%ElementNodeAreas')
+    CALL HDFFile%WriteData(SystemData%rElementNodeAreas,cHDFPath=f_cAttributesDir//'/SystemData%ElementNodeAreaFractions')
     !CALL HDFFile%WriteData(SystemData%iActiveLayerBelow,cAttributesDir//'/SystemData%iActiveLayerBelow')  !This is computed based on SystemData%lActiveNode array
     
   END SUBROUTINE WriteToFile
@@ -197,6 +207,7 @@ CONTAINS
     TYPE(SystemDataType) :: Dummy
     
     DEALLOCATE(SystemData%rNodeAreas                 , &
+               SystemData%iElementIDs                , &
                SystemData%rElementAreas              , &
                SystemData%iElementNNodes             , &
                SystemData%iElementNodes              , &

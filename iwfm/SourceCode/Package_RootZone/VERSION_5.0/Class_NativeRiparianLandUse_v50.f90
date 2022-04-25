@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -24,7 +24,7 @@ MODULE Class_NativeRiparianLandUse_v50
   USE MessageLogger           , ONLY: SetLastMessage                , &
                                       EchoProgress                  , &
                                       MessageArray                  , &
-                                      iFatal
+                                      f_iFatal
   USE IOInterface
   USE TimeSeriesUtilities     , ONLY: TimeStepType
   USE GeneralUtilities        , ONLY: StripTextUntilCharacter       , &
@@ -40,8 +40,7 @@ MODULE Class_NativeRiparianLandUse_v50
   USE Package_UnsatZone       , ONLY: RootZoneSoilType              , &
                                       NonPondedLUMoistureRouter
   USE Package_PrecipitationET , ONLY: ETType
-  USE Package_Misc            , ONLY: SolverDataType                , &
-                                      FlowDest_GWElement
+  USE Package_Misc            , ONLY: SolverDataType                
   USE Class_BaseRootZone      , ONLY: TrackMoistureDueToSource
   IMPLICIT NONE
   
@@ -99,6 +98,7 @@ MODULE Class_NativeRiparianLandUse_v50
     PROCEDURE,PASS :: AdvanceAreas          
     PROCEDURE,PASS :: SoilMContent_To_Depth 
     PROCEDURE,PASS :: Simulate  
+    PROCEDURE,PASS :: RewindTSInputFilesToTimeStamp 
   END TYPE NativeRiparianDatabase_v50_Type
   
 
@@ -130,21 +130,22 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW NATIVE AND RIPARIAN LAND USE DATA
   ! -------------------------------------------------------------
-  SUBROUTINE New(NVRVLand,cFileName,cWorkingDirectory,FactCN,NSoils,NElements,NSubregions,TrackTime,iStat) 
+  SUBROUTINE New(NVRVLand,cFileName,cWorkingDirectory,FactCN,NSoils,NElements,NSubregions,iSubregionIDs,TrackTime,iStat) 
     CLASS(NativeRiparianDatabase_v50_Type) :: NVRVLand
     CHARACTER(LEN=*),INTENT(IN)            :: cFileName,cWorkingDirectory
     REAL(8),INTENT(IN)                     :: FACTCN
-    INTEGER,INTENT(IN)                     :: NSoils,NElements,NSubregions
+    INTEGER,INTENT(IN)                     :: NSoils,NElements,NSubregions,iSubregionIDs(NSubregions)
     LOGICAL,INTENT(IN)                     :: TrackTime
     INTEGER,INTENT(OUT)                    :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+3) :: ThisProcedure = ModName // 'New'
     CHARACTER                   :: ALine*1000
-    INTEGER                     :: ErrorCode,indxRegion
+    INTEGER                     :: ErrorCode,indxRegion,iRegion,ID
     REAL(8)                     :: FACT
     REAL(8),ALLOCATABLE         :: DummyArray(:,:)
     INTEGER,ALLOCATABLE         :: IntDummyArray(:,:)
+    LOGICAL                     :: lProcessed(NSubregions)
     TYPE(GenericFileType)       :: NVRVFile
     CHARACTER(:),ALLOCATABLE    :: cAbsPathFileName
     
@@ -171,7 +172,7 @@ CONTAINS
               NVRVLand%RegionETPot_RV(NSubregions)     , &
               STAT=ErrorCode                           )
     IF (ErrorCode .NE. 0) THEN
-        CALL SetLastMessage('Error in allocating memory for native/riparian vegetation data!',iFatal,ThisProcedure)
+        CALL SetLastMessage('Error in allocating memory for native/riparian vegetation data!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
@@ -188,41 +189,68 @@ CONTAINS
         ALine = StripTextUntilCharacter(ALine,'/') 
         CALL CleanSpecialCharacters(ALine)
         CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-        CALL NVRVLand%LandUseDataFile%New(cAbsPathFileName,'Native and riparian veg. area file',NElements,2,TrackTime,iStat)
+        CALL NVRVLand%LandUseDataFile%New(cAbsPathFileName,cWorkingDirectory,'Native and riparian veg. area file',NElements,2,TrackTime,iStat)
         IF (iStat .EQ. -1) RETURN
         
         !Rooting depths
         CALL NVRVFile%ReadData(FACT,iStat)  ;  IF (iStat .EQ. -1) RETURN
-        CALL NVRVFile%ReadData(NVRVLand%RootDepth_Native,iStat)    ;  IF (iStat .EQ. -1) RETURN    ;  NVRVLand%RootDepth_Native   = NVRVLand%RootDepth_Native * FACT
+        CALL NVRVFile%ReadData(NVRVLand%RootDepth_Native,iStat)    ;  IF (iStat .EQ. -1) RETURN  ;  NVRVLand%RootDepth_Native   = NVRVLand%RootDepth_Native * FACT
         CALL NVRVFile%ReadData(NVRVLand%RootDepth_Riparian,iStat)  ;  IF (iStat .EQ. -1) RETURN  ;  NVRVLand%RootDepth_Riparian = NVRVLand%RootDepth_Riparian * FACT
  
         !Read CN column pointers
-        CALL ReadRealData(NVRVFile,NSubregions,2*NSoils+1,DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL ReadRealData(NVRVFile,'curve numbers for native and riparian vegetation','subregions',NSubregions,2*NSoils+1,iSubregionIDs,DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        lProcessed = .FALSE.
         DO indxRegion=1,NSubregions
-            pNativeVeg(:,indxRegion)%SMax   = (1000.0/DummyArray(indxRegion,2:NSoils+1)-10.0) * FACTCN
-            pRiparianVeg(:,indxRegion)%SMax = (1000.0/DummyArray(indxRegion,NSoils+2:)-10.0) * FACTCN
+            iRegion = INT(DummyArray(indxRegion,1))
+            IF (lProcessed(iRegion)) THEN
+                ID = iSubregionIDs(iRegion)
+                CALL SetLastMessage('curve numbers for native and riparian vegetation at subregion '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            lProcessed(iRegion) = .TRUE.
+            pNativeVeg(:,iRegion)%SMax   = (1000.0/DummyArray(indxRegion,2:NSoils+1)-10.0) * FACTCN
+            pRiparianVeg(:,iRegion)%SMax = (1000.0/DummyArray(indxRegion,NSoils+2:)-10.0) * FACTCN
         END DO
         
         !Read ETc column pointers (although iColETc can be different for different soils, it is not)
-        CALL ReadPointerData(NVRVFile,NSubregions,3,IntDummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL ReadPointerData(NVRVFile,'evapotranspiration column pointers for native and riparian vegetation','subregions',NSubregions,3,iSubregionIDs,IntDummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        lProcessed = .FALSE.
         DO indxRegion=1,NSubregions
-            pNativeVeg(:,indxRegion)%iColETc   = IntDummyArray(indxRegion,2)
-            pRiparianVeg(:,indxRegion)%iColETc = IntDummyArray(indxRegion,3)
+            iRegion = IntDummyArray(indxRegion,1)
+            IF (lProcessed(iRegion)) THEN
+                ID = iSubregionIDs(iRegion)
+                CALL SetLastMessage('evapotranspiration column pointers for native and riparian vegetation at subregion '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            lProcessed(iRegion)             = .TRUE.
+            pNativeVeg(:,iRegion)%iColETc   = IntDummyArray(indxRegion,2)
+            pRiparianVeg(:,iRegion)%iColETc = IntDummyArray(indxRegion,3)
         END DO
 
         !Initial conditions
-        CALL ReadRealData(NVRVFile,NSubregions,2*NSoils+1,DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL ReadRealData(NVRVFile,'initial conditions for native and riparian vegetation','subregions',NSubregions,2*NSoils+1,iSubregionIDs,DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
         IF (MINVAL(DummyArray(:,2:)) .LT. 0.0   .OR.  &
             MAXVAL(DummyArray(:,2:)) .GT. 1.0         ) THEN
           MessageArray(1) = 'Some or all initial root zone moisture contents are less than'
           MessageArray(2) = '0.0 or greater than 1.0 for native and riparian vegetation areas!'
-          CALL SetLastMessage(MessageArray(1:2),iFatal,ThisProcedure)  
+          CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)  
           iStat = -1
           RETURN
         END IF
-        DO indxRegion=1,NSubregions    
-            pNativeVeg(:,indxRegion)%SoilM_Precip   = DummyArray(indxRegion,2::2) 
-            pRiparianVeg(:,indxRegion)%SoilM_Precip = DummyArray(indxRegion,3::2) 
+        lProcessed = .FALSE.
+        DO indxRegion=1,NSubregions 
+            iRegion = INT(DummyArray(indxRegion,1))
+            IF (lProcessed(iRegion)) THEN
+                ID = iSubregionIDs(iRegion)
+                CALL SetLastMessage('initial conditions for native and riparian vegetation at subregion '//TRIM(IntToText(ID))//' are defined more than once!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            lProcessed(iRegion)                  = .TRUE.
+            pNativeVeg(:,iRegion)%SoilM_Precip   = DummyArray(indxRegion,2::2) 
+            pRiparianVeg(:,iRegion)%SoilM_Precip = DummyArray(indxRegion,3::2) 
         END DO
         pNativeVeg%SoilM_AW                      = 0.0
         pRiparianVeg%SoilM_AW                    = 0.0 
@@ -390,9 +418,10 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ TIME SERIES DATA FOR NATIVE AND RIPARIAN VEG
   ! -------------------------------------------------------------
-  SUBROUTINE ReadTSData(NVRVLand,ElemSoilTypes,lLakeElem,TimeStep,AppGrid,iStat)
+  SUBROUTINE ReadTSData(NVRVLand,ElemSoilTypes,iSubregionIDs,rRegionAreas,lLakeElem,TimeStep,AppGrid,iStat)
     CLASS(NativeRiparianDatabase_v50_Type) :: NVRVLand
-    INTEGER,INTENT(IN)                     :: ElemSoilTypes(:)
+    INTEGER,INTENT(IN)                     :: ElemSoilTypes(:),iSubregionIDs(:)
+    REAL(8),INTENT(IN)                     :: rRegionAreas(:)
     LOGICAL,INTENT(IN)                     :: lLakeElem(:)
     TYPE(TimeStepType),INTENT(IN)          :: TimeStep
     TYPE(AppGridType),INTENT(IN)           :: AppGrid
@@ -408,7 +437,7 @@ CONTAINS
     CALL EchoProgress('Reading time series data for native and riparian vegitation lands')
     
     !Land use areas
-    CALL NVRVLand%LandUseDataFile%ReadTSData('Native and riparian veg. areas',TimeStep,AppGrid%AppElement%Area,iStat)
+    CALL NVRVLand%LandUseDataFile%ReadTSData('Native and riparian veg. areas',TimeStep,rRegionAreas,iSubregionIDs,iStat)
     IF (iStat .EQ. -1) RETURN
     IF (NVRVLand%LandUseDataFile%lUpdated) THEN
         ASSOCIATE (pNVArea      => NVRVLand%NativeVeg%Area          , &
@@ -499,11 +528,12 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- SIMULATE FLOW PROCESSES 
   ! -------------------------------------------------------------
-  SUBROUTINE Simulate(NVRVLand,ETData,DeltaT,Precip,GenericMoisture,SubregionSoilsData,UpstrmFlow,SolverData,iStat)
+  SUBROUTINE Simulate(NVRVLand,ETData,iSubregionIDs,DeltaT,Precip,GenericMoisture,SubregionSoilsData,UpstrmFlow,SolverData,iStat)
     CLASS(NativeRiparianDatabase_v50_Type) :: NVRVLand
-    TYPE(ETType)                           :: ETData
-    TYPE(RootZoneSoilType),INTENT(IN)      :: SubregionSoilsData(:,:)
+    TYPE(ETType),INTENT(IN)                :: ETData
+    INTEGER,INTENT(IN)                     :: iSubregionIDs(:)
     REAL(8),INTENT(IN)                     :: DeltaT,Precip(:,:),GenericMoisture(:,:),UpstrmFlow(:)
+    TYPE(RootZoneSoilType),INTENT(IN)      :: SubregionSoilsData(:,:)
     TYPE(SolverDataType),INTENT(IN)        :: SolverData
     INTEGER,INTENT(OUT)                    :: iStat
     
@@ -605,10 +635,10 @@ CONTAINS
                   IF (AchievedConv .NE. 0.0) THEN
                     MessageArray(1) = 'Convergence error in soil moisture routing for native vegetation!'
                     MessageArray(2) =                   'Soil type            = '//TRIM(IntToText(indxSoil))
-                    MessageArray(3) =                   'Subregion            = '//TRIM(IntToText(indxRegion))
+                    MessageArray(3) =                   'Subregion            = '//TRIM(IntToText(iSubregionIDs(indxRegion)))
                     WRITE (MessageArray(4),'(A,F11.8)') 'Desired convergence  = ',SolverData%Tolerance*TotalPorosityCrop
                     WRITE (MessageArray(5),'(A,F11.8)') 'Achieved convergence = ',ABS(AchievedConv)
-                    CALL SetLastMessage(MessageArray(1:5),iFatal,ThisProcedure)
+                    CALL SetLastMessage(MessageArray(1:5),f_iFatal,ThisProcedure)
                     iStat = -1
                     RETURN
                   END IF
@@ -642,11 +672,11 @@ CONTAINS
                   IF (pNVSoilRegion%SoilM_AW     .LT. 0.0) lNegativeMoist = .TRUE.
                   IF (pNVSoilRegion%SoilM_Oth    .LT. 0.0) lNegativeMoist = .TRUE.
                   IF (lNegativeMoist) THEN
-                      MessageArray(1) = 'Soil moisture content becomes negative at subregion '//TRIM(IntToText(indxRegion))//'.'
+                      MessageArray(1) = 'Soil moisture content becomes negative at subregion '//TRIM(IntToText(iSubregionIDs(indxRegion)))//'.'
                       MessageArray(2) = 'This may be due to a too high convergence criteria set for the iterative solution.'
                       MessageArray(3) = 'Try using a smaller value for RZCONV and a higher value for RZITERMX parameters'
                       MessageArray(4) = 'in the Root Zone Main Input File.'
-                      CALL SetLastMessage(MessageArray(1:4),iFatal,ThisProcedure)
+                      CALL SetLastMessage(MessageArray(1:4),f_iFatal,ThisProcedure)
                       iStat = -1
                       RETURN
                   END IF
@@ -689,10 +719,10 @@ CONTAINS
                   IF (AchievedConv .NE. 0.0) THEN
                     MessageArray(1) = 'Convergence error in soil moisture routing for riparian vegetation!'
                     MessageArray(2) =                   'Soil type            = '//TRIM(IntToText(indxSoil))
-                    MessageArray(3) =                   'Subregion            = '//TRIM(IntToText(indxRegion))
+                    MessageArray(3) =                   'Subregion            = '//TRIM(IntToText(iSubregionIDs(indxRegion)))
                     WRITE (MessageArray(4),'(A,F11.8)') 'Desired convergence  = ',SolverData%Tolerance*TotalPorosityCrop
                     WRITE (MessageArray(5),'(A,F11.8)') 'Achieved convergence = ',ABS(AchievedConv)
-                    CALL SetLastMessage(MessageArray(1:5),iFatal,ThisProcedure)
+                    CALL SetLastMessage(MessageArray(1:5),f_iFatal,ThisProcedure)
                     iStat = -1
                     RETURN
                   END IF
@@ -726,11 +756,11 @@ CONTAINS
                   IF (pRVSoilRegion%SoilM_AW     .LT. 0.0) lNegativeMoist = .TRUE.
                   IF (pRVSoilRegion%SoilM_Oth    .LT. 0.0) lNegativeMoist = .TRUE.
                   IF (lNegativeMoist) THEN
-                      MessageArray(1) = 'Soil moisture content becomes negative at subregion '//TRIM(IntToText(indxRegion))//'.'
+                      MessageArray(1) = 'Soil moisture content becomes negative at subregion '//TRIM(IntToText(iSubregionIDs(indxRegion)))//'.'
                       MessageArray(2) = 'This may be due to a too high convergence criteria set for the iterative solution.'
                       MessageArray(3) = 'Try using a smaller value for RZCONV and a higher value for RZITERMX parameters'
                       MessageArray(4) = 'in the Root Zone Main Input File.'
-                      CALL SetLastMessage(MessageArray(1:4),iFatal,ThisProcedure)
+                      CALL SetLastMessage(MessageArray(1:4),f_iFatal,ThisProcedure)
                       iStat = -1
                       RETURN
                   END IF
@@ -762,9 +792,9 @@ CONTAINS
   ! --- CONVERT SOIL INITIAL MOISTURE CONTENTS TO DEPTHS
   ! ---  Note: Called only once at the beginning of simulation
   ! -------------------------------------------------------------
-  SUBROUTINE SoilMContent_To_Depth(NVRVLand,NSoils,NRegions,TotalPorosity,iStat)
+  SUBROUTINE SoilMContent_To_Depth(NVRVLand,NSoils,NRegions,iSubregionIDs,TotalPorosity,iStat)
     CLASS(NativeRiparianDatabase_v50_Type) :: NVRVLand
-    INTEGER,INTENT(IN)                     :: NSoils,NRegions
+    INTEGER,INTENT(IN)                     :: NSoils,NRegions,iSubregionIDs(NRegions)
     REAL(8),INTENT(IN)                     :: TotalPorosity(NSoils,NRegions)
     INTEGER,INTENT(OUT)                    :: iStat
     
@@ -789,12 +819,12 @@ CONTAINS
         DO indxRegion=1,NRegions
             DO indxSoil=1,NSoils
                 IF ((pNV(indxSoil,indxRegion)%SoilM_Precip + pNV(indxSoil,indxRegion)%SoilM_AW + pNV(indxSoil,indxRegion)%SoilM_Oth) .GT. TotalPorosity(indxSoil,indxRegion)) THEN
-                    CALL SetLastMessage('Initial moisture content for native vegetation with soil type ' // TRIM(IntToText(indxSoil)) // ' at subregion ' // TRIM(IntToText(indxRegion)) // ' is greater than total porosity!',iFatal,ThisProcedure)
+                    CALL SetLastMessage('Initial moisture content for native vegetation with soil type ' // TRIM(IntToText(indxSoil)) // ' at subregion ' // TRIM(IntToText(iSubregionIDs(indxRegion))) // ' is greater than total porosity!',f_iFatal,ThisProcedure)
                     iStat = -1
                     RETURN
                 END IF
                 IF ((pRV(indxSoil,indxRegion)%SoilM_Precip + pRV(indxSoil,indxRegion)%SoilM_AW + pRV(indxSoil,indxRegion)%SoilM_Oth) .GT. TotalPorosity(indxSoil,indxRegion)) THEN
-                    CALL SetLastMessage('Initial moisture content for riparian vegetation with soil type ' // TRIM(IntToText(indxSoil)) // ' at subregion ' // TRIM(IntToText(indxRegion)) // ' is greater than total porosity!',iFatal,ThisProcedure)
+                    CALL SetLastMessage('Initial moisture content for riparian vegetation with soil type ' // TRIM(IntToText(indxSoil)) // ' at subregion ' // TRIM(IntToText(iSubregionIDs(indxRegion))) // ' is greater than total porosity!',f_iFatal,ThisProcedure)
                     iStat = -1
                     RETURN
                 END IF
@@ -815,6 +845,21 @@ CONTAINS
     END ASSOCIATE
     
   END SUBROUTINE SoilMContent_To_Depth
+
   
+  ! -------------------------------------------------------------
+  ! --- REWIND TIMESERIES INPUT FILES TO A SPECIFIED TIME STAMP
+  ! -------------------------------------------------------------
+  SUBROUTINE RewindTSInputFilesToTimeStamp(NVRVLand,iSubregionIDs,rRegionAreas,TimeStep,iStat)
+    CLASS(NativeRiparianDatabase_v50_Type) :: NVRVLand
+    INTEGER,INTENT(IN)                     :: iSubregionIDs(:)
+    REAL(8),INTENT(IN)                     :: rRegionAreas(:)
+    TYPE(TimeStepType),INTENT(IN)          :: TimeStep 
+    INTEGER,INTENT(OUT)                    :: iStat
+    
+    CALL NVRVLand%LandUseDataFile%File%RewindFile_To_BeginningOfTSData(iStat)  ;  IF (iStat .NE. 0) RETURN
+    CALL NVRVLand%LandUseDataFile%ReadTSData('Native and riparian veg. areas',TimeStep,rRegionAreas,iSubregionIDs,iStat)
+    
+  END SUBROUTINE RewindTSInputFilesToTimeStamp
   
 END MODULE

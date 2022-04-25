@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2019  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -68,9 +68,9 @@ MODULE Class_BinaryTree
   ! -------------------------------------------------------------
   ! --- MISC. ENTITIES
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER                   :: CharKeyLen = 30
-  INTEGER,PARAMETER                   :: ModNameLen = 18
-  CHARACTER(LEN=ModNameLen),PARAMETER :: ModName    = 'Class_BinaryTree::'
+  INTEGER,PARAMETER                   :: f_iCharKeyLen = 30
+  INTEGER,PARAMETER                   :: ModNameLen    = 18
+  CHARACTER(LEN=ModNameLen),PARAMETER :: ModName       = 'Class_BinaryTree::'
   
   
   
@@ -303,7 +303,7 @@ CONTAINS
     CHARACTER(LEN=*),OPTIONAL,INTENT(IN) :: CharKey
     
     !Local variables
-    CHARACTER :: TempChar*CharKeyLen
+    CHARACTER(:),ALLOCATABLE :: TempChar 
     
     !Initialize
     lNodePreviouslyAdded = .FALSE.
@@ -317,6 +317,7 @@ CONTAINS
         ELSEIF (PRESENT(Real8Key)) THEN
             ALLOCATE (pBTree%Key , SOURCE=Real8Key)
         ELSE
+            ALLOCATE(CHARACTER(LEN=f_iCharKeyLen) :: TempChar)
             TempChar = CharKey
             ALLOCATE (pBTree%Key , SOURCE=TempChar)
         END IF

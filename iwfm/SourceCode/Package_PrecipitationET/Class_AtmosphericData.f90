@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018  
+!  Copyright (C) 2005-2021  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -95,15 +95,15 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INITIALIZE ATMOSPHERIC DATA TIME SERIES DATA FILE
   ! -------------------------------------------------------------
-  SUBROUTINE New(AtmosphericData,FileName,cDataName,TimeStep,iStat) 
+  SUBROUTINE New(AtmosphericData,FileName,cWorkingDirectory,cDataName,TimeStep,iStat) 
     CLASS(AtmosphericDataType),INTENT(OUT) :: AtmosphericData
-    CHARACTER(LEN=*),INTENT(IN)            :: FileName,cDataName
+    CHARACTER(LEN=*),INTENT(IN)            :: FileName,cWorkingDirectory,cDataName
     TYPE(TimeStepType),INTENT(IN)          :: TimeStep
     INTEGER,INTENT(OUT)                    :: iStat
 
     !Local variables
     REAL(8) :: Factor(1)
-    LOGICAL :: DummyArray(1) = (/.TRUE./)
+    LOGICAL :: DummyArray(1) = [.TRUE.]
     
     !Initialize
     iStat = 0
@@ -115,7 +115,7 @@ CONTAINS
     CALL EchoProgress('Instantiating '//TRIM(cDataName))
 
     !Instantiate
-    CALL AtmosphericData%Init(FileName,TRIM(cDataName)//' file',TimeStep%TrackTime,1,.TRUE.,Factor,DummyArray,iStat=iStat)  
+    CALL AtmosphericData%Init(FileName,cWorkingDirectory,TRIM(cDataName)//' file',TimeStep%TrackTime,1,.TRUE.,Factor,DummyArray,iStat=iStat)  
     IF (iStat .EQ. -1) RETURN
     AtmosphericData%Fact      = Factor(1)
     AtmosphericData%cDataName = TRIM(cDataName)

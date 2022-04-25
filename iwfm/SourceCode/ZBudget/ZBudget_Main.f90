@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2018
+!  Copyright (C) 2005-2021
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -29,9 +29,9 @@ PROGRAM ZBudget
                                 LogMessage            , &
                                 LogLastMessage        , &
                                 MessageArray          , &
-                                iMessage              , &
-                                YesEchoProgress       , &
-                                FILE                  
+                                f_iMessage            , &
+                                f_iYesEchoProgress    , &
+                                f_iFILE                  
   USE ProgramTimer      , ONLY: StartTimer               
   USE IWFM_Core_Version , ONLY: IWFM_Core
   USE ZBudgetControls   , ONLY: ProcessZBudgets       , &
@@ -46,7 +46,7 @@ PROGRAM ZBudget
   CALL StartTimer()
   
   !Set flag to echo progress
-  CALL SetFlagToEchoProgress(YesEchoProgress,iStat)
+  CALL SetFlagToEchoProgress(f_iYesEchoProgress,iStat)
   IF (iStat .EQ. -1) CALL EndExecution(StandardOutputFile,iStat)
 
   !Refresh the standard output file
@@ -58,7 +58,7 @@ PROGRAM ZBudget
   MessageArray(1) = 'PROGRAM: IWFM Z-Budget Post-Processor ' // TRIM(IWFM_Core%GetVersion())
   MessageArray(2) = 'This run is made on '//TRIM(GetDate())//' at '//TRIM(GetTime())
   MessageArray(3) = ''
-  CALL LogMessage(MessageArray(1:3),iMessage,'',Destination=FILE)
+  CALL LogMessage(MessageArray(1:3),f_iMessage,'',Destination=f_iFILE)
 
   !Read in the main control data
   CALL ProcessZBudgets('',0,iStat)  
