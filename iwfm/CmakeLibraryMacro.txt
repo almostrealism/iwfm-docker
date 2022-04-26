@@ -40,7 +40,7 @@ macro (SET_COMPILER_FLAGS)
     else (WIN32)
       message(STATUS "Matched Intel Fortran Compiler on Linux")
       set (CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -fPIC") #removing -standard-semantics as it is causing _MP_ instead of _mp_ for module linking  
-      set (CMAKE_Fortran_FLAGS_RELEASE "-f77rtl -O3 -xHost -no-prec-div")
+      set (CMAKE_Fortran_FLAGS_RELEASE "-heap-arrays -f77rtl -O3 -xHost -no-prec-div")
       set (CMAKE_Fortran_FLAGS_DEBUG   "-heap-arrays -O0 -check bounds -traceback -g -debug full -debug-parameters all -gen-interfaces -warn interfaces")
     endif (WIN32)
   elseif (Fortran_COMPILER_NAME MATCHES "g77")
