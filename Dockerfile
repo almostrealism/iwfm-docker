@@ -1,5 +1,7 @@
 FROM intel/oneapi-hpckit
+
 WORKDIR /
+
 COPY szip szip
 COPY h5fortran h5fortran
 COPY zlib-ng-2.0.6.tar.gz /build/hdf5/ZLIB-prefix/src/2.0.6.tar.gz
@@ -9,5 +11,3 @@ COPY iwfm iwfm
 COPY build.sh /build.sh
 
 RUN /build.sh
-
-ENTRYPOINT /build/iwfm/PreProcessor
