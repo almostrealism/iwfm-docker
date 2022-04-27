@@ -26,3 +26,6 @@ F9X=ifort
 
 cmake -S iwfm -B build/iwfm -DHDF5_DIR=$(pwd)/libs
 cmake --build build/iwfm
+
+cmake -S iwfm2obs -B build/iwfm2obs
+cmake --build build/iwfm2obs

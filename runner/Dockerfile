@@ -20,5 +20,3 @@ RUN unzip c2vsimfg_version1.01.zip
 COPY run.sh /run.sh
 
 ENTRYPOINT /run.sh
-
-conda install -c cadwr-sgmo pywfm
