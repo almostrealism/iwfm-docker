@@ -6,4 +6,5 @@ WORKDIR /
 COPY c2vsimfg_version1.01.zip /
 RUN unzip c2vsimfg_version1.01.zip
 
-ENTRYPOINT /run.sh
+# ENTRYPOINT /run.sh
+ENTRYPOINT /run.sh & /usr/sbin/apache2 -DFOREGROUND
