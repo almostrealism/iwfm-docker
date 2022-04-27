@@ -29,3 +29,6 @@ cmake --build build/iwfm
 
 cmake -S iwfm2obs -B build/iwfm2obs
 cmake --build build/iwfm2obs
+
+cmake -S mlt -B build/mlt
+cmake --build build/mlt
