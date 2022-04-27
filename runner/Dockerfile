@@ -2,7 +2,14 @@ FROM ashesfall/iwfm-base
 
 RUN apt-get update
 RUN apt-get install -y curl
-RUN apt-get install -y wget zip dos2unix
+RUN apt-get install -y wget zip dos2unix python3
+
+RUN pip3 install pandas
+RUN pip3 install matplotlib
+RUN pip3 install descartes
+RUN pip3 install shapefile
+RUN pip3 install pyshp
+
 
 WORKDIR /
 
@@ -13,3 +20,5 @@ RUN unzip c2vsimfg_version1.01.zip
 COPY run.sh /run.sh
 
 ENTRYPOINT /run.sh
+
+conda install -c cadwr-sgmo pywfm
