@@ -1,0 +1,31 @@
+# Inputs for ScatterPlot Creation
+# Pest Folder
+../
+
+# Simulation Folder
+../Simulation/
+
+# Observation File
+GW_Obs.smp
+
+# Simulated Transmissivity-weighted Head File
+GW_MultiLayer.out
+
+# Well Info File
+wellinfo_FG.csv
+
+# PDF Name
+ScatterPlots.pdf
+
+# Observation Well - Model Layer Fraction File
+GW_MultiLayer_LayFrac.dat
+
+# subregion groups (subregion groups ; separated, subregions in group are comma-separated)
+1,2,3,4,5,6,7;8,9,10,11,12,13;14,15,16,17,18,19,20,21
+
+# subregion group names (comma-separated)
+Subregions 1-7,Subregions 8-13,Subregions 14-21
+
+# date breaks (comma-separated), optional (use * to ignore)
+*
+

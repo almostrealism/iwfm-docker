@@ -1,0 +1,27 @@
+# Inputs for ResidualMap Creation
+# Pest Folder
+../
+
+# Simulation Folder
+../Simulation/
+
+# Observation File
+GW_Obs.smp
+
+# Simulated Transmissivity-weighted Head File
+GW_MultiLayer.out
+
+# Well Info File
+wellinfo_FG.csv
+
+# Shapefile Folder
+C:\Users\hatch\Desktop\C2VSimFG\C2VSimFG_v1.0\GIS\Shapefiles\
+
+# Model Boundary
+C2VSimFG_Boundary
+
+# PDF Name
+ResidualMap.pdf
+
+# Observation Well - Model Layer Fraction File
+GW_MultiLayer_LayFrac.dat
