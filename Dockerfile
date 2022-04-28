@@ -32,4 +32,8 @@ COPY runner/settings.fig /Simulation/settings.fig
 COPY runner/STR_Obs.smp /Simulation/STR_Obs.smp
 COPY run.sh /run.sh
 
+ENV APACHE_RUN_DIR=/
+ENV APACHE_RUN_USER=www-data
+ENV APACHE_RUN_GROUP=www-data
+ENV APACHE_LOG_DIR=/var/www
 ENTRYPOINT /run.sh & /usr/sbin/apache2 -DFOREGROUND
