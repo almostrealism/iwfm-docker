@@ -1,6 +1,6 @@
 variable "prefix" {
   description = "The prefix used for all resources"
-  default = "klhjadsfjlhdfsakljhfads"
+  default = "iwfm"
 }
 
 variable "location" {
@@ -10,17 +10,16 @@ variable "location" {
 
 variable "subscription_id" {
   description = "Azure Subscription ID to be used for billing"
-  default = "92bb72a7-5aef-4f3f-84a8-a12ae4226763"
 }
 
 variable "docker_image" {
   description = "Docker image name"
-  default = "httpd"
+  default = "ashesfall/iwfm-base"
 }
 
 variable "docker_image_tag" {
   description = "Docker image tag"
-  default = "2"
+  default = "latest"
 }
 
 variable "iwfm_model" {
