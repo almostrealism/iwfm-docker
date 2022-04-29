@@ -4,3 +4,5 @@ model/**
 runner/*.zip
 **/.cproject
 **/.project
+**.tfstate*
+**/.terraform*
