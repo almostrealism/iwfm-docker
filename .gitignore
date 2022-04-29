@@ -2,7 +2,10 @@ build/**
 libs/**
 model/**
 runner/*.zip
+
 **/.cproject
 **/.project
+
 **.tfstate*
 **/.terraform*
+**/*.tfvars
