@@ -5,7 +5,7 @@ variable "prefix" {
 
 variable "region" {
   description = "The AWS region where all resources should be created"
-  default = "Central US"
+  default = "us-east-2"
 }
 
 variable "aws_access_key" {

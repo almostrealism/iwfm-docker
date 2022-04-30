@@ -1,8 +1,11 @@
 provider "aws" {
-  // version = ">= 1.58.0, <= 2.0.0"
   region = var.region
   access_key = var.aws_access_key
   secret_key = var.aws_secret_key
+}
+
+resource "aws_cloudwatch_log_group" "main" {
+  name = "${var.prefix}-logs"
 }
 
 resource "aws_ecs_task_definition" "definition" {
@@ -13,6 +16,10 @@ resource "aws_ecs_task_definition" "definition" {
   cpu                      = "1024"
   memory                   = "2048"
   requires_compatibilities = ["FARGATE"]
+
+  ephemeral_storage {
+    size_in_gib = 100
+  }
 
   container_definitions = <<DEFINITION
   [
@@ -29,7 +36,7 @@ resource "aws_ecs_task_definition" "definition" {
                   "logDriver": "awslogs",
                   "options": {
                       "awslogs-region" : "${var.region}",
-                      "awslogs-group" : "stream-to-log-fluentd",
+                      "awslogs-group" : "${var.prefix}-logs",
                       "awslogs-stream-prefix" : "${var.prefix}"
                   }
               },
@@ -50,6 +57,7 @@ resource "aws_ecs_service" "main" {
   task_definition = aws_ecs_task_definition.definition.arn
   desired_count   = 1
   launch_type     = "FARGATE"
+  depends_on = [aws_cloudwatch_log_group.main]
 
   network_configuration {
     subnets = [aws_subnet.public.id]
