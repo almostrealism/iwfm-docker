@@ -28,11 +28,64 @@ container's built in web server to port 8080 of your own machine you can simply 
 site http://localhost:8080/files in your browser to keep an eye on any output it generates.
 These pages are updated in real time, so you can monitor the entire process using just a browser.
 
+## Deploying the Simulation to AWS
+
+First you'll need to download Terraform, if you have not already. It is free, and available on
+Windows, Linux, and Mac (Intel/ARM).
+
+[Terraform](https://learn.hashicorp.com/tutorials/terraform/install-cli)
+
+Next, navigate to the "aws" directory of this repository and create a file called terraform.tfvars.
+Inside this file, you'll include all the parameters for your deployment.
+
+```
+prefix="iwfm"
+iwfm_model="https://data.cnra.ca.gov/dataset/31f3ddf8-752a-4b04-99e0-2a9f9139817a/resource/bc00cfa5-86ac-4e95-acda-6df1f3d85a73/download/c2vsimfg_version1.01.zip"
+region="us-east-2"
+aws_access_key="your_access_key"
+aws_secret_key="your_secret_key"
+```
+
+If you are doing multiple deployments, you can distinguish between them using prefix, but otherwise
+just leave it as "iwfm". Make sure the iwfm_model is the one you intend to run. us-east-2 is Ohio,
+but any region the support AWS Fargate will work for the deployment.
+
+Now you are ready to deploy. You can initialize terraform (which will download the AWS provider),
+and then apply the deployment.
+
+```
+terraform init
+terraform apply
+```
+
+This will prompt you to agree with the proposed changes. After typing "yes" and pressing enter, it
+will get to work deploying everything. This takes some time, but you can take a look at it in the
+AWS console by visiting the "Elastic Container Service".
+
+To access your deployment, select the iwfm-cluster in the "Elastic Container Service" dashboard.
+Then select the iwfm-service. Then finally, select the one running task inside that service. The
+info on the task will display its public IP address, which you can use to reach the deployment
+from any browser using http://public.ip.address/files, where public.ip.address is the address for
+that task.
+
+If you visit "Cloud Watch" in the AWS console, you should see a dashboard created called
+iwfm-dashboard, where you can monitor the performance and log output of the project.
+
+When you are done, and collected any results of interest to you, you can destroy the deployment.
+
+```
+terraform destroy
+```
+
 ## Deploying the Simulation to Azure
 
-Terraform scripts are provided here to allow any Microsoft user to perform the same operation in
+Note: Running on Azure is currently not supported, because the ephemeral space for containers is
+only 15gb. The work here could be used as a starting point, but will fail due to the small size
+permitted by Azure.
+
+~~Terraform scripts are provided here to allow any Microsoft user to perform the same operation in
 their Azure Cloud account. Because all the results are accessible via the browser, there is no
-need to even deal with the Azure console, you can monitor the process from anywhere.
+need to even deal with the Azure console, you can monitor the process from anywhere.~~
 
 First you'll need to download the Azure CLI and Terraform, if you have not already. They are both
 free, and supported on Windows, Linux, and Mac (Intel/ARM).
