@@ -14,8 +14,8 @@ resource "aws_ecs_task_definition" "definition" {
   task_role_arn            = aws_iam_role.ecs_task_role.arn
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
   network_mode             = "awsvpc"
-  cpu                      = "1024"
-  memory                   = "2048"
+  cpu                      = "2048"
+  memory                   = "4096"
   requires_compatibilities = ["FARGATE"]
 
   ephemeral_storage {
