@@ -1,4 +1,4 @@
-FROM ashesfall/iwfm-runner-final
+FROM ashesfall/iwfm-exp:latest
 
 WORKDIR /
 
