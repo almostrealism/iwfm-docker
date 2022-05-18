@@ -32,3 +32,10 @@ cmake --build build/iwfm2obs
 
 cmake -S mlt -B build/mlt
 cmake --build build/mlt
+
+cmake -S mfUSGLib -B build/mfUSGLib
+cmake --build build/mfUSGLib
+
+cp build/mfUSGLib/libmfUSGLib.a libs/lib/libmfUSGLib.a
+
+cmake -S t2p -B build/t2p -DMFUSG_DIR=$(pwd)/libs

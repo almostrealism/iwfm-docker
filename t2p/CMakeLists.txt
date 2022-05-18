@@ -117,14 +117,11 @@ set(PROJECT_NAME Texture2Par)
 # Source groups
 ################################################################################
 set(Libraries64_release
-    "mfUSGLib/x64/Release/mfUSGLib.lib"
+    "${MFUSG_DIR}/lib/libmfUSGLib.a"
 )
 source_group("Libraries64_release" FILES ${Libraries64_release})
 
-set(Libraries_release
-    "mfUSGLib/Release/mfUSGLib.lib"
-)
-source_group("Libraries_release" FILES ${Libraries_release})
+find_library(MFUSG NAMES libmfUSGLib.a PATHS ${MFUSG_DIR}/lib NO_DEFAULT_PATH)
 
 set(Resource_Files
     "T2P.ico"
@@ -147,7 +144,6 @@ source_group("Source Files" FILES ${Source_Files})
 
 set(ALL_FILES
     ${Libraries64_release}
-    ${Libraries_release}
     ${Resource_Files}
     ${Source_Files}
 )
@@ -161,17 +157,15 @@ use_props(${PROJECT_NAME} "${CMAKE_CONFIGURATION_TYPES}" "${DEFAULT_Fortran_PROP
 ################################################################################
 # Include directories
 ################################################################################
-if("${CMAKE_VS_PLATFORM_NAME}" STREQUAL "Win32")
-    target_include_directories(${PROJECT_NAME} PUBLIC
-        "${CMAKE_CURRENT_SOURCE_DIR}/;"
-        "${CMAKE_CURRENT_SOURCE_DIR}/mfUSGLib/Release"
-    )
-elseif("${CMAKE_VS_PLATFORM_NAME}" STREQUAL "x64")
-    target_include_directories(${PROJECT_NAME} PUBLIC
-        "${CMAKE_CURRENT_SOURCE_DIR}/;"
-        "${CMAKE_CURRENT_SOURCE_DIR}/mfUSGLib/x64/Release"
-    )
-endif()
+target_include_directories(${PROJECT_NAME} PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/;"
+    "${MFUSG_DIR}/include/"
+)
+
+################################################################################
+# Libraries
+################################################################################
+target_link_libraries(${PROJECT_NAME} PUBLIC ${MFUSG})
 
 ################################################################################
 # Compile definitions
