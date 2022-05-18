@@ -20,6 +20,8 @@ COPY heclib heclib
 COPY iwfm iwfm
 COPY iwfm2obs iwfm2obs
 COPY mlt mlt
+COPY mfUSGLib mfUSGLib
+COPY t2p t2p
 COPY build.sh /build.sh
 
 RUN /build.sh
@@ -30,6 +32,12 @@ COPY runner/MultiLayerTarget.in /Simulation/MultiLayerTarget.in
 COPY runner/ObservationConstruction.txt /Simulation/ObservationConstruction.txt
 COPY runner/settings.fig /Simulation/settings.fig
 COPY runner/STR_Obs.smp /Simulation/STR_Obs.smp
+
+COPY runner/nodezones.dat /Simulation/nodezones.dat
+COPY runner/Texture2Par.in /Simulation/Texture2Par.in
+COPY runner/welllog.dat /Simulation/welllog.dat
+COPY runner/zones.txt /Simulation/zones.txt
+
 COPY run.sh /run.sh
 
 ENV APACHE_RUN_DIR=/
