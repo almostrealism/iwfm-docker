@@ -37,5 +37,7 @@ cmake -S mfUSGLib -B build/mfUSGLib
 cmake --build build/mfUSGLib
 
 cp build/mfUSGLib/libmfUSGLib.a libs/lib/libmfUSGLib.a
+cp build/mfUSGLib/mfUSGLib.Modules.dir/* libs/include/
 
 cmake -S t2p -B build/t2p -DMFUSG_DIR=$(pwd)/libs
+cmake --build build/t2p

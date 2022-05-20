@@ -9,6 +9,8 @@ unzip model.zip
 cd Preprocessor
 dos2unix *.dat
 PreProcessor C2VSimFG_Preprocessor.in
+
+cp C2VSimFG_Preprocessor.in ../Simulation/..\\Preprocessor\\C2VSimFG_Preprocessor.in
 mv ..\\Simulation\\C2VSimFG_PreprocessorOut.bin ../Simulation/C2VSimFG_PreprocessorOut.bin
 
 cd ../Simulation
@@ -48,6 +50,9 @@ cp RootZone/C2VSimFG_Urban_PerCapWaterUse.dat RootZone\\C2VSimFG_Urban_PerCapWat
 cp RootZone/C2VSimFG_Urban_Population.dat RootZone\\C2VSimFG_Urban_Population.dat
 cp RootZone/C2VSimFG_Urban_WaterUseSpecs.dat RootZone\\C2VSimFG_Urban_WaterUseSpecs.dat
 
+/build/t2p/Texture2Par Texture2Par.in
+ls -la
+
 dos2unix *.dat
 
 Simulation C2VSimFG.in
@@ -61,7 +66,4 @@ cp ../Preprocessor/C2VSimFG_StreamsSpec.dat ..\\Preprocessor\\C2VSimFG_StreamsSp
 
 /build/iwfm2obs/iwfm2obs_2017 <iwfm2obs_2015.in
 /build/mlt/MultiLayerTarget MultiLayerTarget.in
-ls -la
-
-/build/t2p/Texture2Par Texture2Par.in
 ls -la
