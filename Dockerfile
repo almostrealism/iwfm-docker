@@ -22,6 +22,7 @@ COPY iwfm2obs iwfm2obs
 COPY mlt mlt
 COPY mfUSGLib mfUSGLib
 COPY t2p t2p
+COPY cth cth
 COPY build.sh /build.sh
 
 RUN /build.sh
@@ -37,6 +38,19 @@ COPY runner/nodezones.dat /Simulation/nodezones.dat
 COPY runner/Texture2Par.in /Simulation/Texture2Par.in
 COPY runner/welllog.dat /Simulation/welllog.dat
 COPY runner/zones.txt /Simulation/zones.txt
+
+COPY runner/CalcTypeHyd_All_sim.in /Simulation/CalcTypeHyd_All_sim.in
+COPY runner/CalcTypeHyd_Sub1Sub2_sim.in /Simulation/CalcTypeHyd_Sub1Sub2_sim.in
+COPY runner/CalcTypeHyd_Sub3Sub4_sim.in /Simulation/CalcTypeHyd_Sub3Sub4_sim.in
+COPY runner/CalcTypeHyd_Sub5_sim.in /Simulation/CalcTypeHyd_Sub5_sim.in
+COPY runner/CalcTypeHyd_Sub6Sub7_sim.in /Simulation/CalcTypeHyd_Sub6Sub7_sim.in
+COPY runner/CalcTypeHyd_Sub19Sub20Sub21_sim.in /Simulation/CalcTypeHyd_Sub19Sub20Sub21_sim.in
+COPY runner/CalcTypeHyd_Sub14Sub15_sim.in /Simulation/CalcTypeHyd_Sub14Sub15_sim.in
+COPY runner/CalcTypeHyd_Sub16Sub17Sub18_sim.in /Simulation/CalcTypeHyd_Sub16Sub17Sub18_sim.in
+COPY runner/CalcTypeHyd_Sub11Sub12Sub13_sim.in /Simulation/CalcTypeHyd_Sub11Sub12Sub13_sim.in
+COPY runner/CalcTypeHyd_Sub10_sim.in /Simulation/CalcTypeHyd_Sub10_sim.in
+COPY runner/CalcTypeHyd_Sub8Sub9_sim.in /Simulation/CalcTypeHyd_Sub8Sub9_sim.in
+COPY runner/CalcTypeHyd_CC_sim.in /Simulation/CalcTypeHyd_CC_sim.in
 
 COPY run.sh /run.sh
 

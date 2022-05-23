@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16.0 FATAL_ERROR)
 
-project(CalcTypeHyd )
+project(CalcTypeHyd Fortran)
 
 ################################################################################
 # Set target arch type if empty. Visual studio solution generator provides it.
@@ -9,10 +9,6 @@ if(NOT CMAKE_VS_PLATFORM_NAME)
     set(CMAKE_VS_PLATFORM_NAME "x64")
 endif()
 message("${CMAKE_VS_PLATFORM_NAME} architecture in use")
-
-if(NOT ("${CMAKE_VS_PLATFORM_NAME}" STREQUAL "Win32"))
-    message(FATAL_ERROR "${CMAKE_VS_PLATFORM_NAME} arch is not supported!")
-endif()
 
 ################################################################################
 # Global configuration types
@@ -137,29 +133,8 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 ################################################################################
 # Compile and link options
 ################################################################################
-if(${CMAKE_Fortran_COMPILER_ID} STREQUAL "Intel" AND WIN32)
-    target_compile_options(${PROJECT_NAME} PRIVATE
-        $<$<CONFIG:Debug>:
-            -debug:full;
-            -Od;
-            -traceback;
-            -libs:static;-threads;-dbglibs;
-            -check:bounds,stack;
-            -warn:interfaces
-        >
-        -nologo
-    )
-    target_link_options(${PROJECT_NAME} PRIVATE
-        $<$<CONFIG:Debug>:
-            /DEBUG
-        >
-        /INCREMENTAL:NO;
-        /NOLOGO;
-        /SUBSYSTEM:CONSOLE
-    )
-endif()
 
-if(${CMAKE_Fortran_COMPILER_ID} STREQUAL "Intel" AND UNIX)
+if(${CMAKE_Fortran_COMPILER_ID} STREQUAL "Intel")
     target_compile_options(${PROJECT_NAME} PRIVATE
         $<$<CONFIG:Debug>:
             -debug full;

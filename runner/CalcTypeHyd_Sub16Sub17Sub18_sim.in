@@ -1,0 +1,18 @@
+GW_MultiLayer.out					#path to WLs file
+sub16sub17sub18.dat						#path to cluster weights file
+3										#no. of clusters
+587										#no. of cluster wells
+3										#no. of desired type-hydrographs
+1										#desired cluster for type hydrograph
+2										#desired cluster for type hydrograph
+3										#desired cluster for type hydrograph
+01/01/1985								#start date mm/dd/yyyy
+10/01/2015								#end date mm/dd/yyyy
+C161718_									#pest base name
+2                       averaging periods (order by "month&date for alingning data and output")
+4                       nmonths
+1 2 3 4                 month-num
+3 1                     month&date for alingning data and output
+4                       nmonths
+8 9 10 11               month-num
+10 1                    month&date for alingning data and output

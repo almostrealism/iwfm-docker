@@ -1,0 +1,49 @@
+GW_MultiLayer.out					#path to WLs file
+sub3sub4.dat						#path to cluster weights file
+4										#no. of clusters
+184										#no. of cluster wells
+4										#no. of desired type-hydrographs
+1										#desired cluster for type hydrograph
+2										#desired cluster for type hydrograph
+3										#desired cluster for type hydrograph
+4										#desired cluster for type hydrograph
+01/15/2010								#start date mm/dd/yyyy
+10/01/2015								#end date mm/dd/yyyy
+C34_									#pest base name
+12                       averaging periods (order by "month&date for output")
+1                        nmonths
+1                        month-num
+1 15                     month&date for alingning data and output
+1                        nmonths
+2                        month-num
+2 15                     month&date for alingning data and output
+1                        nmonths
+3                        month-num
+3 15                     month&date for alingning data and output
+1                        nmonths
+4                        month-num
+4 15                     month&date for alingning data and output
+1                        nmonths
+5                        month-num
+5 15                     month&date for alingning data and output
+1                        nmonths
+6                        month-num
+6 15                     month&date for alingning data and output
+1                        nmonths
+7                        month-num
+7 15                     month&date for alingning data and output
+1                        nmonths
+8                        month-num
+8 15                     month&date for alingning data and output
+1                        nmonths
+9                        month-num
+9 15                     month&date for alingning data and output
+1                        nmonths
+10                       month-num
+10 15                    month&date for alingning data and output
+1                        nmonths
+11                       month-num
+11 15                    month&date for alingning data and output
+1                        nmonths
+12                       month-num
+12 15                    month&date for alingning data and output

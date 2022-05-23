@@ -41,3 +41,8 @@ cp build/mfUSGLib/mfUSGLib.Modules.dir/* libs/include/
 
 cmake -S t2p -B build/t2p -DMFUSG_DIR=$(pwd)/libs
 cmake --build build/t2p
+
+FC=ifort
+
+cmake -S cth -B build/cth
+cmake --build build/cth
