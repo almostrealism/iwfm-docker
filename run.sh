@@ -9,11 +9,19 @@ unzip model.zip
 cd Preprocessor
 dos2unix *.dat
 PreProcessor C2VSimFG_Preprocessor.in
+ls -la
 
 cp C2VSimFG_Preprocessor.in ../Simulation/..\\Preprocessor\\C2VSimFG_Preprocessor.in
+cp C2VSimFG_Elements.dat ../Simulation/..\\Preprocessor\\C2VSimFG_Elements.dat
+cp C2VSimFG_Nodes.dat ../Simulation/..\\Preprocessor\\C2VSimFG_Nodes.dat
+cp C2VSimFG_Stratigraphy.dat ../Simulation/..\\Preprocessor\\C2VSimFG_Stratigraphy.dat
+cp C2VSimFG_StreamsSpec.dat ../Simulation/..\\Preprocessor\\C2VSimFG_StreamsSpec.dat
+
 mv ..\\Simulation\\C2VSimFG_PreprocessorOut.bin ../Simulation/C2VSimFG_PreprocessorOut.bin
 
 cd ../Simulation
+cp Groundwater/C2VSimFG_Groundwater1974.dat Groundwater\\C2VSimFG_Groundwater1974_Orig.dat
+
 cp Streams/C2VSimFG_BypassSpec.dat Streams\\C2VSimFG_BypassSpec.dat
 cp Streams/C2VSimFG_Diversions.dat Streams\\C2VSimFG_Diversions.dat
 cp Streams/C2VSimFG_DiversionSpec.dat Streams\\C2VSimFG_DiversionSpec.dat
@@ -22,7 +30,7 @@ cp Streams/C2VSimFG_Streams.dat Streams\\C2VSimFG_Streams.dat
 cp Groundwater/C2VSimFG_BC.dat Groundwater\\C2VSimFG_BC.dat
 cp Groundwater/C2VSimFG_ConstrainedHeadBC.dat Groundwater\\C2VSimFG_ConstrainedHeadBC.dat
 cp Groundwater/C2VSimFG_ElemPump.dat Groundwater\\C2VSimFG_ElemPump.dat
-cp Groundwater/C2VSimFG_Groundwater1974.dat Groundwater\\C2VSimFG_Groundwater1974.dat
+# cp Groundwater/C2VSimFG_Groundwater1974.dat Groundwater\\C2VSimFG_Groundwater1974.dat
 cp Groundwater/C2VSimFG_Pumping.dat Groundwater\\C2VSimFG_Pumping.dat
 cp Groundwater/C2VSimFG_PumpRates.dat Groundwater\\C2VSimFG_PumpRates.dat
 cp Groundwater/C2VSimFG_Subsidence.dat Groundwater\\C2VSimFG_Subsidence.dat
