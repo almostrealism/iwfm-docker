@@ -52,6 +52,11 @@ COPY runner/CalcTypeHyd_Sub10_sim.in /Simulation/CalcTypeHyd_Sub10_sim.in
 COPY runner/CalcTypeHyd_Sub8Sub9_sim.in /Simulation/CalcTypeHyd_Sub8Sub9_sim.in
 COPY runner/CalcTypeHyd_CC_sim.in /Simulation/CalcTypeHyd_CC_sim.in
 
+COPY pestbin /pestbin
+COPY pest/C2VSimFG_01.pst /C2VSimFG_01.pst
+COPY pest/Texture2Par.tpl /Simulation/Texture2Par.tpl
+COPY pest/GWHMultiLayer.ins /Simulation/GWHMultiLayer.ins
+
 COPY run.sh /run.sh
 
 ENV APACHE_RUN_DIR=/
