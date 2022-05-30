@@ -6,12 +6,14 @@
   
    character (len=50),allocatable :: obname(:),obslayer(:),obsDate(:),obtime(:)
    real, allocatable              :: obx(:),oby(:),InterpThick(:,:),InterpElev(:,:),InterpHK(:,:),InterpT(:,:),TOS(:),BOS(:),fscrobs(:)
-   real, allocatable              :: nodex(:),nodey(:),Elevation(:,:),Thick(:,:),HK(:,:),obsvallayer(:),obsTrans(:),dum(:)
+   real, allocatable              :: nodex(:),nodey(:),Elevation(:,:),Thick(:,:),HK(:,:),obsTrans(:),dum(:)
+   real(8), allocatable         :: obsvallayer(:)
    integer                        :: nobs,nnodes,nlayers,nelements,ifail,nreg,NOUTF,NGROUP,NEBK,cnt,cntstart
    integer                        :: i,j,k,m,n,intd,lenght,ipos,skiplines,NOUTH,nodechange,nrecords,idum
    integer,allocatable            :: elements(:,:),ObsElem(:),recperobs(:),ObsOverwriteLayer(:)
    integer                        ::ls(100),rs(100)
-   real                           ::char2double,FX,FACT,TUNITH,tempthick,tope,bote,weightedWL,obsscrthk,totf
+   real                           ::FX,FACT,TUNITH,tempthick,tope,bote,weightedWL,obsscrthk,totf
+   real(8)                      ::char2double
   
     call getarg(1,infile)
     if(infile.eq.' ') then
@@ -356,7 +358,7 @@
       obslayer(i) = cline(ls(1):rs(1))
       obsDate(i)= cline(ls(2):rs(2))
       obtime(i)= cline(ls(3):rs(3))
-      obsvallayer(i)= char2double(ifail,2,cline(ls(4):rs(4)))   
+      obsvallayer(i)= char2double(ifail,2,cline(ls(4):rs(4)))
       
       !read(12,*)obslayer(i),obsDate(i),obtime(i),obsvallayer(i)
      end do
