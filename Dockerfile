@@ -19,6 +19,7 @@ COPY hdf5-hdf5-1_12_1.tar.gz /build/hdf5/HDF5-prefix/src/hdf5-1_12_1.tar.gz
 COPY heclib heclib
 COPY iwfm iwfm
 COPY iwfm2obs iwfm2obs
+COPY srs srs
 COPY mlt mlt
 COPY mfUSGLib mfUSGLib
 COPY t2p t2p
@@ -58,6 +59,8 @@ COPY pest/Texture2Par.tpl /Simulation/Texture2Par.tpl
 COPY pest/GWHMultiLayer.ins /Simulation/GWHMultiLayer.ins
 
 COPY run.sh /run.sh
+COPY run_model.sh /run_model.sh
+COPY run_simulation.sh /run_simulation.sh
 
 ENV APACHE_RUN_DIR=/
 ENV APACHE_RUN_USER=www-data
