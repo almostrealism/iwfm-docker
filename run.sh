@@ -21,8 +21,5 @@ mv ..\\Simulation\\C2VSimFG_PreprocessorOut.bin ../Simulation/C2VSimFG_Preproces
 
 cd /
 
-mkdir C2VSimFG
-mkdir C2VSimFG/simulation
-
 echo "Running pest..."
 /pestbin/pestpp-glm C2VSimFG_01.pst
