@@ -35,9 +35,8 @@ COPY runner/ObservationConstruction.txt /Simulation/ObservationConstruction.txt
 COPY runner/settings.fig /Simulation/settings.fig
 COPY runner/STR_Obs.smp /Simulation/STR_Obs.smp
 
-COPY runner/nodezones.dat /Simulation/nodezones.dat
+COPY runner/*.dat /Simulation/
 COPY runner/Texture2Par.in /Simulation/Texture2Par.in
-COPY runner/welllog.dat /Simulation/welllog.dat
 COPY runner/zones.txt /Simulation/zones.txt
 
 COPY runner/CalcTypeHyd_All_sim.in /Simulation/CalcTypeHyd_All_sim.in
@@ -56,7 +55,8 @@ COPY runner/CalcTypeHyd_CC_sim.in /Simulation/CalcTypeHyd_CC_sim.in
 COPY pestbin /pestbin
 COPY pest/C2VSimFG_01.pst /C2VSimFG_01.pst
 COPY pest/Texture2Par.tpl /Simulation/Texture2Par.tpl
-COPY pest/*.ins /Simulation/
+# COPY pest/*.ins /Simulation/
+COPY pest/GWHMultiLayer.ins /Simulation/GWHMultiLayer.ins
 
 COPY run.sh /run.sh
 COPY run_model.sh /run_model.sh

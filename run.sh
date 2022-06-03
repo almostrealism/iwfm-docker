@@ -19,7 +19,10 @@ cp C2VSimFG_StreamsSpec.dat ../Simulation/..\\Preprocessor\\C2VSimFG_StreamsSpec
 
 mv ..\\Simulation\\C2VSimFG_PreprocessorOut.bin ../Simulation/C2VSimFG_PreprocessorOut.bin
 
+echo "Running initial simulation..."
 cd /
+/run_simulation.sh
 
+cd /
 echo "Running pest..."
 /pestbin/pestpp-glm C2VSimFG_01.pst
