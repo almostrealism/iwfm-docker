@@ -16,11 +16,11 @@ resource "aws_ecs_task_definition" "definition" {
   network_mode             = "awsvpc"
   cpu                      = "2048"
   memory                   = "4096"
-  requires_compatibilities = ["FARGATE"]
 
-  ephemeral_storage {
-    size_in_gib = 100
-  }
+#  requires_compatibilities = ["FARGATE"]
+#  ephemeral_storage {
+#    size_in_gib = 100
+#  }
 
   container_definitions = <<DEFINITION
   [
@@ -57,12 +57,12 @@ resource "aws_ecs_service" "main" {
   cluster         = aws_ecs_cluster.cluster.id
   task_definition = aws_ecs_task_definition.definition.arn
   desired_count   = 1
-  launch_type     = "FARGATE"
+  launch_type     = "EC2"
   depends_on = [aws_cloudwatch_log_group.main]
 
   network_configuration {
     subnets = [aws_subnet.public.id]
     security_groups = [aws_security_group.ecs_tasks.id]
-    assign_public_ip = true
+    # assign_public_ip = true
   }
 }
