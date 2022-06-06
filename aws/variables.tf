@@ -15,12 +15,12 @@ variable "instance_type" {
 
 variable "instance_root_volume_size" {
   description = "The size of the root volume for cluster instances"
-  default = "75"
+  default = "175"
 }
 
 variable "instance_docker_volume_size" {
-  description = "The size of the root volume for cluster instances"
-  default = "300"
+  description = "The size of the volume for docker images on the cluster instances"
+  default = "150"
 }
 
 variable "aws_access_key" {

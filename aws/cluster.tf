@@ -34,7 +34,8 @@ data "aws_ami" "ecs" {
 
   filter {
     name   = "name"
-    values = ["amzn-ami-*-amazon-ecs-optimized"]
+    # values = ["amzn-ami-*-amazon-ecs-optimized"]
+    values = ["amzn2-ami-ecs-hvm-2.0.20220520-x86_64-ebs"]
   }
 
   filter {
@@ -46,7 +47,7 @@ data "aws_ami" "ecs" {
 }
 
 resource "aws_key_pair" "user" {
-  key_name   = "key"
+  key_name   = "${var.prefix}-key"
   public_key = "${file("~/.ssh/id_rsa.pub")}"
 }
 
