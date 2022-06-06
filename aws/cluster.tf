@@ -46,10 +46,10 @@ data "aws_ami" "ecs" {
   owners = ["amazon"]
 }
 
-resource "aws_key_pair" "user" {
-  key_name   = "${var.prefix}-key"
-  public_key = "${file("~/.ssh/id_rsa.pub")}"
-}
+#resource "aws_key_pair" "user" {
+#  key_name   = "${var.prefix}-key"
+#  public_key = "${file("~/.ssh/id_rsa.pub")}"
+#}
 
 resource "aws_launch_configuration" "instance" {
   name_prefix          = "${var.prefix}-lc"
@@ -57,7 +57,7 @@ resource "aws_launch_configuration" "instance" {
   instance_type        = "${var.instance_type}"
   iam_instance_profile = "${aws_iam_instance_profile.instance.name}"
   security_groups      = ["${aws_security_group.ecs_tasks.id}"]
-  key_name             = "${aws_key_pair.user.key_name}"
+#  key_name             = "${aws_key_pair.user.key_name}"
 
 
   user_data = <<EOF
