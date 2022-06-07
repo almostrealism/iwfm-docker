@@ -1,9 +1,5 @@
 data "aws_availability_zones" "available" {}
 
-resource "aws_ecs_cluster" "cluster" {
-  name = "${var.prefix}-cluster"
-}
-
 resource "aws_vpc" "main" {
   cidr_block = "172.17.0.0/16"
   enable_dns_hostnames = true
@@ -44,6 +40,13 @@ resource "aws_security_group" "ecs_tasks" {
     protocol    = "tcp"
     from_port   = 80
     to_port     = 80
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    protocol    = "tcp"
+    from_port   = 22
+    to_port     = 22
     cidr_blocks = ["0.0.0.0/0"]
   }
 
