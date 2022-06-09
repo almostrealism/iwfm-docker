@@ -247,6 +247,12 @@ add_library(Package_ZBudget
   ${SOURCE_DIR}/Package_ZBudget/ZBudget_Parameters.f90
   ${SOURCE_DIR}/Package_ZBudget/ZBudget_Util.f90
   )
+add_library(SharedLibrary
+  ${SOURCE_DIR}/SharedLibrary/IWFM_Budget_Exports_C.f90
+  ${SOURCE_DIR}/SharedLibrary/IWFM_Misc_Exports_C.f90
+  ${SOURCE_DIR}/SharedLibrary/IWFM_Model_Exports_C.f90
+  ${SOURCE_DIR}/SharedLibrary/IWFM_ZBudget_Exports_C.f90
+  )
 #---------- DEFINE DEPENDENCIES -------------#
 # Talk with Can Dogrul about correcting these dependencies. Too much fluff
 add_dependencies(IWFM_Core_Version IWFM_Util)
@@ -270,6 +276,7 @@ add_dependencies(Package_RootZone IWFM_Core_Version Package_Budget Package_Unsat
 add_dependencies(Package_Supply IWFM_Core_Version Package_AppStream Package_AppGW Package_RootZone)
 add_dependencies(Package_UnsatZone Package_AppStream IWFM_Core_Version)
 add_dependencies(Package_ZBudget IWFM_Core_Version Package_Budget)
+add_dependencies(SharedLibrary Package_Model Package_ZBudget)
 #---------- LINUX LINKER GROUPING ------------#
 if (WIN32)
   set(LINKER_RPATH "")
