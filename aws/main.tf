@@ -44,7 +44,7 @@ resource "aws_ecs_task_definition" "definition" {
       "environment": [
               {
                   "name": "IWFM_MODEL",
-                  "value": "${var.iwfm_model}"
+                  "value": "${aws_s3_bucket_website_configuration.www.website_endpoint}/model.zip"
               }
           ]
       }

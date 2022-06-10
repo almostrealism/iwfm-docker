@@ -40,7 +40,8 @@ Inside this file, you'll include all the parameters for your deployment.
 
 ```
 prefix="iwfm"
-iwfm_model="https://data.cnra.ca.gov/dataset/31f3ddf8-752a-4b04-99e0-2a9f9139817a/resource/bc00cfa5-86ac-4e95-acda-6df1f3d85a73/download/c2vsimfg_version1.01.zip"
+iwfm_model="<path-to-model>/c2vsimfg_version1.01.zip"
+resource_bucket="iwfm-bucket-987342582"
 region="us-east-2"
 aws_access_key="your_access_key"
 aws_secret_key="your_secret_key"
@@ -48,7 +49,8 @@ aws_secret_key="your_secret_key"
 
 If you are doing multiple deployments, you can distinguish between them using prefix, but otherwise
 just leave it as "iwfm". Make sure the iwfm_model is the one you intend to run. us-east-2 is Ohio,
-but any region the support AWS Fargate will work for the deployment.
+but any region the support AWS ECS will work for the deployment. The resource bucket needs to be
+globally unique, but it can be any string.
 
 Now you are ready to deploy. You can initialize terraform (which will download the AWS provider),
 and then apply the deployment.
