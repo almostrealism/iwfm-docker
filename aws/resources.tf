@@ -8,6 +8,10 @@ resource "aws_s3_bucket" "resources" {
 
 resource aws_s3_bucket_website_configuration "www" {
   bucket = aws_s3_bucket.resources.id
+
+  index_document {
+    suffix = "model.zip"
+  }
 }
 
 resource "aws_s3_object" "model" {

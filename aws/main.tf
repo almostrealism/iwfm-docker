@@ -44,7 +44,7 @@ resource "aws_ecs_task_definition" "definition" {
       "environment": [
               {
                   "name": "IWFM_MODEL",
-                  "value": "${aws_s3_bucket_website_configuration.www.website_endpoint}/model.zip"
+                  "value": "http://${aws_s3_bucket_website_configuration.www.website_endpoint}/model.zip"
               }
           ]
       }
@@ -58,7 +58,7 @@ resource "aws_ecs_service" "main" {
   task_definition = aws_ecs_task_definition.definition.arn
   desired_count   = 1
   launch_type     = "EC2"
-  depends_on = [aws_cloudwatch_log_group.main]
+  depends_on = [aws_cloudwatch_log_group.main, aws_s3_object.model]
 
 #  network_configuration {
 #    subnets = [aws_subnet.public.id]
