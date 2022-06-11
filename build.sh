@@ -18,7 +18,8 @@ cmake -S heclib -B build/heclib
 cmake --build build/hdf5
 cmake --build build/heclib
 
-cp build/heclib/libheclib.a libs/lib/libheclib.a
+# cp build/heclib/libheclib.a libs/lib/libheclib.a
+cp build/heclib/libheclib.so libs/lib/libheclib.so
 
 CC=icc
 CXX=icpc

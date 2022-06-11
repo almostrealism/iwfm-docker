@@ -6,10 +6,13 @@ set(THIRD_PARTY_DIR "${TOP_DIR}/third_party")
 get_filename_component (Fortran_COMPILER_NAME ${CMAKE_Fortran_COMPILER} NAME)
 # include the common macros for compiler flags and third party libraries
 include(${TOP_DIR}/CmakeLibraryMacro.txt)
+
 #-------        SET UP COMPILER FLAGS --------------#
 set_compiler_flags()
+
 #-------        LIBRARIES  -------------------------#
 find_libs()
+
 #----------------- EXECUTABLES --------------------------------------------
 if(MSVC)
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /NODEFAULTLIB:msvcrt /MANIFEST:NO")
@@ -17,6 +20,7 @@ if(MSVC)
   #set(VS_STARTUP_PROJECT Budget)
 else(MSVC)
 endif()
+
 #------------ INCLUDE DIRS ---------------------#
 include_directories("${CMAKE_Fortran_MODULE_DIRECTORY}" "${HDF5_DIR}/include/static")
 set(SOURCE_DIR "${TOP_DIR}/SourceCode")
@@ -351,6 +355,7 @@ set(ALL_FILES
 )
 
 add_library(IWFMLib SHARED ${ALL_FILES})
+
 #---------- DEFINE DEPENDENCIES -------------#
 # Talk with Can Dogrul about correcting these dependencies. Too much fluff
 add_dependencies(IWFM_Core_Version IWFM_Util)
@@ -375,6 +380,7 @@ add_dependencies(Package_Supply IWFM_Core_Version Package_AppStream Package_AppG
 add_dependencies(Package_UnsatZone Package_AppStream IWFM_Core_Version)
 add_dependencies(Package_ZBudget IWFM_Core_Version Package_Budget)
 add_dependencies(IWFMLib Package_Model Package_ZBudget)
+
 #---------- LINUX LINKER GROUPING ------------#
 if (WIN32)
   set(LINKER_RPATH "")
@@ -385,6 +391,7 @@ else (WIN32)
   set(LINKER_START_GROUP "-Wl,--start-group")
   set(LINKER_END_GROUP "-Wl,--end-group")
 endif (WIN32)
+
 #---------- ADD EXECUTABLES --------#
 add_executable(Budget ${SOURCE_DIR}/Budget/Budget.f90 ${SOURCE_DIR}/Budget/BudgetControls.f90)
 target_include_directories(Budget PUBLIC "${CMAKE_Fortran_MODULE_DIRECTORY}" "${HDF5_DIR}/include/static")
@@ -422,6 +429,11 @@ target_link_libraries(Z-Budget ${LINKER_START_GROUP} IWFM_Core_Version IWFM_Util
 target_link_libraries(Z-Budget ${LINKER_RPATH} ${LINKER_START_GROUP} ${HDF5} ${HDF5_HL} ${HDF5_FORTRAN} ${HDF5_F90CSTUB} ${HDF5_HL_FORTRAN} ${HDF5_HL_F90CSTUB} ${SZLIB} ${ZLIB} ${LINKER_END_GROUP})
 target_link_libraries(Z-Budget ${HECLIB_RELEASE})
 target_include_directories(Z-Budget PUBLIC "${CMAKE_Fortran_MODULE_DIRECTORY}" "${HDF5_DIR}/include/static")
+#
+target_link_libraries(IWFMLib ${LINKER_START_GROUP} IWFM_Core_Version IWFM_Util Package_Budget Package_Discretization Package_Miscellaneous Package_ZBudget ${LINKER_END_GROUP})
+target_link_libraries(IWFMLib ${LINKER_RPATH} ${LINKER_START_GROUP} ${HDF5} ${HDF5_HL} ${HDF5_FORTRAN} ${HDF5_F90CSTUB} ${HDF5_HL_FORTRAN} ${HDF5_HL_F90CSTUB} ${SZLIB} ${ZLIB} ${LINKER_END_GROUP})
+target_link_libraries(IWFMLib ${HECLIB_RELEASE})
+target_include_directories(IWFMLib PUBLIC "${CMAKE_Fortran_MODULE_DIRECTORY}" "${HDF5_DIR}/include/static")
 #------------- install for package ----------------#
 install(TARGETS Budget PreProcessor Simulation Z-Budget RUNTIME DESTINATION "bin")
 set(CPACK_PACKAGE_NAME "IWFMInstaller")
