@@ -20,10 +20,7 @@ endif()
 #------------ INCLUDE DIRS ---------------------#
 include_directories("${CMAKE_Fortran_MODULE_DIRECTORY}" "${HDF5_DIR}/include/static")
 set(SOURCE_DIR "${TOP_DIR}/SourceCode")
-#----------- ADD LIBRARIES FIRST ---------------#
-add_library(IWFM_Core_Version
-  ${SOURCE_DIR}/IWFM_Core_Version/IWFM_Core_Version.f90
-  ${SOURCE_DIR}/IWFM_Core_Version/Revision.fi)
+
 if (YES)
   set(DSS "")
   message(STATUS "Building with DSS")
@@ -32,7 +29,15 @@ else (YES)
   set(DSS "_NoDSS")
   set(DSSCLASSFILESRC "")
 endif (YES)
-add_library(IWFM_Util
+
+#----------- ADD LIBRARIES FIRST ---------------#
+set(IWFM_Core_Version
+  ${SOURCE_DIR}/IWFM_Core_Version/IWFM_Core_Version.f90
+  ${SOURCE_DIR}/IWFM_Core_Version/Revision.fi)
+source_group("IWFM_Core_Version" FILES ${IWFM_Core_Version})
+add_library(IWFM_Core_Version STATIC ${IWFM_Core_Version})
+
+set(IWFM_Util
   ${DSSCLASSFILESRC}
   ${SOURCE_DIR}/IWFM_Util/IOInterface${DSS}/Class_AsciiFileType.f90
   ${SOURCE_DIR}/IWFM_Util/IOInterface${DSS}/Class_BaseFileType.f90
@@ -50,7 +55,10 @@ add_library(IWFM_Util
   ${SOURCE_DIR}/IWFM_Util/Utilities${DSS}/ProgramTimer.f90
   ${SOURCE_DIR}/IWFM_Util/Utilities${DSS}/TimeSeriesUtilities.f90
   )
-add_library(Package_AppGW
+source_group("IWFM_Util" FILES ${IWFM_Util})
+add_library(IWFM_Util STATIC ${IWFM_Util})
+
+set(Package_AppGW
   ${SOURCE_DIR}/Package_AppGW/BC/Class_AppBC.f90
   ${SOURCE_DIR}/Package_AppGW/BC/Class_LayerBC.f90
   ${SOURCE_DIR}/Package_AppGW/BC/Class_TSBCDataFile.f90
@@ -60,7 +68,10 @@ add_library(Package_AppGW
   ${SOURCE_DIR}/Package_AppGW/Package_AppGW.f90
   ${SOURCE_DIR}/Package_AppGW/VerticalFlow.f90
   )
-add_library(Package_AppLake
+source_group("Package_AppGW" FILES ${Package_AppGW})
+add_library(Package_AppGW STATIC ${Package_AppGW})
+
+set(Package_AppLake
   ${SOURCE_DIR}/Package_AppLake/Class_BaseAppLake.f90
   ${SOURCE_DIR}/Package_AppLake/Class_Lake.f90
   ${SOURCE_DIR}/Package_AppLake/Package_AppLake.f90
@@ -71,17 +82,26 @@ add_library(Package_AppLake
   ${SOURCE_DIR}/Package_AppLake/VERSION_5.0/AppLake_v50_Revision.fi
   ${SOURCE_DIR}/Package_AppLake/VERSION_5.0/Class_AppLake_v50.f90
   )
-add_library(Package_AppPumping
+source_group("Package_AppLake" FILES ${Package_AppLake})
+add_library(Package_AppLake STATIC ${Package_AppLake})
+  
+set(Package_AppPumping
   ${SOURCE_DIR}/Package_AppPumping/Class_ElementPumping.f90
   ${SOURCE_DIR}/Package_AppPumping/Class_Pumping.f90
   ${SOURCE_DIR}/Package_AppPumping/Class_PumpsAtElem.f90
   ${SOURCE_DIR}/Package_AppPumping/Class_Well.f90
   ${SOURCE_DIR}/Package_AppPumping/Package_AppPumping.f90
   )
-add_library(Package_AppSmallWatershed
+source_group("Package_AppPumping" FILES ${Package_AppPumping})
+add_library(Package_AppPumping STATIC ${Package_AppPumping})
+
+set(Package_AppSmallWatershed
   ${SOURCE_DIR}/Package_AppSmallWatershed/Package_AppSmallWatershed.f90
   )
-add_library(Package_AppStream
+source_group("Package_AppSmallWatershed" FILES ${Package_AppSmallWatershed})
+add_library(Package_AppSmallWatershed STATIC ${Package_AppSmallWatershed})
+
+set(Package_AppStream
   ${SOURCE_DIR}/Package_AppStream/Class_AppDiverBypass.f90
   ${SOURCE_DIR}/Package_AppStream/Class_BaseAppStream.f90
   ${SOURCE_DIR}/Package_AppStream/Class_Bypass.f90
@@ -109,7 +129,10 @@ add_library(Package_AppStream
   ${SOURCE_DIR}/Package_AppStream/VERSION_5.0/Class_AppStream_v50.f90
   ${SOURCE_DIR}/Package_AppStream/VERSION_5.0/Class_StrmNode_v50.f90
   )
-add_library(Package_AppSubsidence
+source_group("Package_AppStream" FILES ${Package_AppStream})
+add_library(Package_AppStream STATIC ${Package_AppStream})
+  
+set(Package_AppSubsidence
   ${SOURCE_DIR}/Package_AppSubsidence/VERSION_4.0/Class_AppSubsidence_v40.f90
   ${SOURCE_DIR}/Package_AppSubsidence/VERSION_4.0/AppSubsidence_v40_Revision.fi
   ${SOURCE_DIR}/Package_AppSubsidence/Package_AppSubsidence_Revision.fi
@@ -118,23 +141,35 @@ add_library(Package_AppSubsidence
   ${SOURCE_DIR}/Package_AppSubsidence/VERSION_5.0/Class_AppSubsidence_v50.f90
   ${SOURCE_DIR}/Package_AppSubsidence/Class_BaseAppSubsidence.f90
   )
-add_library(Package_AppTileDrain
+source_group("Package_AppSubsidence" FILES ${Package_AppSubsidence})
+add_library(Package_AppSubsidence STATIC ${Package_AppSubsidence})
+  
+set(Package_AppTileDrain
   ${SOURCE_DIR}/Package_AppTileDrain/AppTileDrain_Parameters.f90
   ${SOURCE_DIR}/Package_AppTileDrain/Class_BaseTileDrain.f90
   ${SOURCE_DIR}/Package_AppTileDrain/Package_AppTileDrain.f90
   ${SOURCE_DIR}/Package_AppTileDrain/TileDrainHydrograph.f90
   )
-add_library(Package_AppUnsatZone
+source_group("Package_AppTileDrain" FILES ${Package_AppTileDrain})
+add_library(Package_AppTileDrain STATIC ${Package_AppTileDrain})
+  
+set(Package_AppUnsatZone
   ${SOURCE_DIR}/Package_AppUnsatZone/Package_AppUnsatZone.f90
   )
-add_library(Package_Budget
+source_group("Package_AppUnsatZone" FILES ${Package_AppUnsatZone})
+add_library(Package_AppUnsatZone STATIC ${Package_AppUnsatZone})
+  
+set(Package_Budget
   ${SOURCE_DIR}/Package_Budget/Budget_Parameters.f90
   ${SOURCE_DIR}/Package_Budget/Class_Budget.f90
   ${SOURCE_DIR}/Package_Budget/Class_BudgetInputFile.f90
   ${SOURCE_DIR}/Package_Budget/Package_Budget.f90
   ${SOURCE_DIR}/Package_Budget/Package_Budget_Revision.fi
   )
-add_library(Package_ComponentConnectors
+source_group("Package_Budget" FILES ${Package_Budget})
+add_library(Package_Budget STATIC ${Package_Budget})
+  
+set(Package_ComponentConnectors
   ${SOURCE_DIR}/Package_ComponentConnectors/LakeGWConnector.f90
   ${SOURCE_DIR}/Package_ComponentConnectors/Package_ComponentConnectors.f90
   ${SOURCE_DIR}/Package_ComponentConnectors/Package_ComponentConnectors_Revision.fi
@@ -148,7 +183,10 @@ add_library(Package_ComponentConnectors
   ${SOURCE_DIR}/Package_ComponentConnectors/StrmLakeConnector.f90
   ${SOURCE_DIR}/Package_ComponentConnectors/SupplyDestinationConnector.f90
   )
-add_library(Package_Discretization
+source_group("Package_ComponentConnectors" FILES ${Package_ComponentConnectors})
+add_library(Package_ComponentConnectors STATIC ${Package_ComponentConnectors})
+  
+set(Package_Discretization
   ${SOURCE_DIR}/Package_Discretization/Class_AppFace.f90
   ${SOURCE_DIR}/Package_Discretization/Class_AppGrid.f90
   ${SOURCE_DIR}/Package_Discretization/Class_Grid.f90
@@ -157,19 +195,28 @@ add_library(Package_Discretization
   ${SOURCE_DIR}/Package_Discretization/Package_Discretization_Revision.fi
   ${SOURCE_DIR}/Package_Discretization/ParametricGrid.f90
   )
-add_library(Package_GWZBudget
+source_group("Package_Discretization" FILES ${Package_Discretization})
+add_library(Package_Discretization STATIC ${Package_Discretization})
+  
+set(Package_GWZBudget
   ${SOURCE_DIR}/Package_GWZBudget/Class_GWZBudget.f90
   ${SOURCE_DIR}/Package_GWZBudget/GWZBudget_Parameters.f90
   ${SOURCE_DIR}/Package_GWZBudget/Package_GWZBudget.f90
   )
-add_library(Package_Matrix
+source_group("Package_GWZBudget" FILES ${Package_GWZBudget})
+add_library(Package_GWZBudget STATIC ${Package_GWZBudget})
+  
+set(Package_Matrix
   ${SOURCE_DIR}/Package_Matrix/Lubksb.f90
   ${SOURCE_DIR}/Package_Matrix/Ludcmp.f90
   ${SOURCE_DIR}/Package_Matrix/Package_Matrix.f90
   ${SOURCE_DIR}/Package_Matrix/Package_Matrix_Revision.fi
   ${SOURCE_DIR}/Package_Matrix/pgmres.f
   )
-add_library(Package_Miscellaneous
+source_group("Package_Matrix" FILES ${Package_Matrix})
+add_library(Package_Matrix STATIC ${Package_Matrix})
+  
+set(Package_Miscellaneous
   ${SOURCE_DIR}/Package_Miscellaneous/AbstractFunction.f90
   ${SOURCE_DIR}/Package_Miscellaneous/Class_BaseHydrograph.f90
   ${SOURCE_DIR}/Package_Miscellaneous/Class_GeneralHeadBoundary.f90
@@ -181,16 +228,25 @@ add_library(Package_Miscellaneous
   ${SOURCE_DIR}/Package_Miscellaneous/Package_Misc_Revision.fi
   ${SOURCE_DIR}/Package_Miscellaneous/TSDFileHandler.f90
   )
-add_library(Package_Model
+source_group("Package_Miscellaneous" FILES ${Package_Miscellaneous})
+add_library(Package_Miscellaneous STATIC ${Package_Miscellaneous})
+  
+set(Package_Model
   ${SOURCE_DIR}/Package_Model/Class_Model_ForInquiry.f90
   ${SOURCE_DIR}/Package_Model/Package_Model.f90
   )
-add_library(Package_PrecipitationET
+source_group("Package_Model" FILES ${Package_Model})
+add_library(Package_Model STATIC ${Package_Model})
+  
+set(Package_PrecipitationET
   ${SOURCE_DIR}/Package_PrecipitationET/Class_AtmosphericData.f90
   ${SOURCE_DIR}/Package_PrecipitationET/Package_PrecipET_Revision.fi
   ${SOURCE_DIR}/Package_PrecipitationET/Package_PrecipitationET.f90
   )
-add_library(Package_RootZone
+source_group("Package_PrecipitationET" FILES ${Package_PrecipitationET})
+add_library(Package_PrecipitationET STATIC ${Package_PrecipitationET})
+  
+set(Package_RootZone
   ${SOURCE_DIR}/Package_RootZone/Class_BaseRootZone.f90
   ${SOURCE_DIR}/Package_RootZone/Class_GenericLandUse.f90
   ${SOURCE_DIR}/Package_RootZone/Class_GenericMoistureData.f90
@@ -225,19 +281,28 @@ add_library(Package_RootZone
   ${SOURCE_DIR}/Package_RootZone/VERSION_5.0/RootZone_v50.f90
   ${SOURCE_DIR}/Package_RootZone/VERSION_5.0/RootZone_v50_Revision.fi
   )
-add_library(Package_Supply
+source_group("Package_RootZone" FILES ${Package_RootZone})
+add_library(Package_RootZone STATIC ${Package_RootZone})
+  
+set(Package_Supply
   ${SOURCE_DIR}/Package_Supply/Class_IrigFracFile.f90
   ${SOURCE_DIR}/Package_Supply/Package_Supply.f90
   ${SOURCE_DIR}/Package_Supply/SupplyAdjustment.f90
   )
-add_library(Package_UnsatZone
+source_group("Package_Supply" FILES ${Package_Supply})
+add_library(Package_Supply STATIC ${Package_Supply})
+  
+set(Package_UnsatZone
   ${SOURCE_DIR}/Package_UnsatZone/Class_Soil.f90
   ${SOURCE_DIR}/Package_UnsatZone/Package_UnsatZone.f90
   ${SOURCE_DIR}/Package_UnsatZone/Package_UnsatZone_Revision.fi
   ${SOURCE_DIR}/Package_UnsatZone/RainfallRunoff.f90
   ${SOURCE_DIR}/Package_UnsatZone/UnsatZoneOps.f90
   )
-add_library(Package_ZBudget
+source_group("Package_UnsatZone" FILES ${Package_UnsatZone})
+add_library(Package_UnsatZone STATIC ${Package_UnsatZone})
+  
+set(Package_ZBudget
   ${SOURCE_DIR}/Package_ZBudget/Class_SystemData.f90
   ${SOURCE_DIR}/Package_ZBudget/Class_ZBudget.f90
   ${SOURCE_DIR}/Package_ZBudget/Class_ZBudgetHeader.f90
@@ -247,12 +312,45 @@ add_library(Package_ZBudget
   ${SOURCE_DIR}/Package_ZBudget/ZBudget_Parameters.f90
   ${SOURCE_DIR}/Package_ZBudget/ZBudget_Util.f90
   )
-add_library(IWFMLib SHARED
+source_group("Package_ZBudget" FILES ${Package_ZBudget})
+add_library(Package_ZBudget STATIC ${Package_ZBudget})
+  
+set(IWFMLib SHARED
+  ${SOURCE_DIR}/IWFM_Util/IOInterface${DSS}/IOInterface${DSS}.f90
   ${SOURCE_DIR}/SharedLibrary/IWFM_Budget_Exports_C.f90
   ${SOURCE_DIR}/SharedLibrary/IWFM_Misc_Exports_C.f90
   ${SOURCE_DIR}/SharedLibrary/IWFM_Model_Exports_C.f90
   ${SOURCE_DIR}/SharedLibrary/IWFM_ZBudget_Exports_C.f90
   )
+source_group("IWFMLib" FILES ${IWFMLib})
+  
+set(ALL_FILES
+	${IWFMLib}
+    ${IWFM_Util}
+    ${IWFM_Core_Version}
+    ${Package_AppGW}
+    ${Package_AppLake}
+    ${Package_AppPumping}
+    ${Package_AppSmallWatershed}
+    ${Package_AppStream}
+    ${Package_AppSubsidence}
+    ${Package_AppTileDrain}
+    ${Package_AppUnsatZone}
+    ${Package_Budget}
+    ${Package_ComponentConnectors}
+    ${Package_Discretization}
+    ${Package_GWZBudget}
+    ${Package_Matrix}
+    ${Package_Miscellaneous}
+    ${Package_Model}
+    ${Package_PrecipitationET}
+    ${Package_RootZone}
+    ${Package_Supply}
+    ${Package_UnsatZone}
+    ${Package_ZBudget}
+)
+
+add_library(IWFMLib SHARED ${ALL_FILES})
 #---------- DEFINE DEPENDENCIES -------------#
 # Talk with Can Dogrul about correcting these dependencies. Too much fluff
 add_dependencies(IWFM_Core_Version IWFM_Util)

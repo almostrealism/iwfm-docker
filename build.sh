@@ -13,7 +13,7 @@ make install
 cd ..
 cp szip/szip/lib/* libs/lib/
 
-cmake -S h5fortran/scripts -B build/hdf5 -DCMAKE_INSTALL_PREFIX=$(pwd)/libs
+cmake -S h5fortran/scripts -B build/hdf5 -DCMAKE_INSTALL_PREFIX=$(pwd)/libs -DBUILD_SHARED_LIBS=true
 cmake -S heclib -B build/heclib
 cmake --build build/hdf5
 cmake --build build/heclib
