@@ -36,7 +36,10 @@ variable "image" {
   default = "ashesfall/iwfm-pest:latest"
 }
 
+variable "resource_bucket" {
+  description = "A unique name for an S3 bucket to store the resources for the process"
+}
+
 variable "iwfm_model" {
-  description = "The URL to obtain the IWFM model to run"
-  default = "https://data.cnra.ca.gov/dataset/31f3ddf8-752a-4b04-99e0-2a9f9139817a/resource/bc00cfa5-86ac-4e95-acda-6df1f3d85a73/download/c2vsimfg_version1.01.zip"
+  description = "The path to the IWFM model to run"
 }
