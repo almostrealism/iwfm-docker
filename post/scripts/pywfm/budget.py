@@ -34,7 +34,7 @@ class IWFMBudget(IWFMMiscellaneous):
 
         self.budget_file_name = budget_file_name
 
-        self.dll = ctypes.windll.LoadLibrary(os.path.join(DLL_PATH, DLL))
+        self.dll = ctypes.CDLL(os.path.join(DLL_PATH, DLL))
 
         # check to see if the open file procedure exists in the dll provided
         if not hasattr(self.dll, "IW_Budget_OpenFile"):

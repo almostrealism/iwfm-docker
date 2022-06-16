@@ -1,3 +1,3 @@
 #!/bin/sh
 
-echo "Hello"
+python3 /scripts/plot_rz_budget.py
