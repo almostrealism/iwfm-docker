@@ -26,3 +26,6 @@ cd /
 cd /
 echo "Running pest..."
 /pestbin/pestpp-glm C2VSimFG_01.pst
+
+echo "Running postprocessing..."
+python3 /scripts/plot_rz_budget.py /Simulation/..\\Results\\C2VSimFG_RZ_Budget.hdf

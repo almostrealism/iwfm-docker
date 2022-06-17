@@ -1,0 +1,11 @@
+FROM ashesfall/iwfm-post:latest
+
+WORKDIR /
+
+# COPY post/build.sh /build.sh
+# RUN /build.sh
+
+COPY post/scripts /scripts
+COPY post/post.sh /post.sh
+
+ENTRYPOINT /post.sh
