@@ -1,3 +1,5 @@
+import sys
+import os
 import matplotlib
 import numpy as np
 import pandas as pd
@@ -7,7 +9,24 @@ matplotlib.use('Agg')
 
 from pywfm import IWFMBudget
 
-BUDGET_FILE = '/home/michael/postprocess/Simulation/..\Results\C2VSimFG_RZ_Budget.hdf'
+def read_filename_from_commandline(args):
+    """ Read the budget hdf file name from the commandline
+    """
+    if len(args) == 1:
+        input("Provide name of budget HDF file: ")
+    
+    elif len(args) > 2:
+        raise ValueError("Too many values provided on command line")
+
+    else:
+        file_name = args[1]
+        if not os.path.exists(file_name):
+            raise FileNotFoundError("File provided {} was not found".format(file_name))
+        
+        if not file_name.endswith('hdf'):
+            raise ValueError("Budget files must be HDF format")
+
+        return file_name
 
 def date_to_water_year(month, year):
     if month > 9:
@@ -17,7 +36,7 @@ def date_to_water_year(month, year):
 
 if __name__ == '__main__':
 
-    rz_budget_file = BUDGET_FILE # '../Results/C2VSimFG_RZ_Budget.hdf'
+    rz_budget_file = read_filename_from_commandline(sys.argv)
     
     with IWFMBudget(rz_budget_file) as bud:
         locations = bud.get_location_names()
@@ -95,7 +114,7 @@ if __name__ == '__main__':
                 'k'
             )
             
-            ax.set_xticks(rz_annual.index, rz_annual['Time'].dt.year)
+            ax.set_xticks(rz_annual.index.tolist(), rz_annual['Time'].dt.year.tolist())
             for label in ax.get_xticklabels():
                 label.set_rotation(90)
                 
@@ -166,7 +185,7 @@ if __name__ == '__main__':
                 'k'
             )
             
-            ax.set_xticks(rz_annual.index, rz_annual['Time'].dt.year)
+            ax.set_xticks(rz_annual.index.tolist(), rz_annual['Time'].dt.year.tolist())
             for label in ax.get_xticklabels():
                 label.set_rotation(90)
                 
@@ -219,7 +238,7 @@ if __name__ == '__main__':
                 'k'
             )
             
-            ax.set_xticks(rz_annual.index, rz_annual['Time'].dt.year)
+            ax.set_xticks(rz_annual.index.tolist(), rz_annual['Time'].dt.year.tolist())
             for label in ax.get_xticklabels():
                 label.set_rotation(90)
                 
@@ -309,7 +328,7 @@ if __name__ == '__main__':
                 label='Loss from Land Reduction (Outflow)'
             )
             
-            ax.set_xticks(rz_annual.index, rz_annual['Time'].dt.year)
+            ax.set_xticks(rz_annual.index.tolist(), rz_annual['Time'].dt.year.tolist())
             for label in ax.get_xticklabels():
                 label.set_rotation(90)
                 
@@ -398,7 +417,7 @@ if __name__ == '__main__':
                 label='Loss from Land Reduction (Outflow)'
             )
             
-            ax.set_xticks(rz_annual.index, rz_annual['Time'].dt.year)
+            ax.set_xticks(rz_annual.index.tolist(), rz_annual['Time'].dt.year.tolist())
             for label in ax.get_xticklabels():
                 label.set_rotation(90)
                 
@@ -487,7 +506,7 @@ if __name__ == '__main__':
                 label='Loss from Land Reduction (Outflow)'
             )
             
-            ax.set_xticks(rz_annual.index, rz_annual['Time'].dt.year)
+            ax.set_xticks(rz_annual.index.tolist(), rz_annual['Time'].dt.year.tolist())
             for label in ax.get_xticklabels():
                 label.set_rotation(90)
                 
@@ -503,3 +522,5 @@ if __name__ == '__main__':
             ax.set_title("Native and Riparian Vegetation Root Zone Budget\nfor Subregion {}".format(i))
             plt.savefig('{}_NR_RZ_Budget.png'.format(l))
             plt.close()
+
+    print("Plotting Complete!")

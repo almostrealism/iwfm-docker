@@ -1,6 +1,6 @@
 import os
 
-DLL_PATH = '/home/michael/iwfm-docker/build/iwfm'
+DLL_PATH = '/libs/lib'
 DLL = 'libIWFMLib.so'
 
 from pywfm.model import IWFMModel
