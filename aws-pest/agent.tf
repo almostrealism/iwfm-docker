@@ -1,3 +1,8 @@
+#data "aws_instances" "capacity-provider" {
+#  instance_tags {
+#    # TODO
+#  }
+#}
 
 resource "aws_ecs_task_definition" "agent" {
   family                   = "${var.prefix}-task"
@@ -33,7 +38,7 @@ resource "aws_ecs_task_definition" "agent" {
               },
               {
                   "name": "PEST_HOST",
-                  "value": "${aws_s3_bucket_website_configuration.www.website_endpoint}:4000"
+                  "value": "127.0.0.1:4000"
               }
           ]
       }

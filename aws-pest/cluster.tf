@@ -19,16 +19,6 @@ resource "aws_security_group_rule" "instance_out_all" {
   security_group_id = "${aws_security_group.ecs_tasks.id}"
 }
 
-#data "template_file" "user_data" {
-#  template = "${file("${path.module}/user_data.sh")}"
-#
-#  vars {
-#    additional_user_data_script = "${var.additional_user_data_script}"
-#    ecs_cluster                 = "${aws_ecs_cluster.ecs.name}"
-#    log_group                   = "${aws_cloudwatch_log_group.instance.name}"
-#  }
-#}
-
 data "aws_ami" "ecs" {
   most_recent = true
 

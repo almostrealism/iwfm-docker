@@ -1,6 +1,6 @@
 resource "aws_cloudwatch_dashboard" "main" {
   dashboard_name = "${var.prefix}-dashboard"
-  depends_on = [aws_ecs_service.main, aws_cloudwatch_log_group.main]
+  depends_on = [aws_ecs_service.manager, aws_ecs_service.agent, aws_cloudwatch_log_group.main]
 
   dashboard_body = <<EOF
   {
