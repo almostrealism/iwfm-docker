@@ -33,8 +33,8 @@ resource "aws_cloudwatch_dashboard" "main" {
             "properties": {
                 "metrics": [
                     [ "AWS/ECS", "MemoryUtilization", "ServiceName", "${var.prefix}-service", "ClusterName", "${var.prefix}-cluster", { "visible": false } ],
-                    [ "...", "${var.prefix}-agents", ".", "." ],
-                    [ "...", "${var.prefix}-management", ".", "." ]
+                    [ "...", "${var.prefix}-management", ".", "." ],
+                    [ "...", "${var.prefix}-agents", ".", "." ]
                 ],
                 "view": "timeSeries",
                 "stacked": false,
