@@ -12,12 +12,16 @@ resource "aws_cloudwatch_dashboard" "main" {
             "x": 0,
             "type": "metric",
             "properties": {
+                "metrics": [
+                    [ "AWS/ECS", "CPUUtilization", "ServiceName", "${var.prefix}-service", "ClusterName", "${var.prefix}-cluster", { "visible": false } ],
+                    [ "...", "${var.prefix}-management", ".", "." ],
+                    [ "...", "${var.prefix}-agents", ".", "." ]
+                ],
                 "view": "timeSeries",
                 "stacked": false,
-                "metrics": [
-                    [ "AWS/ECS", "CPUUtilization", "ServiceName", "${var.prefix}-service", "ClusterName", "${var.prefix}-cluster" ]
-                ],
-                "region": "${var.region}"
+                "region": "${var.region}",
+                "period": 300,
+                "stat": "Average"
             }
         },
         {
@@ -27,12 +31,16 @@ resource "aws_cloudwatch_dashboard" "main" {
             "x": 11,
             "type": "metric",
             "properties": {
+                "metrics": [
+                    [ "AWS/ECS", "MemoryUtilization", "ServiceName", "${var.prefix}-service", "ClusterName", "${var.prefix}-cluster", { "visible": false } ],
+                    [ "...", "${var.prefix}-agents", ".", "." ],
+                    [ "...", "${var.prefix}-management", ".", "." ]
+                ],
                 "view": "timeSeries",
                 "stacked": false,
-                "metrics": [
-                    [ "AWS/ECS", "MemoryUtilization", "ServiceName", "${var.prefix}-service", "ClusterName", "${var.prefix}-cluster" ]
-                ],
-                "region": "${var.region}"
+                "region": "${var.region}",
+                "period": 300,
+                "stat": "Average"
             }
         },
         {
@@ -50,47 +58,41 @@ resource "aws_cloudwatch_dashboard" "main" {
         },
         {
             "height": 4,
-            "width": 4,
-            "y": 0,
-            "x": 18,
-            "type": "metric",
-            "properties": {
-                "view": "pie",
-                "metrics": [
-                    [ "AWS/Usage", "ResourceCount", "Type", "Resource", "Resource", "OnDemand", "Service", "Fargate", "Class", "None" ],
-                    [ "...", "Spot", ".", ".", ".", "." ]
-                ],
-                "region": "${var.region}"
-            }
-        },
-        {
-            "height": 4,
-            "width": 9,
+            "width": 10,
             "y": 0,
             "x": 0,
             "type": "metric",
             "properties": {
-                "view": "singleValue",
                 "metrics": [
-                    [ "AWS/Usage", "ResourceCount", "Type", "Resource", "Resource", "OnDemand", "Service", "Fargate", "Class", "None" ],
-                    [ "...", "Spot", ".", ".", ".", "." ]
+                    [ "AWS/Usage", "ResourceCount", "Type", "Resource", "Resource", "OnDemand", "Service", "Fargate", "Class", "None", { "visible": false } ],
+                    [ "...", "Spot", ".", ".", ".", ".", { "visible": false } ],
+                    [ "AWS/ECS/ManagedScaling", "CapacityProviderReservation", "ClusterName", "${var.prefix}-cluster", "CapacityProviderName", "${var.prefix}-provider" ],
+                    [ "AWS/EC2", "StatusCheckFailed", "AutoScalingGroupName", "${var.prefix}-scale-group" ]
                 ],
-                "region": "${var.region}"
+                "view": "singleValue",
+                "region": "${var.region}",
+                "period": 300,
+                "stat": "Average"
             }
         },
         {
             "height": 4,
-            "width": 9,
+            "width": 12,
             "y": 0,
-            "x": 9,
+            "x": 10,
             "type": "metric",
             "properties": {
-                "view": "singleValue",
                 "metrics": [
-                    [ "AWS/Logs", "IncomingLogEvents", "LogGroupName", "${var.prefix}-logs" ],
-                    [ ".", "IncomingBytes", ".", "." ]
+                    [ "AWS/Logs", "IncomingLogEvents", "LogGroupName", "${var.prefix}-logs", { "visible": false } ],
+                    [ ".", "IncomingBytes", ".", ".", { "visible": false } ],
+                    [ "AWS/EC2", "EBSReadBytes", "AutoScalingGroupName", "${var.prefix}-scale-group" ],
+                    [ ".", "EBSWriteBytes", ".", "." ],
+                    [ ".", "EBSByteBalance%", ".", "." ]
                 ],
-                "region": "${var.region}"
+                "view": "singleValue",
+                "region": "${var.region}",
+                "period": 300,
+                "stat": "Average"
             }
         }
     ]
