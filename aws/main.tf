@@ -15,7 +15,7 @@ resource "aws_ecs_task_definition" "definition" {
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
   network_mode             = "host"
   cpu                      = "2048"
-  memory                   = "4096"
+  memory                   = "3860"
 
 #  requires_compatibilities = ["FARGATE"]
 #  ephemeral_storage {

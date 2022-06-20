@@ -10,7 +10,8 @@ variable "region" {
 
 variable "instance_type" {
   description = "The type of AWS EC2 instance to use for the cluster"
-  default = "m5zn.large"
+  # default = "m5zn.large"
+  default = "c6i.large"
 }
 
 variable "instance_root_volume_size" {
