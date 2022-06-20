@@ -1,17 +1,17 @@
 
-resource "aws_ecs_task_definition" "definition" {
+resource "aws_ecs_task_definition" "agent" {
   family                   = "${var.prefix}-task"
   task_role_arn            = aws_iam_role.ecs_task_role.arn
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
   network_mode             = "host"
   cpu                      = "2048"
-  memory                   = "4096"
+  memory                   = "3860"
 
   container_definitions = <<DEFINITION
   [
     {
       "image": "${var.agent_image}",
-      "name": "${var.prefix}-container",
+      "name": "${var.prefix}-agent",
       "portMappings": [
         {
           "containerPort": 80,
@@ -23,13 +23,17 @@ resource "aws_ecs_task_definition" "definition" {
                   "options": {
                       "awslogs-region" : "${var.region}",
                       "awslogs-group" : "${var.prefix}-logs",
-                      "awslogs-stream-prefix" : "${var.prefix}"
+                      "awslogs-stream-prefix" : "${var.prefix}-agent"
                   }
               },
       "environment": [
               {
                   "name": "IWFM_MODEL",
                   "value": "http://${aws_s3_bucket_website_configuration.www.website_endpoint}/model.zip"
+              },
+              {
+                  "name": "PEST_HOST",
+                  "value": "${aws_s3_bucket_website_configuration.www.website_endpoint}:4000"
               }
           ]
       }
@@ -37,11 +41,11 @@ resource "aws_ecs_task_definition" "definition" {
   DEFINITION
 }
 
-resource "aws_ecs_service" "main" {
-  name            = "${var.prefix}-service"
+resource "aws_ecs_service" "agent" {
+  name            = "${var.prefix}-agents"
   cluster         = aws_ecs_cluster.cluster.id
-  task_definition = aws_ecs_task_definition.definition.arn
-  desired_count   = 1
+  task_definition = aws_ecs_task_definition.agent.arn
+  desired_count   = 10
   launch_type     = "EC2"
   depends_on = [aws_cloudwatch_log_group.main, aws_s3_object.model]
 

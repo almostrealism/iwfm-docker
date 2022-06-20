@@ -1,29 +1,33 @@
 
-resource "aws_ecs_task_definition" "definition" {
+resource "aws_ecs_task_definition" "manager" {
   family                   = "${var.prefix}-task"
   task_role_arn            = aws_iam_role.ecs_task_role.arn
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
   network_mode             = "host"
   cpu                      = "2048"
-  memory                   = "4096"
+  memory                   = "3860"
 
   container_definitions = <<DEFINITION
   [
     {
       "image": "${var.manager_image}",
-      "name": "${var.prefix}-container",
+      "name": "${var.prefix}-manager",
       "portMappings": [
         {
           "containerPort": 80,
           "hostPort": 80
-        }
+        },
+        {
+          "containerPort": 4000,
+          "hostPort": 4000
+        },
       ],
       "logConfiguration": {
                   "logDriver": "awslogs",
                   "options": {
                       "awslogs-region" : "${var.region}",
                       "awslogs-group" : "${var.prefix}-logs",
-                      "awslogs-stream-prefix" : "${var.prefix}"
+                      "awslogs-stream-prefix" : "${var.prefix}-manager"
                   }
               },
       "environment": [
@@ -37,10 +41,10 @@ resource "aws_ecs_task_definition" "definition" {
   DEFINITION
 }
 
-resource "aws_ecs_service" "main" {
-  name            = "${var.prefix}-service"
+resource "aws_ecs_service" "manager" {
+  name            = "${var.prefix}-management"
   cluster         = aws_ecs_cluster.cluster.id
-  task_definition = aws_ecs_task_definition.definition.arn
+  task_definition = aws_ecs_task_definition.manager.arn
   desired_count   = 1
   launch_type     = "EC2"
   depends_on = [aws_cloudwatch_log_group.main, aws_s3_object.model]

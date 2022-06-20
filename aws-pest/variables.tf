@@ -1,6 +1,6 @@
 variable "prefix" {
   description = "The prefix used for all resources"
-  default = "iwfm"
+  default = "iwfm-pest"
 }
 
 variable "region" {
@@ -10,7 +10,7 @@ variable "region" {
 
 variable "instance_type" {
   description = "The type of AWS EC2 instance to use for the cluster"
-  default = "m5zn.large"
+  default = "c6i.2xlarge"
 }
 
 variable "instance_root_volume_size" {
