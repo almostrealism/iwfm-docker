@@ -1,0 +1,5 @@
+FROM ashesfall/iwfm-base:latest
+
+COPY pest/agent.sh /agent.sh
+
+ENTRYPOINT /agent.sh
