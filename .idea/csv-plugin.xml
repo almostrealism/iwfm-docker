@@ -17,6 +17,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="/post/scripts/wellinfo_FG.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
       </map>
     </option>
   </component>
