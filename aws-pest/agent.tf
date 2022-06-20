@@ -17,12 +17,6 @@ resource "aws_ecs_task_definition" "agent" {
     {
       "image": "${var.agent_image}",
       "name": "${var.prefix}-agent",
-      "portMappings": [
-        {
-          "containerPort": 80,
-          "hostPort": 80
-        }
-      ],
       "logConfiguration": {
                   "logDriver": "awslogs",
                   "options": {
@@ -50,7 +44,7 @@ resource "aws_ecs_service" "agent" {
   name            = "${var.prefix}-agents"
   cluster         = aws_ecs_cluster.cluster.id
   task_definition = aws_ecs_task_definition.agent.arn
-  desired_count   = 10
+  desired_count   = 3
   launch_type     = "EC2"
   depends_on = [aws_cloudwatch_log_group.main, aws_s3_object.model]
 
