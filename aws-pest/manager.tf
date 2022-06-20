@@ -1,6 +1,6 @@
 
 resource "aws_ecs_task_definition" "manager" {
-  family                   = "${var.prefix}-task"
+  family                   = "${var.prefix}-manager-task"
   task_role_arn            = aws_iam_role.ecs_task_role.arn
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
   network_mode             = "host"
@@ -20,7 +20,7 @@ resource "aws_ecs_task_definition" "manager" {
         {
           "containerPort": 4000,
           "hostPort": 4000
-        },
+        }
       ],
       "logConfiguration": {
                   "logDriver": "awslogs",
