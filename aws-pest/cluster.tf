@@ -36,10 +36,10 @@ data "aws_ami" "ecs" {
   owners = ["amazon"]
 }
 
-#resource "aws_key_pair" "user" {
-#  key_name   = "${var.prefix}-key"
-#  public_key = "${file("~/.ssh/id_rsa.pub")}"
-#}
+resource "aws_key_pair" "user" {
+  key_name   = "${var.prefix}-key"
+  public_key = "${file("~/.ssh/id_rsa.pub")}"
+}
 
 resource "aws_launch_configuration" "instance" {
   name_prefix          = "${var.prefix}-lc"
@@ -47,7 +47,7 @@ resource "aws_launch_configuration" "instance" {
   instance_type        = "${var.instance_type}"
   iam_instance_profile = "${aws_iam_instance_profile.instance.name}"
   security_groups      = ["${aws_security_group.ecs_tasks.id}"]
-#  key_name             = "${aws_key_pair.user.key_name}"
+  key_name             = "${aws_key_pair.user.key_name}"
 
 
   user_data = <<EOF
@@ -57,14 +57,18 @@ EOF
 
   root_block_device {
     volume_size = "${var.instance_root_volume_size}"
-    volume_type = "gp2"
   }
 
-  ebs_block_device {
-    device_name = "/dev/xvdcz"
-    volume_size = "${var.instance_docker_volume_size}"
-    volume_type = "gp2"
+  ephemeral_block_device {
+    device_name = "/dev/nvme0n1"
+    virtual_name = "ephemeral0"
   }
+
+#  ebs_block_device {
+#    device_name = "/dev/xvdcz"
+#    volume_size = "${var.instance_docker_volume_size}"
+#    volume_type = "gp2"
+#  }
 
   lifecycle {
     create_before_destroy = false

@@ -10,17 +10,17 @@ variable "region" {
 
 variable "instance_type" {
   description = "The type of AWS EC2 instance to use for the cluster"
-  default = "c6i.2xlarge"
+  default = "c6id.metal"
 }
 
 variable "instance_root_volume_size" {
   description = "The size of the root volume for cluster instances"
-  default = "175"
+  default = "4000"
 }
 
 variable "instance_docker_volume_size" {
   description = "The size of the volume for docker images on the cluster instances"
-  default = "150"
+  default = "200"
 }
 
 variable "aws_access_key" {
@@ -29,11 +29,6 @@ variable "aws_access_key" {
 
 variable "aws_secret_key" {
   description = "AWS Secret Key"
-}
-
-variable "image" {
-  description = "Docker image"
-  default = "ashesfall/iwfm-pest:latest"
 }
 
 variable "manager_image" {
