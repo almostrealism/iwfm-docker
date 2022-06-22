@@ -5,6 +5,10 @@ provider "aws" {
   secret_key = var.aws_secret_key
 }
 
-resource "aws_cloudwatch_log_group" "main" {
-  name = "${var.prefix}-logs"
+resource "aws_cloudwatch_log_group" "management" {
+  name = "${var.prefix}-management"
+}
+
+resource "aws_cloudwatch_log_group" "agents" {
+  name = "${var.prefix}-agents"
 }

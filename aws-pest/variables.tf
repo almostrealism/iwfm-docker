@@ -13,6 +13,11 @@ variable "instance_type" {
   default = "c6id.metal"
 }
 
+variable "agent_count" {
+  description = "Number of agent containers to use"
+  default = 123
+}
+
 variable "instance_root_volume_size" {
   description = "The size of the root volume for cluster instances"
   default = "4000"

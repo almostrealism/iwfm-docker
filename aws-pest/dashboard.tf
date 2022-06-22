@@ -1,6 +1,6 @@
 resource "aws_cloudwatch_dashboard" "main" {
   dashboard_name = "${var.prefix}-dashboard"
-  depends_on = [aws_ecs_service.manager, aws_ecs_service.agent, aws_cloudwatch_log_group.main]
+  depends_on = [aws_ecs_service.manager, aws_ecs_service.agent, aws_cloudwatch_log_group.management, aws_cloudwatch_log_group.agents]
 
   dashboard_body = <<EOF
   {
@@ -50,7 +50,7 @@ resource "aws_cloudwatch_dashboard" "main" {
             "x": 0,
             "type": "log",
             "properties": {
-                "query": "SOURCE '${var.prefix}-logs' | fields @timestamp, @message\n| sort @timestamp desc\n| limit 200",
+                "query": "SOURCE '${var.prefix}-management' | fields @timestamp, @message\n| sort @timestamp desc\n| limit 200",
                 "region": "${var.region}",
                 "stacked": false,
                 "view": "table"
@@ -83,7 +83,7 @@ resource "aws_cloudwatch_dashboard" "main" {
             "type": "metric",
             "properties": {
                 "metrics": [
-                    [ "AWS/Logs", "IncomingLogEvents", "LogGroupName", "${var.prefix}-logs", { "visible": false } ],
+                    [ "AWS/Logs", "IncomingLogEvents", "LogGroupName", "${var.prefix}-agents", { "visible": false } ],
                     [ ".", "IncomingBytes", ".", ".", { "visible": false } ],
                     [ "AWS/EC2", "EBSReadBytes", "AutoScalingGroupName", "${var.prefix}-scale-group" ],
                     [ ".", "EBSWriteBytes", ".", "." ],

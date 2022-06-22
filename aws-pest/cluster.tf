@@ -57,18 +57,19 @@ EOF
 
   root_block_device {
     volume_size = "${var.instance_root_volume_size}"
+    volume_type = "io1"
+    iops = 64000
   }
 
   ephemeral_block_device {
-    device_name = "/dev/nvme0n1"
+    device_name = "/dev/xvdd"
     virtual_name = "ephemeral0"
   }
 
-#  ebs_block_device {
-#    device_name = "/dev/xvdcz"
-#    volume_size = "${var.instance_docker_volume_size}"
-#    volume_type = "gp2"
-#  }
+  ephemeral_block_device {
+    device_name = "/dev/xvde"
+    virtual_name = "ephemeral1"
+  }
 
   lifecycle {
     create_before_destroy = false

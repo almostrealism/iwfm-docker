@@ -21,7 +21,7 @@ resource "aws_ecs_task_definition" "agent" {
                   "logDriver": "awslogs",
                   "options": {
                       "awslogs-region" : "${var.region}",
-                      "awslogs-group" : "${var.prefix}-logs",
+                      "awslogs-group" : "${var.prefix}-agents",
                       "awslogs-stream-prefix" : "${var.prefix}-agent"
                   }
               },
@@ -44,9 +44,9 @@ resource "aws_ecs_service" "agent" {
   name            = "${var.prefix}-agents"
   cluster         = aws_ecs_cluster.cluster.id
   task_definition = aws_ecs_task_definition.agent.arn
-  desired_count   = 123
+  desired_count   = var.agent_count
   launch_type     = "EC2"
-  depends_on = [aws_cloudwatch_log_group.main, aws_s3_object.model]
+  depends_on = [aws_cloudwatch_log_group.agents, aws_s3_object.model]
 
 #  network_configuration {
 #    subnets = [aws_subnet.public.id]

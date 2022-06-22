@@ -26,7 +26,7 @@ resource "aws_ecs_task_definition" "manager" {
                   "logDriver": "awslogs",
                   "options": {
                       "awslogs-region" : "${var.region}",
-                      "awslogs-group" : "${var.prefix}-logs",
+                      "awslogs-group" : "${var.prefix}-management",
                       "awslogs-stream-prefix" : "${var.prefix}-manager"
                   }
               },
@@ -47,7 +47,7 @@ resource "aws_ecs_service" "manager" {
   task_definition = aws_ecs_task_definition.manager.arn
   desired_count   = 1
   launch_type     = "EC2"
-  depends_on = [aws_cloudwatch_log_group.main, aws_s3_object.model]
+  depends_on = [aws_cloudwatch_log_group.management, aws_s3_object.model]
 
 #  network_configuration {
 #    subnets = [aws_subnet.public.id]
