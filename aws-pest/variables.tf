@@ -23,11 +23,6 @@ variable "instance_root_volume_size" {
   default = "4000"
 }
 
-variable "instance_docker_volume_size" {
-  description = "The size of the volume for docker images on the cluster instances"
-  default = "200"
-}
-
 variable "aws_access_key" {
   description = "AWS Access Key"
 }
