@@ -1,9 +1,3 @@
-#data "aws_instances" "capacity-provider" {
-#  instance_tags {
-#    # TODO
-#  }
-#}
-
 resource "aws_ecs_task_definition" "agent" {
   family                   = "${var.prefix}-agent-task"
   task_role_arn            = aws_iam_role.ecs_task_role.arn

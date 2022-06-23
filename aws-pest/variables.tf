@@ -10,12 +10,12 @@ variable "region" {
 
 variable "instance_type" {
   description = "The type of AWS EC2 instance to use for the cluster"
-  default = "c6id.metal"
+  default = "c6i.metal"
 }
 
 variable "agent_count" {
   description = "Number of agent containers to use"
-  default = 123
+  default = 80
 }
 
 variable "instance_root_volume_size" {

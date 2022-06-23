@@ -1,7 +1,3 @@
-#resource "aws_ecs_cluster" "fargate-cluster" {
-#  name = "${var.prefix}-cluster"
-#}
-
 resource "aws_ecs_cluster" "cluster" {
   name = "${var.prefix}-cluster"
 }
@@ -24,7 +20,6 @@ data "aws_ami" "ecs" {
 
   filter {
     name   = "name"
-    # values = ["amzn-ami-*-amazon-ecs-optimized"]
     values = ["amzn2-ami-ecs-hvm-2.0.20220520-x86_64-ebs"]
   }
 
@@ -61,16 +56,6 @@ EOF
     iops = 64000
   }
 
-  ephemeral_block_device {
-    device_name = "/dev/xvdd"
-    virtual_name = "ephemeral0"
-  }
-
-  ephemeral_block_device {
-    device_name = "/dev/xvde"
-    virtual_name = "ephemeral1"
-  }
-
   lifecycle {
     create_before_destroy = false
   }
@@ -86,6 +71,12 @@ resource "aws_autoscaling_group" "asg" {
 
   health_check_grace_period = 300
   health_check_type         = "EC2"
+
+  tag {
+    key                 = "iwfm-activity"
+    value               = "${var.prefix}"
+    propagate_at_launch = true
+  }
 
   lifecycle {
     create_before_destroy = false
