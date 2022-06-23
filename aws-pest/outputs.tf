@@ -1,6 +1,9 @@
 data "aws_instance" "capacity-provider" {
-  instance_tags {
-    iwfm-activity = "${var.prefix}"
+  depends_on = [aws_autoscaling_group.asg]
+
+  filter {
+    name          = "tag:iwfm-activity"
+    values        = ["${var.prefix}"]
   }
 }
 
@@ -9,5 +12,5 @@ output "instance_ip" {
 }
 
 output "instance_volume" {
-  value = data.aws_instance.capacity-provider.root_block_device
+  value = tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id
 }

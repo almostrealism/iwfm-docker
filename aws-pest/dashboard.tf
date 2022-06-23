@@ -1,6 +1,6 @@
 resource "aws_cloudwatch_dashboard" "main" {
   dashboard_name = "${var.prefix}-dashboard"
-  depends_on = [aws_autoscaling_group.asg, aws_ecs_service.manager, aws_ecs_service.agent, aws_cloudwatch_log_group.management, aws_cloudwatch_log_group.agents]
+  depends_on = [data.aws_instance.capacity-provider, aws_ecs_service.manager, aws_ecs_service.agent, aws_cloudwatch_log_group.management, aws_cloudwatch_log_group.agents]
 
   dashboard_body = <<EOF
   {
@@ -13,7 +13,7 @@ resource "aws_cloudwatch_dashboard" "main" {
             "type": "metric",
             "properties": {
                 "metrics": [
-                    [ "AWS/ECS", "CPUUtilization", "ServiceName", "iwfm-pest-c6id-16xlarge-service", "ClusterName", "iwfm-pest-c6id-16xlarge-cluster", { "visible": false } ],
+                    [ "AWS/ECS", "CPUUtilization", "ServiceName", "${var.prefix}-service", "ClusterName", "${var.prefix}-cluster", { "visible": false } ],
                     [ "...", "${var.prefix}-management", ".", "." ],
                     [ "...", "${var.prefix}-agents", ".", "." ]
                 ],
@@ -32,7 +32,8 @@ resource "aws_cloudwatch_dashboard" "main" {
             "type": "metric",
             "properties": {
                 "metrics": [
-                    [ "...", "iwfm-pest-c6id-16xlarge-management", ".", "." ],
+                    [ "AWS/ECS", "MemoryUtilization", "ServiceName", "${var.prefix}-service", "ClusterName", "${var.prefix}-cluster", { "visible": false } ],
+                    [ "...", "${var.prefix}-management", ".", "." ],
                     [ "...", "${var.prefix}-agents", ".", "." ]
                 ],
                 "view": "timeSeries",
@@ -83,7 +84,7 @@ resource "aws_cloudwatch_dashboard" "main" {
                 "metrics": [
                     [ "AWS/EC2", "EBSReadBytes", "AutoScalingGroupName", "${var.prefix}-scale-group", { "label": "Bytes Read" } ],
                     [ ".", "EBSWriteBytes", ".", ".", { "label": "Bytes Written" } ],
-                    [ "AWS/EBS", "VolumeQueueLength", "VolumeId", "${data.aws_instance.capacity-provider.root_block_device}", { "label": "IO Queue Length" } ],
+                    [ "AWS/EBS", "VolumeQueueLength", "VolumeId", "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", { "label": "IO Queue Length" } ],
                     [ ".", "VolumeThroughputPercentage", ".", ".", { "label": "IO Throughput %" } ]
                 ],
                 "view": "singleValue",
@@ -110,8 +111,8 @@ resource "aws_cloudwatch_dashboard" "main" {
                 },
                 "region": "${var.region}",
                 "metrics": [
-                    [ { "expression": "m1_0 / PERIOD(m1_0) / 1024", "label": "${data.aws_instance.capacity-provider.root_block_device}" } ],
-                    [ "AWS/EBS", "VolumeReadBytes", "VolumeId", "${data.aws_instance.capacity-provider.root_block_device}", { "label": "${data.aws_instance.capacity-provider.root_block_device}", "id": "m1_0", "visible": false } ]
+                    [ { "expression": "m1_0 / PERIOD(m1_0) / 1024", "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}" } ],
+                    [ "AWS/EBS", "VolumeReadBytes", "VolumeId", "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", { "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", "id": "m1_0", "visible": false } ]
                 ],
                 "title": "Read bandwidth (KiB/s)"
             }
@@ -134,8 +135,8 @@ resource "aws_cloudwatch_dashboard" "main" {
                 },
                 "region": "${var.region}",
                 "metrics": [
-                    [ { "expression": "m1_0 / PERIOD(m1_0) / 1024", "label": "${data.aws_instance.capacity-provider.root_block_device}" } ],
-                    [ "AWS/EBS", "VolumeWriteBytes", "VolumeId", "${data.aws_instance.capacity-provider.root_block_device}", { "label": "${data.aws_instance.capacity-provider.root_block_device}", "id": "m1_0", "visible": false } ]
+                    [ { "expression": "m1_0 / PERIOD(m1_0) / 1024", "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}" } ],
+                    [ "AWS/EBS", "VolumeWriteBytes", "VolumeId", "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", { "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", "id": "m1_0", "visible": false } ]
                 ],
                 "title": "Write bandwidth (KiB/s)"
             }
@@ -158,8 +159,8 @@ resource "aws_cloudwatch_dashboard" "main" {
                 },
                 "region": "${var.region}",
                 "metrics": [
-                    [ { "expression": "m1_0 / PERIOD(m1_0)", "label": "${data.aws_instance.capacity-provider.root_block_device}" } ],
-                    [ "AWS/EBS", "VolumeReadOps", "VolumeId", "${data.aws_instance.capacity-provider.root_block_device}", { "label": "${data.aws_instance.capacity-provider.root_block_device}", "id": "m1_0", "visible": false } ]
+                    [ { "expression": "m1_0 / PERIOD(m1_0)", "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}" } ],
+                    [ "AWS/EBS", "VolumeReadOps", "VolumeId", "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", { "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", "id": "m1_0", "visible": false } ]
                 ],
                 "title": "Read throughput (Ops/s)"
             }
@@ -182,8 +183,8 @@ resource "aws_cloudwatch_dashboard" "main" {
                 },
                 "region": "${var.region}",
                 "metrics": [
-                    [ { "expression": "m1_0 / PERIOD(m1_0)", "label": "${data.aws_instance.capacity-provider.root_block_device}" } ],
-                    [ "AWS/EBS", "VolumeWriteOps", "VolumeId", "${data.aws_instance.capacity-provider.root_block_device}", { "label": "${data.aws_instance.capacity-provider.root_block_device}", "id": "m1_0", "visible": false } ]
+                    [ { "expression": "m1_0 / PERIOD(m1_0)", "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}" } ],
+                    [ "AWS/EBS", "VolumeWriteOps", "VolumeId", "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", { "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", "id": "m1_0", "visible": false } ]
                 ],
                 "title": "Write throughput (Ops/s)"
             }
@@ -206,7 +207,7 @@ resource "aws_cloudwatch_dashboard" "main" {
                 },
                 "region": "${var.region}",
                 "metrics": [
-                    [ "AWS/EBS", "VolumeQueueLength", "VolumeId", "${data.aws_instance.capacity-provider.root_block_device}", { "label": "${data.aws_instance.capacity-provider.root_block_device}", "id": "m1_0", "visible": true } ]
+                    [ "AWS/EBS", "VolumeQueueLength", "VolumeId", "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", { "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", "id": "m1_0", "visible": true } ]
                 ],
                 "title": "Average queue length (Operations)"
             }
@@ -229,8 +230,8 @@ resource "aws_cloudwatch_dashboard" "main" {
                 },
                 "region": "${var.region}",
                 "metrics": [
-                    [ { "expression": "m1_0 / PERIOD(m1_0) * 100", "label": "${data.aws_instance.capacity-provider.root_block_device}" } ],
-                    [ "AWS/EBS", "VolumeIdleTime", "VolumeId", "${data.aws_instance.capacity-provider.root_block_device}", { "label": "${data.aws_instance.capacity-provider.root_block_device}", "id": "m1_0", "visible": false } ]
+                    [ { "expression": "m1_0 / PERIOD(m1_0) * 100", "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}" } ],
+                    [ "AWS/EBS", "VolumeIdleTime", "VolumeId", "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", { "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", "id": "m1_0", "visible": false } ]
                 ],
                 "title": "Time spent idle (%)"
             }
@@ -253,9 +254,9 @@ resource "aws_cloudwatch_dashboard" "main" {
                 },
                 "region": "${var.region}",
                 "metrics": [
-                    [ { "expression": "IF(m2_0 != 0, (m1_0 / m2_0) / 1024, 0)", "label": "${data.aws_instance.capacity-provider.root_block_device}" } ],
-                    [ "AWS/EBS", "VolumeReadBytes", "VolumeId", "${data.aws_instance.capacity-provider.root_block_device}", { "label": "${data.aws_instance.capacity-provider.root_block_device}", "id": "m1_0", "visible": false } ],
-                    [ ".", "VolumeReadOps", ".", ".", { "label": "${data.aws_instance.capacity-provider.root_block_device}", "id": "m2_0", "visible": false } ]
+                    [ { "expression": "IF(m2_0 != 0, (m1_0 / m2_0) / 1024, 0)", "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}" } ],
+                    [ "AWS/EBS", "VolumeReadBytes", "VolumeId", "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", { "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", "id": "m1_0", "visible": false } ],
+                    [ ".", "VolumeReadOps", ".", ".", { "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", "id": "m2_0", "visible": false } ]
                 ],
                 "title": "Average read size (KiB/op)"
             }
@@ -278,9 +279,9 @@ resource "aws_cloudwatch_dashboard" "main" {
                 },
                 "region": "${var.region}",
                 "metrics": [
-                    [ { "expression": "IF(m2_0 != 0, (m1_0 / m2_0) / 1024, 0)", "label": "${data.aws_instance.capacity-provider.root_block_device}" } ],
-                    [ "AWS/EBS", "VolumeWriteBytes", "VolumeId", "${data.aws_instance.capacity-provider.root_block_device}", { "label": "${data.aws_instance.capacity-provider.root_block_device}", "id": "m1_0", "visible": false } ],
-                    [ ".", "VolumeWriteOps", ".", ".", { "label": "${data.aws_instance.capacity-provider.root_block_device}", "id": "m2_0", "visible": false } ]
+                    [ { "expression": "IF(m2_0 != 0, (m1_0 / m2_0) / 1024, 0)", "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}" } ],
+                    [ "AWS/EBS", "VolumeWriteBytes", "VolumeId", "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", { "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", "id": "m1_0", "visible": false } ],
+                    [ ".", "VolumeWriteOps", ".", ".", { "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", "id": "m2_0", "visible": false } ]
                 ],
                 "title": "Average write size (KiB/op)"
             }
@@ -303,9 +304,9 @@ resource "aws_cloudwatch_dashboard" "main" {
                 },
                 "region": "${var.region}",
                 "metrics": [
-                    [ { "expression": "IF(m2_0 !=0, (m1_0 / m2_0) * 1000, 0)", "label": "${data.aws_instance.capacity-provider.root_block_device}" } ],
-                    [ "AWS/EBS", "VolumeTotalReadTime", "VolumeId", "${data.aws_instance.capacity-provider.root_block_device}", { "label": "${data.aws_instance.capacity-provider.root_block_device}", "id": "m1_0", "visible": false } ],
-                    [ ".", "VolumeReadOps", ".", ".", { "label": "${data.aws_instance.capacity-provider.root_block_device}", "id": "m2_0", "visible": false } ]
+                    [ { "expression": "IF(m2_0 !=0, (m1_0 / m2_0) * 1000, 0)", "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}" } ],
+                    [ "AWS/EBS", "VolumeTotalReadTime", "VolumeId", "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", { "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", "id": "m1_0", "visible": false } ],
+                    [ ".", "VolumeReadOps", ".", ".", { "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", "id": "m2_0", "visible": false } ]
                 ],
                 "title": "Average read latency (ms/op)"
             }
@@ -328,9 +329,9 @@ resource "aws_cloudwatch_dashboard" "main" {
                 },
                 "region": "${var.region}",
                 "metrics": [
-                    [ { "expression": "IF(m2_0 !=0, (m1_0 / m2_0) * 1000, 0)", "label": "${data.aws_instance.capacity-provider.root_block_device}" } ],
-                    [ "AWS/EBS", "VolumeTotalWriteTime", "VolumeId", "${data.aws_instance.capacity-provider.root_block_device}", { "label": "${data.aws_instance.capacity-provider.root_block_device}", "id": "m1_0", "visible": false } ],
-                    [ ".", "VolumeWriteOps", ".", ".", { "label": "${data.aws_instance.capacity-provider.root_block_device}", "id": "m2_0", "visible": false } ]
+                    [ { "expression": "IF(m2_0 !=0, (m1_0 / m2_0) * 1000, 0)", "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}" } ],
+                    [ "AWS/EBS", "VolumeTotalWriteTime", "VolumeId", "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", { "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", "id": "m1_0", "visible": false } ],
+                    [ ".", "VolumeWriteOps", ".", ".", { "label": "${tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id}", "id": "m2_0", "visible": false } ]
                 ],
                 "title": "Average write latency (ms/op)"
             }
