@@ -3,7 +3,7 @@ resource "aws_ecs_task_definition" "agent" {
   task_role_arn            = aws_iam_role.ecs_task_role.arn
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
   network_mode             = "host"
-  cpu                      = "1024"
+  cpu                      = "1584"
   memory                   = "3072"
 
   container_definitions = <<DEFINITION
