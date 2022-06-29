@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/iwfm-docker.iml" filepath="$PROJECT_DIR$/.idea/iwfm-docker.iml" />
+      <module fileurl="file://$PROJECT_DIR$/postprocessing/postprocessing.iml" filepath="$PROJECT_DIR$/postprocessing/postprocessing.iml" />
     </modules>
   </component>
 </project>
