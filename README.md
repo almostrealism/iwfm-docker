@@ -35,7 +35,7 @@ Windows, Linux, and Mac (Intel/ARM).
 
 [Terraform](https://learn.hashicorp.com/tutorials/terraform/install-cli)
 
-Next, navigate to the "aws" directory of this repository and create a file called terraform.tfvars.
+Next, navigate to the "terraform/iwfm-aws" directory of this repository and create a file called terraform.tfvars.
 Inside this file, you'll include all the parameters for your deployment.
 
 ```
@@ -79,6 +79,14 @@ When you are done, and collected any results of interest to you, you can destroy
 terraform destroy
 ```
 
+## Deploying PEST++ to AWS
+
+Follow the same instructions for deploying the IWFM model, but use the directory terraform/pestpp-aws.
+
+```
+terraform destroy
+```
+
 ## Deploying the Simulation to Azure
 
 Note: Running on Azure is currently not supported, because the ephemeral space for containers is
@@ -105,8 +113,8 @@ az login
 This will open a browser where you can complete the normal sign in process.
 
 Then you can initialize terraform, and apply the template. Make sure to specify the ID of the Azure
-subscription you want to use. Make sure to run these commands from the azure directory located
-within where ever you checked out this GitHub repository.
+subscription you want to use. Make sure to run these commands from the terraform/iwfm-azure directory
+located within where ever you checked out this GitHub repository.
 
 ```
 terraform init
