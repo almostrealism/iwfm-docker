@@ -71,14 +71,14 @@ if __name__ == '__main__':
             rz_annual['location_id'] = i
             rz_annual['location_name'] = l
 
-            print(rz_annual.head())
+            # print("Adding {} rows".format(len(rz_annual)))
 
             if data is None:
-                data = rz_annual
+                data = rz_annual.copy(deep=True)
             else:
-                data.append(rz_annual)
+                data = data.append(rz_annual)
 
-    print(data.head)
+    print("Total rows: {}".format(len(data)))
 
     session = boto3.Session(
         aws_access_key_id=access_key,
