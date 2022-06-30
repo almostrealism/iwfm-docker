@@ -61,9 +61,6 @@ if __name__ == '__main__':
                 volume_units='AF'
             )
 
-            rz_annual['location_id'] = i
-            rz_annual['location_name'] = l
-
             # Generate new columns to separate fields where positive and negative values are allowed
             rz_annual['Ag. Net Loss from Land Reduction (-)'] = np.where(rz_annual['Ag. Net Gain from Land Expansion (+)'].to_numpy() < 0, -1*rz_annual['Ag. Net Gain from Land Expansion (+)'].to_numpy(), 0)
             rz_annual['Ag. Net Gain from Land Expansion (+)'] = np.where(rz_annual['Ag. Net Gain from Land Expansion (+)'].to_numpy() >= 0, rz_annual['Ag. Net Gain from Land Expansion (+)'].to_numpy(), 0)
@@ -71,6 +68,8 @@ if __name__ == '__main__':
             rz_annual['Urban Net Gain from Land Expansion (+)'] = np.where(rz_annual['Urban Net Gain from Land Expansion (+)'].to_numpy() >= 0, rz_annual['Urban Net Gain from Land Expansion (+)'].to_numpy(), 0)
             rz_annual['Native&Riparian Veg. Net Loss from Land Reduction (-)'] = np.where(rz_annual['Native&Riparian Veg. Net Gain from Land Expansion (+)'].to_numpy() < 0, -1*rz_annual['Native&Riparian Veg. Net Gain from Land Expansion (+)'].to_numpy(), 0)
             rz_annual['Native&Riparian Veg. Net Gain from Land Expansion (+)'] = np.where(rz_annual['Native&Riparian Veg. Net Gain from Land Expansion (+)'].to_numpy() >= 0, rz_annual['Native&Riparian Veg. Net Gain from Land Expansion (+)'].to_numpy(), 0)
+            rz_annual['location_id'] = i
+            rz_annual['location_name'] = l
 
             print(rz_annual.head())
 
