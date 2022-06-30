@@ -4,6 +4,15 @@ import os
 import numpy as np
 from pywfm import IWFMBudget
 import awswrangler as wr
+import boto3
+
+db_bucket = "iwfm-athena-1"
+db_name = "iwfm_db"
+table_name = "budgets"
+
+access_key = os.getenv("AWS_ACCESS_KEY_ID")
+secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+
 
 def read_filename_from_commandline(args):
     """ Read the budget hdf file name from the commandline
@@ -24,11 +33,13 @@ def read_filename_from_commandline(args):
 
         return file_name
 
+
 def date_to_water_year(month, year):
     if month > 9:
         return int(year + 1)
     else:
         return int(year)
+
 
 if __name__ == '__main__':
 
@@ -44,9 +55,9 @@ if __name__ == '__main__':
             rz_annual = bud.get_values(
                 i,
                 output_interval='1YEAR',
-                area_conversion_factor=1/43560,
+                area_conversion_factor=1 / 43560,
                 area_units='Acres',
-                volume_conversion_factor=1/43560,
+                volume_conversion_factor=1 / 43560,
                 volume_units='AF'
             )
 
@@ -70,10 +81,18 @@ if __name__ == '__main__':
 
     print(data.head)
 
+    session = boto3.Session(
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key
+    )
+
     # Storing the data and metadata to Data Lake
-    # wr.pandas.to_parquet(
-    #     dataframe=data,
-    #     database="database",
-    #     path="s3://your-s3-bucket/path/to/new/table"
-    #     # partition_cols=["name"],
-    # )
+    wr.s3.to_parquet(
+        df=data,
+        database=db_name,
+        table=table_name,
+        path=f's3://{db_bucket}/budgets',
+        partition_cols=["location_id"],
+        dataset=True,
+        boto3_session=session
+    )

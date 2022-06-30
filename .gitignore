@@ -9,3 +9,6 @@ runner/*.zip
 **.tfstate*
 **/.terraform*
 **/*.tfvars
+
+# Temporary stuff
+docker_run.sh
