@@ -50,8 +50,6 @@ if __name__ == '__main__':
                 volume_conversion_factor=1/43560,
                 volume_units='AF'
             )
-
-            print
             
             # Generate new columns to separate fields where positive and negative values are allowed
             rz_annual['Ag. Net Loss from Land Reduction (-)'] = np.where(rz_annual['Ag. Net Gain from Land Expansion (+)'].to_numpy() < 0, -1*rz_annual['Ag. Net Gain from Land Expansion (+)'].to_numpy(), 0)

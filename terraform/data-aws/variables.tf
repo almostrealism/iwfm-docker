@@ -19,7 +19,3 @@ variable "aws_secret_key" {
 variable "resource_bucket" {
   description = "A unique name for an S3 bucket to store the resources for the process"
 }
-
-variable "athena_workgroup" {
-  description = "ARN of the Athena workgroup"
-}
