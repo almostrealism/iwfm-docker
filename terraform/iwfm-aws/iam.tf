@@ -97,7 +97,7 @@ data "aws_iam_policy_document" "instance_policy" {
   statement {
     sid = "AnalyticsS3"
     actions = ["s3:GetObject", "s3:PutObject"]
-    resources = ["arn:aws:s3:::iwfm/*"]
+    resources = ["arn:aws:s3:::${var.analytics_bucket}/*"]
   }
 }
 

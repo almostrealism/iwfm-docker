@@ -11,6 +11,7 @@ RUN pip3 install pandas
 RUN pip3 install matplotlib
 RUN pip3 install descartes
 RUN pip3 install pyshp
+RUN pip3 install awswrangler
 
 COPY tools/szip szip
 COPY tools/h5fortran h5fortran
@@ -62,12 +63,13 @@ COPY init.sh /init.sh
 COPY run.sh /run.sh
 COPY run_model.sh /run_model.sh
 COPY run_simulation.sh /run_simulation.sh
+COPY post/post.sh /post.sh
 
-COPY post/scripts /scripts
+COPY postprocessing /scripts
 
 ENV APACHE_RUN_DIR=/
 ENV APACHE_RUN_USER=www-data
 ENV APACHE_RUN_GROUP=www-data
 ENV APACHE_LOG_DIR=/var/www
 
-ENTRYPOINT /init.sh
+ENTRYPOINT /init.sh ; /scripts/post.sh
