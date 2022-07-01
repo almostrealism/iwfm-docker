@@ -1,7 +1,0 @@
-        !COMPILER-GENERATED INTERFACE MODULE: Mon Jan 06 10:28:29 2020
-        MODULE CLN1DA__genmod
-          INTERFACE 
-            SUBROUTINE CLN1DA
-            END SUBROUTINE CLN1DA
-          END INTERFACE 
-        END MODULE CLN1DA__genmod

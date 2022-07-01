@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<VisualStudioUserFile ProjectCreator="Intel Fortran" Keyword="Console Application" Version="11.0" ProjectIdGuid="{211605F0-3466-4529-9535-7B862FD192B2}">
+	<Configurations>
+		<Configuration Name="Debug|Win32" WorkingDirectory="C:\Projects\1511_DWR\Texture2Par\SourceCode\01_Src_2019-06-27_debug\Working\Texture2Par"/>
+		<Configuration Name="Release|Win32"/>
+		<Configuration Name="Debug|x64" WorkingDirectory="C:\Projects\1511_DWR\Texture2Par\SourceCode\02_Src_2020-02-20_AnisoF_AnisoC\Working\Tex2Par_Test_Vivek\Simulation"/>
+		<Configuration Name="Release|x64"/></Configurations></VisualStudioUserFile>

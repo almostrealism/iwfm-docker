@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<VisualStudioUserFile ProjectCreator="Intel Fortran" Keyword="Console Application" Version="11.0" ProjectIdGuid="{8F4C4711-4E24-4923-A195-7434E4FB0FE7}">
-	<Configurations>
-		<Configuration Name="Debug|Win32" WorkingDirectory="p:\1511\999_Tools\SquareRootStream\"/>
-		<Configuration Name="Release|Win32"/></Configurations></VisualStudioUserFile>

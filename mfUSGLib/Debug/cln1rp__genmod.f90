@@ -1,8 +1,0 @@
-        !COMPILER-GENERATED INTERFACE MODULE: Mon Jan 06 10:28:29 2020
-        MODULE CLN1RP__genmod
-          INTERFACE 
-            SUBROUTINE CLN1RP(IN)
-              INTEGER(KIND=4), INTENT(IN) :: IN
-            END SUBROUTINE CLN1RP
-          END INTERFACE 
-        END MODULE CLN1RP__genmod

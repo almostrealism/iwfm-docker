@@ -43,11 +43,6 @@ resource "aws_iam_role_policy_attachment" "ecs-task-execution-role-policy-attach
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-#resource "aws_iam_role_policy_attachment" "task_s3" {
-#  role       = aws_iam_role.ecs_task_role.name
-#  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
-#}
-
 data "aws_iam_policy_document" "instance_policy" {
   statement {
     sid = "CloudwatchPutMetricData"
@@ -97,6 +92,12 @@ data "aws_iam_policy_document" "instance_policy" {
     resources = [
       "*",
     ]
+  }
+
+  statement {
+    sid = "AnalyticsS3"
+    actions = ["s3:GetObject", "s3:PutObject"]
+    resources = ["arn:aws:s3:::iwfm/*"]
   }
 }
 

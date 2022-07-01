@@ -1,9 +1,0 @@
-        !COMPILER-GENERATED INTERFACE MODULE: Mon Jan 06 10:28:28 2020
-        MODULE FILLGFU__genmod
-          INTERFACE 
-            SUBROUTINE FILLGFU(INDIS,IOUT)
-              INTEGER(KIND=4) :: INDIS
-              INTEGER(KIND=4) :: IOUT
-            END SUBROUTINE FILLGFU
-          END INTERFACE 
-        END MODULE FILLGFU__genmod

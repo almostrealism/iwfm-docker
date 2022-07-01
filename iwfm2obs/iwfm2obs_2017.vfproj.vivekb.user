@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<VisualStudioUserFile ProjectCreator="Intel Fortran" Keyword="Console Application" Version="11.0" ProjectIdGuid="{2C8526AD-19E0-4A5E-8D6A-F6A7DFBF71CE}">
-	<Configurations>
-		<Configuration Name="Debug|Win32" WorkingDirectory="C:\Projects\1710_DWR\999_Tools\iwfm2obs_2015\Working\C2VSimFG_v0.3.16_PEST06_1_aqt\C2VSimFG\Simulation"/>
-		<Configuration Name="Release|Win32"/>
-		<Configuration Name="Debug|x64"/>
-		<Configuration Name="Release|x64"/></Configurations></VisualStudioUserFile>

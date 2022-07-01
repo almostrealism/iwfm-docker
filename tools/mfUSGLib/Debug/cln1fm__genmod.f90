@@ -1,0 +1,8 @@
+        !COMPILER-GENERATED INTERFACE MODULE: Mon Jan 06 10:28:29 2020
+        MODULE CLN1FM__genmod
+          INTERFACE 
+            SUBROUTINE CLN1FM(KPER)
+              INTEGER(KIND=4) :: KPER
+            END SUBROUTINE CLN1FM
+          END INTERFACE 
+        END MODULE CLN1FM__genmod

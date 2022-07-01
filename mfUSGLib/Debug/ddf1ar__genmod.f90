@@ -1,8 +1,0 @@
-        !COMPILER-GENERATED INTERFACE MODULE: Mon Jan 06 10:28:23 2020
-        MODULE DDF1AR__genmod
-          INTERFACE 
-            SUBROUTINE DDF1AR(IUDDF)
-              INTEGER(KIND=4) :: IUDDF
-            END SUBROUTINE DDF1AR
-          END INTERFACE 
-        END MODULE DDF1AR__genmod

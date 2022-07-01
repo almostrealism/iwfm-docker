@@ -6,8 +6,8 @@ from pywfm import IWFMBudget
 import awswrangler as wr
 import boto3
 
-db_bucket = "iwfm-athena-1"
-db_name = "iwfm_db"
+db_bucket = os.getenv("DB_BUCKET")
+db_name = os.getenv("DB_NAME")
 table_name = "budgets"
 
 access_key = os.getenv("AWS_ACCESS_KEY_ID")
@@ -62,12 +62,24 @@ if __name__ == '__main__':
             )
 
             # Generate new columns to separate fields where positive and negative values are allowed
-            rz_annual['Ag. Net Loss from Land Reduction (-)'] = np.where(rz_annual['Ag. Net Gain from Land Expansion (+)'].to_numpy() < 0, -1*rz_annual['Ag. Net Gain from Land Expansion (+)'].to_numpy(), 0)
-            rz_annual['Ag. Net Gain from Land Expansion (+)'] = np.where(rz_annual['Ag. Net Gain from Land Expansion (+)'].to_numpy() >= 0, rz_annual['Ag. Net Gain from Land Expansion (+)'].to_numpy(), 0)
-            rz_annual['Urban Net Loss from Land Reduction (-)'] = np.where(rz_annual['Urban Net Gain from Land Expansion (+)'].to_numpy() < 0, -1*rz_annual['Urban Net Gain from Land Expansion (+)'].to_numpy(), 0)
-            rz_annual['Urban Net Gain from Land Expansion (+)'] = np.where(rz_annual['Urban Net Gain from Land Expansion (+)'].to_numpy() >= 0, rz_annual['Urban Net Gain from Land Expansion (+)'].to_numpy(), 0)
-            rz_annual['Native&Riparian Veg. Net Loss from Land Reduction (-)'] = np.where(rz_annual['Native&Riparian Veg. Net Gain from Land Expansion (+)'].to_numpy() < 0, -1*rz_annual['Native&Riparian Veg. Net Gain from Land Expansion (+)'].to_numpy(), 0)
-            rz_annual['Native&Riparian Veg. Net Gain from Land Expansion (+)'] = np.where(rz_annual['Native&Riparian Veg. Net Gain from Land Expansion (+)'].to_numpy() >= 0, rz_annual['Native&Riparian Veg. Net Gain from Land Expansion (+)'].to_numpy(), 0)
+            rz_annual['Ag. Net Loss from Land Reduction (-)'] = np.where(
+                rz_annual['Ag. Net Gain from Land Expansion (+)'].to_numpy() < 0,
+                -1 * rz_annual['Ag. Net Gain from Land Expansion (+)'].to_numpy(), 0)
+            rz_annual['Ag. Net Gain from Land Expansion (+)'] = np.where(
+                rz_annual['Ag. Net Gain from Land Expansion (+)'].to_numpy() >= 0,
+                rz_annual['Ag. Net Gain from Land Expansion (+)'].to_numpy(), 0)
+            rz_annual['Urban Net Loss from Land Reduction (-)'] = np.where(
+                rz_annual['Urban Net Gain from Land Expansion (+)'].to_numpy() < 0,
+                -1 * rz_annual['Urban Net Gain from Land Expansion (+)'].to_numpy(), 0)
+            rz_annual['Urban Net Gain from Land Expansion (+)'] = np.where(
+                rz_annual['Urban Net Gain from Land Expansion (+)'].to_numpy() >= 0,
+                rz_annual['Urban Net Gain from Land Expansion (+)'].to_numpy(), 0)
+            rz_annual['Native&Riparian Veg. Net Loss from Land Reduction (-)'] = np.where(
+                rz_annual['Native&Riparian Veg. Net Gain from Land Expansion (+)'].to_numpy() < 0,
+                -1 * rz_annual['Native&Riparian Veg. Net Gain from Land Expansion (+)'].to_numpy(), 0)
+            rz_annual['Native&Riparian Veg. Net Gain from Land Expansion (+)'] = np.where(
+                rz_annual['Native&Riparian Veg. Net Gain from Land Expansion (+)'].to_numpy() >= 0,
+                rz_annual['Native&Riparian Veg. Net Gain from Land Expansion (+)'].to_numpy(), 0)
             rz_annual['location_id'] = i
             rz_annual['location_name'] = l
 
@@ -78,12 +90,10 @@ if __name__ == '__main__':
             else:
                 data = data.append(rz_annual)
 
-    print("Total rows: {}".format(len(data)))
+    print(f"Total rows: {len(data)}")
 
-    session = boto3.Session(
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key
-    )
+    data.rename(columns=lambda x: x.lower().replace(' ', '_').replace('+', 'pos').replace('-', 'neg').replace('(', '').replace(')', '').replace('.', '').replace('=', 'eq').replace('&', '_'), inplace=True)
+    print(f"Columns: {data.columns.tolist()}")
 
     # Storing the data and metadata to Data Lake
     wr.s3.to_parquet(
@@ -92,6 +102,5 @@ if __name__ == '__main__':
         table=table_name,
         path=f's3://{db_bucket}/budgets',
         partition_cols=["location_id"],
-        dataset=True,
-        boto3_session=session
+        dataset=True
     )

@@ -1,7 +1,0 @@
-        !COMPILER-GENERATED INTERFACE MODULE: Mon Jan 06 10:28:23 2020
-        MODULE DDF1DA__genmod
-          INTERFACE 
-            SUBROUTINE DDF1DA
-            END SUBROUTINE DDF1DA
-          END INTERFACE 
-        END MODULE DDF1DA__genmod
