@@ -36,12 +36,16 @@ Windows, Linux, and Mac (Intel/ARM).
 [Terraform](https://learn.hashicorp.com/tutorials/terraform/install-cli)
 
 Next, navigate to the "terraform/iwfm-aws" directory of this repository and create a file called terraform.tfvars.
-Inside this file, you'll include all the parameters for your deployment.
+Inside this file, you'll include all the parameters for your deployment. You can select any resource_bucket and
+analytics_bucket you want, as long as they don't exist already. Your analytics_bucket is where the final results
+will live so that they can be analyzed using QuickSight. Any region is acceptable, but it must match your QuickSight
+region if you want to create dashboards.
 
 ```
 prefix="iwfm"
 iwfm_model="<path-to-model>/c2vsimfg_version1.01.zip"
 resource_bucket="iwfm-bucket-987342582"
+analytics_bucket="iwfm-analytics-3523598"
 region="us-east-2"
 aws_access_key="your_access_key"
 aws_secret_key="your_secret_key"
@@ -73,7 +77,23 @@ that task.
 If you visit "Cloud Watch" in the AWS console, you should see a dashboard created called
 iwfm-dashboard, where you can monitor the performance and log output of the project.
 
-When you are done, and collected any results of interest to you, you can destroy the deployment.
+### Cleaning Up
+
+TODO: Explain how to isolate and preserve the analysis results using the process:
+
+```
+# list all resources
+terraform state list
+
+# remove that resource you don't want to destroy
+# you can add more to be excluded if required
+terraform state rm <resource_to_be_deleted>
+
+# destroy the whole stack except above excluded resource(s)
+terraform destroy
+```
+
+When you are done, and detached analytics results from your deployment, you can destroy the deployment.
 
 ```
 terraform destroy

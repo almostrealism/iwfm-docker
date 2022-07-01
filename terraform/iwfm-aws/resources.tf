@@ -4,6 +4,8 @@ resource "aws_s3_bucket" "resources" {
   tags = {
     Name = "${var.prefix}-resources"
   }
+
+  force_destroy = true
 }
 
 resource aws_s3_bucket_website_configuration "www" {
