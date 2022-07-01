@@ -1,0 +1,9 @@
+        !COMPILER-GENERATED INTERFACE MODULE: Mon Jan 06 10:28:29 2020
+        MODULE CLN1BDS__genmod
+          INTERFACE 
+            SUBROUTINE CLN1BDS(KSTP,KPER)
+              INTEGER(KIND=4) :: KSTP
+              INTEGER(KIND=4) :: KPER
+            END SUBROUTINE CLN1BDS
+          END INTERFACE 
+        END MODULE CLN1BDS__genmod

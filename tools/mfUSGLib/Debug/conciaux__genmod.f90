@@ -1,0 +1,11 @@
+        !COMPILER-GENERATED INTERFACE MODULE: Mon Jan 06 10:28:26 2020
+        MODULE CONCIAUX__genmod
+          INTERFACE 
+            SUBROUTINE CONCIAUX(ICOMP,NAUX,BNDAUX,IAUX)
+              INTEGER(KIND=4) :: ICOMP
+              INTEGER(KIND=4) :: NAUX
+              CHARACTER(LEN=4) :: BNDAUX(4)
+              INTEGER(KIND=4) :: IAUX
+            END SUBROUTINE CONCIAUX
+          END INTERFACE 
+        END MODULE CONCIAUX__genmod
