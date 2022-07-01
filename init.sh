@@ -9,7 +9,6 @@ unzip model.zip
 cd Preprocessor
 dos2unix *.dat
 PreProcessor C2VSimFG_Preprocessor.in
-ls -la
 
 cp C2VSimFG_Preprocessor.in ../Simulation/..\\Preprocessor\\C2VSimFG_Preprocessor.in
 cp C2VSimFG_Elements.dat ../Simulation/..\\Preprocessor\\C2VSimFG_Elements.dat

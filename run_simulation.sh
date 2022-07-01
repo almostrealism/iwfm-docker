@@ -40,12 +40,10 @@ cp RootZone/C2VSimFG_Urban_Population.dat RootZone\\C2VSimFG_Urban_Population.da
 cp RootZone/C2VSimFG_Urban_WaterUseSpecs.dat RootZone\\C2VSimFG_Urban_WaterUseSpecs.dat
 
 /build/t2p/Texture2Par Texture2Par.in
-ls -la
 
 dos2unix *.dat
 
 Simulation C2VSimFG.in
-ls -la
 
 cp ../Preprocessor/C2VSimFG_Preprocessor.in ..\\Preprocessor\\C2VSimFG_Preprocessor.in
 cp ../Preprocessor/C2VSimFG_Elements.dat ..\\Preprocessor\\C2VSimFG_Elements.dat
