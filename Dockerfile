@@ -1,4 +1,4 @@
-FROM intel/oneapi-hpckit
+FROM intel/oneapi-hpckit:2022.1.2-devel-ubuntu18.04
 
 WORKDIR /
 
@@ -25,7 +25,7 @@ COPY tools/mlt mlt
 COPY tools/mfUSGLib mfUSGLib
 COPY tools/t2p t2p
 COPY tools/cth cth
-COPY build.sh /build.sh
+COPY tools/build.sh /build.sh
 
 RUN /build.sh
 
