@@ -85,12 +85,10 @@ TODO: Explain how to isolate and preserve the analysis results using the process
 # list all resources
 terraform state list
 
-# remove that resource you don't want to destroy
-# you can add more to be excluded if required
-terraform state rm <resource_to_be_deleted>
-
-# destroy the whole stack except above excluded resource(s)
-terraform destroy
+# remove the analytics resources that you want to keep
+terraform state rm aws_athena_database.main
+terraform state rm aws_athena_workgroup.main
+terraform state rm aws_s3_bucket.db
 ```
 
 When you are done, and detached analytics results from your deployment, you can destroy the deployment.

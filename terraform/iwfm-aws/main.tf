@@ -52,7 +52,11 @@ resource "aws_ecs_task_definition" "definition" {
               },
               {
                   "name": "DB_NAME",
-                  "value": "${var.prefix}_db"
+                  "value": "${var.prefix}_database"
+              },
+              {
+                  "name": "AWS_DEFAULT_REGION",
+                  "value": "${var.region}"
               }
           ]
       }
