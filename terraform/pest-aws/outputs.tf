@@ -5,6 +5,11 @@ data "aws_instance" "capacity-provider" {
     name          = "tag:iwfm-activity"
     values        = ["${var.prefix}"]
   }
+
+  filter {
+    name = "instance-state-name"
+    values = ["pending", "running"]
+  }
 }
 
 output "instance_ip" {
