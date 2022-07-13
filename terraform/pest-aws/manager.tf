@@ -4,8 +4,8 @@ resource "aws_ecs_task_definition" "manager" {
   task_role_arn            = aws_iam_role.ecs_task_role.arn
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
   network_mode             = "host"
-  cpu                      = "4096"
-  memory                   = "3072"
+  cpu                      = "12288"
+  memory                   = "9216"
 
   container_definitions = <<DEFINITION
   [

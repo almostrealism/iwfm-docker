@@ -1,5 +1,5 @@
 FROM ashesfall/iwfm-base:latest
 
-COPY pest/manager.sh /manager.sh
+COPY tools/pest/manager.sh /manager.sh
 
 ENTRYPOINT /manager.sh & /usr/sbin/apache2 -DFOREGROUND

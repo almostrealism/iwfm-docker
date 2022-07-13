@@ -15,7 +15,7 @@ variable "instance_type" {
 
 variable "agent_count" {
   description = "Number of agent containers to use"
-  default = 80
+  default = 74
 }
 
 variable "instance_root_volume_size" {
