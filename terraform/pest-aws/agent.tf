@@ -27,6 +27,10 @@ resource "aws_ecs_task_definition" "agent" {
               {
                   "name": "PEST_HOST",
                   "value": "127.0.0.1:4000"
+              },
+              {
+                  "name": "PEST_CMD",
+                  "value": "${var.pest_cmd}"
               }
           ]
       }

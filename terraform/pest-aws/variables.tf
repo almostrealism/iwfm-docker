@@ -48,3 +48,8 @@ variable "resource_bucket" {
 variable "iwfm_model" {
   description = "The path to the IWFM model to run"
 }
+
+variable "pest_cmd" {
+  description = "The kind of PEST++ operation to run"
+  default = "glm"
+}
