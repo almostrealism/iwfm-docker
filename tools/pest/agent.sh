@@ -5,4 +5,4 @@ PATH=$PATH:/build/iwfm
 
 cd /
 echo "Running pest..."
-/pestbin/pestpp-glm C2VSimFG_01.pst /h $PEST_HOST
+/pestbin/pestpp-$PEST_CMD C2VSimFG_01.pst /h $PEST_HOST

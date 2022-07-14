@@ -34,6 +34,10 @@ resource "aws_ecs_task_definition" "manager" {
               {
                   "name": "IWFM_MODEL",
                   "value": "http://${aws_s3_bucket_website_configuration.www.website_endpoint}/model.zip"
+              },
+              {
+                  "name": "PEST_CMD",
+                  "value": "${var.pest_cmd}"
               }
           ]
       }
