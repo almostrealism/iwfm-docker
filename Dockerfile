@@ -54,9 +54,8 @@ COPY runner/CalcTypeHyd_Sub8Sub9_sim.in /Simulation/CalcTypeHyd_Sub8Sub9_sim.in
 COPY runner/CalcTypeHyd_CC_sim.in /Simulation/CalcTypeHyd_CC_sim.in
 
 COPY tools/pestbin /pestbin
-COPY tools/pest/C2VSimFG_01.pst /C2VSimFG_01.pst
+
 COPY tools/pest/Texture2Par.tpl /Simulation/Texture2Par.tpl
-# COPY pest/*.ins /Simulation/
 COPY tools/pest/GWHMultiLayer.ins /Simulation/GWHMultiLayer.ins
 
 COPY init.sh /init.sh
