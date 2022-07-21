@@ -59,9 +59,9 @@ COPY tools/pest/Texture2Par.tpl /Simulation/Texture2Par.tpl
 COPY tools/pest/GWHMultiLayer.ins /Simulation/GWHMultiLayer.ins
 
 COPY init.sh /init.sh
-COPY run.sh /run.sh
-COPY run_model.sh /run_model.sh
-COPY run_simulation.sh /run_simulation.sh
+COPY runner/run.sh /run.sh
+COPY runner/run_model.sh /run_model.sh
+COPY runner/run_simulation.sh /run_simulation.sh
 COPY post/post.sh /post.sh
 
 COPY postprocessing /scripts
