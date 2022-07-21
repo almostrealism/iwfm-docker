@@ -7,7 +7,7 @@ resource "aws_s3_bucket" "db" {
 }
 
 resource "aws_athena_workgroup" "main" {
-  name = "${var.prefix}-group"
+  name = "${var.prefix}-${var.analytics_workspace_name}"
 
   configuration {
     enforce_workgroup_configuration    = true

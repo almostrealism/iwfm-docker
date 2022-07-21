@@ -44,6 +44,10 @@ variable "analytics_bucket" {
   description = "A unique name for an S3 bucket to store the parquet files for analytics"
 }
 
+variable "analytics_workspace_name" {
+  description = "A name for the analytics workspace"
+}
+
 variable "iwfm_model" {
   description = "The path to the IWFM model to run"
 }
