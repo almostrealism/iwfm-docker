@@ -2,12 +2,6 @@ FROM ashesfall/pest-agent-post:latest
 
 WORKDIR /
 
-RUN pip3 install awswrangler
-
-ENV AWS_DEFAULT_REGION none
-ENV AWS_ACCESS_KEY_ID none
-ENV AWS_SECRET_ACCESS_KEY none
-
 COPY postprocessing /scripts
 COPY post/post.sh /post.sh
 

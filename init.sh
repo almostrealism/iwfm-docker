@@ -20,4 +20,4 @@ mv ..\\Simulation\\C2VSimFG_PreprocessorOut.bin ../Simulation/C2VSimFG_Preproces
 
 echo "Running initial simulation..."
 cd /
-/run_simulation.sh
+/run_model.sh

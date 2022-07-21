@@ -7,5 +7,5 @@ cd /
 echo "Running pest..."
 /pestbin/pestpp-$PEST_CMD C2VSimFG_01.pst /h :4000
 
-echo "Running postprocessing..."
-python3 /scripts/plot_rz_budget.py /Simulation/..\\Results\\C2VSimFG_RZ_Budget.hdf
+#echo "Running postprocessing..."
+#python3 /scripts/plot_rz_budget.py /Simulation/..\\Results\\C2VSimFG_RZ_Budget.hdf
