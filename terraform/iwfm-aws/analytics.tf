@@ -7,7 +7,7 @@ resource "aws_s3_bucket" "db" {
 }
 
 resource "aws_athena_workgroup" "main" {
-  name = "${var.prefix}-${var.analytics_workspace_name}"
+  name = "${var.prefix}-${var.analytics_title}"
 
   configuration {
     enforce_workgroup_configuration    = true
@@ -20,6 +20,6 @@ resource "aws_athena_workgroup" "main" {
 }
 
 resource "aws_athena_database" "main" {
-  name   = "${var.prefix}_database"
+  name   = "${var.prefix}_${var.analytics_title}_db"
   bucket = aws_s3_bucket.resources.bucket
 }
