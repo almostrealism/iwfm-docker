@@ -66,6 +66,7 @@ COPY post/post.sh /post.sh
 
 COPY postprocessing /scripts
 
+COPY tools/apache2/autoindex.conf /etc/apache2/mods-available/autoindex.conf
 ENV APACHE_RUN_DIR=/
 ENV APACHE_RUN_USER=www-data
 ENV APACHE_RUN_GROUP=www-data
