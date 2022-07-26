@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -1270,7 +1270,7 @@ CONTAINS
     AppGrid%AppElement%ID = ElemID
     
     !Check if elements are convex
-    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NElements,NVertex,Vertex,X,Y,iStat) NUM_THREADS(OMP_GET_NUM_PROCS()-1)
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NElements,NVertex,Vertex,X,Y,iStat) 
     !$OMP DO SCHEDULE(STATIC,500) 
     DO indx=1,NElements
         IF (NVertex(indx) .EQ. 3) CYCLE
@@ -1297,7 +1297,7 @@ CONTAINS
     IF (iStat .EQ. -1) RETURN
 
     !Identify faces for each element
-    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NElements,AppGrid,iStatParallel,ThisProcedure) NUM_THREADS(OMP_GET_NUM_PROCS()-1)
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NElements,AppGrid,iStatParallel,ThisProcedure) 
     !$OMP DO SCHEDULE(STATIC,500) 
     DO indx=1,NElements
         CALL ListFacesForElement(AppGrid,indx,AppGrid%AppElement(indx)%FaceID,iStat)
@@ -1325,7 +1325,7 @@ CONTAINS
     END IF
     
     !Compute element vertex areas and vertex area fractions
-    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NElements,NVertex,Vertex,AppGrid,iStatParallel) NUM_THREADS(OMP_GET_NUM_PROCS()-1)
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NElements,NVertex,Vertex,AppGrid,iStatParallel) 
     !$OMP DO SCHEDULE(STATIC,500) 
     DO indx=1,NElements
         ALLOCATE (AppGrid%AppElement(indx)%VertexArea(NVertex(indx)) , AppGrid%AppElement(indx)%VertexAreaFraction(NVertex(indx)) , STAT=ErrorCode)
@@ -1350,7 +1350,7 @@ CONTAINS
     END IF
     
     !Compute integral of delwi * delwj
-    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NElements,AppGrid,iStatParallel) NUM_THREADS(OMP_GET_NUM_PROCS()-1)
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NElements,AppGrid,iStatParallel) 
     !$OMP DO SCHEDULE(STATIC,500)
     DO indx=1,NElements
         CALL Compute_DELShpI_DELShpJ(AppGrid%GridType,indx,AppGrid%AppElement%ID,AppGrid%AppElement(indx)%Integral_DELShpI_DELShpJ,AppGrid%AppElement(indx)%Area,iStat)
@@ -1366,7 +1366,7 @@ CONTAINS
     END IF
 
     !Compute integral of rot_delwi * delwj
-    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NElements,AppGrid,iStatParallel) NUM_THREADS(OMP_GET_NUM_PROCS()-1)
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NElements,AppGrid,iStatParallel) 
     !$OMP DO SCHEDULE(STATIC,500)
     DO indx=1,NElements
         CALL Compute_Rot_DELShpI_DELShpJ(AppGrid%GridType,indx,AppGrid%AppElement%ID,AppGrid%AppElement(indx)%Integral_Rot_DELShpI_DELShpJ,AppGrid%AppElement(indx)%Area,iStat)
@@ -1390,7 +1390,7 @@ CONTAINS
     AppGrid%AppNode(DummyIntArray)%BoundaryNode = .TRUE.
 
     !Gather surrounding elements for each node
-    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NNodes,AppGrid,iStatParallel) NUM_THREADS(OMP_GET_NUM_PROCS()-1)
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NNodes,AppGrid,iStatParallel) 
     !$OMP DO SCHEDULE(STATIC,500)
     DO indx=1,NNodes
         CALL ListSurroundingElems(AppGrid%GridType,indx,AppGrid%AppNode(indx)%SurroundingElement,iStat)
@@ -1407,7 +1407,7 @@ CONTAINS
     END IF
 
     !Construct the list of connected nodes for each node
-    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NNodes,AppGrid,iStatParallel) NUM_THREADS(OMP_GET_NUM_PROCS()-1)
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NNodes,AppGrid,iStatParallel) 
     !$OMP DO SCHEDULE(STATIC,500)
     DO indx=1,NNodes
         CALL ListConnectedNodes(AppGrid%GridType,indx,AppGrid%AppNode(indx)%ConnectedNode,iStat)
@@ -1426,7 +1426,7 @@ CONTAINS
     AppGrid%NSumConnectedNode = SUM(AppGrid%AppNode%NConnectedNode)
          
     !Identify faces that meet at each node
-    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NNodes,AppGrid,iStatParallel) NUM_THREADS(OMP_GET_NUM_PROCS()-1)
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NNodes,AppGrid,iStatParallel) 
     !$OMP DO SCHEDULE(STATIC,500)
     DO indx=1,NNodes
         CALL ListFacesAtNode(AppGrid,indx,AppGrid%AppNode(indx)%FaceID,iStat)  
@@ -1451,7 +1451,7 @@ CONTAINS
     CALL CheckForGaps(AppGrid,NodeID,lFirstCall=.TRUE.)
 
     !Identify elements on the counter-clockwise side of each face that meet at each node
-    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NNodes,AppGrid,iStatParallel) NUM_THREADS(OMP_GET_NUM_PROCS()-1)
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NNodes,AppGrid,iStatParallel) 
     !$OMP DO SCHEDULE(STATIC,500)
     DO indx=1,NNodes
         CALL ListElemID_CCW(AppGrid,indx,AppGrid%AppNode(indx)%ElemID_OnCCWSide,iStat)  
@@ -1526,7 +1526,7 @@ CONTAINS
         YP = AppGrid%Y(indxNode)
         
         !Check if the node is in any element that it is not a vertex of
-        !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(indxNode,XP,YP,iNNodesInError,iNodesInError,AppGrid) NUM_THREADS(OMP_GET_NUM_PROCS()-1)
+        !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(indxNode,XP,YP,iNNodesInError,iNodesInError,AppGrid) 
         !$OMP DO SCHEDULE(STATIC,500)
         DO indxElem=1,AppGrid%NElements
             !If element has the node as vertex, skip check
@@ -1856,7 +1856,7 @@ CONTAINS
     iStatParallel = 0
     
     !Compute irrotationality coefficients at each node
-    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NNodes,AppNode,AppFace,X,Y,iStatParallel) NUM_THREADS(OMP_GET_NUM_PROCS()-1)
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NNodes,AppNode,AppFace,X,Y,iStatParallel) 
     !$OMP DO SCHEDULE(STATIC,500)
     DO indxNode=1,NNodes
                
@@ -2105,23 +2105,24 @@ CONTAINS
     REAL(8),INTENT(OUT)           :: ElemData(:)
 
     !Local variables
-    INTEGER              :: indxElem,indxVertex,Vertex(4),iNode
-    TYPE(AppElementType) :: AppElement
+    INTEGER :: indxElem,indxVertex,Vertex(4),iNode,iNVertex
+    REAL(8) :: rVertexArea(4),rArea
 
     !Initialize
     ElemData = 0.0
 
     !Distribute node data to elements
     DO indxElem=1,AppGrid%NElements
-      AppElement = AppGrid%AppElement(indxElem)
-      Vertex     = AppGrid%Vertex(:,indxElem)
-      DO indxVertex=1,AppGrid%NVertex(indxElem)
-        iNode              = Vertex(indxVertex)
-        ElemData(indxElem) = ElemData(indxElem) + NodeData(iNode) * AppElement%VertexArea(indxVertex)
-      END DO
-      ElemData(IndxElem) = ElemData(indxElem) / AppElement%Area
+        Vertex                  = AppGrid%Vertex(:,indxElem)
+        iNVertex                = AppGrid%NVertex(indxElem)
+        rVertexArea(1:iNVertex) = AppGrid%AppElement(indxElem)%VertexArea
+        rArea                   = AppGrid%AppElement(indxElem)%Area
+        DO indxVertex=1,iNVertex
+            iNode              = Vertex(indxVertex)
+            ElemData(indxElem) = ElemData(indxElem) + NodeData(iNode) * rVertexArea(indxVertex)
+        END DO
+        ElemData(indxElem) = ElemData(indxElem) / rArea
     END DO
-
   
   END SUBROUTINE AreaAverage_ElemData_From_NodeData
   
@@ -2135,20 +2136,21 @@ CONTAINS
     REAL(8),INTENT(OUT)           :: NodeData(AppGrid%NNodes)
 
     !Local variables
-    INTEGER              :: indxElem,indxVertex,Vertex(4),Node
-    TYPE(AppElementType) :: AppElement
+    INTEGER :: indxElem,indxVertex,iVertex(4),iNode,iNVertex
+    REAL(8) :: rVertexAreaFraction(4)
 
     !Initialize
     NodeData = 0.0
 
     !Distribute element data to nodes
     DO indxElem=1,AppGrid%NElements
-      AppElement = AppGrid%AppElement(indxElem)
-      Vertex     = AppGrid%Vertex(:,indxElem)
-      DO indxVertex=1,AppGrid%NVertex(indxElem)
-        Node           = Vertex(indxVertex)
-        NodeData(Node) = NodeData(Node) + ElemData(indxElem)*AppElement%VertexAreaFraction(indxVertex)
-      END DO
+        iNVertex                        = AppGrid%NVertex(indxElem)
+        rVertexAreaFraction(1:iNVertex) = AppGrid%AppElement(indxElem)%VertexAreaFraction
+        iVertex                         = AppGrid%Vertex(:,indxElem)
+        DO indxVertex=1,iNVertex
+            iNode           = iVertex(indxVertex)
+            NodeData(iNode) = NodeData(iNode) + ElemData(indxElem)*rVertexAreaFraction(indxVertex)
+        END DO
     END DO
 
   END SUBROUTINE ElemData_To_NodeData
@@ -2157,27 +2159,32 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GIVEN INFO FOR NODES, DISTRIBUTE THEM TO ELEMENTS
   ! -------------------------------------------------------------
-  PURE SUBROUTINE NodeData_To_ElemData(AppGrid,NodeData,ElemData)
+  SUBROUTINE NodeData_To_ElemData(AppGrid,NodeData,ElemData)
     CLASS(AppGridType),INTENT(IN) :: AppGrid
     REAL(8),INTENT(IN)            :: NodeData(:)
     REAL(8),INTENT(OUT)           :: ElemData(:)
 
     !Local variables
-    INTEGER              :: indxElem,indxVertex,Vertex(4),iNode
-    TYPE(AppElementType) :: AppElement
+    INTEGER :: indxElem,indxVertex,iVertex(4),iNode,iNVertex
+    REAL(8) :: rVertexArea(4)
 
     !Initialize
     ElemData = 0.0
 
     !Distribute node data to elements
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(AppGrid,ElemData,NodeData) IF(AppGrid%NElements >=960)
+    !$OMP DO SCHEDULE(STATIC,960)
     DO indxElem=1,AppGrid%NElements
-        AppElement = AppGrid%AppElement(indxElem)
-        Vertex     = AppGrid%Vertex(:,indxElem)
-        DO indxVertex=1,AppGrid%NVertex(indxElem)
-            iNode              = Vertex(indxVertex)
-            ElemData(indxElem) = ElemData(indxElem) + NodeData(iNode) * AppElement%VertexArea(indxVertex) / AppGrid%AppNode(iNode)%Area
+        iNVertex                = AppGrid%NVertex(indxElem) 
+        rVertexArea(1:iNVertex) = AppGrid%AppElement(indxElem)%VertexArea
+        iVertex                 = AppGrid%Vertex(:,indxElem)
+        DO indxVertex=1,iNVertex
+            iNode              = iVertex(indxVertex)
+            ElemData(indxElem) = ElemData(indxElem) + NodeData(iNode) * rVertexArea(indxVertex) / AppGrid%AppNode(iNode)%Area
         END DO
     END DO
+    !$OMP END DO
+    !$OMP END PARALLEL
 
   END SUBROUTINE NodeData_To_ElemData
   
@@ -2200,7 +2207,7 @@ CONTAINS
     iStatParallel = 0
 
     !Find the boundary nodes
-    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(AppGrid,BndNodeList,iStatParallel) NUM_THREADS(OMP_GET_NUM_PROCS()-1)
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(AppGrid,BndNodeList,iStatParallel) 
     !$OMP DO SCHEDULE(STATIC,500)
     DO indxFace=1,AppGrid%NFaces
         IF (.NOT. AppGrid%AppFace%BoundaryFace(indxFace)) CYCLE
@@ -2319,7 +2326,7 @@ CONTAINS
     INTEGER :: indxNode,NFace,indxFace,FaceID,FaceIndexStart,OrderedIndex(50),FaceID_Ordered(50),ElemID_onCCWSide_Ordered(50)
     
     !Order information for each node
-    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(AppGrid) NUM_THREADS(OMP_GET_NUM_PROCS()-1)
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(AppGrid) 
     !$OMP DO SCHEDULE(STATIC,500)
     DO indxNode=1,AppGrid%NNodes
         !Number of faces connecting at node         
@@ -2605,7 +2612,7 @@ CONTAINS
     REAL(8) :: rValue
         
     !Check
-    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NNodes,AppNode,NVertex,Vertex,AppElement) NUM_THREADS(OMP_GET_NUM_PROCS()-1)
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NNodes,AppNode,NVertex,Vertex,AppElement) 
     !$OMP DO SCHEDULE(STATIC,500)
     DO indxNode=1,NNodes
       DO indxNode1=1,AppNode(indxNode)%NConnectedNode

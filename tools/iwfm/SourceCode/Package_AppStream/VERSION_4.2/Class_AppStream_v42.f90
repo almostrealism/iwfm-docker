@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -58,6 +58,7 @@ MODULE Class_AppStream_v42
                                             f_iLakeToStrmFlow                 
   USE Package_Discretization        , ONLY: AppGridType                     , &
                                             StratigraphyType                
+  USE Package_PrecipitationET       , ONLY: ETType
   USE Package_Misc                  , ONLY: PairedDataType                  , &
                                             f_iFlowDest_Outside             , &
                                             f_iFlowDest_Lake                , &
@@ -95,6 +96,7 @@ MODULE Class_AppStream_v42
   ! -------------------------------------------------------------
   TYPE,EXTENDS(BaseAppStreamType) :: AppStream_v42_Type
     TYPE(StrmNodeType),ALLOCATABLE :: Nodes(:)
+    REAL(8),ALLOCATABLE            :: rWetPerimeter(:)
   CONTAINS
     PROCEDURE,PASS :: SetStaticComponent             => AppStream_v42_SetStaticComponent
     PROCEDURE,PASS :: SetStaticComponentFromBinFile  => ReadPreprocessedData
@@ -215,7 +217,7 @@ CONTAINS
     END IF
     
     !Read stream configuration
-    CALL ReadStreamConfigData(DataFile,Stratigraphy,iGWNodeIDs,StrmGWConnector,StrmLakeConnector,AppStream,iStat)
+    CALL ReadStreamConfigData(DataFile,AppGrid,Stratigraphy,iGWNodeIDs,StrmGWConnector,StrmLakeConnector,AppStream,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Read rating tables
@@ -235,7 +237,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INSTANTIATE DYNAMIC PART OF STREAM DATA (GENERALLY CALLED IN SIMULATION)
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_v42_SetDynamicComponent(AppStream,IsForInquiry,cFileName,cWorkingDirectory,TimeStep,NTIME,iLakeIDs,AppGrid,Stratigraphy,StrmLakeConnector,StrmGWConnector,iStat)
+  SUBROUTINE AppStream_v42_SetDynamicComponent(AppStream,IsForInquiry,cFileName,cWorkingDirectory,TimeStep,NTIME,iLakeIDs,AppGrid,Stratigraphy,ETData,StrmLakeConnector,StrmGWConnector,iStat)
     CLASS(AppStream_v42_Type)         :: AppStream
     LOGICAL,INTENT(IN)                :: IsForInquiry
     CHARACTER(LEN=*),INTENT(IN)       :: cFileName,cWorkingDirectory
@@ -243,13 +245,14 @@ CONTAINS
     INTEGER,INTENT(IN)                :: NTIME,iLakeIDs(:)
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy      !Not used in this versions
+    TYPE(ETType),INTENT(IN)           :: ETData
     TYPE(StrmLakeConnectorType)       :: StrmLakeConnector
     TYPE(StrmGWConnectorType)         :: StrmGWConnector
     INTEGER,INTENT(OUT)               :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+33) :: ThisProcedure = ModName // 'AppStream_v42_SetDynamicComponent'
-    INTEGER                      :: indxNode,iReachIDs(AppStream%NReaches),iStrmNodeIDs(AppStream%NStrmNodes),indx
+    INTEGER                      :: indxNode,iReachIDs(AppStream%NReaches),iStrmNodeIDs(AppStream%NStrmNodes),indx,iNStrmNodes
     TYPE(GenericFileType)        :: MainFile
     CHARACTER(LEN=1000)          :: ALine,DiverFileName,DiverSpecFileName,BypassSpecFileName,DiverDetailBudFileName,ReachBudRawFileName
     TYPE(BudgetHeaderType)       :: BudHeader
@@ -257,6 +260,7 @@ CONTAINS
     
     !Initailize
     iStat        = 0
+    iNStrmNodes  = AppStream%NStrmNodes
     iStrmNodeIDs = AppStream%Nodes%ID
   
     !Open main file
@@ -276,7 +280,7 @@ CONTAINS
     END IF
 
     !Allocate memory for stream states
-    IF (.NOT. ALLOCATED(AppStream%State)) ALLOCATE (AppStream%State(AppStream%NStrmNodes))
+    IF (.NOT. ALLOCATED(AppStream%State)) ALLOCATE (AppStream%State(iNStrmNodes))
     
     !Initialize related files
     !-------------------------
@@ -287,7 +291,7 @@ CONTAINS
         ALine = StripTextUntilCharacter(ALine,'/') 
         CALL CleanSpecialCharacters(ALine)
         CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-        CALL AppStream%StrmInflowData%New(cAbsPathFileName,cWorkingDirectory,TimeStep,AppStream%NStrmNodes,iStrmNodeIDs,iStat)
+        CALL AppStream%StrmInflowData%New(cAbsPathFileName,cWorkingDirectory,TimeStep,iNStrmNodes,iStrmNodeIDs,iStat)
         IF (iStat .EQ. -1) RETURN
     END IF
     
@@ -367,15 +371,20 @@ CONTAINS
     END IF
 
     !Hydrograph printing
-    CALL AppStream%StrmHyd%New(AppStream%lRouted,IsForInquiry,cWorkingDirectory,AppStream%NStrmNodes,iStrmNodeIDs,TimeStep,MainFile,iStat)
+    CALL AppStream%StrmHyd%New(AppStream%lRouted,IsForInquiry,cWorkingDirectory,iNStrmNodes,iStrmNodeIDs,TimeStep,MainFile,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Stream budget at selected nodes
     CALL AppStream%StrmNodeBudget%New(AppStream%lRouted,IsForInquiry,cWorkingDirectory,iReachIDs,iStrmNodeIDs,NTIME,TimeStep,AppStream%GetVersion(),PrepareStreamBudgetHeader,MainFile,iStat)
     IF (iStat .EQ. -1) RETURN
     
-    !Stream bed parameters for stream-gw connectivity
-    CALL StrmGWConnector%CompileConductance(MainFile,AppGrid,Stratigraphy,AppStream%NStrmNodes,iStrmNodeIDs,AppStream%Reaches%UpstrmNode,AppStream%Reaches%DownstrmNode,AppStream%Nodes%BottomElev,iStat)
+    !Stream bed parameters for stream-gw connectivity, wetted perimeter and stream length for each node
+    ALLOCATE (AppStream%rWetPerimeter(iNStrmNodes))
+    CALL StrmGWConnector%CompileConductance(MainFile,AppGrid,Stratigraphy,iNStrmNodes,iStrmNodeIDs,AppStream%Nodes%BottomElev,AppStream%Nodes%rLength,iStat,AppStream%rWetPerimeter)
+    IF (iStat .EQ. -1) RETURN
+    
+    !Stream evaporation data
+    CALL AppStream%StrmEvap%New(MainFile,TimeStep,ETData,cWorkingDirectory,iNStrmNodes,iStrmNodeIDs,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !If non-routed streams, return at this point
@@ -385,7 +394,7 @@ CONTAINS
     END IF
     
     !Set the heads to the bottom elevation
-    DO indxNode=1,AppStream%NStrmNodes
+    DO indxNode=1,iNStrmNodes
         AppStream%State(indxNode)%Head   = AppStream%Nodes(indxNode)%BottomElev + 2.0
         AppStream%State(indxNode)%Head_P = AppStream%State(indxNode)%Head
     END DO
@@ -399,7 +408,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INSTANTIATE COMPLETE STREAM DATA
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_v42_SetAllComponents(AppStream,IsForInquiry,cFileName,cSimWorkingDirectory,TimeStep,NTIME,iLakeIDs,AppGrid,Stratigraphy,BinFile,StrmLakeConnector,StrmGWConnector,iStat)
+  SUBROUTINE AppStream_v42_SetAllComponents(AppStream,IsForInquiry,cFileName,cSimWorkingDirectory,TimeStep,NTIME,iLakeIDs,AppGrid,Stratigraphy,ETData,BinFile,StrmLakeConnector,StrmGWConnector,iStat)
     CLASS(AppStream_v42_Type),INTENT(OUT) :: AppStream
     LOGICAL,INTENT(IN)                    :: IsForInquiry
     CHARACTER(LEN=*),INTENT(IN)           :: cFileName,cSimWorkingDirectory
@@ -407,6 +416,7 @@ CONTAINS
     INTEGER,INTENT(IN)                    :: NTIME,iLakeIDs(:)
     TYPE(AppGridType),INTENT(IN)          :: AppGrid
     TYPE(StratigraphyType),INTENT(IN)     :: Stratigraphy      !Not used in this version
+    TYPE(ETType),INTENT(IN)               :: ETData
     TYPE(GenericFileType)                 :: BinFile
     TYPE(StrmLakeConnectorType)           :: StrmLakeConnector
     TYPE(StrmGWConnectorType)             :: StrmGWConnector
@@ -426,7 +436,7 @@ CONTAINS
     IF (iStat .EQ. -1) RETURN
     
     !Set the dynamic part of AppStream
-    CALL AppStream_v42_SetDynamicComponent(AppStream,IsForInquiry,cFileName,cSimWorkingDirectory,TimeStep,NTIME,iLakeIDs,AppGrid,Stratigraphy,StrmLakeConnector,StrmGWConnector,iStat)
+    CALL AppStream_v42_SetDynamicComponent(AppStream,IsForInquiry,cFileName,cSimWorkingDirectory,TimeStep,NTIME,iLakeIDs,AppGrid,Stratigraphy,ETData,StrmLakeConnector,StrmGWConnector,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Make sure that if static part is defined, so is the dynamic part
@@ -446,12 +456,13 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INSTANTIATE COMPLETE STREAM DATA WITHOUT INTERMEDIATE BINARY FILE
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_v42_SetAllComponentsWithoutBinFile(AppStream,IsRoutedStreams,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,TimeStep,NTIME,iLakeIDs,StrmLakeConnector,StrmGWConnector,iStat)
+  SUBROUTINE AppStream_v42_SetAllComponentsWithoutBinFile(AppStream,IsRoutedStreams,IsForInquiry,cPPFileName,cSimFileName,cSimWorkingDirectory,AppGrid,Stratigraphy,ETData,TimeStep,NTIME,iLakeIDs,StrmLakeConnector,StrmGWConnector,iStat)
     CLASS(AppStream_v42_Type),INTENT(OUT) :: AppStream
     LOGICAL,INTENT(IN)                    :: IsRoutedStreams,IsForInquiry
     CHARACTER(LEN=*),INTENT(IN)           :: cPPFileName,cSimFileName,cSimWorkingDirectory
     TYPE(AppGridType),INTENT(IN)          :: AppGrid
     TYPE(StratigraphyType),INTENT(IN)     :: Stratigraphy
+    TYPE(ETType),INTENT(IN)               :: ETData
     TYPE(TimeStepType),INTENT(IN)         :: TimeStep
     INTEGER,INTENT(IN)                    :: NTIME,iLakeIDs(:)
     TYPE(StrmLakeConnectorType)           :: StrmLakeConnector
@@ -469,7 +480,7 @@ CONTAINS
     IF (iStat .EQ. -1) RETURN
     
     !Instantiate the dynamic component of the AppStream data
-    CALL AppStream_v42_SetDynamicComponent(AppStream,IsForInquiry,cSimFileName,cSimWorkingDirectory,TimeStep,NTIME,iLakeIDs,AppGrid,Stratigraphy,StrmLakeConnector,StrmGWConnector,iStat)
+    CALL AppStream_v42_SetDynamicComponent(AppStream,IsForInquiry,cSimFileName,cSimWorkingDirectory,TimeStep,NTIME,iLakeIDs,AppGrid,Stratigraphy,ETData,StrmLakeConnector,StrmGWConnector,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Make sure that if static part is defined, so is the dynamic part
@@ -736,8 +747,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ STREAM REACH CONFIGURATION DATA
   ! -------------------------------------------------------------
-  SUBROUTINE ReadStreamConfigData(DataFile,Stratigraphy,iGWNodeIDs,StrmGWConnector,StrmLakeConnector,AppStream,iStat)
+  SUBROUTINE ReadStreamConfigData(DataFile,AppGrid,Stratigraphy,iGWNodeIDs,StrmGWConnector,StrmLakeConnector,AppStream,iStat)
     TYPE(GenericFileType)                 :: DataFile
+    TYPE(AppGridType),INTENT(IN)          :: AppGrid
     TYPE(StratigraphyType),INTENT(IN)     :: Stratigraphy
     INTEGER,INTENT(IN)                    :: iGWNodeIDs(:)
     TYPE(StrmGWConnectorType),INTENT(OUT) :: StrmGWConnector
@@ -752,6 +764,7 @@ CONTAINS
                                     iLayers(100),nGWNodes,iStrmNodeID,indxStrmNode,iReachID,    &
                                     indxNode1,indxReach1
     CHARACTER                    :: ALine*2000
+    INTEGER,ALLOCATABLE          :: iGWNodes_Work(:),iGWNodes_Strm(:)
     
     !Initailize
     iStat = 0
@@ -880,6 +893,15 @@ CONTAINS
     
     !Compile upstream nodes for each node
     CALL CompileUpstrmNodes(AppStream)
+    
+    !Compute stream length at each node
+    ALLOCATE (iGWNodes_Strm(AppStream%NStrmNodes)) 
+    DO indxNode=1,AppStream%NStrmNodes
+        CALL StrmGWConnector%GetGWNodesAtStrmNode(indxNode,iGWNodes_Work,iStat)  
+        IF (iStat .EQ. -1) RETURN
+        iGWNodes_Strm(indxNode) = iGWNodes_Work(1)
+    END DO
+    CALL AppStream%ComputeStreamLength(AppGrid%X,AppGrid%Y,iGWNodes_Strm,AppStream%Reaches%UpstrmNode,AppStream%Reaches%DownstrmNode,AppStream%Nodes%rLength,iStat)
     
   END SUBROUTINE ReadStreamConfigData
   
@@ -1247,18 +1269,20 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- CALCULATE STREAM FLOWS
   ! -------------------------------------------------------------
-  SUBROUTINE AppStream_v42_Simulate(AppStream,GWHeads,Runoff,ReturnFlow,TributaryFlow,DrainInflows,RiparianET,RiparianETFrac,StrmGWConnector,StrmLakeConnector,Matrix)
+  SUBROUTINE AppStream_v42_Simulate(AppStream,GWHeads,Runoff,ReturnFlow,PondDrain,TributaryFlow,DrainInflows,RiparianET,ETData,RiparianETFrac,StrmGWConnector,StrmLakeConnector,Matrix)
     CLASS(AppStream_v42_Type)   :: AppStream
-    REAL(8),INTENT(IN)          :: GWHeads(:,:),Runoff(:),ReturnFlow(:),TributaryFlow(:),DrainInflows(:),RiparianET(:)
+    REAL(8),INTENT(IN)          :: GWHeads(:,:),Runoff(:),ReturnFlow(:),PondDrain(:),TributaryFlow(:),DrainInflows(:),RiparianET(:)
+    TYPE(ETType),INTENT(IN)     :: ETData
     REAL(8),INTENT(OUT)         :: RiparianETFrac(:)
     TYPE(StrmGWConnectorType)   :: StrmGWConnector
     TYPE(StrmLakeConnectorType) :: StrmLakeConnector
     TYPE(MatrixType)            :: Matrix
    
     !Local variables
-    INTEGER                                 :: indxNode,indx,iNode,indxReach,ErrorCode,iNodeIDs_Connect(1),NNodes,NDiver
+    INTEGER                                 :: indxNode,indx,iNode,indxReach,ErrorCode,iNodeIDs_Connect(1),NNodes,NDiver, &
+                                               iAreaCol,iEvapCol
     REAL(8)                                 :: rInflow,rOutflow,Bypass_Recieved,rUpdateValues(1), &
-                                               rValue,rBypassOut,rRipET
+                                               rValue,rBypassOut,rRipET,rEvapAct,rEvapPot,rArea
     REAL(8),DIMENSION(AppStream%NStrmNodes) :: dFlow_dStage,Inflows,rUpdateRHS,rNetInflows
     REAL(8),ALLOCATABLE                     :: HRG(:)
     INTEGER,ALLOCATABLE                     :: iStrmIDs(:),iLakeIDs(:)
@@ -1310,6 +1334,7 @@ CONTAINS
             rInflow = Inflows(indxNode)                                       &    !Inflow as defined by the user
                     + Runoff(indxNode)                                        &    !Direct runoff of precipitation 
                     + ReturnFlow(indxNode)                                    &    !Return flow of applied water 
+                    + PondDrain(indxNode)                                     &    !Pond drain from ponded ag 
                     + TributaryFlow(indxNode)                                 &    !Tributary inflows from small watersheds and creeks
                     + DrainInflows(indxNode)                                  &    !Inflow from tile drains
                     + Bypass_Recieved                                         &    !Received by-pass flows 
@@ -1338,6 +1363,23 @@ CONTAINS
                 rOutflow                 = rOutflow + rRipET
             ELSE
                 RiparianETFrac(indxNode) = 0.0
+            END IF
+            
+            !Stream evaporation
+            iEvapCol = AppStream%StrmEvap%iEvapCol(indxNode)
+            IF (iEvapCol .EQ. 0) THEN
+                AppStream%StrmEvap%rEvap(indxNode) = 0.0
+            ELSE
+                iAreaCol = AppStream%StrmEvap%iAreaCol(indxNode)
+                IF (iAreaCol .EQ. 0) THEN
+                    rArea = AppStream%rWetPerimeter(indxNode) * AppStream%Nodes(indxNode)%rLength
+                ELSE
+                    rArea = AppStream%StrmEvap%StrmAreaFile%rVAlues(iAreaCol)
+                END IF
+                rEvapPot                           = ETData%rValues(iEvapCol) * rArea
+                rEvapAct                           = MIN(rEvapPot , rInflow-rOutflow)
+                AppStream%StrmEvap%rEvap(indxNode) = rEvapAct
+                rOutflow                           = rOutflow + rEvapAct
             END IF
         
             !Net inflow

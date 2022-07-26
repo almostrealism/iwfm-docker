@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -89,22 +89,21 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- COMPILE STREAM-GW CONNECTOR
   ! -------------------------------------------------------------
-  SUBROUTINE StrmGWConnector_v41_CompileConductance(Connector,InFile,AppGrid,Stratigraphy,NStrmNodes,iStrmNodeIDs,UpstrmNodes,DownstrmNodes,BottomElevs,iStat)
+  SUBROUTINE StrmGWConnector_v41_CompileConductance(Connector,InFile,AppGrid,Stratigraphy,NStrmNodes,iStrmNodeIDs,BottomElevs,rLength,iStat,rWetPerimeter)
     CLASS(StrmGWConnector_v41_Type)   :: Connector
     TYPE(GenericFileType)             :: InFile
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
-    INTEGER,INTENT(IN)                :: NStrmNodes,iStrmNodeIDs(NStrmNodes),UpstrmNodes(:),DownstrmNodes(:)
-    REAL(8),INTENT(IN)                :: BottomElevs(:)
+    INTEGER,INTENT(IN)                :: NStrmNodes,iStrmNodeIDs(NStrmNodes)
+    REAL(8),INTENT(IN)                :: BottomElevs(NStrmNodes),rLength(NStrmNodes)
     INTEGER,INTENT(OUT)               :: iStat
+    REAL(8),OPTIONAL,INTENT(OUT)      :: rWetPerimeter(NStrmNodes)
     
     !Local variables
     CHARACTER(LEN=ModNameLen+38)  :: ThisProcedure = ModName // 'StrmGWConnector_v41_CompileConductance'
-    INTEGER                       :: indxReach,indxNode,iGWNode,iGWUpstrmNode,iUpstrmNode,        &
-                                     iDownstrmNode,iNode,ErrorCode,iLayer,iStrmNodeID,iGWNodeID,  &
+    INTEGER                       :: indxNode,iGWNode,iNode,ErrorCode,iLayer,iStrmNodeID,iGWNodeID,  &
                                      iInteractionType
-    REAL(8)                       :: B_DISTANCE,F_DISTANCE,CA,CB,FACTK,FACTL,                     &
-                                     DummyArray(NStrmNodes,3)
+    REAL(8)                       :: FACTK,FACTL,DummyArray(NStrmNodes,3)
     REAL(8),DIMENSION(NStrmNodes) :: Conductivity,BedThick
     CHARACTER                     :: ALine*500,TimeUnitConductance*6
     LOGICAL                       :: lProcessed(NStrmNodes)
@@ -151,31 +150,27 @@ CONTAINS
     END DO
 
     !Compute conductance (does not include wetted perimeter since it changes with stage dynamically)
-    DO indxReach=1,SIZE(UpstrmNodes)
-        iUpstrmNode   = UpstrmNodes(indxReach)
-        iDownstrmNode = DownstrmNodes(indxReach)
-        B_DISTANCE    = 0.0
-        DO indxNode=iUpstrmNode+1,iDownstrmNode
-            iGWUpstrmNode = iGWNodes(indxNode-1)
-            iGWNode       = iGWNodes(indxNode)
-            iLayer        = Connector%iLayer(indxNode)
-            IF (Connector%iInteractionType .EQ. iDisconnectAtBottomOfBed) THEN
-                IF (BottomElevs(indxNode)-BedThick(indxNode) .LT. Stratigraphy%BottomElev(iGWNode,iLayer)) THEN
-                    iStrmNodeID        = iStrmNodeIDs(indxNode)
-                    iGWNodeID          = AppGrid%AppNode(iGWNode)%ID
-                    BedThick(indxNode) = BottomElevs(indxNode) - Stratigraphy%BottomElev(iGWNode,iLayer)
-                    MessageArray(1)    = 'Stream bed thickness at stream node ' // TRIM(IntToText(iStrmNodeID)) // ' and GW node '// TRIM(IntToText(iGWNodeID)) // ' penetrates into second active aquifer layer!'
-                    MessageArray(2)    = 'It is adjusted to penetrate only into the top active layer.'
-                    CALL LogMessage(MessageArray(1:2),f_iWarn,ThisProcedure) 
+    DO indxNode=1,NStrmNodes
+        iGWNode = iGWNodes(indxNode)
+        iLayer  = Connector%iLayer(indxNode)
+        IF (Connector%iInteractionType .EQ. iDisconnectAtBottomOfBed) THEN
+            IF (BottomElevs(indxNode)-BedThick(indxNode) .LT. Stratigraphy%BottomElev(iGWNode,iLayer)) THEN
+                iStrmNodeID        = iStrmNodeIDs(indxNode)
+                iGWNodeID          = AppGrid%AppNode(iGWNode)%ID
+                BedThick(indxNode) = BottomElevs(indxNode) - Stratigraphy%BottomElev(iGWNode,iLayer)
+                MessageArray(1)    = 'Stream bed thickness at stream node ' // TRIM(IntToText(iStrmNodeID)) // ' and GW node '// TRIM(IntToText(iGWNodeID)) // ' penetrates into second active aquifer layer!'
+                MessageArray(2)    = 'It is adjusted to penetrate only into the top active layer.'
+                CALL LogMessage(MessageArray(1:2),f_iWarn,ThisProcedure) 
+                IF (BedThick(indxNode) .LE. 0.0) THEN
+                    MessageArray(1) = 'Stream bed thickness at stream node ' // TRIM(IntToText(iStrmNodeID)) // ' and GW node '// TRIM(IntToText(iGWNodeID)) // ' is less than or equal to zero!'
+                    MessageArray(2) = 'Check the stratigraphy and bed thickness at this location.'
+                    CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
+                    iStat = -1
+                    RETURN
                 END IF
             END IF
-            CA                        = AppGrid%X(iGWUpstrmNode) - AppGrid%X(iGWNode)
-            CB                        = AppGrid%Y(iGWUpstrmNode) - AppGrid%Y(iGWNode)
-            F_DISTANCE                = SQRT(CA*CA + CB*CB)/2d0
-            Conductivity(indxNode-1)  = Conductivity(indxNode-1)*(F_DISTANCE+B_DISTANCE)/BedThick(indxNode-1)
-            B_DISTANCE                = F_DISTANCE
-        END DO
-        Conductivity(iDownstrmNode) = Conductivity(iDownstrmNode)*B_DISTANCE/BedThick(iDownstrmNode)
+        END IF
+        Conductivity(indxNode) = Conductivity(indxNode)*rLength(indxNode)/BedThick(indxNode)
     END DO
     
     !Allocate memory

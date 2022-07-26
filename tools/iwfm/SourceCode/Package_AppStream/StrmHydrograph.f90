@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -27,10 +27,12 @@ MODULE StrmHydrograph
                                      f_iFatal                      , &
                                      f_iInfo
   USE IOInterface            , ONLY: GenericFileType               , &
+                                     RealTSDataInFileType          , &
+                                     PrepareTSDOutputFile          , &
                                      iGetFileType_FromName         , &
                                      f_iDSS                        , &
                                      f_iUNKNOWN                    , &
-                                     f_iDataset                      
+                                     f_iDataset  
   USE GeneralUtilities       , ONLY: LocateInList                  , &
                                      StripTextUntilCharacter       , &
                                      IntToText                     , &
@@ -42,10 +44,7 @@ MODULE StrmHydrograph
                                      ConvertID_To_Index
   USE TimeSeriesUtilities    , ONLY: TimeStepType                  , &
                                      IncrementTimeStamp
-  USE Package_Misc           , ONLY: RealTSDataInFileType          , &
-                                     PrepareTSDOutputFile          , &
-                                     ReadTSData                    , &
-                                     f_iDataUnitType_Length        , &
+  USE Package_Misc           , ONLY: f_iDataUnitType_Length        , &
                                      f_iDataUnitType_Volume
   USE Class_StrmState 
   IMPLICIT NONE
@@ -399,12 +398,12 @@ CONTAINS
     !Read data
     IF (StrmHyd%iHydType .EQ. iHydBoth) THEN
         IF (iHydType .EQ. iHydFlow) THEN
-            CALL StrmHyd%HydFile_ForInquiry%ReadData(iHydIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)  
+            CALL StrmHyd%HydFile_ForInquiry%ReadTSData(iHydIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)  
         ELSE
-            CALL StrmHyd%HydFile_ForInquiry%ReadData(2*StrmHyd%NHyd+iHydIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)  
+            CALL StrmHyd%HydFile_ForInquiry%ReadTSData(2*StrmHyd%NHyd+iHydIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)  
         END IF
     ELSE
-        CALL StrmHyd%HydFile_ForInquiry%ReadData(iHydIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)  
+        CALL StrmHyd%HydFile_ForInquiry%ReadTSData(iHydIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)  
     END IF
     IF (iStat .EQ. -1) RETURN
 
@@ -800,7 +799,7 @@ CONTAINS
     END IF
     DO indxTime=1,NTIME
         !Read data
-        CALL ReadTSData(TimeStep_Local,'stream hydrographs',StrmHyd%HydFile_ForInquiry,FileReadCode,iStat)
+        CALL StrmHyd%HydFile_ForInquiry%ReadTSData(TimeStep_Local,'stream hydrographs',FileReadCode,iStat)
         IF (iStat .EQ. -1) RETURN
         
         !Transfer  values to matrix to be written to HDF file

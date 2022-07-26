@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -30,8 +30,7 @@ MODULE Class_StrmInflow
   USE MessageLogger        , ONLY: SetLastMessage          , &
                                    MessageArray            , &
                                    f_iFatal                  
-  USE Package_Misc         , ONLY: RealTSDataInFileType    , &
-                                   ReadTSData
+  USE IOInterface          , ONLY: RealTSDataInFileType   
   IMPLICIT NONE
   
   
@@ -74,8 +73,8 @@ MODULE Class_StrmInflow
     PROCEDURE,PASS :: GetInflowNodes
     PROCEDURE,PASS :: GetInflowIDs
     PROCEDURE,PASS :: SetInflow
-    PROCEDURE,PASS :: ReadTSData    => StrmInflow_ReadTSData
-    
+    PROCEDURE,PASS :: StrmInflow_ReadTSData    
+    GENERIC        :: ReadTSData             => StrmInflow_ReadTSData
   END TYPE StrmInflowType
   
   
@@ -403,7 +402,7 @@ CONTAINS
     IF (StrmInflow%lDefined .EQ. .FALSE.) RETURN
 
     !Read data
-    CALL ReadTSData(TimeStep,'Stream inflow data',StrmInflow%RealTSDataInFileType,FileReadCode,iStat)
+    CALL StrmInflow%ReadTSData(TimeStep,'Stream inflow data',FileReadCode,iStat)
     IF (iStat .EQ. -1) RETURN
     
     SELECT CASE(FileReadCode)
@@ -448,6 +447,5 @@ CONTAINS
     END SELECT
         
   END SUBROUTINE StrmInflow_ReadTSData
-
 
 END MODULE

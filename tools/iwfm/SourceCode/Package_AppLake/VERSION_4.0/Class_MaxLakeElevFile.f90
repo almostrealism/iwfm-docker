@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,8 +21,7 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_MaxLakeElevFile
-  USE TSDFileHandler        , ONLY: RealTSDataInFileType  , &
-                                    ReadTSData
+  USE IOInterface           , ONLY: RealTSDataInFileType
   USE TimeSeriesUtilities   , ONLY: TimeStepType
   IMPLICIT NONE
   
@@ -52,7 +51,8 @@ MODULE Class_MaxLakeElevFile
   CONTAINS
       PROCEDURE,PASS :: New
       PROCEDURE,PASS :: Kill
-      PROCEDURE,PASS :: ReadTSData => MaxLakeELevFile_ReadTSData
+      PROCEDURE,PASS :: MaxLakeElevFile_ReadTSData
+      GENERIC        :: ReadTSData => MaxLakeElevFile_ReadTSData
   END TYPE MaxLakeElevFileType
   
   
@@ -152,7 +152,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ MAX LAKE ELEV DATA
   ! -------------------------------------------------------------
-  SUBROUTINE MaxLakeELevFile_ReadTSData(MaxLakeElevFile,TimeStep,iStat)
+  SUBROUTINE MaxLakeElevFile_ReadTSData(MaxLakeElevFile,TimeStep,iStat)
     CLASS(MaxLakeElevFileType)    :: MaxLakeElevFile
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
     INTEGER,INTENT(OUT)           :: iStat
@@ -161,12 +161,12 @@ CONTAINS
     INTEGER :: FileReadCode
     
     !Read data
-    CALL ReadTSData(TimeStep,'Maximum lake elevation data',MaxLakeElevFile%RealTSDataInFileType,FileReadCode,iStat)
+    CALL MaxLakeElevFile%ReadTSData(TimeStep,'Maximum lake elevation data',FileReadCode,iStat)
     IF (iStat .EQ. -1) RETURN
 
     !If error code returned was zero (data read successfully), scale maximum lake elevations
     IF (FileReadCode .EQ. 0) MaxLakeElevFile%rValues = MaxLakeElevFile%rValues * MaxLakeElevFile%Fact
   
-  END SUBROUTINE MaxLakeELevFile_ReadTSData
+  END SUBROUTINE MaxLakeElevFile_ReadTSData
   
 END MODULE

@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -25,8 +25,7 @@ MODULE Class_TSBCDataFile
   USE TimeSeriesUtilities , ONLY: TimeStepType
   USE MessageLogger       , ONLY: SetLastMessage        , &
                                   f_iFatal
-  USE Package_Misc        , ONLY: RealTSDataInFileType  , &
-                                  ReadTSData
+  USE IOInterface         , ONLY: RealTSDataInFileType 
   IMPLICIT NONE
   
   
@@ -45,10 +44,7 @@ MODULE Class_TSBCDataFile
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC :: TSBCDataFileType         , &
-            TSBCDataFile_New         , &
-            TSBCDataFile_Kill        , &
-            TSBCDataFile_ReadTSData 
+  PUBLIC :: TSBCDataFileType        
   
   
   ! -------------------------------------------------------------
@@ -61,6 +57,11 @@ MODULE Class_TSBCDataFile
       INTEGER,ALLOCATABLE :: iTSFlowBCColumns(:)            !List of column numbers that store time series flow b.c.
       REAL(8)             :: Factor_TSHeadBC     = 1.0      !Factor to convert time series head b.c. to simulation units
       REAL(8)             :: Factor_TSFlowBC     = 1.0      !Factor to convert time series flow b.c. to simulation units
+  CONTAINS
+      PROCEDURE,PASS :: New
+      PROCEDURE,PASS :: Kill
+      PROCEDURE,PASS :: TSBCDataFile_ReadTSData
+      GENERIC        :: ReadTSData => TSBCDataFile_ReadTSData
   END TYPE TSBCDataFileType
   
   
@@ -90,19 +91,19 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INSTANTIATE TIME SERIES BOUNDARY CONDITIONS DATA FILE
   ! -------------------------------------------------------------
-  SUBROUTINE TSBCDataFile_New(cFileName,cWorkingDirectory,iTSFlowBCColumns,TimeStep,TSBCDataFile,iStat)
+  SUBROUTINE New(TSBCDataFile,cFileName,cWorkingDirectory,iTSFlowBCColumns,TimeStep,iStat)
+    CLASS(TSBCDataFileType)       :: TSBCDataFile
     CHARACTER(LEN=*),INTENT(IN)   :: cFileName,cWorkingDirectory
     INTEGER,INTENT(IN)            :: iTSFlowBCColumns(:)
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
-    TYPE(TSBCDataFileType)        :: TSBCDataFile
     INTEGER,INTENT(OUT)           :: iStat
     
     !Local variables
-    CHARACTER(LEN=ModNameLen+16) :: ThisProcedure = ModName // 'TSBCDataFile_New'
-    CHARACTER                    :: cErrorMsg*200
-    INTEGER                      :: ErrorCode
-    REAL(8)                      :: rFactor(2)
-    LOGICAL,ALLOCATABLE          :: RateTypeDataArray(:)
+    CHARACTER(LEN=ModNameLen+3) :: ThisProcedure = ModName // 'New'
+    CHARACTER                   :: cErrorMsg*200
+    INTEGER                     :: ErrorCode
+    REAL(8)                     :: rFactor(2)
+    LOGICAL,ALLOCATABLE         :: RateTypeDataArray(:)
     
     !Initialize
     iStat = 0
@@ -144,12 +145,12 @@ CONTAINS
     TSBCDataFile%lDefined = .TRUE.
     
     !Read the time series b.c. for the first time step to compute groundwater storage
-    CALL TSBCDataFile_ReadTSData(TimeStep,TSBCDataFile,iStat)
+    CALL TSBCDataFile%ReadTSData(TimeStep,iStat)
     
     !Free memory
     DEALLOCATE (RateTypeDataArray , STAT=ErrorCode)
     
-  END SUBROUTINE TSBCDataFile_New
+  END SUBROUTINE New
   
   
   
@@ -167,8 +168,8 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- KILL TIME SERIES BOUNDARY CONDITIONS DATA FILE
   ! -------------------------------------------------------------
-  SUBROUTINE TSBCDataFile_Kill(TSBCDataFile)
-    TYPE(TSBCDataFileType) :: TSBCDataFile
+  SUBROUTINE Kill(TSBCDataFile)
+    CLASS(TSBCDataFileType) :: TSBCDataFile
     
     !Local variables
     INTEGER :: ErrorCode
@@ -180,7 +181,7 @@ CONTAINS
     TSBCDataFile%Factor_TSFlowBC  = 1.0    
     TSBCDataFile%lDefined         = .FALSE.
     
-  END SUBROUTINE TSBCDataFile_Kill
+  END SUBROUTINE Kill
   
   
   
@@ -198,9 +199,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ TIME SERIES B.C. DATA
   ! -------------------------------------------------------------
-  SUBROUTINE TSBCDataFile_ReadTSData(TimeStep,TSBCDataFile,iStat)
+  SUBROUTINE TSBCDataFile_ReadTSData(TSBCDataFile,TimeStep,iStat)
+    CLASS(TSBCDataFileType)       :: TSBCDataFile
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
-    TYPE(TSBCDataFileType)        :: TSBCDataFile
     INTEGER,INTENT(OUT)           :: iStat
     
     !Local variables
@@ -213,7 +214,7 @@ CONTAINS
     IF (.NOT. TSBCDataFile%lDefined) RETURN
     
     !Read data
-    CALL ReadTSData(TimeStep,'timeseries boundary conditions data',TSBCDataFile%RealTSDataInFileType,FileReadCode,iStat)
+    CALL TSBCDataFile%ReadTSData(TimeStep,'timeseries boundary conditions data',FileReadCode,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Return if data reading was not successful

@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -26,6 +26,8 @@ MODULE GWHydrograph
                                      MessageArray              , &
                                      f_iFatal
   USE IOInterface            , ONLY: GenericFileType           , &
+                                     Real2DTSDataInFileType    , &
+                                     PrepareTSDOutputFile      , &
                                      iGetFileType_FromName     , &
                                      f_iUNKNOWN                , &
                                      f_iTXT                    , &
@@ -46,9 +48,6 @@ MODULE GWHydrograph
   USE Package_Misc           , ONLY: BaseHydrographType        , &
                                      HydOutputType             , &
                                      TecplotOutputType         , &
-                                     Real2DTSDataInFileType    , &
-                                     PrepareTSDOutputFile      , &
-                                     ReadTSData                , &
                                      f_iHyd_GWHead             
   USE Package_Discretization , ONLY: AppGridType               , &
                                      StratigraphyType          , &
@@ -899,7 +898,7 @@ CONTAINS
         CALL GWHydData%AllHeadOutFile_ForInquiry%File%RewindFile_To_BeginningOfTSData(iStat)
     
         !Read data
-        CALL GWHydData%AllHeadOutFile_ForInquiry%ReadData(iLayer,indxNode,iPathNameIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rValues,rOutputDates,ErrorCode,iStat)  
+        CALL GWHydData%AllHeadOutFile_ForInquiry%ReadTSData(iLayer,indxNode,iPathNameIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rValues,rOutputDates,ErrorCode,iStat)  
         IF (iStat .EQ. -1) RETURN
         
         !Transfer to temporary array
@@ -940,7 +939,7 @@ CONTAINS
     iPathNameIndex = (iLayer - 1) * GWHydData%AllHeadOutFile_ForInquiry%nCol + iNode
     
     !Read data
-    CALL GWHydData%AllHeadOutFile_ForInquiry%ReadData(iLayer,iNode,iPathNameIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)  
+    CALL GWHydData%AllHeadOutFile_ForInquiry%ReadTSData(iLayer,iNode,iPathNameIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)  
     IF (iStat .EQ. -1) RETURN
     
     !Convert unit
@@ -1399,7 +1398,7 @@ CONTAINS
     TimeStep_Local = TimeStep
     DO indxTime=1,NTIME+1
         !Read data
-        CALL ReadTSData(TimeStep_Local,'gw-heads-at-all-nodes file',AllHeadsInFile,FileReadCode,iStat)
+        CALL AllHeadsInFile%ReadTSData(TimeStep_Local,'gw-heads-at-all-nodes file',FileReadCode,iStat)
         IF (iStat .EQ. -1) RETURN
         
         !Transfer  values to matrix to be written to HDF file

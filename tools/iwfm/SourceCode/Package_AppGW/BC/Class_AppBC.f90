@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,21 +21,30 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_AppBC
-  USE GeneralUtilities        
-  USE TimeSeriesUtilities     , ONLY: TimeStepType            , &
-                                      TimeIntervalConversion
-  USE IOInterface             
-  USE MessageLogger           , ONLY: SetLastMessage          , &
-                                      EchoProgress            , &
-                                      MessageArray            , &
-                                      f_iFatal
-  USE Package_Misc            , ONLY: RealTSDataInFileType    , &
-                                      PrepareTSDOutputFile    
-  USE Package_Discretization  , ONLY: AppGridType             , &
-                                      StratigraphyType        , &
-                                      ConvertID_To_Index
-  USE Class_LayerBC
-  USE Class_TSBCDataFile
+  USE GeneralUtilities        , ONLY: ConvertID_To_Index            , &
+                                      StripTextUntilCharacter       , &
+                                      CleanSpecialCharacters        , &
+                                      EstablishAbsolutePathFileName , &
+                                      ArrangeText                   , &
+                                      PrepareTitle                  , &  
+                                      FirstLocation                 , &
+                                      IntToText                     , &
+                                      LocateInList                  
+  USE TimeSeriesUtilities     , ONLY: TimeStepType                  , &
+                                      TimeIntervalConversion        
+  USE IOInterface             , ONLY: GenericFileType               , &
+                                      PrepareTSDOutputFile          , &
+                                      f_iDSS                        , &
+                                      f_iUNKNOWN                    
+  USE MessageLogger           , ONLY: SetLastMessage                , &
+                                      EchoProgress                  , &
+                                      MessageArray                  , &
+                                      f_iFatal                      
+  USE Package_Discretization  , ONLY: AppGridType                   , &
+                                      StratigraphyType              , &
+                                      ConvertID_To_Index            
+  USE Class_LayerBC                                                 
+  USE Class_TSBCDataFile      , ONLY: TSBCDataFileType              
   USE Package_Matrix          , ONLY: MatrixType
   IMPLICIT NONE
   
@@ -93,7 +102,7 @@ MODULE Class_AppBC
       PROCEDURE,PASS :: SetBC
       PROCEDURE,PASS :: IsDefined  
       PROCEDURE,PASS :: IsBoundaryFlowNode
-      PROCEDURE,PASS :: ReadTSData                         => AppBC_ReadTSData                       
+      PROCEDURE,PASS :: ReadTSData                                                
       PROCEDURE,PASS :: PrintResults                      
       PROCEDURE,PASS :: ConvertTimeUnit                   
       PROCEDURE,PASS :: ResetSpecifiedHeadBC
@@ -225,7 +234,7 @@ CONTAINS
     IF (NFlowBCCols .GT. 0   .OR.   NHeadBCCols .GT. 0) THEN
         IF (ALine .NE. '') THEN
             CALL EstablishAbsolutePathFileName(TRIM(ADJUSTL(ALine)),cWorkingDirectory,cAbsPathFileName)
-            CALL TSBCDataFile_New(cAbsPathFileName,cWorkingDirectory,iTSFlowBCColumns,TimeStep,AppBC%TSBCDataFile,iStat)
+            CALL AppBC%TSBCDataFile%New(cAbsPathFileName,cWorkingDirectory,iTSFlowBCColumns,TimeStep,iStat)
             IF (iStat .EQ. -1) RETURN
         ELSE
             MessageArray(1) = 'Time Series Boundary Conditions Data File must be specified when'
@@ -393,7 +402,7 @@ CONTAINS
     CALL LayerBC_Kill(AppBC%LayerBC)
     DEALLOCATE(AppBC%LayerBC , STAT=ErrorCode)
     
-    CALL TSBCDataFile_Kill(AppBC%TSBCDataFile)
+    CALL AppBC%TSBCDataFile%Kill()
     
     IF (AppBC%lBCFlowOutput_Defined) THEN
         CALL BCFlowOutput_Kill(AppBC%BCFlowOutput)
@@ -789,7 +798,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ TIME SERIES BOUNDARY CONDITIONS
   ! -------------------------------------------------------------
-  SUBROUTINE AppBC_ReadTSData(AppBC,NodeIDs,TimeStep,BottomElev,Heads,iStat)
+  SUBROUTINE ReadTSData(AppBC,NodeIDs,TimeStep,BottomElev,Heads,iStat)
     CLASS(AppBCType)              :: AppBC
     INTEGER,INTENT(IN)            :: NodeIDs(:)
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
@@ -798,14 +807,14 @@ CONTAINS
     INTEGER,INTENT(OUT)           :: iStat
     
     !Read time series boundary conditions data
-    CALL TSBCDataFile_ReadTSData(TimeStep,AppBC%TSBCDataFile,iStat)
+    CALL AppBC%TSBCDataFile%ReadTSData(TimeStep,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Use the newly read time series b.c. data to set the layer b.c. data
     IF (AppBC%TSBCDataFile%lUpdated)   &
         CALL LayerBC_SetTSBoundaryConditions(NodeIDs,BottomElev,AppBC%TSBCDataFile%rValues,Heads,AppBC%LayerBC)
     
-  END SUBROUTINE AppBC_ReadTSData
+  END SUBROUTINE ReadTSData
   
   
   

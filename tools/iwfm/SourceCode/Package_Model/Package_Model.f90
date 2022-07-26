@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -107,8 +107,8 @@ MODULE Package_Model
                                           f_iSupply_Diversion                         , &
                                           f_iSupply_ElemPump                          , &
                                           f_iSupply_Well                              , &
-                                          f_iAg                                       , &
-                                          f_iUrb 
+                                          f_iLandUse_Ag                               , &
+                                          f_iLandUse_Urb 
   USE Package_Discretization      , ONLY: AppGridType                                 , &
                                           StratigraphyType                            , &
                                           Discretization_GetNodeLayer                 , &
@@ -292,8 +292,10 @@ MODULE Package_Model
       LOGICAL                              :: lDiversionAdjusted           = .FALSE.               !Flag to check if diversions are adjusted to meet demand
       REAL(8),ALLOCATABLE                  :: LakeRunoff(:)                                        !Rainfall runoff into each (lake)
       REAL(8),ALLOCATABLE                  :: LakeReturnFlow(:)                                    !Irrigation return flow into each (lake)
-      REAL(8),ALLOCATABLE                  :: QDRAIN(:)                                            !Tile drainage into each (stream node)
+      REAL(8),ALLOCATABLE                  :: LakePondDrain(:)                                     !Ponded ag pond drains into each (lake)
+      REAL(8),ALLOCATABLE                  :: QTDRAIN(:)                                           !Tile drainage into each (stream node)
       REAL(8),ALLOCATABLE                  :: QTRIB(:)                                             !Tributary inflows into each (stream node)
+      REAL(8),ALLOCATABLE                  :: QRPONDDRAIN(:)                                       !Ponded ag pond drain into each (stream node)
       REAL(8),ALLOCATABLE                  :: QRTRN(:)                                             !Irrigation return flow into each (stream node)
       REAL(8),ALLOCATABLE                  :: QROFF(:)                                             !Rainfall runoff into each (stream node)
       REAL(8),ALLOCATABLE                  :: QRVET(:)                                             !Outflow due to riparian ET from each (stream node)
@@ -358,6 +360,10 @@ MODULE Package_Model
       PROCEDURE,PASS   :: GetGWHeads_All
       PROCEDURE,PASS   :: GetGWHeads_ForALayer
       PROCEDURE,PASS   :: GetSubsidence_All
+      PROCEDURE,PASS   :: GetNWells
+      PROCEDURE,PASS   :: GetWellIDs
+      PROCEDURE,PASS   :: GetNElemPumps
+      PROCEDURE,PASS   :: GetElemPumpIDs
       PROCEDURE,PASS   :: GetNodalGWPumping_Actual
       PROCEDURE,PASS   :: GetNodalGWPumping_Required
       PROCEDURE,PASS   :: GetSWShedPercolationFlows
@@ -395,6 +401,8 @@ MODULE Package_Model
       PROCEDURE,PASS   :: GetBypassDiversionOriginDestData
       PROCEDURE,PASS   :: GetBypassReceived_FromABypass
       PROCEDURE,PASS   :: GetBypassOutflows
+      PROCEDURE,PASS   :: GetBypassRecoverableLossFactor
+      PROCEDURE,PASS   :: GetBypassNonRecoverableLossFactor
       PROCEDURE,PASS   :: GetStrmBottomElevs
       PROCEDURE,PASS   :: GetStrmRatingTable
       PROCEDURE,PASS   :: GetStrmNUpstrmNodes
@@ -412,10 +420,13 @@ MODULE Package_Model
       PROCEDURE,PASS   :: GetStrmStages
       PROCEDURE,PASS   :: GetStrmDiversionDelivery
       PROCEDURE,PASS   :: GetStrmDiversionsExportNodes
+      PROCEDURE,PASS   :: GetStrmDiversionNElems
+      PROCEDURE,PASS   :: GetStrmDiversionElems
       PROCEDURE,PASS   :: GetStrmDiversionReturnLocations
       PROCEDURE,PASS   :: GetStrmTributaryInflows
       PROCEDURE,PASS   :: GetStrmRainfallRunoff
       PROCEDURE,PASS   :: GetStrmReturnFlows
+      PROCEDURE,PASS   :: GetStrmPondDrains
       PROCEDURE,PASS   :: GetStrmTileDrains
       PROCEDURE,PASS   :: GetStrmRiparianETs
       PROCEDURE,PASS   :: GetStrmGainFromGW
@@ -918,6 +929,14 @@ CONTAINS
     CALL Model%StrmGWConnector%New(PPBinaryFile,iStat)    ;  IF (iStat .EQ. -1) RETURN
     CALL Model%LakeGWConnector%New(PPBinaryFile,iStat)    ;  IF (iStat .EQ. -1) RETURN
   
+    !Precipitation data
+    CALL Model%PrecipData%New(ProjectFileNames(SIM_PrecipDataFileID),Model%cSIMWorkingDirectory,'precipitation data',Model%TimeStep,iStat)
+    IF (iStat .EQ. -1) RETURN
+
+    !ET data
+    CALL Model%ETData%New(ProjectFileNames(SIM_ETDataFileID),Model%cSIMWorkingDirectory,'ET data',Model%TimeStep,iStat)
+    IF (iStat .EQ. -1) RETURN
+  
     !Lakes
     !Make sure lake component is defined, if it is defined in Preprocessor
     IF (Model%LakeGWConnector%IsDefined()) THEN
@@ -930,7 +949,7 @@ CONTAINS
     CALL Model%AppLake%New(lForInquiry,ProjectFileNames(SIM_LakeDataFileID),Model%cSIMWorkingDirectory,Model%TimeStep,Model%NTIME,Model%AppGrid,PPBinaryFile,Model%LakeGWConnector,iStat)
     IF (iStat .EQ. -1) RETURN
     NLakes = Model%AppLake%GetNLakes()
-    ALLOCATE (Model%LakeRunoff(NLakes) , Model%LakeReturnFlow(NLakes) , iLakeIDs(NLakes) , STAT=ErrorCode , ERRMSG=cErrorMsg)
+    ALLOCATE (Model%LakeRunoff(NLakes) , Model%LakeReturnFlow(NLakes) , Model%LakePondDrain(NLakes) , iLakeIDs(NLakes) , STAT=ErrorCode , ERRMSG=cErrorMsg)
     IF (ErrorCode .NE. 0) THEN
         CALL SetLastMessage('Error allocating memory for lake related data!'//f_cLineFeed//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
         iStat = -1
@@ -939,6 +958,7 @@ CONTAINS
     CALL Model%AppLake%GetLakeIDs(iLakeIDs)
     Model%LakeRunoff     = 0.0
     Model%LakeReturnFlow = 0.0
+    Model%LakePondDrain  = 0.0
 
     !Streams
     !Make sure stream component is defined if it is defined in Preprocessor
@@ -949,23 +969,33 @@ CONTAINS
             RETURN
         END IF
     END IF
-    CALL Model%AppStream%New(lForInquiry,ProjectFileNames(SIM_StrmDataFileID),Model%cSIMWorkingDirectory,Model%TimeStep,Model%NTIME,iLakeIDs,Model%AppGrid,Model%Stratigraphy,PPBinaryFile,Model%StrmLakeConnector,Model%StrmGWConnector,iStat)
+    CALL Model%AppStream%New(lForInquiry,ProjectFileNames(SIM_StrmDataFileID),Model%cSIMWorkingDirectory,Model%TimeStep,Model%NTIME,iLakeIDs,Model%AppGrid,Model%Stratigraphy,Model%ETData,PPBinaryFile,Model%StrmLakeConnector,Model%StrmGWConnector,iStat)
     IF (iStat .EQ. -1) RETURN
     NStrmNodes          = Model%AppStream%GetNStrmNodes()
     lDiversions_Defined = Model%AppStream%IsDiversionsDefined()
-    ALLOCATE (Model%QTRIB(NStrmNodes) , Model%QRTRN(NStrmNodes) , Model%QROFF(NStrmNodes) , Model%QDRAIN(NStrmNodes) , Model%QRVET(NStrmNodes) , Model%QRVETFRAC(NStrmNodes) , iStrmNodeIDs(NStrmNodes) , STAT=ErrorCode , ERRMSG=cErrorMsg)
+    ALLOCATE (Model%QTRIB(NStrmNodes)       , &
+              Model%QRPONDDRAIN(NStrmNodes) , &
+              Model%QRTRN(NStrmNodes)       , &
+              Model%QROFF(NStrmNodes)       , &
+              Model%QTDRAIN(NStrmNodes)     , &
+              Model%QRVET(NStrmNodes)       , &
+              Model%QRVETFRAC(NStrmNodes)   , &
+              iStrmNodeIDs(NStrmNodes)      , &
+              STAT=ErrorCode                , &
+              ERRMSG=cErrorMsg              )
     IF (ErrorCode .NE. 0) THEN
         CALL SetLastMessage('Error allocating memory for stream related data!'//f_cLineFeed//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
     CALL Model%AppStream%GetStrmNodeIDs(iStrmNodeIDs)
-    Model%QTRIB     = 0.0
-    Model%QROFF     = 0.0
-    Model%QRTRN     = 0.0
-    Model%QDRAIN    = 0.0
-    Model%QRVET     = 0.0
-    Model%QRVETFRAC = 0.0
+    Model%QTRIB       = 0.0
+    Model%QROFF       = 0.0
+    Model%QRTRN       = 0.0
+    Model%QRPONDDRAIN = 0.0
+    Model%QTDRAIN     = 0.0
+    Model%QRVET       = 0.0
+    Model%QRVETFRAC   = 0.0
     
     !Matrix
     CALL Model%Matrix%New(PPBinaryFile,iStat)
@@ -993,14 +1023,6 @@ CONTAINS
     CALL Model%AppSWShed%New(lForInquiry,ProjectFileNames(SIM_SmallWatershedDataFileID),Model%cSIMWorkingDirectory,Model%TimeStep,Model%NTIME,NStrmNodes,iStrmNodeIDs,Model%AppGrid,Model%Stratigraphy,cIWFMVersion,iStat)
     IF (iStat .EQ. -1) RETURN
 
-    !Precipitation data
-    CALL Model%PrecipData%New(ProjectFileNames(SIM_PrecipDataFileID),Model%cSIMWorkingDirectory,'precipitation data',Model%TimeStep,iStat)
-    IF (iStat .EQ. -1) RETURN
-
-    !ET data
-    CALL Model%ETData%New(ProjectFileNames(SIM_ETDataFileID),Model%cSIMWorkingDirectory,'ET data',Model%TimeStep,iStat)
-    IF (iStat .EQ. -1) RETURN
-  
     !Root zone component (must be instantiated after gw and streams)
     IF (ProjectFileNames(SIM_RootZoneDataFileID) .NE. '') THEN
         CALL Model%RootZone%New(lForInquiry,ProjectFileNames(SIM_RootZoneDataFileID),Model%cSIMWorkingDirectory,Model%AppGrid,Model%TimeStep,Model%NTIME,Model%ETData,Model%PrecipData,iStat,iStrmNodeIDs=iStrmNodeIDs,iLakeIDs=iLakeIDs)
@@ -1081,26 +1103,27 @@ CONTAINS
         CALL Model%GetHydrographTypeList(cHydTypeList,iHydLocationTypeList,iHydCompList,cHydFiles)
         CALL Model%GetBudget_List(cBudgetList,iBudgetTypeList,iBudgetCompList,iBudgetLocationTypeList,cBudgetFiles)
         CALL Model%GetZBudget_List(cZBudgetList,iZBudgetTypeList,cZBudgetFiles)
-        CALL Model%Model_ForInquiry%PrintModelData(Model%cSIMWorkingDirectory , &
-                                                   Model%AppGW                , &
-                                                   Model%AppUnsatZone         , &
-                                                   Model%AppStream            , &
-                                                   Model%AppSWShed            , &
-                                                   Model%TimeStep             , &
-                                                   Model%NTIME                , &
-                                                   cHydTypeList               , &
-                                                   cHydFiles                  , &
-                                                   iHydLocationTypeList       , &
-                                                   iHydCompList               , &
-                                                   cBudgetList                , &
-                                                   cBudgetFiles               , &
-                                                   iBudgetTypeList            , &
-                                                   iBudgetCompList            , &
-                                                   iBudgetLocationTypeList    , &
-                                                   cZBudgetList               , &
-                                                   cZBudgetFiles              , &
-                                                   iZBudgetTypeList           , &
-                                                   iStat                      )
+        CALL Model%Model_ForInquiry%PrintModelData(Model%cSIMWorkingDirectory      , &
+                                                   Model%AppGW                     , &
+                                                   Model%AppUnsatZone              , &
+                                                   Model%AppStream                 , &
+                                                   Model%AppSWShed                 , &
+                                                   Model%DiverDestinationConnector , &
+                                                   Model%TimeStep                  , &
+                                                   Model%NTIME                     , &
+                                                   cHydTypeList                    , &
+                                                   cHydFiles                       , &
+                                                   iHydLocationTypeList            , &
+                                                   iHydCompList                    , &
+                                                   cBudgetList                     , &
+                                                   cBudgetFiles                    , &
+                                                   iBudgetTypeList                 , &
+                                                   iBudgetCompList                 , &
+                                                   iBudgetLocationTypeList         , &
+                                                   cZBudgetList                    , &
+                                                   cZBudgetFiles                   , &
+                                                   iZBudgetTypeList                , &
+                                                   iStat                           )
         IF (iStat .EQ. -1) CALL Model%Model_ForInquiry%Kill()
     END IF
     
@@ -1216,6 +1239,14 @@ CONTAINS
     CALL Model%SupplyAdjust%SetAdjustFlag(iAdjustFlag,iStat)
     IF (iStat .EQ. -1) RETURN
     
+    !Precipitation data
+    CALL Model%PrecipData%New(ProjectFileNames(SIM_PrecipDataFileID),Model%cSIMWorkingDirectory,'precipitation data',Model%TimeStep,iStat)
+    IF (iStat .EQ. -1) RETURN
+
+    !ET data
+    CALL Model%ETData%New(ProjectFileNames(SIM_ETDataFileID),Model%cSIMWorkingDirectory,'ET data',Model%TimeStep,iStat)
+    IF (iStat .EQ. -1) RETURN
+  
     !Lakes
     !Make sure lake component is defined, if it is defined in Preprocessor
     IF (Model%LakeGWConnector%IsDefined()) THEN
@@ -1228,7 +1259,7 @@ CONTAINS
     CALL Model%AppLake%New(lForInquiry,ProjectFileNames(SIM_LakeDataFileID),Model%cSIMWorkingDirectory,Model%TimeStep,Model%NTIME,Model%AppGrid,Model%LakeGWConnector,iStat)
     IF (iStat .EQ. -1) RETURN
     NLakes = Model%AppLake%GetNLakes()
-    ALLOCATE (Model%LakeRunoff(NLakes) , Model%LakeReturnFlow(NLakes) , iLakeIDs(NLakes) , STAT=ErrorCode , ERRMSG=cErrorMsg)
+    ALLOCATE (Model%LakeRunoff(NLakes) , Model%LakeReturnFlow(NLakes) , Model%LakePondDrain(NLakes) , iLakeIDs(NLakes) , STAT=ErrorCode , ERRMSG=cErrorMsg)
     IF (ErrorCode .NE. 0) THEN
         CALL SetLastMessage('Error allocating memory for lake related data!'//f_cLineFeed//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
         iStat = -1
@@ -1237,6 +1268,7 @@ CONTAINS
     CALL Model%AppLake%GetLakeIDs(iLakeIDs)
     Model%LakeRunoff     = 0.0
     Model%LakeReturnFlow = 0.0
+    Model%LakePondDrain  = 0.0
   
     !Streams
     !Make sure stream component is defined if it is defined in Preprocessor
@@ -1247,23 +1279,33 @@ CONTAINS
             RETURN
         END IF
     END IF
-    CALL Model%AppStream%New(lForInquiry,ProjectFileNames(SIM_StrmDataFileID),Model%cSIMWorkingDirectory,Model%TimeStep,Model%NTIME,iLakeIDs,Model%AppGrid,Model%Stratigraphy,Model%StrmGWConnector,Model%StrmLakeConnector,iStat)
+    CALL Model%AppStream%New(lForInquiry,ProjectFileNames(SIM_StrmDataFileID),Model%cSIMWorkingDirectory,Model%TimeStep,Model%NTIME,iLakeIDs,Model%AppGrid,Model%Stratigraphy,Model%ETData,Model%StrmGWConnector,Model%StrmLakeConnector,iStat)
     IF (iStat .EQ. -1) RETURN
     NStrmNodes          = Model%AppStream%GetNStrmNodes()
     lDiversions_Defined = Model%AppStream%IsDiversionsDefined()
-    ALLOCATE (Model%QTRIB(NStrmNodes) , Model%QRTRN(NStrmNodes) , Model%QROFF(NStrmNodes) , Model%QDRAIN(NStrmNodes) , Model%QRVET(NStrmNodes) , Model%QRVETFRAC(NStrmNodes) , iStrmNodeIDs(NStrmNodes) , STAT=ErrorCode , ERRMSG=cErrorMsg)
+    ALLOCATE (Model%QTRIB(NStrmNodes)       , &
+              Model%QRPONDDRAIN(NStrmNodes) , &
+              Model%QRTRN(NStrmNodes)       , &
+              Model%QROFF(NStrmNodes)       , &
+              Model%QTDRAIN(NStrmNodes)     , &
+              Model%QRVET(NStrmNodes)       , &
+              Model%QRVETFRAC(NStrmNodes)   , &
+              iStrmNodeIDs(NStrmNodes)      , &
+              STAT=ErrorCode                , &
+              ERRMSG=cErrorMsg              )
     IF (ErrorCode .NE. 0) THEN
         CALL SetLastMessage('Error allocating memory for stream related data!'//f_cLineFeed//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
     CALL Model%AppStream%GetStrmNodeIDs(iStrmNodeIDs)
-    Model%QTRIB     = 0.0
-    Model%QROFF     = 0.0
-    Model%QRTRN     = 0.0
-    Model%QDRAIN    = 0.0
-    Model%QRVET     = 0.0
-    Model%QRVETFRAC = 0.0
+    Model%QTRIB       = 0.0
+    Model%QROFF       = 0.0
+    Model%QRTRN       = 0.0
+    Model%QRPONDDRAIN = 0.0
+    Model%QTDRAIN     = 0.0
+    Model%QRVET       = 0.0
+    Model%QRVETFRAC   = 0.0
     
     !Groundwater
     CALL Model%AppStream%GetStrmConnectivityInGWNodes(Model%StrmGWConnector,StrmConnectivity)
@@ -1299,14 +1341,6 @@ CONTAINS
     CALL Model%AppSWShed%New(lForInquiry,ProjectFileNames(SIM_SmallWatershedDataFileID),Model%cSIMWorkingDirectory,Model%TimeStep,Model%NTIME,NStrmNodes,iStrmNodeIDs,Model%AppGrid,Model%Stratigraphy,cIWFMVersion,iStat)
     IF (iStat .EQ. -1) RETURN
     
-    !Precipitation data
-    CALL Model%PrecipData%New(ProjectFileNames(SIM_PrecipDataFileID),Model%cSIMWorkingDirectory,'precipitation data',Model%TimeStep,iStat)
-    IF (iStat .EQ. -1) RETURN
-
-    !ET data
-    CALL Model%ETData%New(ProjectFileNames(SIM_ETDataFileID),Model%cSIMWorkingDirectory,'ET data',Model%TimeStep,iStat)
-    IF (iStat .EQ. -1) RETURN
-  
     !Root zone component (must be instantiated after gw and streams)
     IF (ProjectFileNames(SIM_RootZoneDataFileID) .NE. '') THEN
         CALL Model%RootZone%New(lForInquiry,ProjectFileNames(SIM_RootZoneDataFileID),Model%cSIMWorkingDirectory,Model%AppGrid,Model%TimeStep,Model%NTIME,Model%ETData,Model%PrecipData,iStat,iStrmNodeIDs=iStrmNodeIDs,iLakeIDs=iLakeIDs)
@@ -1383,26 +1417,27 @@ CONTAINS
     IF (lForInquiry) THEN
         CALL Model%GetBudget_List(cBudgetList,iBudgetTypeList,iBudgetCompList,iBudgetLocationTypeList,cBudgetFiles)
         CALL Model%GetZBudget_List(cZBudgetList,iZBudgetTypeList,cZBudgetFiles)
-        CALL Model%Model_ForInquiry%PrintModelData(Model%cSIMWorkingDirectory , &
-                                                   Model%AppGW                , &
-                                                   Model%AppUnsatZone         , &
-                                                   Model%AppStream            , &
-                                                   Model%AppSWShed            , &
-                                                   Model%TimeStep             , &
-                                                   Model%NTIME                , &
-                                                   cHydTypeList               , &
-                                                   cHydFiles                  , &
-                                                   iHydLocationTypeList       , &
-                                                   iHydCompList               , &
-                                                   cBudgetList                , &
-                                                   cBudgetFiles               , &
-                                                   iBudgetTypeList            , &
-                                                   iBudgetCompList            , &
-                                                   iBudgetLocationTypeList    , &
-                                                   cZBudgetList               , &
-                                                   cZBudgetFiles              , &
-                                                   iZBudgetTypeList           , &
-                                                   iStat                      )
+        CALL Model%Model_ForInquiry%PrintModelData(Model%cSIMWorkingDirectory      , &
+                                                   Model%AppGW                     , &
+                                                   Model%AppUnsatZone              , &
+                                                   Model%AppStream                 , &
+                                                   Model%AppSWShed                 , &
+                                                   Model%DiverDestinationConnector , &
+                                                   Model%TimeStep                  , &
+                                                   Model%NTIME                     , &
+                                                   cHydTypeList                    , &
+                                                   cHydFiles                       , &
+                                                   iHydLocationTypeList            , &
+                                                   iHydCompList                    , &
+                                                   cBudgetList                     , &
+                                                   cBudgetFiles                    , &
+                                                   iBudgetTypeList                 , &
+                                                   iBudgetCompList                 , &
+                                                   iBudgetLocationTypeList         , &
+                                                   cZBudgetList                    , &
+                                                   cZBudgetFiles                   , &
+                                                   iZBudgetTypeList                , &
+                                                   iStat                           )
         IF (iStat .EQ. -1) CALL Model%Model_ForInquiry%Kill()
     END IF
        
@@ -1547,6 +1582,14 @@ CONTAINS
     CALL Model%SupplyAdjust%SetAdjustFlag(iAdjustFlag,iStat)
     IF (iStat .EQ. -1) RETURN
     
+    !Precipitation data
+    CALL Model%PrecipData%New(cSIMFileNames(SIM_PrecipDataFileID),Model%cSIMWorkingDirectory,'precipitation data',Model%TimeStep,iStat)
+    IF (iStat .EQ. -1) RETURN
+
+    !ET data
+    CALL Model%ETData%New(cSIMFileNames(SIM_ETDataFileID),Model%cSIMWorkingDirectory,'ET data',Model%TimeStep,iStat)
+    IF (iStat .EQ. -1) RETURN
+  
     !Lakes
     !Make sure lake component is defined, if it is defined in Preprocessor
     IF (Model%LakeGWConnector%IsDefined()) THEN
@@ -1559,7 +1602,7 @@ CONTAINS
     CALL Model%AppLake%New(lForInquiry,cSIMFileNames(SIM_LakeDataFileID),Model%cSIMWorkingDirectory,Model%TimeStep,Model%NTIME,Model%AppGrid,Model%LakeGWConnector,iStat)
     IF (iStat .EQ. -1) RETURN
     NLakes = Model%AppLake%GetNLakes()
-    ALLOCATE (Model%LakeRunoff(NLakes) , Model%LakeReturnFlow(NLakes) , iLakeIDs(NLakes) , STAT=ErrorCode , ERRMSG=cErrorMsg)
+    ALLOCATE (Model%LakeRunoff(NLakes) , Model%LakeReturnFlow(NLakes) , Model%LakePondDrain(NLakes) , iLakeIDs(NLakes) , STAT=ErrorCode , ERRMSG=cErrorMsg)
     IF (ErrorCode .NE. 0) THEN
         CALL SetLastMessage('Error allocating memory for lake related data!'//f_cLineFeed//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
         iStat = -1
@@ -1568,6 +1611,7 @@ CONTAINS
     CALL Model%AppLake%GetLakeIDs(iLakeIDs)
     Model%LakeRunoff     = 0.0
     Model%LakeReturnFlow = 0.0
+    Model%LakePondDrain  = 0.0
   
     !Streams
     !Make sure stream component is defined if it is defined in Preprocessor
@@ -1578,23 +1622,33 @@ CONTAINS
             RETURN
         END IF
     END IF
-    CALL Model%AppStream%New(lForInquiry,cSIMFileNames(SIM_StrmDataFileID),Model%cSIMWorkingDirectory,Model%TimeStep,Model%NTIME,iLakeIDs,Model%AppGrid,Model%Stratigraphy,Model%StrmGWConnector,Model%StrmLakeConnector,iStat)
+    CALL Model%AppStream%New(lForInquiry,cSIMFileNames(SIM_StrmDataFileID),Model%cSIMWorkingDirectory,Model%TimeStep,Model%NTIME,iLakeIDs,Model%AppGrid,Model%Stratigraphy,Model%ETData,Model%StrmGWConnector,Model%StrmLakeConnector,iStat)
     IF (iStat .EQ. -1) RETURN
     NStrmNodes          = Model%AppStream%GetNStrmNodes()
     lDiversions_Defined = Model%AppStream%IsDiversionsDefined()
-    ALLOCATE (Model%QTRIB(NStrmNodes) , Model%QRTRN(NStrmNodes) , Model%QROFF(NStrmNodes) , Model%QDRAIN(NStrmNodes) , Model%QRVET(NStrmNodes) , Model%QRVETFRAC(NStrmNodes) , iStrmNodeIDs(NStrmNodes) , STAT=ErrorCode , ERRMSG=cErrorMsg)
+    ALLOCATE (Model%QTRIB(NStrmNodes)       , &
+              Model%QRPONDDRAIN(NStrmNodes) , &
+              Model%QRTRN(NStrmNodes)       , &
+              Model%QROFF(NStrmNodes)       , &
+              Model%QTDRAIN(NStrmNodes)     , &
+              Model%QRVET(NStrmNodes)       , &
+              Model%QRVETFRAC(NStrmNodes)   , &
+              iStrmNodeIDs(NStrmNodes)      , &
+              STAT=ErrorCode                , &
+              ERRMSG=cErrorMsg              )
     IF (ErrorCode .NE. 0) THEN
         CALL SetLastMessage('Error allocating memory for stream related data!'//f_cLineFeed//TRIM(cErrorMsg),f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
     CALL Model%AppStream%GetStrmNodeIDs(iStrmNodeIDs)
-    Model%QTRIB     = 0.0
-    Model%QROFF     = 0.0
-    Model%QRTRN     = 0.0
-    Model%QDRAIN    = 0.0
-    Model%QRVET     = 0.0
-    Model%QRVETFRAC = 0.0
+    Model%QTRIB       = 0.0
+    Model%QROFF       = 0.0
+    Model%QRTRN       = 0.0
+    Model%QRPONDDRAIN = 0.0
+    Model%QTDRAIN     = 0.0
+    Model%QRVET       = 0.0
+    Model%QRVETFRAC   = 0.0
     
     !Groundwater
     CALL Model%AppStream%GetStrmConnectivityInGWNodes(Model%StrmGWConnector,StrmConnectivity)
@@ -1630,14 +1684,6 @@ CONTAINS
     CALL Model%AppSWShed%New(lForInquiry,cSIMFileNames(SIM_SmallWatershedDataFileID),Model%cSIMWorkingDirectory,Model%TimeStep,Model%NTIME,NStrmNodes,iStrmNodeIDs,Model%AppGrid,Model%Stratigraphy,cIWFMVersion,iStat)
     IF (iStat .EQ. -1) RETURN
 
-    !Precipitation data
-    CALL Model%PrecipData%New(cSIMFileNames(SIM_PrecipDataFileID),Model%cSIMWorkingDirectory,'precipitation data',Model%TimeStep,iStat)
-    IF (iStat .EQ. -1) RETURN
-
-    !ET data
-    CALL Model%ETData%New(cSIMFileNames(SIM_ETDataFileID),Model%cSIMWorkingDirectory,'ET data',Model%TimeStep,iStat)
-    IF (iStat .EQ. -1) RETURN
-  
     !Root zone component (must be instantiated after gw and streams)
     IF (cSIMFileNames(SIM_RootZoneDataFileID) .NE. '') THEN
         CALL Model%RootZone%New(lForInquiry,cSIMFileNames(SIM_RootZoneDataFileID),Model%cSIMWorkingDirectory,Model%AppGrid,Model%TimeStep,Model%NTIME,Model%ETData,Model%PrecipData,iStat,iStrmNodeIDs=iStrmNodeIDs,iLakeIDs=iLakeIDs)
@@ -1714,26 +1760,27 @@ CONTAINS
     IF (lForInquiry) THEN
         CALL Model%GetBudget_List(cBudgetList,iBudgetTypeList,iBudgetCompList,iBudgetLocationTypeList,cBudgetFiles)
         CALL Model%GetZBudget_List(cZBudgetList,iZBudgetTypeList,cZBudgetFiles)
-        CALL Model%Model_ForInquiry%PrintModelData(Model%cSIMWorkingDirectory , &
-                                                   Model%AppGW                , &
-                                                   Model%AppUnsatZone         , &
-                                                   Model%AppStream            , &
-                                                   Model%AppSWShed            , &
-                                                   Model%TimeStep             , &
-                                                   Model%NTIME                , &
-                                                   cHydTypeList               , &
-                                                   cHydFiles                  , &
-                                                   iHydLocationTypeList       , &
-                                                   iHydCompList               , &
-                                                   cBudgetList                , &
-                                                   cBudgetFiles               , &
-                                                   iBudgetTypeList            , &
-                                                   iBudgetCompList            , &
-                                                   iBudgetLocationTypeList    , &
-                                                   cZBudgetList               , &
-                                                   cZBudgetFiles              , &
-                                                   iZBudgetTypeList           , &
-                                                   iStat                      )
+        CALL Model%Model_ForInquiry%PrintModelData(Model%cSIMWorkingDirectory      , &
+                                                   Model%AppGW                     , &
+                                                   Model%AppUnsatZone              , &
+                                                   Model%AppStream                 , &
+                                                   Model%AppSWShed                 , &
+                                                   Model%DiverDestinationConnector , &
+                                                   Model%TimeStep                  , &
+                                                   Model%NTIME                     , &
+                                                   cHydTypeList                    , &
+                                                   cHydFiles                       , &
+                                                   iHydLocationTypeList            , &
+                                                   iHydCompList                    , &
+                                                   cBudgetList                     , &
+                                                   cBudgetFiles                    , &
+                                                   iBudgetTypeList                 , &
+                                                   iBudgetCompList                 , &
+                                                   iBudgetLocationTypeList         , &
+                                                   cZBudgetList                    , &
+                                                   cZBudgetFiles                   , &
+                                                   iZBudgetTypeList                , &
+                                                   iStat                           )
         IF (iStat .EQ. -1) CALL Model%Model_ForInquiry%Kill()
     END IF
 
@@ -1793,8 +1840,10 @@ CONTAINS
                 Model%cSIMWorkingDirectory      , &
                 Model%LakeRunoff                , &
                 Model%LakeReturnFlow            , &                
-                Model%QDRAIN                    , &      
+                Model%LakePondDrain             , &                
+                Model%QTDRAIN                   , &      
                 Model%QTRIB                     , &                           
+                Model%QRPONDDRAIN               , &                           
                 Model%QRTRN                     , &                           
                 Model%QROFF                     , &                           
                 Model%QRVET                     , &                           
@@ -3936,6 +3985,54 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
+  ! --- GET NUMBER OF WELLS 
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetNWells(Model) RESULT(N)
+    CLASS(ModelType),INTENT(IN) :: Model
+    INTEGER                     :: N
+    
+    N = Model%AppGW%GetNWells()
+    
+  END FUNCTION GetNWells
+  
+   
+  ! -------------------------------------------------------------
+  ! --- GET WELL IDs
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetWellIDs(Model,IDs)
+    CLASS(ModelType),INTENT(IN) :: Model
+    INTEGER,INTENT(OUT)         :: IDs(:)
+    
+    CALL Model%AppGW%GetWellIDs(IDs)
+    
+  END SUBROUTINE GetWellIDs
+  
+   
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF ELEMENT PUMPING 
+  ! -------------------------------------------------------------
+  PURE FUNCTION GetNElemPumps(Model) RESULT(N)
+    CLASS(ModelType),INTENT(IN) :: Model
+    INTEGER                     :: N
+    
+    N = Model%AppGW%GetNElemPumps() 
+    
+  END FUNCTION GetNElemPumps
+  
+   
+  ! -------------------------------------------------------------
+  ! --- GET ELEMENT PUMPING IDs
+  ! -------------------------------------------------------------
+  PURE SUBROUTINE GetElemPumpIDs(Model,IDs)
+    CLASS(ModelType),INTENT(IN) :: Model
+    INTEGER,INTENT(OUT)         :: IDs(:)
+    
+    CALL Model%AppGW%GetElemPumpIDs(IDs)
+    
+  END SUBROUTINE GetElemPumpIDs
+  
+   
+  ! -------------------------------------------------------------
   ! --- GET ACTUAL NODAL PUMPING
   ! -------------------------------------------------------------
   PURE SUBROUTINE GetNodalGWPumping_Actual(Model,NodalPumpActual)
@@ -4252,33 +4349,36 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET NUMBER OF DIVERSIONS
   ! -------------------------------------------------------------
-  SUBROUTINE GetNDiversions(Model,iNDiver,iStat)
+  FUNCTION GetNDiversions(Model) RESULT(iNDiver)
     CLASS(ModelType),INTENT(IN) :: Model
-    INTEGER,INTENT(OUT)         :: iNDiver,iStat
-    
-    !Local variables
-    CHARACTER(LEN=ModNameLen+14),PARAMETER :: ThisProcedure = ModName // 'GetNDiversions'
+    INTEGER                     :: iNDiver
     
     IF (Model%lModel_ForInquiry_Defined) THEN
-        CALL SetLastMessage('Model is instantiated only partially. Number of diversions cannot be retrieved from a partially instantiated model.',f_iWarn,ThisProcedure)
-        iNDiver = 0
-        iStat   = -1
+        iNDiver = Model%Model_ForInquiry%GetNLocations(f_iLocationType_Diversion)
     ELSE
         iNDiver = Model%AppStream%GetNDiver()
-        iStat   = 0
     END IF
 
-  END SUBROUTINE GetNDiversions
+  END FUNCTION GetNDiversions
   
   
   ! -------------------------------------------------------------
   ! --- GET STREAM DIVERSION IDS
   ! -------------------------------------------------------------
-  PURE SUBROUTINE GetDiversionIDs(Model,IDs)
+  SUBROUTINE GetDiversionIDs(Model,IDs)
     CLASS(ModelType),INTENT(IN) :: Model
     INTEGER,INTENT(OUT)         :: IDs(:)
     
-    CALL Model%AppStream%GetDiversionIDs(IDs)
+    !Local variables
+    INTEGER             :: iDummy
+    INTEGER,ALLOCATABLE :: IDs_Local(:)
+    
+    IF (Model%lModel_ForInquiry_Defined) THEN
+        CALL Model%Model_ForInquiry%GetLocationIDs(iDummy,f_iLocationType_Diversion,IDs_Local)
+        IDs = IDs_Local
+    ELSE
+        CALL Model%AppStream%GetDiversionIDs(IDs)
+    END IF
     
   END SUBROUTINE GetDiversionIDs
 
@@ -4356,6 +4456,32 @@ CONTAINS
   END SUBROUTINE GetBypassOutflows
   
     
+  ! -------------------------------------------------------------
+  ! --- GET BYPASS RECOVERABLE LOSS FACTOR
+  ! -------------------------------------------------------------
+  FUNCTION GetBypassRecoverableLossFactor(Model,iBypass) RESULT(rFactor)
+    CLASS(ModelType),INTENT(IN) :: Model
+    INTEGER,INTENT(IN)          :: iBypass
+    REAL(8)                     :: rFactor
+    
+    rFactor = Model%AppStream%GetBypassRecoverableLossFactor(iBypass)
+    
+  END FUNCTION GetBypassRecoverableLossFactor
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET BYPASS NON-RECOVERABLE LOSS FACTOR
+  ! -------------------------------------------------------------
+  FUNCTION GetBypassNonRecoverableLossFactor(Model,iBypass) RESULT(rFactor)
+    CLASS(ModelType),INTENT(IN) :: Model
+    INTEGER,INTENT(IN)          :: iBypass
+    REAL(8)                     :: rFactor
+    
+    rFactor = Model%AppStream%GetBypassNonRecoverableLossFactor(iBypass)
+    
+  END FUNCTION GetBypassNonRecoverableLossFactor
+  
+  
   ! -------------------------------------------------------------
   ! --- GET GROUNDWATER NODES FOR EACH STREAM NODE AT A REACH
   ! -------------------------------------------------------------
@@ -4603,6 +4729,33 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
+  ! --- GET POND DRAINS INTO ALL STREAM NODES
+  ! -------------------------------------------------------------
+  SUBROUTINE GetStrmPondDrains(Model,rQRPONDDRAIN,iStat)
+    CLASS(ModelType),INTENT(IN) :: Model
+    REAL(8),INTENT(OUT)         :: rQRPONDDRAIN(:)
+    INTEGER,INTENT(OUT)         :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+17),PARAMETER :: ThisProcedure = ModName // 'GetStrmPondDrains'
+    
+    !Initialize
+    iStat = 0
+    
+    !Make sure it is not Model_ForInquiry
+    IF (Model%lModel_ForInquiry_Defined) THEN
+        CALL SetLastMessage('Pond drains into stream nodes cannot be retrieved from the model when it is instantiated for inquiry!',f_iWarn,ThisProcedure)
+        rQRPONDDRAIN = 0.0
+        iStat        = -1
+        RETURN
+    END IF
+    
+    rQRPONDDRAIN = Model%QRPONDDRAIN
+    
+  END SUBROUTINE GetStrmPondDrains
+  
+  
+  ! -------------------------------------------------------------
   ! --- GET TILE DRAINS INTO ALL STREAM NODES
   ! -------------------------------------------------------------
   SUBROUTINE GetStrmTileDrains(Model,rQDRAIN,iStat)
@@ -4624,7 +4777,7 @@ CONTAINS
         RETURN
     END IF
     
-    rQDRAIN = Model%QDRAIN
+    rQDRAIN = Model%QTDRAIN
     
   END SUBROUTINE GetStrmTileDrains
   
@@ -4826,17 +4979,59 @@ CONTAINS
     INTEGER,INTENT(IN)          :: iDivList(:)
     INTEGER,INTENT(OUT)         :: iStrmNodeList(:)
     
-    CALL Model%AppStream%GetDiversionsExportNodes(iDivList,iStrmNodeList)
+    IF (Model%lModel_ForInquiry_Defined) THEN
+        CALL Model%Model_ForInquiry%GetDiversionsExportNodes(iDivList,iStrmNodeList)
+    ELSE
+        CALL Model%AppStream%GetDiversionsExportNodes(iDivList,iStrmNodeList)
+    END IF
     
   END SUBROUTINE GetStrmDiversionsExportNodes
 
 
   ! -------------------------------------------------------------
-  ! --- GET RETURN FLOW LOCATION(S) FOR A STREAM DIVERSION
+  ! --- GET NUMBER OF ELEMENTS SERVED BY A DIVERSION
   ! -------------------------------------------------------------
-  SUBROUTINE GetStrmDiversionReturnLocations(Model,iDiv,iNLocations,iLocations,iLocationTypes,iStat)
+  FUNCTION GetStrmDiversionNElems(Model,iDiv) RESULT(iNElems)
+    CLASS(ModelType),INTENT(IN) :: Model
+    INTEGER,INTENT(IN)          :: iDiv
+    INTEGER                     :: iNElems
+    
+    !Local variables
+    INTEGER,ALLOCATABLE :: iElems(:)
+    
+    IF (Model%lModel_ForInquiry_Defined) THEN
+        iNElems = Model%Model_ForInquiry%GetStrmDiversionNElems(iDiv)
+    ELSE
+        CALL Model%DiverDestinationConnector%GetServedElemList(iDiv,iElems)
+        iNElems = SIZE(iElems)
+    END IF
+    
+  END FUNCTION GetStrmDiversionNElems
+
+
+  ! -------------------------------------------------------------
+  ! --- GET INDICES OF ELEMENTS SERVED BY A DIVERSION
+  ! -------------------------------------------------------------
+  SUBROUTINE GetStrmDiversionElems(Model,iDiv,iElems)
     CLASS(ModelType),INTENT(IN)     :: Model
     INTEGER,INTENT(IN)              :: iDiv
+    INTEGER,ALLOCATABLE,INTENT(OUT) :: iElems(:)
+    
+    IF (Model%lModel_ForInquiry_Defined) THEN
+        CALL Model%Model_ForInquiry%GetStrmDiversionElems(iDiv,iElems)
+    ELSE
+        CALL Model%DiverDestinationConnector%GetServedElemList(iDiv,iElems)
+    END IF
+    
+  END SUBROUTINE GetStrmDiversionElems
+
+
+  ! -------------------------------------------------------------
+  ! --- GET RETURN FLOW LOCATION(S) GENERTAED OVER A SPECIFIED LAND USE FOR A STREAM DIVERSION
+  ! -------------------------------------------------------------
+  SUBROUTINE GetStrmDiversionReturnLocations(Model,iLUType,iDiv,iNLocations,iLocations,iLocationTypes,iStat)
+    CLASS(ModelType),INTENT(IN)     :: Model
+    INTEGER,INTENT(IN)              :: iLUType,iDiv
     INTEGER,INTENT(OUT)             :: iNLocations
     INTEGER,ALLOCATABLE,INTENT(OUT) :: iLocations(:),iLocationTypes(:)
     INTEGER,INTENT(OUT)             :: iStat 
@@ -4862,8 +5057,8 @@ CONTAINS
     ALLOCATE (iReturnDests(iNElements) , iReturnDestTypes(iNElements))
     
     !Get surface water destinations and destination types for each element
-    iReturnDests     = Model%RootZone%GetSurfaceFlowDestinations(iNElements)
-    iReturnDestTypes = Model%RootZone%GetSurfaceFlowDestinationTypes(iNElements)
+    CALL Model%RootZone%GetSurfaceFlowDestinations(iLUType,iNElements,iReturnDests)  
+    CALL Model%RootZone%GetSurfaceFlowDestinationTypes(iLUType,iNElements,iReturnDestTypes)
     
     !Get destination types for all diversions
     CALL Model%AppStream%GetDiversionDestination(DivDests)
@@ -5777,12 +5972,12 @@ CONTAINS
     !Read in file names and initialize the files
     DO indx=1,nSIM_InputFiles
         CALL MainControlFile%ReadData(ProjectFileNames(indx),iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL CleanSpecialCharacters(ProjectFileNames(indx))
         ProjectFileNames(indx) = ADJUSTL(StripTextUntilCharacter(ProjectFileNames(indx),'/'))
         !Convert project file names to absolute path names
         CALL EstablishAbsolutePathFileName(ProjectFileNames(indx),Model%cSIMWorkingDirectory,cAbsPathFileName)
         ProjectFileNames(indx) = cAbsPathFileName
     END DO
-    CALL CleanSpecialCharacters(ProjectFileNames)
     
     !Make sure pre-processor binary and groundwater data files are specified
     IF (ProjectFileNames(SIM_BinaryInputFileID) .EQ. '') THEN
@@ -6098,10 +6293,10 @@ CONTAINS
     CALL Model%AppUnsatZone%PrintResults(Model%AppGrid,Model%TimeStep,Model%lEndOfSimulation,Model%QPERC)
     
     !Print out stream simulation results 
-    CALL Model%AppStream%PrintResults(Model%TimeStep,Model%lEndOfSimulation,Model%QTRIB,Model%QROFF,Model%QRTRN,Model%QDRAIN,Model%QRVET,Model%StrmGWConnector,Model%StrmLakeConnector)
+    CALL Model%AppStream%PrintResults(Model%TimeStep,Model%lEndOfSimulation,Model%QTRIB,Model%QROFF,Model%QRTRN,Model%QRPONDDRAIN,Model%QTDRAIN,Model%QRVET,Model%StrmGWConnector,Model%StrmLakeConnector)
 
     !Print out lake simulation results 
-    CALL Model%AppLake%PrintResults(Model%TimeStep,Model%lEndOfSimulation,Model%LakeRunoff,Model%LakeReturnFlow,Model%LakeGWConnector,Model%StrmLakeConnector)
+    CALL Model%AppLake%PrintResults(Model%TimeStep,Model%lEndOfSimulation,Model%LakeRunoff,Model%LakeReturnFlow,Model%LakePondDrain,Model%LakeGWConnector,Model%StrmLakeConnector)
 
     !Print out small watersheds simulation results 
     CALL Model%AppSWShed%PrintResults(Model%TimeStep,Model%lEndOfSimulation)
@@ -6521,7 +6716,7 @@ CONTAINS
     ELSE
         ALLOCATE (iBypassesOW_Local(0) , rBypassesOW_Local(0))
     END IF
-    CALL Model%AppStream%ReadTSData(Model%lDiversionAdjusted,TimeStep,iDiversionsOW_Local,rDiversionsOW_Local,iStrmInflowsOW_Local,rStrmInflowsOW_Local,iBypassesOW_Local,rBypassesOW_Local,iStat)
+    CALL Model%AppStream%ReadTSData(Model%lDiversionAdjusted,TimeStep,iDiversionsOW_Local,rDiversionsOW_Local,iStrmInflowsOW_Local,rStrmInflowsOW_Local,iBypassesOW_Local,rBypassesOW_Local,Model%StrmLakeConnector,iStat)
 
   END SUBROUTINE ReadTSData
   
@@ -6875,8 +7070,8 @@ CONTAINS
         IF (iStat .EQ. -1) RETURN
     
         !Based on demand, set the supply-to-destination distribution ratios
-        CALL Model%RootZone%GetWaterDemand(f_iAg,AgDemand)
-        CALL Model%RootZone%GetWaterDemand(f_iUrb,UrbDemand)
+        CALL Model%RootZone%GetWaterDemand(f_iLandUse_Ag,AgDemand)
+        CALL Model%RootZone%GetWaterDemand(f_iLandUse_Urb,UrbDemand)
         CALL Model%DiverDestinationConnector%InitSupplyToAgUrbanFracs(AgDemand,Model%DestAgAreas,UrbDemand,Model%DestUrbAreas)
         CALL Model%WellDestinationConnector%InitSupplyToAgUrbanFracs(AgDemand,Model%DestAgAreas,UrbDemand,Model%DestUrbAreas)
         CALL Model%ElemPumpDestinationConnector%InitSupplyToAgUrbanFracs(AgDemand,Model%DestAgAreas,UrbDemand,Model%DestUrbAreas)
@@ -6910,9 +7105,20 @@ CONTAINS
             CALL Model%AppSWShed%UpdateRHS(Model%AppGrid%NNodes , Model%Matrix)
       
 ! ***** SIMULATE STREAMS AND UPDATE MATRIX COEFF AND RHS ACCORDINGLY
-            CALL Model%RootZone%GetFlowsToStreams(Model%AppGrid , Model%QROFF , Model%QRTRN , Model%QRVET)
-            CALL Model%AppGW%GetTileDrainFlowsToStreams(Model%QDRAIN)
-            CALL Model%AppStream%Simulate(Model%GWHeads,Model%QROFF,Model%QRTRN,Model%QTRIB,Model%QDRAIN,Model%QRVET,Model%QRVETFRAC,Model%StrmGWConnector,Model%StrmLakeConnector,Model%Matrix)
+            CALL Model%RootZone%GetFlowsToStreams(Model%AppGrid , Model%QROFF , Model%QRTRN , Model%QRPONDDRAIN , Model%QRVET)
+            CALL Model%AppGW%GetTileDrainFlowsToStreams(Model%QTDRAIN)
+            CALL Model%AppStream%Simulate(Model%GWHeads           , &
+                                          Model%QROFF             , &
+                                          Model%QRTRN             , &
+                                          Model%QRPONDDRAIN       , &
+                                          Model%QTRIB             , &
+                                          Model%QTDRAIN           , &
+                                          Model%QRVET             , &
+                                          Model%ETData            , &
+                                          Model%QRVETFRAC         , &
+                                          Model%StrmGWConnector   , &
+                                          Model%StrmLakeConnector , &
+                                          Model%Matrix            )
                      
             IF (Model%lRootZone_Defined) THEN      
 ! ***** COMPUTE THE ACTUAL WATER SUPPLY TO AGRICULTURAL AND URBAN LANDS
@@ -6934,7 +7140,7 @@ CONTAINS
             END IF
 
 ! ***** SIMULATE APPLICATION LAKES AND UPDATE MATRIX COEFF AND RHS ACCORDINGLY
-            CALL Model%RootZone%GetFlowsToLakes(Model%AppGrid,Model%LakeRunoff,Model%LakeReturnFlow)
+            CALL Model%RootZone%GetFlowsToLakes(Model%AppGrid,Model%LakeRunoff,Model%LakeReturnFlow,Model%LakePondDrain)
             CALL Model%LakeGWConnector%Simulate(Model%AppLake%GetElevs(NLakes)  , &
                                                 Model%GWHeads                   , &
                                                 Model%Stratigraphy%GSElev       , &
@@ -6943,6 +7149,7 @@ CONTAINS
                                         Model%GWHeads              , &
                                         Model%LakeRunoff           , &
                                         Model%LakeReturnFlow       , &
+                                        Model%LakePondDrain        , &
                                         Model%LakeGWConnector      , &
                                         Model%StrmLakeConnector    , &
                                         Model%Matrix               )

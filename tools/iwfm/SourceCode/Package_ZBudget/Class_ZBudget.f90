@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -143,9 +143,9 @@ MODULE Class_ZBudget
   ABSTRACT INTERFACE
      SUBROUTINE Abstract_CallBackFun(iLenText,cText_C) BIND(C)
        !DEC$ ATTRIBUTES STDCALL :: Abstract_CallBackFun
-       IMPORT                          :: C_INT,C_CHAR
-       INTEGER(C_INT),INTENT(IN)       :: iLenText
-       CHARACTER(C_CHAR),INTENT(INOUT) :: cText_C(iLenText)
+       IMPORT                               :: C_INT,C_CHAR
+       INTEGER(C_INT),INTENT(IN)            :: iLenText
+       CHARACTER(KIND=C_CHAR),INTENT(INOUT) :: cText_C(iLenText)
      END SUBROUTINE Abstract_CallbackFun
   END INTERFACE
 
@@ -754,7 +754,7 @@ CONTAINS
     INTEGER                                :: NTimeSteps,iNOutputIntervals,NStorageCol,NErrorCol,iNZoneDataCols,iZoneArray(1),iCol,indx
     REAL(8),ALLOCATABLE                    :: rZoneFlows(:)
     CHARACTER(LEN=f_iTimeStampLength)      :: cAdjPrintBeginDateAndTime,cAdjPrintEndDateAndTime,cPrintDateAndTime,cCurrentDateAndTime
-    CHARACTER(C_CHAR)                      :: cPrintDateAndTime_C(f_iTimeStampLength)
+    CHARACTER(KIND=C_CHAR)                 :: cPrintDateAndTime_C(f_iTimeStampLength)
     LOGICAL                                :: lFinalTime
     TYPE(TimeStepType)                     :: TimeStep
     CLASS(*),POINTER                       :: pZone
@@ -1372,7 +1372,8 @@ CONTAINS
             pLWUGroup%iAgShortDataIndex       = LocateInList(f_iVR_lwu_AgShort,ZBudget%Header%iDataTypes(indxS:)) + indxS - 1
             pLWUGroup%iAgPumpDataIndex        = LocateInList(f_iVR_lwu_AgPump,ZBudget%Header%iDataTypes(indxS:)) + indxS - 1
             pLWUGroup%iAgDiverDataIndex       = LocateInList(f_iVR_lwu_AgDiv,ZBudget%Header%iDataTypes(indxS:)) + indxS - 1
-            pLWUGroup%iAgOtherInflowDataIndex = LocateInList(f_iVR_lwu_AgOthIn,ZBudget%Header%iDataTypes(indxS:)) + indxS - 1
+            pLWUGroup%iAgOtherInflowDataIndex = LocateInList(f_iVR_lwu_AgOthIn,ZBudget%Header%iDataTypes(indxS:))
+            IF (pLWUGroup%iAgOtherInflowDataIndex .GT. 0) pLWUGroup%iAgOtherInflowDataIndex = pLWUGroup%iAgOtherInflowDataIndex + indxS - 1
             IF (pLWUGroup%iAgSupplyReqDataIndex .EQ. 0) EXIT
             NLWUGroups          = NLWUGroups + 1
             pLWUGroup%iMaxIndex = MAX(pLWUGroup%iAgSupplyReqDataIndex  , &
@@ -1392,8 +1393,9 @@ CONTAINS
                 ALLOCATE (pLWUGroup%rAgSupplyReqRead(ZBudget%Header%iNDataElems(pLWUGroup%iAgSupplyReqDataIndex,indxLayer),iNOutputIntervals)     , &
                           pLWUGroup%rAgShortRead(ZBudget%Header%iNDataElems(pLWUGroup%iAgShortDataIndex,indxLayer),iNOutputIntervals)             , &
                           pLWUGroup%rAgPumpRead(ZBudget%Header%iNDataElems(pLWUGroup%iAgPumpDataIndex,indxLayer),iNOutputIntervals)               , &
-                          pLWUGroup%rAgDiverRead(ZBudget%Header%iNDataElems(pLWUGroup%iAgDiverDataIndex,indxLayer),iNOutputIntervals)             , &
-                          pLWUGroup%rAgOtherInflowRead(ZBudget%Header%iNDataElems(pLWUGroup%iAgOtherInflowDataIndex,indxLayer),iNOutputIntervals) )
+                          pLWUGroup%rAgDiverRead(ZBudget%Header%iNDataElems(pLWUGroup%iAgDiverDataIndex,indxLayer),iNOutputIntervals)             )
+                IF (pLWUGroup%iAgOtherInflowDataIndex .GT. 0) &
+                    ALLOCATE (pLWUGroup%rAgOtherInflowRead(ZBudget%Header%iNDataElems(pLWUGroup%iAgOtherInflowDataIndex,indxLayer),iNOutputIntervals))
 
                 !Ag supply requirement
                 iDataset = DatasetIndex(f_iElemDataType,NLayers,lFaceFlows_Defined,iNDataColumns,pLWUGroup%iAgSupplyReqDataIndex,indxLayer)
@@ -1408,8 +1410,10 @@ CONTAINS
                 CALL ZBudget%File%ReadData(cBeginDateAndTime,iDataset,pLWUGroup%rAgDiverRead,ErrorCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
                 
                 !Ag surface inflows from upstream elements
-                iDataset = DatasetIndex(f_iElemDataType,NLayers,lFaceFlows_Defined,iNDataColumns,pLWUGroup%iAgOtherInflowDataIndex,indxLayer)
-                CALL ZBudget%File%ReadData(cBeginDateAndTime,iDataset,pLWUGroup%rAgOtherInflowRead,ErrorCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
+                IF (pLWUGroup%iAgOtherInflowDataIndex .GT. 0) THEN
+                    iDataset = DatasetIndex(f_iElemDataType,NLayers,lFaceFlows_Defined,iNDataColumns,pLWUGroup%iAgOtherInflowDataIndex,indxLayer)
+                    CALL ZBudget%File%ReadData(cBeginDateAndTime,iDataset,pLWUGroup%rAgOtherInflowRead,ErrorCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
+                END IF
                 
                 !Ag short
                 iDataset = DatasetIndex(f_iElemDataType,NLayers,lFaceFlows_Defined,iNDataColumns,pLWUGroup%iAgShortDataIndex,indxLayer)
@@ -1549,7 +1553,8 @@ CONTAINS
                   iElemColAgShort       = ZBudget%Header%iElemDataColumns(iElem,LWUGroup(iLWUGroup)%iAgShortDataIndex,indxLayer)
                   iElemColAgPump        = ZBudget%Header%iElemDataColumns(iElem,LWUGroup(iLWUGroup)%iAgPumpDataIndex,indxLayer)
                   iElemColAgDiver       = ZBudget%Header%iElemDataColumns(iElem,LWUGroup(iLWUGroup)%iAgDiverDataIndex,indxLayer)
-                  iElemColAgOtherInflow = ZBudget%Header%iElemDataColumns(iElem,LWUGroup(iLWUGroup)%iAgOtherInflowDataIndex,indxLayer)
+                  iElemColAgOtherInflow = 0
+                  IF (LWUGroup(iLWUGroup)%iAgOtherInflowDataIndex .GT. 0) iElemColAgOtherInflow = ZBudget%Header%iElemDataColumns(iElem,LWUGroup(iLWUGroup)%iAgOtherInflowDataIndex,indxLayer)
                   rAgShortPrevious      = 0.0
                   DO indxTime=1,iNOutputIntervals
                       rAgSupReq_Modified = ModifiedAgSupplyReq(rAgShortPrevious,LWUGroup(iLWUGroup)%rAgSupplyReqRead(iElemColAgSupplyReq,indxTime))                      

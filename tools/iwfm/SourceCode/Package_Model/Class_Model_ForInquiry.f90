@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,86 +21,87 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_Model_ForInquiry
-  USE MessageLogger             , ONLY: SetLastMessage                   , &
-                                        f_iFatal  
-  USE GeneralUtilities          , ONLY: EstablishAbsolutePathFileName    , &
-                                        LocateInList                     , &
-                                        IntToText                        , &
-                                        UpperCase                        , &
-                                        StripTextUntilCharacter          
-  USE TimeSeriesUtilities       , ONLY: TimeStepType                     , &
-                                        ExtractMonth                     , &
-                                        ExtractYear                      , &
-                                        DayMonthYearToJulianDate         , &
-                                        JulianDateAndMinutesToTimeStamp  , &
-                                        CTimeStep_To_RTimeStep           , &
-                                        NPeriods                         , &
-                                        IncrementTimeStamp               , &
-                                        OPERATOR(.TSLT.)                 , &
-                                        OPERATOR(.TSGT.)                 , &
-                                        f_iTimeStampLength              
-  USE IOInterface               , ONLY: GenericFileType                  , &
-                                        DoesFileExist                    , &
-                                        iGetFileType_FromName            , &
-                                        f_iTXT                           , &
-                                        f_iHDF
-  USE Package_Discretization    , ONLY: AppGridType                      , &
-                                        StratigraphyType
-  USE Package_Misc              , ONLY: RealTSDataInFileType             , &
-                                        f_iAllLocationIDsListed          , &
-                                        f_iLocationType_Node             , &
-                                        f_iLocationType_Element          , &
-                                        f_iLocationType_Zone             , &
-                                        f_iLocationType_Subregion        , & 
-                                        f_iLocationType_Lake             , & 
-                                        f_iLocationType_StrmNode         , & 
-                                        f_iLocationType_StrmReach        , & 
-                                        f_iLocationType_SmallWatershed   , & 
-                                        f_iLocationType_GWHeadObs        , &
-                                        f_iLocationType_StrmHydObs       , &
-                                        f_iLocationType_SubsidenceObs    , &
-                                        f_iLocationType_TileDrainObs     , &
-                                        f_iLocationType_Diversion        , &
-                                        f_iLocationType_StrmNodeBud      , &
-                                        f_iStrmComp                      , &
-                                        f_iLakeComp                      , &
-                                        f_iGWComp                        , &
-                                        f_iRootZoneComp                  , &
-                                        f_iUnsatZoneComp                 , &
-                                        f_iSWShedComp                      
-  USE Package_AppGW             , ONLY: AppGWType                        , &
-                                        f_iBudgetType_GW                 , &
-                                        f_cDescription_GWHyd_AtNodeLayer
-  USE Package_GWZBudget         , ONLY: GWZBudgetType                    , & 
-                                        f_iZBudgetType_GW                
-  USE Package_AppStream         , ONLY: AppStreamType                    , &
-                                        StrmNodeBudgetType               , &  
-                                        f_iBudgetType_StrmNode           , &
-                                        f_iBudgetType_StrmReach          , &
-                                        f_iBudgetType_DiverDetail        
-  USE Package_AppLake           , ONLY: AppLakeType                      , &
-                                        f_iBudgetType_Lake    
-  USE Package_AppUnsatZone      , ONLY: AppUnsatZoneType                 , &
-                                        f_iBudgetType_UnsatZone          , &
-                                        f_iZBudgetType_UnsatZone                 
-  USE Package_AppSmallWatershed , ONLY: AppSmallWatershedType            , &
-                                        f_iBudgetType_SWShed             
-  USE Package_RootZone          , ONLY: RootZoneType                     , &
-                                        f_iBudgetType_RootZone           , &
-                                        f_iBudgetType_LWU                , &
-                                        f_iBudgetType_NonPondedCrop_RZ   , &
-                                        f_iBudgetType_NonPondedCrop_LWU  , &
-                                        f_iBudgetType_PondedCrop_RZ      , &
-                                        f_iBudgetType_PondedCrop_LWU     , &
-                                        f_iZBudgetType_LWU               , &
-                                        f_iZBudgetType_RootZone          
-  USE Package_PrecipitationET   , ONLY: PrecipitationType
-  USE Package_Budget            , ONLY: BudgetType                       , &
-                                        f_iColumnHeaderLen
-  USE Package_ZBudget           , ONLY: ZBudgetType                      , &
-                                        ZoneListType                     , &
-                                        IsZBudgetFile                    , &
-                                        f_iColumnHeaderLen
+  USE MessageLogger               , ONLY: SetLastMessage                   , &
+                                          f_iFatal  
+  USE GeneralUtilities            , ONLY: EstablishAbsolutePathFileName    , &
+                                          LocateInList                     , &
+                                          IntToText                        , &
+                                          UpperCase                        , &
+                                          StripTextUntilCharacter          
+  USE TimeSeriesUtilities         , ONLY: TimeStepType                     , &
+                                          ExtractMonth                     , &
+                                          ExtractYear                      , &
+                                          DayMonthYearToJulianDate         , &
+                                          JulianDateAndMinutesToTimeStamp  , &
+                                          CTimeStep_To_RTimeStep           , &
+                                          NPeriods                         , &
+                                          IncrementTimeStamp               , &
+                                          OPERATOR(.TSLT.)                 , &
+                                          OPERATOR(.TSGT.)                 , &
+                                          f_iTimeStampLength              
+  USE IOInterface                 , ONLY: GenericFileType                  , &
+                                          DoesFileExist                    , &
+                                          iGetFileType_FromName            , &
+                                          f_iTXT                           , &
+                                          f_iHDF
+  USE Package_Discretization      , ONLY: AppGridType                      , &
+                                          StratigraphyType
+  USE Package_Misc                , ONLY: ElemGroupType                    , &
+                                          f_iAllLocationIDsListed          , &
+                                          f_iLocationType_Node             , &
+                                          f_iLocationType_Element          , &
+                                          f_iLocationType_Zone             , &
+                                          f_iLocationType_Subregion        , & 
+                                          f_iLocationType_Lake             , & 
+                                          f_iLocationType_StrmNode         , & 
+                                          f_iLocationType_StrmReach        , & 
+                                          f_iLocationType_SmallWatershed   , & 
+                                          f_iLocationType_GWHeadObs        , &
+                                          f_iLocationType_StrmHydObs       , &
+                                          f_iLocationType_SubsidenceObs    , &
+                                          f_iLocationType_TileDrainObs     , &
+                                          f_iLocationType_Diversion        , &
+                                          f_iLocationType_StrmNodeBud      , &
+                                          f_iStrmComp                      , &
+                                          f_iLakeComp                      , &
+                                          f_iGWComp                        , &
+                                          f_iRootZoneComp                  , &
+                                          f_iUnsatZoneComp                 , &
+                                          f_iSWShedComp
+  USE Package_ComponentConnectors , ONLY: SupplyDestinationConnectorType
+  USE Package_AppGW               , ONLY: AppGWType                        , &
+                                          f_iBudgetType_GW                 , &
+                                          f_cDescription_GWHyd_AtNodeLayer
+  USE Package_GWZBudget           , ONLY: GWZBudgetType                    , & 
+                                          f_iZBudgetType_GW                
+  USE Package_AppStream           , ONLY: AppStreamType                    , &
+                                          StrmNodeBudgetType               , &  
+                                          f_iBudgetType_StrmNode           , &
+                                          f_iBudgetType_StrmReach          , &
+                                          f_iBudgetType_DiverDetail        
+  USE Package_AppLake             , ONLY: AppLakeType                      , &
+                                          f_iBudgetType_Lake    
+  USE Package_AppUnsatZone        , ONLY: AppUnsatZoneType                 , &
+                                          f_iBudgetType_UnsatZone          , &
+                                          f_iZBudgetType_UnsatZone                 
+  USE Package_AppSmallWatershed   , ONLY: AppSmallWatershedType            , &
+                                          f_iBudgetType_SWShed             
+  USE Package_RootZone            , ONLY: RootZoneType                     , &
+                                          f_iBudgetType_RootZone           , &
+                                          f_iBudgetType_LWU                , &
+                                          f_iBudgetType_NonPondedCrop_RZ   , &
+                                          f_iBudgetType_NonPondedCrop_LWU  , &
+                                          f_iBudgetType_PondedCrop_RZ      , &
+                                          f_iBudgetType_PondedCrop_LWU     , &
+                                          f_iZBudgetType_LWU               , &
+                                          f_iZBudgetType_RootZone          
+  USE Package_PrecipitationET     , ONLY: PrecipitationType
+  USE Package_Budget              , ONLY: BudgetType                       , &
+                                          f_iColumnHeaderLen
+  USE Package_ZBudget             , ONLY: ZBudgetType                      , &
+                                          ZoneListType                     , &
+                                          IsZBudgetFile                    , &
+                                          f_iColumnHeaderLen
   IMPLICIT NONE
   
   
@@ -150,6 +151,8 @@ MODULE Class_Model_ForInquiry
       INTEGER                                          :: iNStrmNodes_WithBudget = 0 
       INTEGER,ALLOCATABLE                              :: iStrmReachIDs(:)
       INTEGER,ALLOCATABLE                              :: iDiversionIDs(:) 
+      INTEGER,ALLOCATABLE                              :: iDiversionExportNodes(:)  !Lists indices (not IDs) for the stream nodes diversions are exported from
+      TYPE(ElemGroupType),ALLOCATABLE                  :: lstElemsServedByDivers(:) !Lists element indices (not IDs) that each diversion serves
       INTEGER,ALLOCATABLE                              :: iSmallWatershedIDs(:) 
       INTEGER,ALLOCATABLE                              :: iGWHeadObsIDs(:) 
       INTEGER,ALLOCATABLE                              :: iStrmHydObsIDs(:) 
@@ -198,6 +201,9 @@ MODULE Class_Model_ForInquiry
       PROCEDURE,PASS   :: GetGWHeads_ForALayer
       PROCEDURE,PASS   :: GetNLocations
       PROCEDURE,PASS   :: GetLocationIDs
+      PROCEDURE,PASS   :: GetDiversionsExportNodes
+      PROCEDURE,PASS   :: GetStrmDiversionNElems
+      PROCEDURE,PASS   :: GetStrmDiversionElems
       PROCEDURE,NOPASS :: DeleteDataFile                  
       PROCEDURE,NOPASS :: PrintModelData
       PROCEDURE,NOPASS :: IsInstantiableFromFile
@@ -239,7 +245,7 @@ CONTAINS
     INTEGER,INTENT(OUT)            :: NTIME,iStat
     
     !Local variables
-    INTEGER                  :: iNStrmNodes,iNZBudgets,iNBudgets,iNHydTypes 
+    INTEGER                  :: iNStrmNodes,iNZBudgets,iNBudgets,iNHydTypes,indx,iNElems 
     CHARACTER(:),ALLOCATABLE :: cFileName
     TYPE(GenericFileType)    :: ModelDataFile
     
@@ -343,6 +349,26 @@ CONTAINS
         CALL ModelDataFile%ReadData(Model%cHydrographFiles,iStat)             ; IF (iStat .EQ. -1) GOTO 10 
     END IF
     
+    !Read stream nodes diversions are taken out of
+    ALLOCATE (Model%iDiversionExportNodes(Model%iNDiversions))
+    IF (Model%iNDiversions .GT. 0) THEN
+        CALL ModelDataFile%ReadData(Model%iDiversionExportNodes,iStat)
+        IF (iStat .EQ. -1) GOTO 10
+    END IF
+    
+    !Read elements that each diversion serves
+    ALLOCATE (Model%lstElemsServedByDivers(Model%iNDiversions))
+    IF (Model%iNDiversions .GT. 0) THEN
+        DO indx=1,Model%iNDiversions
+            CALL ModelDataFile%ReadData(iNElems,iStat)
+            IF (iStat .EQ. -1) GOTO 10
+            Model%lstElemsServedByDivers(indx)%NElems = iNElems
+            ALLOCATE (Model%lstElemsServedByDivers(indx)%iElems(iNElems))
+            CALL ModelDataFile%ReadData(Model%lstElemsServedByDivers(indx)%iElems,iStat)
+            IF (iStat .EQ. -1) GOTO 10
+        END DO
+    END IF
+    
     !Close file
 10  CALL ModelDataFile%Kill()
         
@@ -399,6 +425,46 @@ CONTAINS
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
+
+  ! -------------------------------------------------------------
+  ! --- GET STREAM NODE INDICES FOR A GIVEN SET OF DIVERSION INDICES
+  ! -------------------------------------------------------------
+  SUBROUTINE GetDiversionsExportNodes(Model,iDivList,iStrmNodeList)
+    CLASS(Model_ForInquiry_Type),INTENT(IN) :: Model
+    INTEGER,INTENT(IN)                      :: iDivList(:)
+    INTEGER,INTENT(OUT)                     :: iStrmNodeList(:)
+    
+    iStrmNodeList = Model%iDiversionExportNodes(iDivList)
+    
+  END SUBROUTINE GetDiversionsExportNodes
+
+
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF ELEMENTS SERVED BY A DIVERSION
+  ! -------------------------------------------------------------
+  FUNCTION GetStrmDiversionNElems(Model,iDiv) RESULT(iNElems)
+    CLASS(Model_ForInquiry_Type),INTENT(IN) :: Model
+    INTEGER,INTENT(IN)                      :: iDiv
+    INTEGER                                 :: iNElems
+    
+    iNElems = Model%lstElemsServedByDivers(iDiv)%NElems
+    
+  END FUNCTION GetStrmDiversionNElems
+
+
+  ! -------------------------------------------------------------
+  ! --- GET INDICES OF ELEMENTS SERVED BY A DIVERSION
+  ! -------------------------------------------------------------
+  SUBROUTINE GetStrmDiversionElems(Model,iDiv,iElems)
+    CLASS(Model_ForInquiry_Type),INTENT(IN) :: Model
+    INTEGER,INTENT(IN)                      :: iDiv
+    INTEGER,ALLOCATABLE,INTENT(OUT)         :: iElems(:)
+    
+    ALLOCATE (iElems(Model%lstElemsServedByDivers(iDiv)%NElems))
+    iElems = Model%lstElemsServedByDivers(iDiv)%iElems
+    
+  END SUBROUTINE GetStrmDiversionElems
+
 
   ! -------------------------------------------------------------
   ! --- GET NUMBER OF AVAILABLE HYDROGRAPH OUTPUT TYPES FROM INQUIRY MODEL
@@ -1542,20 +1608,21 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- PRINT MODEL DATA
   ! -------------------------------------------------------------
-  SUBROUTINE PrintModelData(cSIMWorkingDirectory,AppGW,AppUnsatZone,AppStream,AppSWShed,TimeStep,NTIME,cHydTypeList,cHydFileList,iHydLocationTypeList,iHydCompList,cBudgetList,cBudgetFiles,iBudgetTypeList,iBudgetCompList,iBudgetLocationTypeList,cZBudgetList,cZBudgetFiles,iZBudgetTypeList,iStat)
-    CHARACTER(LEN=*),INTENT(IN)            :: cSIMWorkingDirectory
-    TYPE(AppGWType),INTENT(IN)             :: AppGW
-    TYPE(AppUnsatZoneType),INTENT(IN)      :: AppUnsatZone
-    TYPE(AppStreamType),INTENT(IN)         :: AppStream
-    TYPE(AppSmallWatershedType),INTENT(IN) :: AppSWShed
-    TYPE(TimeStepType),INTENT(IN)          :: TimeStep
-    INTEGER,INTENT(IN)                     :: NTIME,iHydLocationTypeList(:),iHydCompList(:),iBudgetTypeList(:),iBudgetCompList(:),iBudgetLocationTypeList(:),iZBudgetTypeList(:)
-    CHARACTER(LEN=*),INTENT(IN)            :: cHydTypeList(:),cHydFileList(:),cBudgetList(:),cBudgetFiles(:),cZBudgetList(:),cZBudgetFiles(:)
-    INTEGER,INTENT(OUT)                    :: iStat
+  SUBROUTINE PrintModelData(cSIMWorkingDirectory,AppGW,AppUnsatZone,AppStream,AppSWShed,DiverDestinationConnector,TimeStep,NTIME,cHydTypeList,cHydFileList,iHydLocationTypeList,iHydCompList,cBudgetList,cBudgetFiles,iBudgetTypeList,iBudgetCompList,iBudgetLocationTypeList,cZBudgetList,cZBudgetFiles,iZBudgetTypeList,iStat)
+    CHARACTER(LEN=*),INTENT(IN)                     :: cSIMWorkingDirectory
+    TYPE(AppGWType),INTENT(IN)                      :: AppGW
+    TYPE(AppUnsatZoneType),INTENT(IN)               :: AppUnsatZone
+    TYPE(AppStreamType),INTENT(IN)                  :: AppStream
+    TYPE(AppSmallWatershedType),INTENT(IN)          :: AppSWShed
+    TYPE(SupplyDestinationConnectorType),INTENT(IN) :: DiverDestinationConnector
+    TYPE(TimeStepType),INTENT(IN)                   :: TimeStep
+    INTEGER,INTENT(IN)                              :: NTIME,iHydLocationTypeList(:),iHydCompList(:),iBudgetTypeList(:),iBudgetCompList(:),iBudgetLocationTypeList(:),iZBudgetTypeList(:)
+    CHARACTER(LEN=*),INTENT(IN)                     :: cHydTypeList(:),cHydFileList(:),cBudgetList(:),cBudgetFiles(:),cZBudgetList(:),cZBudgetFiles(:)
+    INTEGER,INTENT(OUT)                             :: iStat
     
     !Local variables
-    INTEGER                  :: iErrorCode,iNData
-    INTEGER,ALLOCATABLE      :: iIDs(:)
+    INTEGER                  :: iErrorCode,iNData,indx
+    INTEGER,ALLOCATABLE      :: iIDs(:),iStrmNodeList(:),iDivList(:),iElemList(:)
     CHARACTER(:),ALLOCATABLE :: cFileName
     TYPE(GenericFileType)    :: ModelDataFile
     
@@ -1672,6 +1739,20 @@ CONTAINS
         CALL ModelDataFile%WriteData(cHydTypeList)
         CALL ModelDataFile%WriteData(cHydFileList)
     END IF
+    
+    !Write stream node indices where diversions originate
+    iNData = AppStream%GetNDiver()
+    ALLOCATE (iStrmNodeList(iNData) , iDivList(iNData))
+    iDivList =[(indx,indx=1,iNData)]
+    CALL AppStream%GetDiversionsExportNodes(iDivList,iStrmNodeList)
+    CALL ModelDataFile%WriteData(iStrmNodeList)
+    
+    !Write elements diversions bring water to
+    DO indx=1,iNData
+        CALL DiverDestinationConnector%GetServedElemList(indx,iElemList)
+        CALL ModelDataFile%WriteData(SIZE(iElemList))
+        CALL ModelDataFile%WriteData(iElemList)
+    END DO
     
     !Close file
     CALL ModelDataFile%Kill()

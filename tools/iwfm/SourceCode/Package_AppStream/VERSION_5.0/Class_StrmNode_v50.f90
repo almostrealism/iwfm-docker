@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -65,7 +65,7 @@ MODULE Class_StrmNode_v50
       REAL(8)                    :: BottomElev         = 0.0        !Elevation of stream bottom
       REAL(8)                    :: MaxElev            = 0.0        !Maximum elevation for the stream surface (used only to limit the range of Newton-Raphson iterations to speed up convergence)
       REAL(8)                    :: Slope              = 0.0        !Slope of the stream bed
-      REAL(8)                    :: Length             = 0.0        !Length of the stream reach associated with the node
+      REAL(8)                    :: rLength            = 0.0        !Length of the stream reach associated with the node
       REAL(8)                    :: Area_P             = 0.0        !Flow area at previous time step
       TYPE(ConnectivityListType) :: Connectivity                    !Stream node connectivity (list of upstream nodes)
       TYPE(CrossSectionType)     :: CrossSection                    !Cross section related data
@@ -75,6 +75,7 @@ MODULE Class_StrmNode_v50
       PROCEDURE,PASS :: Head
       PROCEDURE,PASS :: dArea
       PROCEDURE,PASS :: dFlow
+      PROCEDURE,PASS :: WetP
       PROCEDURE,PASS :: Evaluate              => WetP
       PROCEDURE,PASS :: Derivative            => dWetP
       PROCEDURE,PASS :: InverseEvaluate       => WetP_InverseEvaluate

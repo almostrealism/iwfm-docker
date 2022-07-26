@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -75,6 +75,8 @@ MODULE SupplyDestinationConnector
       INTEGER,ALLOCATABLE :: iDests(:)                                   !List of destinationss served by a generic water supply
       REAL(8),ALLOCATABLE :: SupplyToDestFracs_Ag(:)                     !Fraction of the generic ag water supply that go to each destination to meet ag water demand
       REAL(8),ALLOCATABLE :: SupplyToDestFracs_Urb(:)                    !Fraction of the generic urban water supply that go to each destination to meet urban water demand
+      REAL(8),ALLOCATABLE :: SupplyMax_Ag(:)                             !Array to store maximum ag supply delivered to each destination (derived from the maximum supply for the destination distributed to destinations based on ag demand)  
+      REAL(8),ALLOCATABLE :: SupplyMax_Urb(:)                            !Array to store maximum urb supply delivered to each destination (derived from the maximum supply for the destination distributed to destinations based on urb demand)
   CONTAINS
       PROCEDURE,PASS :: Kill    => SupplyToDestination_Kill
   END TYPE SupplyToDestinationType
@@ -270,7 +272,9 @@ CONTAINS
             Connector%nDest     = 1
             ALLOCATE (Connector%iDests(1)               , &
                       Connector%SupplyToDestFracs_Ag(1) , &
-                      Connector%SupplyToDestFracs_Urb(1))
+                      Connector%SupplyToDestFracs_Urb(1), &
+                      Connector%SupplyMax_Ag(1)         , &
+                      Connector%SupplyMax_Urb(1)        )
             Connector%iDests(1)                = Destination%iDest
             Connector%SupplyToDestFracs_Ag(1)  = 1.0
             Connector%SupplyToDestFracs_Urb(1) = 1.0
@@ -296,10 +300,12 @@ CONTAINS
             Connector%nDest     = NElems
             ALLOCATE (Connector%iDests(NElems)               , &
                       Connector%SupplyToDestFracs_Ag(NElems) , & 
-                      Connector%SupplyToDestFracs_Urb(NElems))
+                      Connector%SupplyToDestFracs_Urb(NElems), &
+                      Connector%SupplyMax_Ag(NElems)         , &
+                      Connector%SupplyMax_Urb(NElems)        )
             Connector%iDests                = Destination%iDestElems%iElems
-            Connector%SupplyToDestFracs_Ag  = 1d0 / REAL(NElems,8)  !This is an initialization
-            Connector%SupplyToDestFracs_Urb = 1d0 / REAL(NElems,8)  !This is an initialization
+            Connector%SupplyToDestFracs_Ag  = 1.0  !This is an initialization
+            Connector%SupplyToDestFracs_Urb = 1.0  !This is an initialization
         
         !Supply goes to a subregion
         CASE (f_iFlowDest_Subregion)
@@ -318,10 +324,12 @@ CONTAINS
             Connector%nDest     = AppGrid%AppSubregion(iRegion)%NRegionElements
             ALLOCATE (Connector%iDests(Connector%nDest)               , &
                       Connector%SupplyToDestFracs_Ag(Connector%nDest) , & 
-                      Connector%SupplyToDestFracs_Urb(Connector%nDest))
+                      Connector%SupplyToDestFracs_Urb(Connector%nDest), &
+                      Connector%SupplyMax_Ag(Connector%nDest)         , &
+                      Connector%SupplyMax_Urb(Connector%nDest)        )
             Connector%iDests                = AppGrid%AppSubregion(iRegion)%RegionElements
-            Connector%SupplyToDestFracs_Ag  = 1.0
-            Connector%SupplyToDestFracs_Urb = 1.0
+            Connector%SupplyToDestFracs_Ag  = 1.0  !This is an initialization
+            Connector%SupplyToDestFracs_Urb = 1.0  !This is an initialization
             
     END SELECT
     
@@ -371,7 +379,9 @@ CONTAINS
             Connector%nDest     = 1
             ALLOCATE (Connector%iDests(1)               , &
                       Connector%SupplyToDestFracs_Ag(1) , &
-                      Connector%SupplyToDestFracs_Urb(1))
+                      Connector%SupplyToDestFracs_Urb(1), &
+                      Connector%SupplyMax_Ag(1)         , &
+                      Connector%SupplyMax_Urb(1)        )
             Connector%iDests(1)                = AppGrid%AppElement(Destination%iDest)%Subregion
             Connector%SupplyToDestFracs_Ag(1)  = 1.0
             Connector%SupplyToDestFracs_Urb(1) = 1.0
@@ -385,7 +395,9 @@ CONTAINS
             Connector%nDest     = 1
             ALLOCATE (Connector%iDests(1)               , &
                       Connector%SupplyToDestFracs_Ag(1) , & 
-                      Connector%SupplyToDestFracs_Urb(1))
+                      Connector%SupplyToDestFracs_Urb(1), &
+                      Connector%SupplyMax_Ag(1)         , &
+                      Connector%SupplyMax_Urb(1)        )
             Connector%iDests(1)                = AppGrid%AppElement(Destination%iDestElems%iElems(1))%Subregion
             Connector%SupplyToDestFracs_Ag(1)  = 1.0
             Connector%SupplyToDestFracs_Urb(1) = 1.0
@@ -407,7 +419,9 @@ CONTAINS
             Connector%nDest     = 1
             ALLOCATE (Connector%iDests(1)               , &
                       Connector%SupplyToDestFracs_Ag(1) , & 
-                      Connector%SupplyToDestFracs_Urb(1))
+                      Connector%SupplyToDestFracs_Urb(1), &
+                      Connector%SupplyMax_Ag(1)         , &
+                      Connector%SupplyMax_Urb(1)        )
             Connector%iDests(1)                = iRegion
             Connector%SupplyToDestFracs_Ag(1)  = 1.0
             Connector%SupplyToDestFracs_Urb(1) = 1.0
@@ -439,7 +453,7 @@ CONTAINS
   
   
     ! ############################################
-    ! --- ADD SUPPLY TO THE LIST OF SUUPLIES TO A GIVEN DESTINATION
+    ! --- ADD SUPPLY TO THE LIST OF SUPPLIES TO A GIVEN DESTINATION
     ! ############################################
     SUBROUTINE AddData(indxSupply,indxDest,Connector)
       INTEGER,INTENT(IN)            :: indxSupply,indxDest
@@ -491,6 +505,8 @@ CONTAINS
     DEALLOCATE (SupplyToDest%iDests                , &
                 SupplyToDest%SupplyToDestFracs_Ag  , &
                 SupplyToDest%SupplyToDestFracs_Urb , &
+                SupplyToDest%SupplyMax_Ag          , &
+                SupplyToDest%SupplyMax_Urb         , &
                 STAT=ErrorCode                     )
     SupplyToDest%iDestType = Dummy%iDestType
     SupplyToDest%nDest     = Dummy%nDest

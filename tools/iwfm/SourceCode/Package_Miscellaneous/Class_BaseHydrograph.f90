@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -38,15 +38,14 @@ MODULE Class_BaseHydrograph
   USE TimeSeriesUtilities    , ONLY: TimeStepType                   , &
                                      IncrementTimeStamp
   USE IOInterface            , ONLY: GenericFileType                , &
+                                     RealTSDataInFileType           , &
+                                     PrepareTSDOutputFile           , &
                                      iGetFileType_FromName          , &
                                      f_iUNKNOWN                     , &
                                      f_iDSS
   USE GenericLinkedList      , ONLY: GenericLinkedListType 
   USE Package_Discretization , ONLY: AppGridType                    , &
                                      StratigraphyType               
-  USE TSDFileHandler         , ONLY: RealTSDataInFileType           , &
-                                     PrepareTSDOutputFile           , &
-                                     ReadTSData
   IMPLICIT NONE
 
   
@@ -706,7 +705,7 @@ CONTAINS
     END IF
     
     !Read data
-    CALL HydOutput%InFile_ForInquiry%ReadData(iHydIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,FileReadCode,iStat)  
+    CALL HydOutput%InFile_ForInquiry%ReadTSData(iHydIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,FileReadCode,iStat)  
     IF (iStat .EQ. -1) RETURN
     
     !Convert unit
@@ -1067,7 +1066,7 @@ CONTAINS
     TimeStep_Local = TimeStep
     DO indxTime=1,NTIME+1
         !Read data
-        CALL ReadTSData(TimeStep_Local,cDescription,HydOut%InFile_ForInquiry,FileReadCode,iStat)
+        CALL HydOut%InFile_ForInquiry%ReadTSData(TimeStep_Local,cDescription,FileReadCode,iStat)
         IF (iStat .EQ. -1) RETURN
         
         !Transfer  values to matrix to be written to HDF file

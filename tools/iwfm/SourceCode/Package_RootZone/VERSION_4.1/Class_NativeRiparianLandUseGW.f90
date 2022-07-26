@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -35,9 +35,8 @@ MODULE Class_NativeRiparianLandUseGW
                                       AllocArray                           , &
                                       LocateInList                         
   USE TimeSeriesUtilities     , ONLY: TimeStepType                         
-  USE IOInterface             , ONLY: GenericFileType                      
-  USE Package_Misc            , ONLY: RealTSDataInFileType                 , &
-                                      SolverDataType                       , &
+  USE IOInterface             , ONLY: GenericFileType  
+  USE Package_Misc            , ONLY: SolverDataType                       , &
                                       f_iFlowDest_GWElement                
   USE Class_BaseRootZone      , ONLY: TrackMoistureDueToSource             
   USE Class_GenericLandUseGW  , ONLY: GenericLandUseGWType                 , &
@@ -82,15 +81,15 @@ MODULE Class_NativeRiparianLandUseGW
   ! --- NATIVE/RIPARIAN LAND DATABASE TYPE
   ! -------------------------------------------------------------
   TYPE NativeRiparianDatabaseType
-    TYPE(NativeRiparianType),ALLOCATABLE :: NativeVeg(:)
-    TYPE(NativeRiparianType),ALLOCATABLE :: RiparianVeg(:)
-    TYPE(RVETFromStrmType)               :: RVETFromStrm
-    LOGICAL                              :: lRVETFromStrm_Simulated  = .FALSE.
-    REAL(8)                              :: RootDepth_Native         = 0.0     
-    REAL(8)                              :: RootDepth_Riparian       = 0.0    
-    REAL(8),ALLOCATABLE                  :: RegionETPot_NV(:)                    !Regional potential ET for native vegetation
-    REAL(8),ALLOCATABLE                  :: RegionETPot_RV(:)                    !Regional potential ET for riparian vegetation
-    TYPE(LandUseDataFileType)            :: LandUseDataFile                      !Land use data file
+    TYPE(NativeRiparianType)  :: NativeVeg
+    TYPE(NativeRiparianType)  :: RiparianVeg
+    TYPE(RVETFromStrmType)    :: RVETFromStrm
+    LOGICAL                   :: lRVETFromStrm_Simulated  = .FALSE.
+    REAL(8)                   :: RootDepth_Native         = 0.0     
+    REAL(8)                   :: RootDepth_Riparian       = 0.0    
+    REAL(8),ALLOCATABLE       :: RegionETPot_NV(:)                    !Regional potential ET for native vegetation
+    REAL(8),ALLOCATABLE       :: RegionETPot_RV(:)                    !Regional potential ET for riparian vegetation
+    TYPE(LandUseDataFileType) :: LandUseDataFile                      !Land use data file
   CONTAINS
     PROCEDURE,PASS :: New                             
     PROCEDURE,PASS :: Kill                            
@@ -153,7 +152,7 @@ CONTAINS
     !Local variables
     CHARACTER(LEN=ModNameLen+3)  :: ThisProcedure = ModName // 'New'
     CHARACTER                    :: ALine*1000
-    INTEGER                      :: ErrorCode,iStrmNodes(NElements),iElem,ID,indxElem,iStrmNodeID
+    INTEGER                      :: ErrorCode,iStrmNodes(NElements),iElem,ID,indxElem,iStrmNodeID,iStat1
     REAL(8)                      :: FACT
     REAL(8),ALLOCATABLE          :: DummyArray(:,:)
     LOGICAL                      :: lProcessed(NElements)
@@ -171,16 +170,20 @@ CONTAINS
     IF (iStat .EQ. -1) RETURN
 
     !Allocate memory
-    ALLOCATE (NVRVLand%NativeVeg(NElements)        , &
-              NVRVLand%RiparianVeg(NElements)      , &
-              NVRVLand%RegionETPot_NV(NSubregions) , &
+    CALL NVRVLand%NativeVeg%New(NElements,1,iStat1)
+    CALL NVRVLand%RiparianVeg%New(NElements,1,iStat)
+    ALLOCATE (NVRVLand%RegionETPot_NV(NSubregions) , &
               NVRVLand%RegionETPot_RV(NSubregions) , &
               STAT=ErrorCode                       )
-    IF (ErrorCode .NE. 0) THEN
+    IF (ErrorCode+iStat1+iStat .NE. 0) THEN
         CALL SetLastMessage('Error in allocating memory for native/riparian vegetation data!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
+    
+    !Initialize arrays
+    NVRVLand%RegionETPot_NV = 0.0
+    NVRVLand%RegionETPot_RV = 0.0
     
     !Land use data file
     CALL NVRVFile%ReadData(ALine,iStat)  ;  IF (iStat .EQ. -1) RETURN  
@@ -207,12 +210,12 @@ CONTAINS
             iStat = -1
             RETURN
         END IF
-        lProcessed(iElem)                   = .TRUE.
-        NVRVLand%NativeVeg(iElem)%SMax      = (1000.0/DummyArray(indxElem,2)-10.0) * FACTCN
-        NVRVLand%RiparianVeg(iElem)%SMax    = (1000.0/DummyArray(indxElem,3)-10.0) * FACTCN
-        NVRVLand%NativeVeg(iElem)%iColETc   = INT(DummyArray(indxElem,4))
-        NVRVLand%RiparianVeg(iElem)%iColETc = INT(DummyArray(indxElem,5))
-        iStrmNodeID                         = INT(DummyArray(indxElem,6))
+        lProcessed(iElem)                     = .TRUE.
+        NVRVLand%NativeVeg%SMax(iElem,1)      = (1000.0/DummyArray(indxElem,2)-10.0) * FACTCN
+        NVRVLand%RiparianVeg%SMax(iElem,1)    = (1000.0/DummyArray(indxElem,3)-10.0) * FACTCN
+        NVRVLand%NativeVeg%iColETc(iElem,1)   = INT(DummyArray(indxElem,4))
+        NVRVLand%RiparianVeg%iColETc(iElem,1) = INT(DummyArray(indxElem,5))
+        iStrmNodeID                           = INT(DummyArray(indxElem,6))
         IF (iStrmNodeID .EQ. 0) THEN
             iStrmNodes(iElem) = 0
         ELSE
@@ -254,19 +257,19 @@ CONTAINS
             iStat = -1
             RETURN
         END IF
-        lProcessed(iElem)                                       = .TRUE.
-        NVRVLand%NativeVeg(iElem)%SoilM_Precip                  = DummyArray(indxElem,2) 
-        NVRVLand%NativeVeg(iElem)%SoilM_AW                      = 0.0
-        NVRVLand%NativeVeg(iElem)%SoilM_Precip_P                = NVRVLand%NativeVeg(iElem)%SoilM_Precip
-        NVRVLand%NativeVeg(iElem)%SoilM_AW_P                    = NVRVLand%NativeVeg(iElem)%SoilM_AW
-        NVRVLand%NativeVeg(iElem)%SoilM_Precip_P_BeforeUpdate   = NVRVLand%NativeVeg(iElem)%SoilM_Precip
-        NVRVLand%NativeVeg(iElem)%SoilM_AW_P_BeforeUpdate       = NVRVLand%NativeVeg(iElem)%SoilM_AW
-        NVRVLand%RiparianVeg(iElem)%SoilM_Precip                = DummyArray(indxElem,3) 
-        NVRVLand%RiparianVeg(iElem)%SoilM_AW                    = 0.0 
-        NVRVLand%RiparianVeg(iElem)%SoilM_Precip_P              = NVRVLand%RiparianVeg(iElem)%SoilM_Precip
-        NVRVLand%RiparianVeg(iElem)%SoilM_AW_P                  = NVRVLand%RiparianVeg(iElem)%SoilM_AW
-        NVRVLand%RiparianVeg(iElem)%SoilM_Precip_P_BeforeUpdate = NVRVLand%RiparianVeg(iElem)%SoilM_Precip
-        NVRVLand%RiparianVeg(iElem)%SoilM_AW_P_BeforeUpdate     = NVRVLand%RiparianVeg(iElem)%SoilM_AW
+        lProcessed(iElem)                                         = .TRUE.
+        NVRVLand%NativeVeg%SoilM_Precip(iElem,1)                  = DummyArray(indxElem,2) 
+        NVRVLand%NativeVeg%SoilM_AW(iElem,1)                      = 0.0
+        NVRVLand%NativeVeg%SoilM_Precip_P(iElem,1)                = NVRVLand%NativeVeg%SoilM_Precip(iElem,1)
+        NVRVLand%NativeVeg%SoilM_AW_P(iElem,1)                    = NVRVLand%NativeVeg%SoilM_AW(iElem,1)
+        NVRVLand%NativeVeg%SoilM_Precip_P_BeforeUpdate(iElem,1)   = NVRVLand%NativeVeg%SoilM_Precip(iElem,1)
+        NVRVLand%NativeVeg%SoilM_AW_P_BeforeUpdate(iElem,1)       = NVRVLand%NativeVeg%SoilM_AW(iElem,1)
+        NVRVLand%RiparianVeg%SoilM_Precip(iElem,1)                = DummyArray(indxElem,3) 
+        NVRVLand%RiparianVeg%SoilM_AW(iElem,1)                    = 0.0 
+        NVRVLand%RiparianVeg%SoilM_Precip_P(iElem,1)              = NVRVLand%RiparianVeg%SoilM_Precip(iElem,1)
+        NVRVLand%RiparianVeg%SoilM_AW_P(iElem,1)                  = NVRVLand%RiparianVeg%SoilM_AW(iElem,1)
+        NVRVLand%RiparianVeg%SoilM_Precip_P_BeforeUpdate(iElem,1) = NVRVLand%RiparianVeg%SoilM_Precip(iElem,1)
+        NVRVLand%RiparianVeg%SoilM_AW_P_BeforeUpdate(iElem,1)     = NVRVLand%RiparianVeg%SoilM_AW(iElem,1)
     END DO
     
     !Close file
@@ -301,9 +304,11 @@ CONTAINS
     TYPE(NativeRiparianDatabaseType) :: Dummy
     
     !Deallocate arrays
-    DEALLOCATE (NVRVLand%NativeVeg    , &
-                NVRVLand%RiparianVeg  , &
-                STAT = ErrorCode      )
+    CALL NVRVLand%NativeVeg%Kill()
+    CALL NVRVLand%RiparianVeg%Kill()
+    DEALLOCATE (NVRVLand%RegionETPot_NV  , &
+                NVRVLand%RegionETPot_RV  , &
+                STAT = ErrorCode         )
     
     !Close files
     CALL NVRVLand%LandUseDataFile%Kill()
@@ -413,8 +418,8 @@ CONTAINS
     CLASS(NativeRiparianDatabaseType) :: NVRVLand
     REAL(8),INTENT(IN)                :: Area(:,:)
    
-    NVRVLand%NativeVeg%Area   = Area(1,:)
-    NVRVLand%RiparianVeg%Area = Area(2,:)
+    NVRVLand%NativeVeg%Area(:,1)   = Area(1,:)
+    NVRVLand%RiparianVeg%Area(:,1) = Area(2,:)
     
   END SUBROUTINE SetAreas
   
@@ -507,8 +512,8 @@ CONTAINS
     CALL NVRVLand%LandUseDataFile%ReadTSData('Native and riparian veg. areas',TimeStep,rElemAreas,iElemIDs,iStat)
     IF (iStat .EQ. -1) RETURN
     IF (NVRVLAnd%LandUseDataFile%lUpdated) THEN
-        NVRVLand%NativeVeg%Area   = NVRVLand%LandUseDataFile%rValues(:,2)
-        NVRVLand%RiparianVeg%Area = NVRVLand%LandUseDataFile%rValues(:,3)
+        NVRVLand%NativeVeg%Area(:,1)   = NVRVLand%LandUseDataFile%rValues(:,2)
+        NVRVLand%RiparianVeg%Area(:,1) = NVRVLand%LandUseDataFile%rValues(:,3)
     END IF
     
   END SUBROUTINE ReadTSData
@@ -583,16 +588,14 @@ CONTAINS
     
     !Local variables
     CHARACTER(LEN=ModNameLen+18),PARAMETER :: ThisProcedure = ModName // 'ComputeWaterDemand'
-    !$ INTEGER                             :: iChunk
     INTEGER                                :: indxElem,KunsatMethod,iColETc(1)
     REAL(8)                                :: ETFromStrm_Required(NElements),WiltingPoint,FieldCapacity,TotalPorosity,HydCond,  &
                                               Lambda,ETc(1),RootDepth,PrecipD,SoilM_P,GM,ETa,AchievedConv,SoilM,Runoff,Excess,  &
                                               PrecipInfilt,Perc,ETc_effect
-    TYPE(NativeRiparianType),POINTER       :: pRV(:)
+    TYPE(NativeRiparianType),POINTER       :: pRV
     
     !Initialize
-    iStat    = 0
-    !$ iChunk = MAX(1 , NElements/(OMP_GET_MAX_THREADS()-1)/10)
+    iStat = 0
     
     !Return if riparian-et-from-streams are not simulated
     IF (.NOT. NVRVLand%lRVETFromStrm_Simulated) RETURN
@@ -603,15 +606,11 @@ CONTAINS
 
     !Loop over elements
     !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NElements,pRV,ETFromStrm_Required,lLakeElem,RootDepth,SoilsData, &
-    !$OMP                                  ETData,Precip,GenericMoisture,SolverData,iElemIDs,DeltaT,iStat)  &
-    !$OMP          NUM_THREADS(OMP_GET_MAX_THREADS()-1)
-    !$OMP DO SCHEDULE(DYNAMIC,iChunk)
+    !$OMP                                  ETData,Precip,GenericMoisture,SolverData,iElemIDs,DeltaT,iStat)  
+    !$OMP DO SCHEDULE(DYNAMIC,200)
     DO indxElem=1,NElements
-        !Cycle if an error occured previously
-        IF (iStat .EQ. -1) CYCLE
-        
         !Cycle if riparian area is zero
-        IF (pRV(indxElem)%Area .EQ. 0.0) THEN
+        IF (pRV%Area(indxElem,1) .EQ. 0.0) THEN
             ETFromStrm_Required(indxElem) = 0.0
             CYCLE
         END IF
@@ -629,16 +628,16 @@ CONTAINS
         HydCond       = SoilsData(indxElem)%HydCond
         Lambda        = SoilsData(indxElem)%Lambda
         KunsatMethod  = SoilsData(indxElem)%KunsatMethod
-        iColETc(1)    = pRV(indxElem)%iColETc
+        iColETc(1)    = pRV%iColETc(indxElem,1)
         ETc           = ETData%GetValues(iColETc) * DeltaT
-        ETc_effect    = ETc(1) - MIN(ETc(1) , pRV(indxElem)%ETFromGW_Max)
+        ETc_effect    = ETc(1) - MIN(ETc(1) , pRV%ETFromGW_Max(indxElem,1))
         PrecipD       = Precip(indxElem) * DeltaT
-        SoilM_P       = pRV(indxElem)%SoilM_Precip_P + pRV(indxElem)%SoilM_AW_P + pRV(indxElem)%SoilM_Oth_P 
+        SoilM_P       = pRV%SoilM_Precip_P(indxElem,1) + pRV%SoilM_AW_P(indxElem,1) + pRV%SoilM_Oth_P(indxElem,1) 
         GM            = GenericMoisture(1,indxElem) * RootDepth * DeltaT
         
         !Route moisture mainly to compute actual ET
         CALL NonPondedLUMoistureRouter(PrecipD                                ,  &
-                                       pRV(indxElem)%SMax                     ,  &
+                                       pRV%SMax(indxElem,1)                   ,  &
                                        SoilM_P                                ,  &
                                        ETc_effect                             ,  & 
                                        HydCond                                ,  & 
@@ -671,7 +670,7 @@ CONTAINS
 
         !Required stream flow to meet ET
         IF (ETa .LT. ETc_effect) THEN
-            ETFromStrm_Required(indxElem) = (ETc_effect-ETa) * pRV(indxElem)%Area
+            ETFromStrm_Required(indxElem) = (ETc_effect-ETa) * pRV%Area(indxElem,1)
         ELSE
             ETFromStrm_Required(indxElem) = 0.0
         END IF
@@ -689,7 +688,7 @@ CONTAINS
   ! --- SIMULATE FLOW PROCESSES 
   ! -------------------------------------------------------------
   SUBROUTINE Simulate(NVRVLand,AppGrid,ETData,DeltaT,Precip,GenericMoisture,SoilsData,ElemSupply,ElemsToGW,SolverData,lLakeElem,iStat)
-    CLASS(NativeRiparianDatabaseType),TARGET :: NVRVLand
+    CLASS(NativeRiparianDatabaseType)        :: NVRVLand
     TYPE(AppGridType),INTENT(IN)             :: AppGrid
     TYPE(ETType),INTENT(IN)                  :: ETData
     TYPE(RootZoneSoil_v41_Type),INTENT(IN)   :: SoilsData(AppGrid%NElements)
@@ -701,7 +700,6 @@ CONTAINS
     
     !Local variables
     CHARACTER(LEN=ModNameLen+8),PARAMETER :: ThisProcedure = ModName // 'Simulate'
-    !$ INTEGER                            :: iChunk  
     INTEGER                               :: indxElem,iColETc(2),KunsatMethod,iElemID
     REAL(8)                               :: AchievedConv,ETc(2),HydCond,TotalPorosity,Area_NV,Area_RV,       &
                                              FieldCapacity,TotalPorosityCrop,FieldCapacityCrop,Lambda,        &
@@ -709,12 +707,10 @@ CONTAINS
                                              WiltingPointCrop,SoilM,SoilM_P,GMNV,rMultip,Inflow,ratio(2),     &
                                              PrecipD,RiparianETStrm(AppGrid%NElements),Infilt(3),ETc_effect,  &
                                              SoilM_P_Array(3),SoilM_Array(3),ETPartition(3)
-    LOGICAL                               :: lElemFlowToGW,lNegativeMoistNV,lNegativeMoistRV
-    TYPE(NativeRiparianType),POINTER      :: pNVElem,pRVElem
+    LOGICAL                               :: lElemFlowToGW
     
     !Initialize
-    iStat     = 0
-    !$ iChunk = MAX(1 , AppGrid%NElements/(OMP_GET_MAX_THREADS()-1)/10)
+    iStat = 0
   
     !Inform user
     CALL EchoProgress('Simulating flows at native and riparian vegetation lands')
@@ -729,30 +725,25 @@ CONTAINS
     END IF
     
     !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(AppGrid,NVRVLand,lLakeElem,ETData,SoilsData,DeltaT,Precip,iStat,RootDepthNV,  &
-    !$OMP                                  RootDepthRV,GenericMoisture,ElemSupply,ElemsToGW,SolverData,RiparianETStrm)   &
-    !$OMP          NUM_THREADS(OMP_GET_MAX_THREADS()-1)
-    !$OMP DO SCHEDULE(DYNAMIC,iChunk)
+    !$OMP                                  RootDepthRV,GenericMoisture,ElemSupply,ElemsToGW,SolverData,RiparianETStrm)   
+    !$OMP DO SCHEDULE(NONMONOTONIC:DYNAMIC,96)
     DO indxElem=1,AppGrid%NElements
         !Initalize flows
-        NVRVLand%NativeVeg(indxElem)%Runoff          = 0.0  ;  NVRVLand%RiparianVeg(indxElem)%Runoff          = 0.0
-        NVRVLand%NativeVeg(indxElem)%PrecipInfilt    = 0.0  ;  NVRVLand%RiparianVeg(indxElem)%PrecipInfilt    = 0.0   
-        NVRVLand%NativeVeg(indxElem)%ETa             = 0.0  ;  NVRVLand%RiparianVeg(indxElem)%ETa             = 0.0   
-        NVRVLand%NativeVeg(indxElem)%Perc            = 0.0  ;  NVRVLand%RiparianVeg(indxElem)%Perc            = 0.0 
-        NVRVLand%NativeVeg(indxElem)%GMExcess        = 0.0  ;  NVRVLand%RiparianVeg(indxElem)%GMExcess        = 0.0
-        NVRVLand%NativeVeg(indxElem)%ETFromGW_Actual = 0.0  ;  NVRVLand%RiparianVeg(indxElem)%ETFromGW_Actual = 0.0
+        NVRVLand%NativeVeg%Runoff(indxElem,1)          = 0.0  ;  NVRVLand%RiparianVeg%Runoff(indxElem,1)          = 0.0
+        NVRVLand%NativeVeg%PrecipInfilt(indxElem,1)    = 0.0  ;  NVRVLand%RiparianVeg%PrecipInfilt(indxElem,1)    = 0.0   
+        NVRVLand%NativeVeg%ETa(indxElem,1)             = 0.0  ;  NVRVLand%RiparianVeg%ETa(indxElem,1)             = 0.0   
+        NVRVLand%NativeVeg%Perc(indxElem,1)            = 0.0  ;  NVRVLand%RiparianVeg%Perc(indxElem,1)            = 0.0 
+        NVRVLand%NativeVeg%GMExcess(indxElem,1)        = 0.0  ;  NVRVLand%RiparianVeg%GMExcess(indxElem,1)        = 0.0
+        NVRVLand%NativeVeg%ETFromGW_Actual(indxElem,1) = 0.0  ;  NVRVLand%RiparianVeg%ETFromGW_Actual(indxElem,1) = 0.0
         IF (iStat .EQ. -1) CYCLE
         
         !Cycle if native and riparian veg areas are both zero
-        Area_NV = NVRVLand%NativeVeg(indxElem)%Area
-        Area_RV = NVRVLand%RiparianVeg(indxElem)%Area
+        Area_NV = NVRVLand%NativeVeg%Area(indxElem,1)
+        Area_RV = NVRVLand%RiparianVeg%Area(indxElem,1)
         IF (Area_NV .EQ. 0.0   .AND.   Area_RV .EQ. 0.0) CYCLE
         
         !Cycle if it is lake element
         IF (lLakeElem(indxElem)) CYCLE
-        
-        !Pointers to NV and RV data
-        pNVElem => NVRVLand%NativeVeg(indxElem)
-        pRVElem => NVRVLand%RiparianVeg(indxElem)
         
         !Does the surface flow go to groundwater
         IF (LocateInList(indxElem,ElemsToGW) .GT. 0) THEN
@@ -767,8 +758,8 @@ CONTAINS
         HydCond       = SoilsData(indxElem)%HydCond
         Lambda        = SoilsData(indxElem)%Lambda
         KunsatMethod  = SoilsData(indxElem)%KunsatMethod
-        iColETc(1)    = pNVElem%iColETc
-        iColETc(2)    = pRVElem%iColETc
+        iColETc(1)    = NVRVLand%NativeVeg%iColETc(indxElem,1)
+        iColETc(2)    = NVRVLand%RiparianVeg%iColETc(indxElem,1)
         ETc           = ETData%GetValues(iColETc)
 
         !Water supply as runoff from upstream elements 
@@ -783,35 +774,35 @@ CONTAINS
             TotalPorosityCrop = TotalPorosity * RootDepthNV
             FieldCapacityCrop = FieldCapacity * RootDepthNV
             WiltingPointCrop  = WiltingPoint  * RootDepthNV
-            SoilM_P           = pNVElem%SoilM_Precip_P + pNVElem%SoilM_AW_P + pNVElem%SoilM_Oth_P
+            SoilM_P           = NVRVLand%NativeVeg%SoilM_Precip_P(indxElem,1) + NVRVLand%NativeVeg%SoilM_AW_P(indxElem,1) + NVRVLand%NativeVeg%SoilM_Oth_P(indxElem,1)
             GMNV              = GenericMoisture(1,indxElem) * RootDepthNV * DeltaT
             Inflow            = Supply + GMNV 
             
             !ET from GW
-            pNVElem%ETFromGW_Actual = MIN(ETc(1)*DeltaT , pNVElem%ETFromGW_Max)
-            ETc_effect              = ETc(1)*DeltaT - pNVElem%ETFromGW_Actual
+            NVRVLand%NativeVeg%ETFromGW_Actual(indxElem,1) = MIN(ETc(1)*DeltaT , NVRVLand%NativeVeg%ETFromGW_Max(indxElem,1))
+            ETc_effect                                     = ETc(1)*DeltaT - NVRVLand%NativeVeg%ETFromGW_Actual(indxElem,1)
             
             !Simulate
-            CALL NonPondedLUMoistureRouter(PrecipD                                ,  &
-                                           pNVElem%SMax                           ,  &
-                                           SoilM_P                                ,  &
-                                           ETc_effect                             ,  & 
-                                           HydCond                                ,  & 
-                                           TotalPorosityCrop                      ,  & 
-                                           FieldCapacityCrop                      ,  & 
-                                           WiltingPointCrop                       ,  &
-                                           Lambda                                 ,  & 
-                                           Inflow                                 ,  &
-                                           SolverData%Tolerance*TotalPorosityCrop ,  &
-                                           KunsatMethod                           ,  &
-                                           SolverData%IterMax                     ,  &
-                                           SoilM                                  ,  & 
-                                           pNVElem%Runoff                         ,  & 
-                                           pNVElem%PrecipInfilt                   ,  & 
-                                           pNVElem%ETa                            ,  & 
-                                           pNVElem%Perc                           ,  & 
-                                           Excess                                 ,  &
-                                           AchievedConv                           ) 
+            CALL NonPondedLUMoistureRouter(PrecipD                                      ,  &
+                                           NVRVLand%NativeVeg%SMax(indxElem,1)          ,  &
+                                           SoilM_P                                      ,  &
+                                           ETc_effect                                   ,  & 
+                                           HydCond                                      ,  & 
+                                           TotalPorosityCrop                            ,  & 
+                                           FieldCapacityCrop                            ,  & 
+                                           WiltingPointCrop                             ,  &
+                                           Lambda                                       ,  & 
+                                           Inflow                                       ,  &
+                                           SolverData%Tolerance*TotalPorosityCrop       ,  &
+                                           KunsatMethod                                 ,  &
+                                           SolverData%IterMax                           ,  &
+                                           SoilM                                        ,  & 
+                                           NVRVLand%NativeVeg%Runoff(indxElem,1)        ,  & 
+                                           NVRVLand%NativeVeg%PrecipInfilt(indxElem,1)  ,  & 
+                                           NVRVLand%NativeVeg%ETa(indxElem,1)           ,  & 
+                                           NVRVLand%NativeVeg%Perc(indxElem,1)          ,  & 
+                                           Excess                                       ,  &
+                                           AchievedConv                                 ) 
                                          
             !Generate error if convergence is not achieved
             IF (AchievedConv .NE. 0.0) THEN
@@ -829,33 +820,29 @@ CONTAINS
             
             !Reduce total infiltration based on correction for total porosity
             IF (Excess .NE. 0.0) THEN
-                ratio = [pNVElem%PrecipInfilt , GMNV]
+                ratio = [NVRVLand%NativeVeg%PrecipInfilt(indxElem,1) , GMNV]
                 CALL NormalizeArray(ratio)
-                pNVElem%Runoff         = pNVElem%Runoff + Excess * ratio(1)
-                pNVElem%GMExcess       = Excess * ratio(2)
-                pNVElem%PrecipInfilt   = PrecipD - pNVElem%Runoff
+                NVRVLand%NativeVeg%Runoff(indxElem,1)        = NVRVLand%NativeVeg%Runoff(indxElem,1) + Excess * ratio(1)
+                NVRVLand%NativeVeg%GMExcess(indxElem,1)      = Excess * ratio(2)
+                NVRVLand%NativeVeg%PrecipInfilt(indxElem,1)  = PrecipD - NVRVLand%NativeVeg%Runoff(indxElem,1)
             END IF
             
             !Compute moisture from precip and irrigation
-            SoilM_P_Array = [pNVElem%SoilM_Precip_P , pNVElem%SoilM_AW_P , pNVElem%SoilM_Oth_P  ]
-            Infilt        = [pNVElem%PrecipInfilt   , 0d0                , GMNV-pNVElem%GMExcess]
-            CALL TrackMoistureDueToSource(SoilM_P_Array     ,  &
-                                          Infilt            ,  &
-                                          pNVElem%Perc      ,  &
-                                          pNVElem%ETa       ,  &
-                                          0d0               ,  &
-                                          SoilM_Array       ,  &
-                                          ETPartition       )
-            pNVElem%SoilM_Precip = SoilM_Array(1)
-            pNVElem%SoilM_AW     = SoilM_Array(2)
-            pNVElem%SoilM_Oth    = SoilM_Array(3)
+            SoilM_P_Array = [NVRVLand%NativeVeg%SoilM_Precip_P(indxElem,1) , NVRVLand%NativeVeg%SoilM_AW_P(indxElem,1) , NVRVLand%NativeVeg%SoilM_Oth_P(indxElem,1)  ]
+            Infilt        = [NVRVLand%NativeVeg%PrecipInfilt(indxElem,1)   , 0d0                                       , GMNV-NVRVLand%NativeVeg%GMExcess(indxElem,1)]
+            CALL TrackMoistureDueToSource(SoilM_P_Array                        ,  &
+                                          Infilt                               ,  &
+                                          NVRVLand%NativeVeg%Perc(indxElem,1)  ,  &
+                                          NVRVLand%NativeVeg%ETa(indxElem,1)   ,  &
+                                          0d0                                  ,  &
+                                          SoilM_Array                          ,  &
+                                          ETPartition                          )
+            NVRVLand%NativeVeg%SoilM_Precip(indxElem,1) = SoilM_Array(1)
+            NVRVLand%NativeVeg%SoilM_AW(indxElem,1)     = SoilM_Array(2)
+            NVRVLand%NativeVeg%SoilM_Oth(indxElem,1)    = SoilM_Array(3)
             
             !Make sure soil moisture is not less than zero
-            lNegativeMoistNV = .FALSE.
-            IF (pNVElem%SoilM_Precip .LT. 0.0) lNegativeMoistNV = .TRUE.
-            IF (pNVElem%SoilM_AW     .LT. 0.0) lNegativeMoistNV = .TRUE.
-            IF (pNVElem%SoilM_Oth    .LT. 0.0) lNegativeMoistNV = .TRUE.
-            IF (lNegativeMoistNV) THEN
+            IF (ANY(SoilM_Array.LT.0.0)) THEN
                 !$OMP CRITICAL
                 iElemID         = AppGrid%AppElement(indxElem)%ID
                 MessageArray(1) = 'Soil moisture content becomes negative at element '//TRIM(IntToText(iElemID))//' for native vegetation.'
@@ -869,18 +856,18 @@ CONTAINS
             END IF
             
             !Convert depths to volumetric rates
-            rMultip                 = Area_NV / DeltaT
-            pNVElem%Runoff          = pNVElem%Runoff          * rMultip
-            pNVElem%PrecipInfilt    = pNVElem%PrecipInfilt    * rMultip
-            pNVElem%Perc            = pNVElem%Perc            * rMultip
-            pNVElem%ETFromGW_Actual = pNVElem%ETFromGW_Actual * rMultip
-            pNVElem%ETa             = pNVElem%ETa             * rMultip + pNVElem%ETFromGW_Actual    !Includes ET from groundwater
+            rMultip                                        = Area_NV / DeltaT
+            NVRVLand%NativeVeg%Runoff(indxElem,1)          = NVRVLand%NativeVeg%Runoff(indxElem,1)          * rMultip
+            NVRVLand%NativeVeg%PrecipInfilt(indxElem,1)    = NVRVLand%NativeVeg%PrecipInfilt(indxElem,1)    * rMultip
+            NVRVLand%NativeVeg%Perc(indxElem,1)            = NVRVLand%NativeVeg%Perc(indxElem,1)            * rMultip
+            NVRVLand%NativeVeg%ETFromGW_Actual(indxElem,1) = NVRVLand%NativeVeg%ETFromGW_Actual(indxElem,1) * rMultip
+            NVRVLand%NativeVeg%ETa(indxElem,1)             = NVRVLand%NativeVeg%ETa(indxElem,1)             * rMultip + NVRVLand%NativeVeg%ETFromGW_Actual(indxElem,1)    !Includes ET from groundwater
             
             !If surface flow goes to groundwater, update the runoff processes
             IF (lElemFlowToGW) THEN
-                pNVElem%Perc         = pNVElem%Perc + pNVElem%Runoff
-                pNVElem%PrecipInfilt = pNVElem%PrecipInfilt + pNVElem%Runoff        !Runoff is assumed to bypass root zone for proper mass balance    
-                pNVElem%Runoff       = 0.0
+                NVRVLand%NativeVeg%Perc(indxElem,1)         = NVRVLand%NativeVeg%Perc(indxElem,1) + NVRVLand%NativeVeg%Runoff(indxElem,1)
+                NVRVLand%NativeVeg%PrecipInfilt(indxElem,1) = NVRVLand%NativeVeg%PrecipInfilt(indxElem,1) + NVRVLand%NativeVeg%Runoff(indxElem,1)        !Runoff is assumed to bypass root zone for proper mass balance    
+                NVRVLand%NativeVeg%Runoff(indxElem,1)       = 0.0
             END IF
         END IF
         
@@ -890,35 +877,35 @@ CONTAINS
             TotalPorosityCrop = TotalPorosity * RootDepthRV
             FieldCapacityCrop = FieldCapacity * RootDepthRV
             WiltingPointCrop  = WiltingPoint  * RootDepthRV
-            SoilM_P           = pRVElem%SoilM_Precip_P + pRVElem%SoilM_AW_P + pRVElem%SoilM_Oth_P 
+            SoilM_P           = NVRVLand%RiparianVeg%SoilM_Precip_P(indxElem,1) + NVRVLand%RiparianVeg%SoilM_AW_P(indxElem,1) + NVRVLand%RiparianVeg%SoilM_Oth_P(indxElem,1) 
             GMRV              = GenericMoisture(1,indxElem) * RootDepthRV * DeltaT
             Inflow            = Supply + GMRV 
             
             !ET from GW
-            pRVElem%ETFromGW_Actual = MIN(ETc(2)*DeltaT , pRVElem%ETFromGW_Max)
-            ETc_effect              = ETc(2)*DeltaT - pRVElem%ETFromGW_Actual
+            NVRVLand%RiparianVeg%ETFromGW_Actual(indxElem,1) = MIN(ETc(2)*DeltaT , NVRVLand%RiparianVeg%ETFromGW_Max(indxElem,1))
+            ETc_effect                                       = ETc(2)*DeltaT - NVRVLand%RiparianVeg%ETFromGW_Actual(indxElem,1)
             
             !Simulate
-            CALL NonPondedLUMoistureRouter(PrecipD                                ,  &
-                                           pRVElem%SMax                           ,  &
-                                           SoilM_P                                ,  &
-                                           ETc_effect                             ,  & 
-                                           HydCond                                ,  & 
-                                           TotalPorosityCrop                      ,  & 
-                                           FieldCapacityCrop                      ,  & 
-                                           WiltingPointCrop                       ,  &
-                                           Lambda                                 ,  & 
-                                           Inflow                                 ,  &
-                                           SolverData%Tolerance*TotalPorosityCrop ,  &
-                                           KunsatMethod                           ,  &
-                                           SolverData%IterMax                     ,  &
-                                           SoilM                                  ,  & 
-                                           pRVElem%Runoff                         ,  & 
-                                           pRVElem%PrecipInfilt                   ,  & 
-                                           pRVElem%ETa                            ,  & 
-                                           pRVElem%Perc                           ,  & 
-                                           Excess                                 ,  &
-                                           AchievedConv                           ) 
+            CALL NonPondedLUMoistureRouter(PrecipD                                       ,  &
+                                           NVRVLand%RiparianVeg%SMax(indxElem,1)         ,  &
+                                           SoilM_P                                       ,  &
+                                           ETc_effect                                    ,  & 
+                                           HydCond                                       ,  & 
+                                           TotalPorosityCrop                             ,  & 
+                                           FieldCapacityCrop                             ,  & 
+                                           WiltingPointCrop                              ,  &
+                                           Lambda                                        ,  & 
+                                           Inflow                                        ,  &
+                                           SolverData%Tolerance*TotalPorosityCrop        ,  &
+                                           KunsatMethod                                  ,  &
+                                           SolverData%IterMax                            ,  &
+                                           SoilM                                         ,  & 
+                                           NVRVLand%RiparianVeg%Runoff(indxElem,1)       ,  & 
+                                           NVRVLand%RiparianVeg%PrecipInfilt(indxElem,1) ,  & 
+                                           NVRVLand%RiparianVeg%ETa(indxElem,1)          ,  & 
+                                           NVRVLand%RiparianVeg%Perc(indxElem,1)         ,  & 
+                                           Excess                                        ,  &
+                                           AchievedConv                                  ) 
                                          
             !Generate error if convergence is not achieved
             IF (AchievedConv .NE. 0.0) THEN
@@ -936,33 +923,29 @@ CONTAINS
             
             !Reduce total infiltration based on correction for total porosity
             IF (Excess .NE. 0.0) THEN
-                ratio = [pRVElem%PrecipInfilt , GMRV]
+                ratio = [NVRVLand%RiparianVeg%PrecipInfilt(indxElem,1) , GMRV]
                 CALL NormalizeArray(ratio)
-                pRVElem%Runoff         = pRVElem%Runoff + Excess * ratio(1)
-                pRVElem%GMExcess       = Excess * ratio(2)
-                pRVElem%PrecipInfilt   = PrecipD - pRVElem%Runoff
+                NVRVLand%RiparianVeg%Runoff(indxElem,1)         = NVRVLand%RiparianVeg%Runoff(indxElem,1) + Excess * ratio(1)
+                NVRVLand%RiparianVeg%GMExcess(indxElem,1)       = Excess * ratio(2)
+                NVRVLand%RiparianVeg%PrecipInfilt(indxElem,1)   = PrecipD - NVRVLand%RiparianVeg%Runoff(indxElem,1)
             END IF
             
             !Compute moisture from precip and irrigation
-            SoilM_P_Array = [pRVElem%SoilM_Precip_P , pRVElem%SoilM_AW_P , pRVElem%SoilM_Oth_P  ]
-            Infilt        = [pRVElem%PrecipInfilt   , 0d0                , GMRV-pRVElem%GMExcess]
-            CALL TrackMoistureDueToSource(SoilM_P_Array     ,  &
-                                          Infilt            ,  &
-                                          pRVElem%Perc      ,  &
-                                          pRVElem%ETa       ,  &
-                                          0d0               ,  &
-                                          SoilM_Array       ,  &
-                                          ETPartition       )
-            pRVElem%SoilM_Precip = SoilM_Array(1)
-            pRVElem%SoilM_AW     = SoilM_Array(2)
-            pRVElem%SoilM_Oth    = SoilM_Array(3)
+            SoilM_P_Array = [NVRVLand%RiparianVeg%SoilM_Precip_P(indxElem,1) , NVRVLand%RiparianVeg%SoilM_AW_P(indxElem,1) , NVRVLand%RiparianVeg%SoilM_Oth_P(indxElem,1)  ]
+            Infilt        = [NVRVLand%RiparianVeg%PrecipInfilt(indxElem,1)   , 0d0                                         , GMRV-NVRVLand%RiparianVeg%GMExcess(indxElem,1)]
+            CALL TrackMoistureDueToSource(SoilM_P_Array                         ,  &
+                                          Infilt                                ,  &
+                                          NVRVLand%RiparianVeg%Perc(indxElem,1) ,  &
+                                          NVRVLand%RiparianVeg%ETa(indxElem,1)  ,  &
+                                          0d0                                   ,  &
+                                          SoilM_Array                           ,  &
+                                          ETPartition                           )
+            NVRVLand%RiparianVeg%SoilM_Precip(indxElem,1) = SoilM_Array(1)
+            NVRVLand%RiparianVeg%SoilM_AW(indxElem,1)     = SoilM_Array(2)
+            NVRVLand%RiparianVeg%SoilM_Oth(indxElem,1)    = SoilM_Array(3)
             
             !Make sure soil moisture is not less than zero
-            lNegativeMoistRV = .FALSE.
-            IF (pRVElem%SoilM_Precip .LT. 0.0) lNegativeMoistRV = .TRUE.
-            IF (pRVElem%SoilM_AW     .LT. 0.0) lNegativeMoistRV = .TRUE.
-            IF (pRVElem%SoilM_Oth    .LT. 0.0) lNegativeMoistRV = .TRUE.
-            IF (lNegativeMoistRV) THEN
+            IF (ANY(SoilM_Array.LT.0.0)) THEN
                 !$OMP CRITICAL
                 iElemID         = AppGrid%AppElement(indxElem)%ID
                 MessageArray(1) = 'Soil moisture content becomes negative at element '//TRIM(IntToText(iElemID))//' for riparian vegetation.'
@@ -976,27 +959,24 @@ CONTAINS
             END IF
             
             !Convert depths to volumetric rates
-            rMultip                 = Area_RV / DeltaT
-            pRVElem%Runoff          = pRVElem%Runoff          * rMultip
-            pRVElem%PrecipInfilt    = pRVElem%PrecipInfilt    * rMultip
-            pRVElem%Perc            = pRVElem%Perc            * rMultip
-            pRVElem%ETFromGW_Actual = pRVElem%ETFromGW_Actual * rMultip
-            pRVElem%ETa             = pRVElem%ETa             * rMultip + pRVElem%ETFromGW_Actual + RiparianETStrm(indxElem)           !Includes ET from stream and groundwater
+            rMultip                                          = Area_RV / DeltaT
+            NVRVLand%RiparianVeg%Runoff(indxElem,1)          = NVRVLand%RiparianVeg%Runoff(indxElem,1)          * rMultip
+            NVRVLand%RiparianVeg%PrecipInfilt(indxElem,1)    = NVRVLand%RiparianVeg%PrecipInfilt(indxElem,1)    * rMultip
+            NVRVLand%RiparianVeg%Perc(indxElem,1)            = NVRVLand%RiparianVeg%Perc(indxElem,1)            * rMultip
+            NVRVLand%RiparianVeg%ETFromGW_Actual(indxElem,1) = NVRVLand%RiparianVeg%ETFromGW_Actual(indxElem,1) * rMultip
+            NVRVLand%RiparianVeg%ETa(indxElem,1)             = NVRVLand%RiparianVeg%ETa(indxElem,1)             * rMultip + NVRVLand%RiparianVeg%ETFromGW_Actual(indxElem,1) + RiparianETStrm(indxElem)           !Includes ET from stream and groundwater
             
             !If surface flow goes to groundwater, update the runoff processes
             IF (lElemFlowToGW) THEN
-                pRVElem%Perc         = pRVElem%Perc + pRVElem%Runoff
-                pRVElem%PrecipInfilt = pRVElem%PrecipInfilt + pRVElem%Runoff        !Runoff is assumed to bypass root zone for proper mass balance    
-                pRVElem%Runoff       = 0.0
+                NVRVLand%RiparianVeg%Perc(indxElem,1)         = NVRVLand%RiparianVeg%Perc(indxElem,1) + NVRVLand%RiparianVeg%Runoff(indxElem,1)
+                NVRVLand%RiparianVeg%PrecipInfilt(indxElem,1) = NVRVLand%RiparianVeg%PrecipInfilt(indxElem,1) + NVRVLand%RiparianVeg%Runoff(indxElem,1)        !Runoff is assumed to bypass root zone for proper mass balance    
+                NVRVLand%RiparianVeg%Runoff(indxElem,1)       = 0.0
             END IF
         END IF
     END DO
     !$OMP END DO
     !$OMP END PARALLEL
     
-    !Nullify pointers
-    NULLIFY(pNVElem , pRVElem)
-                                   
   END SUBROUTINE Simulate
   
 
@@ -1025,13 +1005,13 @@ CONTAINS
     !Initialize
     RootDepth(1) = NVRVLand%RootDepth_Native
     RootDepth(2) = NVRVLand%RootDepth_Riparian
-    Area(1,:)    = NVRVLand%NativeVeg%Area
-    Area(2,:)    = NVRVLand%RiparianVeg%Area
+    Area(1,:)    = NVRVLand%NativeVeg%Area(:,1)
+    Area(2,:)    = NVRVLand%RiparianVeg%Area(:,1)
     
     CALL ComputeETFromGW_Max(DepthToGW,Sy,RootDepth,CapillaryRise,Area,ETFromGW_Max)
     
-    NVRVLand%NativeVeg%ETFromGW_Max   = ETFromGW_Max(1,:)
-    NVRVLand%RiparianVeg%ETFromGW_Max = ETFromGW_Max(2,:)
+    NVRVLand%NativeVeg%ETFromGW_Max(:,1)   = ETFromGW_Max(1,:)
+    NVRVLand%RiparianVeg%ETFromGW_Max(:,1) = ETFromGW_Max(2,:)
     
   END SUBROUTINE NVRV_ComputeETFromGW_Max
   
@@ -1055,42 +1035,42 @@ CONTAINS
     iStat = 0
     
     !Return if native and riparian lands are not simulated
-    IF (SIZE(NVRVLand%NativeVeg).EQ.0  .AND.  SIZE(NVRVLand%RiparianVeg).EQ.0) RETURN
+    IF (SIZE(NVRVLand%NativeVeg%SMax).EQ.0  .AND.  SIZE(NVRVLand%RiparianVeg%SMax).EQ.0) RETURN
     
     !Initialize
     RootDepth_NV = NVRVLand%RootDepth_Native
     RootDepth_RV = NVRVLand%RootDepth_Riparian
     
     !Check if initial conditions are greater than total porosity, if not convert conetnts to depths and equate SoilM_P to SoilM
-    DO indxElem=1,NElements
-      ASSOCIATE (pNV => NVRVLand%NativeVeg(indxElem)   , &
-                 pRV => NVRVLand%RiparianVeg(indxElem) ) 
-                 
-        IF ((pNV%SoilM_Precip + pNV%SoilM_AW + pNV%SoilM_Oth) .GT. TotalPorosity(indxElem)) THEN
-            CALL SetLastMessage('Initial moisture content for native vegetation at element ' // TRIM(IntToText(iElemIDs(indxElem))) // ' is greater than total porosity!',f_iFatal,ThisProcedure)
-            iStat = -1
-            RETURN
-        END IF
-        IF ((pRV%SoilM_Precip + pRV%SoilM_AW + pRV%SoilM_Oth) .GT. TotalPorosity(indxElem)) THEN
-            CALL SetLastMessage('Initial moisture content for riparian vegetation at element ' // TRIM(IntToText(iElemIDs(indxElem))) // ' is greater than total porosity!',f_iFatal,ThisProcedure)
-            iStat = -1
-            RETURN
-        END IF
-        pNV%SoilM_Precip   = pNV%SoilM_Precip * RootDepth_NV
-        pNV%SoilM_AW       = pNV%SoilM_AW     * RootDepth_NV
-        pNV%SoilM_Oth      = pNV%SoilM_Oth    * RootDepth_NV
-        pRV%SoilM_Precip   = pRV%SoilM_Precip * RootDepth_RV
-        pRV%SoilM_AW       = pRV%SoilM_AW     * RootDepth_RV
-        pRV%SoilM_Oth      = pRV%SoilM_Oth    * RootDepth_RV
-        pNV%SoilM_Precip_P = pNV%SoilM_Precip
-        pNV%SoilM_AW_P     = pNV%SoilM_AW
-        pNV%SoilM_Oth_P    = pNV%SoilM_Oth
-        pRV%SoilM_Precip_P = pRV%SoilM_Precip
-        pRV%SoilM_AW_P     = pRV%SoilM_AW
-        pRV%SoilM_Oth_P    = pRV%SoilM_Oth
-   
-      END ASSOCIATE
-    END DO 
+    ASSOCIATE (pNV => NVRVLand%NativeVeg   , &
+               pRV => NVRVLand%RiparianVeg ) 
+        DO indxElem=1,NElements
+                   
+            IF ((pNV%SoilM_Precip(indxElem,1) + pNV%SoilM_AW(indxElem,1) + pNV%SoilM_Oth(indxElem,1)) .GT. TotalPorosity(indxElem)) THEN
+                CALL SetLastMessage('Initial moisture content for native vegetation at element ' // TRIM(IntToText(iElemIDs(indxElem))) // ' is greater than total porosity!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            IF ((pRV%SoilM_Precip(indxElem,1) + pRV%SoilM_AW(indxElem,1) + pRV%SoilM_Oth(indxElem,1)) .GT. TotalPorosity(indxElem)) THEN
+                CALL SetLastMessage('Initial moisture content for riparian vegetation at element ' // TRIM(IntToText(iElemIDs(indxElem))) // ' is greater than total porosity!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            pNV%SoilM_Precip(indxElem,1)   = pNV%SoilM_Precip(indxElem,1) * RootDepth_NV
+            pNV%SoilM_AW(indxElem,1)       = pNV%SoilM_AW(indxElem,1)     * RootDepth_NV
+            pNV%SoilM_Oth(indxElem,1)      = pNV%SoilM_Oth(indxElem,1)    * RootDepth_NV
+            pRV%SoilM_Precip(indxElem,1)   = pRV%SoilM_Precip(indxElem,1) * RootDepth_RV
+            pRV%SoilM_AW(indxElem,1)       = pRV%SoilM_AW(indxElem,1)     * RootDepth_RV
+            pRV%SoilM_Oth(indxElem,1)      = pRV%SoilM_Oth(indxElem,1)    * RootDepth_RV
+            pNV%SoilM_Precip_P(indxElem,1) = pNV%SoilM_Precip(indxElem,1)
+            pNV%SoilM_AW_P(indxElem,1)     = pNV%SoilM_AW(indxElem,1)
+            pNV%SoilM_Oth_P(indxElem,1)    = pNV%SoilM_Oth(indxElem,1)
+            pRV%SoilM_Precip_P(indxElem,1) = pRV%SoilM_Precip(indxElem,1)
+            pRV%SoilM_AW_P(indxElem,1)     = pRV%SoilM_AW(indxElem,1)
+            pRV%SoilM_Oth_P(indxElem,1)    = pRV%SoilM_Oth(indxElem,1)
+        
+        END DO 
+    END ASSOCIATE
     
   END SUBROUTINE SoilMContent_To_Depth
   

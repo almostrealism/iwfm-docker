@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -39,6 +39,10 @@ PROGRAM IWFM_F2
 
   !$ iBlockTime = KMP_GET_BLOCKTIME()
   !$ CALL KMP_SET_BLOCKTIME(0)
+  
+  !Set number of threads for parallel processing
+  !$ CALL OMP_SET_NUM_THREADS(OMP_GET_NUM_PROCS())
+
   
   !Start program timer
   CALL StartTimer()

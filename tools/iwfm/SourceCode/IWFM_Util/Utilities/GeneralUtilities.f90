@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -195,8 +195,8 @@ CONTAINS
   ! --- FIND THE LENGTH OF A C STRING
   ! -------------------------------------------------------------
   FUNCTION CString_Len(cstr) RESULT(iLen)
-    CHARACTER(C_CHAR),INTENT(IN) :: cstr(*)
-    INTEGER                      :: iLen
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cstr(*)
+    INTEGER                           :: iLen
     
     iLen = 1
     DO 
@@ -212,8 +212,8 @@ CONTAINS
   ! --- COPY FORTRAN STRING TO C STRING
   ! -------------------------------------------------------------
   SUBROUTINE String_Copy_F_C(f_string, c_string)
-      CHARACTER(LEN=*),INTENT(IN)   :: f_string
-      CHARACTER(C_CHAR),INTENT(OUT) :: c_string(:)
+      CHARACTER(LEN=*),INTENT(IN)        :: f_string
+      CHARACTER(KIND=C_CHAR),INTENT(OUT) :: c_string(:)
      
       !Local variables
       INTEGER :: indx
@@ -230,8 +230,8 @@ CONTAINS
   ! --- COPY C STRING TO FORTRAN STRING
   ! -------------------------------------------------------------
   SUBROUTINE String_Copy_C_F(c_string, f_string)
-      CHARACTER(C_CHAR),INTENT(IN) :: c_string(:)
-      CHARACTER(LEN=*),INTENT(OUT) :: f_string
+      CHARACTER(KIND=C_CHAR),INTENT(IN) :: c_string(:)
+      CHARACTER(LEN=*),INTENT(OUT)      :: f_string
       
       !Local variables
       INTEGER :: indx
@@ -521,18 +521,20 @@ CONTAINS
   ! --- FIND THE FIRST OCCURANCE OF A CHARACTER IN A STRING
   ! -------------------------------------------------------------
   FUNCTION FirstLocation(ACharacter,SearchString,Back) RESULT(Location)
-    CHARACTER(LEN=1),INTENT(IN)::ACharacter
-    CHARACTER(LEN=*),INTENT(IN)::SearchString
-    LOGICAL,INTENT(IN),OPTIONAL::Back
-    INTEGER::Location
+    CHARACTER(LEN=1),INTENT(IN) :: ACharacter
+    CHARACTER(LEN=*),INTENT(IN) :: SearchString
+    LOGICAL,INTENT(IN),OPTIONAL :: Back
+    INTEGER                     :: Location
 
     !Local variables
-    LOGICAL::LocalBack
-    LocalBack=.FALSE.
+    LOGICAL ::LocalBack
+    
+    !Initialize
+    LocalBack = .FALSE.
     IF (PRESENT(Back)) LocalBack=Back
 
-    Location=0 !Default: 0 means character is not found in the search string 
-    Location=SCAN(SearchString,ACharacter,BACK=LocalBack)      
+    Location = 0 !Default: 0 means character is not found in the search string 
+    Location = SCAN(SearchString,ACharacter,BACK=LocalBack)      
 
   END FUNCTION FirstLocation
 
@@ -1939,9 +1941,9 @@ CONTAINS
     REAL(8)    :: r8
     EQUIVALENCE (r8,i8)
     
-    IF (rArg .LT. -500.0) THEN
-        rExp = 0.0
-    ELSEIF (rArg .GT. 500.0) THEN
+    IF (rArg .LT. -500d0) THEN
+        rExp = 0d0
+    ELSEIF (rArg .GT. 500d0) THEN
         rExp = HUGE(0d0)
     ELSE
         i8   = 6497320848556798 * rArg + 4607182418800017408

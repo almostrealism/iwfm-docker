@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -27,11 +27,6 @@ MODULE Package_Misc
   USE Class_SolverData           , ONLY: SolverDataType
   USE Opening_screen             , ONLY: PRINT_SCREEN            ,  &
                                          GET_MAIN_FILE   
-  USE TSDFileHandler             , ONLY: IntTSDataInFileType     ,  &
-                                         RealTSDataInFileType    ,  &
-                                         Real2DTSDataInFileType  ,  &
-                                         PrepareTSDOutputFile    ,  &
-                                         ReadTSData
   USE AbstractFunction           , ONLY: AbstractFunctionType
   USE Class_BaseHydrograph       , ONLY: BaseHydrographType     , &
                                          HydOutputType          , &
@@ -135,12 +130,15 @@ MODULE Package_Misc
   ! -------------------------------------------------------------
   ! --- FLAGS FOR LAND USE TYPES
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER :: f_iAg          = 1 , &   !Flag to specify that some entity is for General Ag
-                       f_iUrb         = 2 , &   !Flag to specify that some entity is for Urban
-                       f_iNonPondedAg = 3 , &   !Flag to specify that some entity is for Non-ponded Ag
-                       f_iRice        = 4 , &   !Flag to specify that some entity is for Rice
-                       f_iRefuge      = 5 , &   !Flag to specify that some entity is for Refuge
-                       f_iNVRV        = 6       !Flag to specify that some entity is for Native & Riparian Veg.
+  INTEGER,PARAMETER :: f_iLandUse_Ag          = 1  , &   !Flag to specify that some entity is for General Ag
+                       f_iLandUse_NonPondedAg = 11 , &   !Flag to specify that some entity is for Non-ponded Ag
+                       f_iLandUse_PondedAg    = 12 , &   !Flag to specify that some entity is for Ponded Ag
+                       f_iLandUse_Rice        = 121, &   !Flag to specify that some entity is for Rice
+                       f_iLandUse_Refuge      = 122, &   !Flag to specify that some entity is for Refuge
+                       f_iLandUse_Urb         = 2  , &   !Flag to specify that some entity is for General Urban
+                       f_iLandUse_UrbIn       = 21 , &   !Flag to specify that some entity is for Urban Indoors
+                       f_iLandUse_UrbOut      = 22 , &   !Flag to specify that some entity is for Urban Outdoors
+                       f_iLandUse_NVRV        = 6        !Flag to specify that some entity is for Native & Riparian Veg.
   
   
   ! -------------------------------------------------------------

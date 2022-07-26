@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021
+!  Copyright (C) 2005-2022
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -97,13 +97,13 @@ CONTAINS
                  '|                                                      |' ,&
                  '|   Principal Contact:                                 |' ,&
                  '|       Dr. Tariq N. Kadir ... Senior Engineer, DWR    |' ,&
-                 '|                  (916) 653 3513                      |' ,&
-                 '|                  kadir@water.ca.gov                  |' ,&
+                 '|                  (916) 902 7786                      |' ,&
+                 '|             tariq.kadir@water.ca.gov                 |' ,&
                  '|                                                      |' ,&
                  '|   Principal Programmer and Technical Support:        |' ,&
                  '|       Dr. Emin Can Dogrul ... Senior Engineer, DWR   |' ,&
-                 '|                  (916) 654 7018                      |' ,&
-                 '|                  dogrul@water.ca.gov                 |' ,&
+                 '|                  (916) 902 9914                      |' ,&
+                 '|              can.dogrul@water.ca.gov                 |' ,&
                  '|                                                      |' ,&
                  '|                                                      |' ,&
                          REPEAT('-',f_OPEN_SCREEN_LINE_LENGTH)              ]  

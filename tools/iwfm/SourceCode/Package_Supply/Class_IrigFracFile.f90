@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -22,8 +22,7 @@
 !***********************************************************************
 MODULE Class_IrigFracFile
   USE TimeSeriesUtilities  , ONLY: TimeStepType
-  USE Package_Misc         , ONLY: RealTSDataInFileType , &
-                                   ReadTSData
+  USE IOInterface          , ONLY: RealTSDataInFileType 
   USE Package_AppGW        , ONLY: AppGWType
   USE Package_AppStream    , ONLY: AppStreamType
   IMPLICIT NONE
@@ -56,7 +55,8 @@ MODULE Class_IrigFracFile
   CONTAINS
     PROCEDURE,PASS :: New 
     PROCEDURE,PASS :: Kill
-    PROCEDURE,PASS :: ReadTSData =>  IrigFracFile_ReadTSData  
+    PROCEDURE,PASS :: IrigFracFile_ReadTSData
+    GENERIC        :: ReadTSData              => IrigFracFile_ReadTSData
   END TYPE
     
   
@@ -114,7 +114,7 @@ CONTAINS
     INTEGER :: FileReadCode
     
     !Read time series data
-    CALL ReadTSData(TimeStep,'Irrigations fractions data',IrigFracFile%RealTSDataInFileType,FileReadCode,iStat)
+    CALL IrigFracFile%ReadTSData(TimeStep,'Irrigations fractions data',FileReadCode,iStat)
     IF (iStat .EQ. -1) RETURN
         
     !Update the supply irrigtaion fractions if read with no problems

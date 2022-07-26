@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -723,17 +723,22 @@ CONTAINS
   ! --- ADD CONDUCTANCE RELATED DATA TO CONNECTOR
   ! ---  Note: Assumes GW nodes are already defined
   ! -------------------------------------------------------------
-  SUBROUTINE CompileConductance(Connector,InFile,AppGrid,Stratigraphy,NStrmNodes,iStrmNodeIDs,UpstrmNodes,DownstrmNodes,BottomElevs,iStat)
+  SUBROUTINE CompileConductance(Connector,InFile,AppGrid,Stratigraphy,NStrmNodes,iStrmNodeIDs,BottomElevs,rLength,iStat,rWetPerimeter)
     CLASS(StrmGWConnectorType)        :: Connector
     TYPE(GenericFileType)             :: InFile
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
-    INTEGER,INTENT(IN)                :: NStrmNodes,iStrmNodeIDs(NStrmNodes),UpstrmNodes(:),DownstrmNodes(:)
-    REAL(8),INTENT(IN)                :: BottomElevs(:)
+    INTEGER,INTENT(IN)                :: NStrmNodes,iStrmNodeIDs(NStrmNodes)
+    REAL(8),INTENT(IN)                :: BottomElevs(NStrmNodes),rLength(NStrmNodes)
     INTEGER,INTENT(OUT)               :: iStat
+    REAL(8),OPTIONAL,INTENT(OUT)      :: rWetPerimeter(NStrmNodes)
+    
+    !Local variables
+    REAL(8) :: rWP_Local(NStrmNodes)
 
     IF (Connector%lDefined) THEN
-        CALL Connector%Me%CompileConductance(InFile,AppGrid,Stratigraphy,NStrmNodes,iStrmNodeIDs,UpstrmNodes,DownstrmNodes,BottomElevs,iStat)
+        CALL Connector%Me%CompileConductance(InFile,AppGrid,Stratigraphy,NStrmNodes,iStrmNodeIDs,BottomElevs,rLength,iStat,rWP_Local)
+        IF (PRESENT(rWetPerimeter)) rWetPerimeter = rWP_Local
     ELSE
         iStat = 0
     END IF

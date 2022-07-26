@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -61,18 +61,22 @@ MODULE IWFM_Misc_Exports
                                           f_iLocationType_TileDrain                , &
                                           f_iLocationType_SmallWatershed           , &
                                           f_iLocationType_StrmNodeBud              , &
+                                          f_iLocationType_Diversion                , &
+                                          f_iLocationType_Bypass                   , &
                                           f_iDataUnitType_Length                   , &
                                           f_iDataUnitType_Area                     , &
                                           f_iDataUnitType_Volume                   , &
                                           f_iSupply_Diversion                      , &
                                           f_iSupply_ElemPump                       , &
                                           f_iSupply_Well                           , &
-                                          f_iAg                                    , &
-                                          f_iUrb                                   , &
-                                          f_iNonPondedAg                           , & 
-                                          f_iRice                                  , & 
-                                          f_iRefuge                                , & 
-                                          f_iNVRV                                  
+                                          f_iLandUse_Ag                            , &
+                                          f_iLandUse_Urb                           , &
+                                          f_iLandUse_UrbIn                         , &
+                                          f_iLandUse_UrbOut                        , &
+                                          f_iLandUse_NonPondedAg                   , & 
+                                          f_iLandUse_Rice                          , & 
+                                          f_iLandUse_Refuge                        , & 
+                                          f_iLandUse_NVRV                                  
   USE Package_Budget              , ONLY: Package_Budget_GetVersion
   USE Package_ZBudget             , ONLY: Package_ZBudget_GetVersion               , &
                                           f_iZoneHorizontal                        , &
@@ -159,9 +163,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_GetVersion(iLen,cVer,iStat) BIND(C,NAME='IW_GetVersion')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_GetVersion
-    INTEGER(C_INT),INTENT(IN)     :: iLen
-    CHARACTER(C_CHAR),INTENT(OUT) :: cVer(iLen)
-    INTEGER(C_INT),INTENT(OUT)    :: iStat
+    INTEGER(C_INT),INTENT(IN)          :: iLen
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cVer(iLen)
+    INTEGER(C_INT),INTENT(OUT)         :: iStat
     
     !Local variables
     TYPE(RootZoneType)  :: RootZone
@@ -196,9 +200,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_IWFMUtil_GetVersion(iLen,cVer,iStat) BIND(C,NAME='IW_IWFMUtil_GetVersion')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_IWFMUtil_GetVersion
-    INTEGER(C_INT),INTENT(IN)     :: iLen
-    CHARACTER(C_CHAR),INTENT(OUT) :: cVer(iLen)
-    INTEGER(C_INT),INTENT(OUT)    :: iStat
+    INTEGER(C_INT),INTENT(IN)          :: iLen
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cVer(iLen)
+    INTEGER(C_INT),INTENT(OUT)         :: iStat
     
     !Local variables
     CHARACTER :: cVer_F*iLen
@@ -273,14 +277,34 @@ CONTAINS
     INTEGER(C_INT),INTENT(OUT) :: iLUTypeID_GenAg,iLUTypeID_Urb,iLUTypeID_NonPondedAg,iLUTypeID_Rice,iLUTypeID_Refuge,iLUTypeID_NVRV,iStat
     
     iStat                 = 0
-    iLUTypeID_GenAg       = f_iAg
-    iLUTypeID_Urb         = f_iUrb
-    iLUTypeID_NonPondedAg = f_iNonPondedAg
-    iLUTypeID_Rice        = f_iRice
-    iLUTypeID_Refuge      = f_iRefuge
-    iLUTypeID_NVRV        = f_iNVRV
+    iLUTypeID_GenAg       = f_iLandUse_Ag
+    iLUTypeID_Urb         = f_iLandUse_Urb
+    iLUTypeID_NonPondedAg = f_iLandUse_NonPondedAg
+    iLUTypeID_Rice        = f_iLandUse_Rice
+    iLUTypeID_Refuge      = f_iLandUse_Refuge
+    iLUTypeID_NVRV        = f_iLandUse_NVRV
     
   END SUBROUTINE IW_GetLandUseTypeIDs
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET LAND USE TYPE IDs (Version 1)
+  ! -------------------------------------------------------------
+  SUBROUTINE IW_GetLandUseTypeIDs_1(iLUTypeID_GenAg,iLUTypeID_GenUrb,iLUTypeID_NonPondedAg,iLUTypeID_Rice,iLUTypeID_Refuge,iLUTypeID_UrbIn,iLUTypeID_UrbOut,iLUTypeID_NVRV,iStat) BIND(C,NAME="IW_GetLandUseTypeIDs_1")
+    !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_GetLandUseTypeIDs_1
+    INTEGER(C_INT),INTENT(OUT) :: iLUTypeID_GenAg,iLUTypeID_GenUrb,iLUTypeID_NonPondedAg,iLUTypeID_Rice,iLUTypeID_Refuge,iLUTypeID_UrbIn,iLUTypeID_UrbOut,iLUTypeID_NVRV,iStat
+    
+    iStat                 = 0
+    iLUTypeID_GenAg       = f_iLandUse_Ag
+    iLUTypeID_GenUrb      = f_iLandUse_Urb
+    iLUTypeID_UrbIn       = f_iLandUse_UrbIn
+    iLUTypeID_UrbOut      = f_iLandUse_UrbOut
+    iLUTypeID_NonPondedAg = f_iLandUse_NonPondedAg
+    iLUTypeID_Rice        = f_iLandUse_Rice
+    iLUTypeID_Refuge      = f_iLandUse_Refuge
+    iLUTypeID_NVRV        = f_iLandUse_NVRV
+    
+  END SUBROUTINE IW_GetLandUseTypeIDs_1
   
   
   ! -------------------------------------------------------------
@@ -291,7 +315,7 @@ CONTAINS
     INTEGER(C_INT),INTENT(OUT) :: iLUTypeID_GenAg,iStat
     
     iStat           = 0
-    iLUTypeID_GenAg = f_iAg
+    iLUTypeID_GenAg = f_iLandUse_Ag
     
   END SUBROUTINE IW_GetLandUseTypeID_GenAg
   
@@ -304,9 +328,35 @@ CONTAINS
     INTEGER(C_INT),INTENT(OUT) :: iLUTypeID_Urb,iStat
     
     iStat         = 0
-    iLUTypeID_Urb = f_iUrb
+    iLUTypeID_Urb = f_iLandUse_Urb
     
   END SUBROUTINE IW_GetLandUseTypeID_Urban
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET URBAN INDOORS LAND USE TYPE ID
+  ! -------------------------------------------------------------
+  SUBROUTINE IW_GetLandUseTypeID_UrbIndoors(iLUTypeID_UrbIn,iStat) BIND(C,NAME="IW_GetLandUseTypeID_UrbIndoors")
+    !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_GetLandUseTypeID_UrbIndoors
+    INTEGER(C_INT),INTENT(OUT) :: iLUTypeID_UrbIn,iStat
+    
+    iStat           = 0
+    iLUTypeID_UrbIn = f_iLandUse_UrbIn
+    
+  END SUBROUTINE IW_GetLandUseTypeID_UrbIndoors
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET URBAN OUTDOORS LAND USE TYPE ID
+  ! -------------------------------------------------------------
+  SUBROUTINE IW_GetLandUseTypeID_UrbOutdoors(iLUTypeID_UrbOut,iStat) BIND(C,NAME="IW_GetLandUseTypeID_UrbOutdoors")
+    !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_GetLandUseTypeID_UrbOutdoors
+    INTEGER(C_INT),INTENT(OUT) :: iLUTypeID_UrbOut,iStat
+    
+    iStat            = 0
+    iLUTypeID_UrbOut = f_iLandUse_UrbOut
+    
+  END SUBROUTINE IW_GetLandUseTypeID_UrbOutdoors
   
   
   ! -------------------------------------------------------------
@@ -317,7 +367,7 @@ CONTAINS
     INTEGER(C_INT),INTENT(OUT) :: iLUTypeID_NonPondedAg,iStat
     
     iStat                 = 0
-    iLUTypeID_NonPondedAg = f_iNonPondedAg
+    iLUTypeID_NonPondedAg = f_iLandUse_NonPondedAg
     
   END SUBROUTINE IW_GetLandUseTypeID_NonPondedAg
   
@@ -330,7 +380,7 @@ CONTAINS
     INTEGER(C_INT),INTENT(OUT) :: iLUTypeID_Rice,iStat
     
     iStat          = 0
-    iLUTypeID_Rice = f_iRice
+    iLUTypeID_Rice = f_iLandUse_Rice
     
   END SUBROUTINE IW_GetLandUseTypeID_Rice
   
@@ -343,7 +393,7 @@ CONTAINS
     INTEGER(C_INT),INTENT(OUT) :: iLUTypeID_Refuge,iStat
     
     iStat            = 0
-    iLUTypeID_Refuge = f_iRefuge
+    iLUTypeID_Refuge = f_iLandUse_Refuge
     
   END SUBROUTINE IW_GetLandUseTypeID_Refuge
   
@@ -356,7 +406,7 @@ CONTAINS
     INTEGER(C_INT),INTENT(OUT) :: iLUTypeID_NVRV,iStat
     
     iStat          = 0
-    iLUTypeID_NVRV = f_iNVRV
+    iLUTypeID_NVRV = f_iLandUse_NVRV
     
   END SUBROUTINE IW_GetLandUseTypeID_NVRV
   
@@ -416,9 +466,22 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
-  ! --- GET LOCATION TYPE IDs
+  ! --- GET LOCATION TYPE IDs 
   ! -------------------------------------------------------------
-  SUBROUTINE IW_GetLocationTypeIDs(iLocationTypeID_Node,iLocationTypeID_Element,iLocationTypeID_Subregion,iLocationTypeID_Zone,iLocationTypeID_Lake,iLocationTypeID_StrmNode,iLocationTypeID_StrmReach,iLocationTypeID_TileDrainObs,iLocationTypeID_SmallWatershed,iLocationTypeID_GWHeadObs,iLocationTypeID_StrmHydObs,iLocationTypeID_SubsidenceObs,iLocationTypeID_StrmNodeBud,iStat) BIND(C,NAME="IW_GetLocationTypeIDs")
+  SUBROUTINE IW_GetLocationTypeIDs(iLocationTypeID_Node           , &
+                                   iLocationTypeID_Element        , &
+                                   iLocationTypeID_Subregion      , &
+                                   iLocationTypeID_Zone           , &
+                                   iLocationTypeID_Lake           , &
+                                   iLocationTypeID_StrmNode       , &
+                                   iLocationTypeID_StrmReach      , &
+                                   iLocationTypeID_TileDrainObs   , &
+                                   iLocationTypeID_SmallWatershed , &
+                                   iLocationTypeID_GWHeadObs      , &
+                                   iLocationTypeID_StrmHydObs     , &
+                                   iLocationTypeID_SubsidenceObs  , &
+                                   iLocationTypeID_StrmNodeBud    , &
+                                   iStat) BIND(C,NAME="IW_GetLocationTypeIDs")
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_GetLocationTypeIDs
     INTEGER(C_INT),INTENT(OUT) :: iLocationTypeID_Node,iLocationTypeID_Element,iLocationTypeID_Subregion,iLocationTypeID_Zone,iLocationTypeID_Lake,iLocationTypeID_StrmReach,iLocationTypeID_StrmNode,iLocationTypeID_StrmNodeBud,iLocationTypeID_StrmHydObs,iLocationTypeID_GWHeadObs,iLocationTypeID_SubsidenceObs,iLocationTypeID_SmallWatershed,iLocationTypeID_TileDrainObs,iStat
     
@@ -438,6 +501,48 @@ CONTAINS
     iLocationTypeID_StrmNodeBud    = f_iLocationType_StrmNodeBud
     
   END SUBROUTINE IW_GetLocationTypeIDs
+  
+    
+  ! -------------------------------------------------------------
+  ! --- GET LOCATION TYPE IDs (OVERWRITES PREVIOUS VERSION)
+  ! -------------------------------------------------------------
+  SUBROUTINE IW_GetLocationTypeIDs_1(iLocationTypeID_Node           , &
+                                     iLocationTypeID_Element        , &
+                                     iLocationTypeID_Subregion      , &
+                                     iLocationTypeID_Zone           , &
+                                     iLocationTypeID_Lake           , &
+                                     iLocationTypeID_StrmNode       , &
+                                     iLocationTypeID_StrmReach      , &
+                                     iLocationTypeID_TileDrainObs   , &
+                                     iLocationTypeID_SmallWatershed , &
+                                     iLocationTypeID_GWHeadObs      , &
+                                     iLocationTypeID_StrmHydObs     , &
+                                     iLocationTypeID_SubsidenceObs  , &
+                                     iLocationTypeID_StrmNodeBud    , &
+                                     iLocationTypeID_Diversion      , &
+                                     iLocationTypeID_Bypass         , &
+                                     iStat) BIND(C,NAME="IW_GetLocationTypeIDs_1")
+    !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_GetLocationTypeIDs_1
+    INTEGER(C_INT),INTENT(OUT) :: iLocationTypeID_Node,iLocationTypeID_Element,iLocationTypeID_Subregion,iLocationTypeID_Zone,iLocationTypeID_Lake,iLocationTypeID_StrmReach,iLocationTypeID_StrmNode,iLocationTypeID_StrmNodeBud,iLocationTypeID_StrmHydObs,iLocationTypeID_GWHeadObs,iLocationTypeID_SubsidenceObs,iLocationTypeID_SmallWatershed,iLocationTypeID_TileDrainObs,iLocationTypeID_Diversion,iLocationTypeID_Bypass,iStat
+    
+    iStat                          = 0
+    iLocationTypeID_Node           = f_iLocationType_Node
+    iLocationTypeID_Element        = f_iLocationType_Element
+    iLocationTypeID_Subregion      = f_iLocationType_Subregion
+    iLocationTypeID_Zone           = f_iLocationType_Zone
+    iLocationTypeID_Lake           = f_iLocationType_Lake
+    iLocationTypeID_StrmReach      = f_iLocationType_StrmReach
+    iLocationTypeID_StrmNode       = f_iLocationType_StrmNode
+    iLocationTypeID_StrmHydObs     = f_iLocationType_StrmHydObs
+    iLocationTypeID_GWHeadObs      = f_iLocationType_GWHeadObs
+    iLocationTypeID_SubsidenceObs  = f_iLocationType_SubsidenceObs
+    iLocationTypeID_SmallWatershed = f_iLocationType_SmallWatershed
+    iLocationTypeID_TileDrainObs   = f_iLocationType_TileDrainObs
+    iLocationTypeID_StrmNodeBud    = f_iLocationType_StrmNodeBud
+    iLocationTypeID_Diversion      = f_iLocationType_Diversion
+    iLocationTypeID_Bypass         = f_iLocationType_Bypass
+    
+  END SUBROUTINE IW_GetLocationTypeIDs_1
   
     
   ! -------------------------------------------------------------
@@ -620,6 +725,32 @@ CONTAINS
     iLocationTypeID = f_iLocationType_Element
 
   END SUBROUTINE IW_GetLocationTypeID_Element
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET LOCATION TYPE ID FOR DIVERSION
+  ! -------------------------------------------------------------
+  SUBROUTINE IW_GetLocationTypeID_Diversion(iLocationTypeID,iStat) BIND(C,NAME="IW_GetLocationTypeID_Diversion")
+    !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_GetLocationTypeID_Diversion
+    INTEGER(C_INT),INTENT(OUT) :: iLocationTypeID,iStat
+    
+    iStat           = 0
+    iLocationTypeID = f_iLocationType_Diversion
+
+  END SUBROUTINE IW_GetLocationTypeID_Diversion
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET LOCATION TYPE ID FOR BYPASS
+  ! -------------------------------------------------------------
+  SUBROUTINE IW_GetLocationTypeID_Bypass(iLocationTypeID,iStat) BIND(C,NAME="IW_GetLocationTypeID_Bypass")
+    !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_GetLocationTypeID_Diversion
+    INTEGER(C_INT),INTENT(OUT) :: iLocationTypeID,iStat
+    
+    iStat           = 0
+    iLocationTypeID = f_iLocationType_Bypass
+
+  END SUBROUTINE IW_GetLocationTypeID_Bypass
   
   
   ! -------------------------------------------------------------
@@ -816,9 +947,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_GetNIntervals(cBeginDateAndTime,cEndDateAndTime,iLenDateAndTime,cInterval,iLenInterval,NIntervals,iStat) BIND(C,NAME='IW_GetNIntervals')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_GetNIntervals
-    INTEGER(C_INT),INTENT(IN)    :: iLenDateAndTime,iLenInterval
-    CHARACTER(C_CHAR),INTENT(IN) :: cBeginDateAndTime(iLenDateAndTime),cEndDateAndTime(iLenDateAndTime),cInterval(iLenInterval)
-    INTEGER(C_INT),INTENT(OUT)   :: NIntervals,iStat
+    INTEGER(C_INT),INTENT(IN)         :: iLenDateAndTime,iLenInterval
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cBeginDateAndTime(iLenDateAndTime),cEndDateAndTime(iLenDateAndTime),cInterval(iLenInterval)
+    INTEGER(C_INT),INTENT(OUT)        :: NIntervals,iStat
     
     !Local variables
     INTEGER   :: DELTAT_InMinutes,ErrorCode
@@ -849,9 +980,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_GetLastMessage(iLen,cErrorMessage,iStat) BIND (C,NAME='IW_GetLastMessage')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_GetLastMessage
-    INTEGER(C_INT),INTENT(IN)       :: iLen
-    CHARACTER(C_CHAR),INTENT(INOUT) :: cErrorMessage(iLen)
-    INTEGER(C_INT),INTENT(OUT)      :: iStat
+    INTEGER(C_INT),INTENT(IN)            :: iLen
+    CHARACTER(KIND=C_CHAR),INTENT(INOUT) :: cErrorMessage(iLen)
+    INTEGER(C_INT),INTENT(OUT)           :: iStat
     
     !Local variables
     CHARACTER(LEN=iLen) :: cErrorMessage_F
@@ -903,9 +1034,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_SetLogFile(iLen,cFileName,iStat) BIND(C,NAME='IW_SetLogFile')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_SetLogFile
-    INTEGER(C_INT),INTENT(IN)    :: iLen 
-    CHARACTER(C_CHAR),INTENT(IN) :: cFileName(iLen)
-    INTEGER(C_INT),INTENT(OUT)   :: iStat
+    INTEGER(C_INT),INTENT(IN)         :: iLen 
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cFileName(iLen)
+    INTEGER(C_INT),INTENT(OUT)        :: iStat
     
     !Local variables
     CHARACTER(LEN=iLen) :: cFileName_F
@@ -941,10 +1072,10 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_IncrementTime(iLenDateAndTime,cDateAndTime,iLenInterval,cInterval,iNCount,iStat) BIND(C,NAME='IW_IncrementTime')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_IncrementTime
-    INTEGER(C_INT),INTENT(IN)       :: iLenDateAndTime,iLenInterval,iNCount 
-    CHARACTER(C_CHAR),INTENT(INOUT) :: cDateAndTime(iLenDateAndTime)
-    CHARACTER(C_CHAR),INTENT(IN)    :: cInterval(iLenInterval)
-    INTEGER(C_INT),INTENT(OUT)      :: iStat
+    INTEGER(C_INT),INTENT(IN)            :: iLenDateAndTime,iLenInterval,iNCount 
+    CHARACTER(KIND=C_CHAR),INTENT(INOUT) :: cDateAndTime(iLenDateAndTime)
+    CHARACTER(KIND=C_CHAR),INTENT(IN)    :: cInterval(iLenInterval)
+    INTEGER(C_INT),INTENT(OUT)           :: iStat
     
     !Local variables
     CHARACTER :: cDateAndTime_F*iLenDateAndTime,cDateAndTimeNew*iLenDateAndTime,cInterval_F*iLenInterval
@@ -983,9 +1114,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_IsTimeGreaterThan(iLenDateAndTime,cDateAndTime1,cDateAndTime2,isGreaterThan,iStat) BIND(C,NAME='IW_IsTimeGreaterThan')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_IsTimeGreaterThan
-    INTEGER(C_INT),INTENT(IN)       :: iLenDateAndTime
-    CHARACTER(C_CHAR),INTENT(INOUT) :: cDateAndTime1(iLenDateAndTime),cDateAndTime2(iLenDateAndTime)
-    INTEGER(C_INT),INTENT(OUT)      :: isGreaterThan,iStat
+    INTEGER(C_INT),INTENT(IN)            :: iLenDateAndTime
+    CHARACTER(KIND=C_CHAR),INTENT(INOUT) :: cDateAndTime1(iLenDateAndTime),cDateAndTime2(iLenDateAndTime)
+    INTEGER(C_INT),INTENT(OUT)           :: isGreaterThan,iStat
     
     !Local variables
     CHARACTER :: cDateAndTime1_F*iLenDateAndTime,cDateAndTime2_F*iLenDateAndTime
@@ -1063,8 +1194,8 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE fooStrPassed(iLen,cStrPassed) BIND (C,NAME="fooStrPassed")
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: fooStrPassed
-    INTEGER(C_INT),INTENT(IN) :: iLen
-    CHARACTER(C_CHAR),INTENT(IN) :: cStrPassed(iLen)
+    INTEGER(C_INT),INTENT(IN)         :: iLen
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cStrPassed(iLen)
     
     !Local variable
     INTEGER               :: iStat
@@ -1085,8 +1216,8 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE fooStrReceived(iLen,cStrRecvd) BIND (C,NAME="fooStrReceived")
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: fooStrReceived
-    INTEGER(C_INT),INTENT(IN) :: iLen
-    CHARACTER(C_CHAR),INTENT(OUT) :: cStrRecvd(iLen)
+    INTEGER(C_INT),INTENT(IN)          :: iLen
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cStrRecvd(iLen)
     
     !Local variable
     CHARACTER(LEN=iLen) :: cStr_F  

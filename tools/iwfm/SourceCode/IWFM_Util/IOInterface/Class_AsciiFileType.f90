@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021
+!  Copyright (C) 2005-2022
 !  State of California, Department of Water Resources
 !
 !  This program is free software; you can redistribute it and/or
@@ -670,21 +670,21 @@ CONTAINS
         TYPE IS (CHARACTER(LEN=*))
             READ (ThisFile%UnitN,'(A)',IOSTAT=ErrorCode) Data
             IF (ErrorCode .NE. 0) THEN
-                IF (.NOT. PRESENT(Status)) CALL ThisFile%IOStatHandler(ErrorCode,iStat=iStat)
+                IF (.NOT. PRESENT(Status)) CALL ThisFile%IOStatHandler(ErrorCode,iStat,iErrorLine=ThisFile%AtLine,cDataType='character')
             END IF
 
 
         TYPE IS (REAL(8))
             READ (ThisFile%UnitN,*,IOSTAT=ErrorCode) Data
             IF (ErrorCode .NE. 0) THEN
-                IF (.NOT. PRESENT(Status)) CALL ThisFile%IOStatHandler(ErrorCode,iStat=iStat)
+                IF (.NOT. PRESENT(Status)) CALL ThisFile%IOStatHandler(ErrorCode,iStat,iErrorLine=ThisFile%AtLine,cDataType='real')
             END IF
 
 
         TYPE IS (INTEGER)
             READ (ThisFile%UnitN,*,IOSTAT=ErrorCode) Data
             IF (ErrorCode .NE. 0) THEN
-                IF (.NOT. PRESENT(Status)) CALL ThisFile%IOStatHandler(ErrorCode,iStat=iStat)
+                IF (.NOT. PRESENT(Status)) CALL ThisFile%IOStatHandler(ErrorCode,iStat,iErrorLine=ThisFile%AtLine,cDataType='integer')
             END IF
 
 
@@ -714,7 +714,7 @@ CONTAINS
 
     !Local variables
     CHARACTER(LEN=ModNameLen+25),PARAMETER :: ThisProcedure = ModName // 'ReadArrayData_AsciiInFile'
-    CHARACTER                              :: InitialDataLine*30000
+    CHARACTER                              :: InitialDataLine*30000,cDataType*10
     INTEGER                                :: ErrorCode
 
     !Initialize
@@ -738,22 +738,30 @@ CONTAINS
     SELECT TYPE(Data)
         TYPE IS (REAL(8))
             READ (ThisFile%UnitN,*,IOSTAT=ErrorCode) Data
-
+            cDataType = 'real'
 
         TYPE IS (INTEGER)
             READ (ThisFile%UnitN,*,IOSTAT=ErrorCode) Data
+            cDataType = 'integer'
 
 
         CLASS DEFAULT
             CALL SetLastMessage('Trying to read unrecognized data type from file '//ThisFile%Name//'!',f_iFatal,ThisProcedure)
-            iStat = -1
+            cDataType = ''
+            iStat     = -1
 
     END SELECT
 
     !Process error code
     IF (PRESENT(Status)) Status = ErrorCode
     IF (ErrorCode .NE. 0) THEN
-        IF (.NOT. PRESENT(Status)) CALL ThisFile%IOStatHandler(ErrorCode,iStat=iStat)
+        IF (.NOT. PRESENT(Status)) THEN
+            IF (cDataType .EQ. '') THEN
+                CALL ThisFile%IOStatHandler(ErrorCode,iStat,iErrorLine=ThisFile%AtLine)
+            ELSE
+                CALL ThisFile%IOStatHandler(ErrorCode,iStat,iErrorLine=ThisFile%AtLine,cDataType=cDataType)
+            END IF
+        END IF
     END IF
     IF (iStat .EQ. -1) RETURN
 
@@ -779,6 +787,7 @@ CONTAINS
     CHARACTER                              :: InitialDataLine*30000
     REAL(8),ALLOCATABLE                    :: rData(:)
     INTEGER,ALLOCATABLE                    :: iData(:)
+    CHARACTER(:),ALLOCATABLE               :: cData(:)
 
     !Initialize
     iStat = 0
@@ -802,6 +811,23 @@ CONTAINS
     IF (iStat .EQ. -1) RETURN
 
     SELECT TYPE(Data)
+        TYPE IS (CHARACTER(LEN=*))
+            ALLOCATE (CHARACTER(LEN=LEN(Data)) :: cData(nCol))
+            DO rowIndx=1,nRow
+                READ (ThisFile%UnitN,'(A)',IOSTAT=ErrorCode) cData
+                Data(rowIndx,:) = cData
+                IF (ErrorCode .NE. 0) THEN
+                    IF (PRESENT(Status)) THEN
+                        Status = ErrorCode
+                        RETURN
+                    ELSE
+                        CALL ThisFile%IOStatHandler(ErrorCode,iStat,iErrorLine=ThisFile%AtLine,cDataType='real')
+                    END IF
+                END IF
+            END DO
+            DEALLOCATE (cData)
+
+
         TYPE IS (REAL(8))
             ALLOCATE (rData(nCol))
             DO rowIndx=1,nRow
@@ -812,7 +838,7 @@ CONTAINS
                         Status = ErrorCode
                         RETURN
                     ELSE
-                        CALL ThisFile%IOStatHandler(ErrorCode,iStat=iStat)
+                        CALL ThisFile%IOStatHandler(ErrorCode,iStat,iErrorLine=ThisFile%AtLine,cDataType='real')
                     END IF
                 END IF
             END DO
@@ -829,7 +855,7 @@ CONTAINS
                         Status = ErrorCode
                         RETURN
                     ELSE
-                        CALL ThisFile%IOStatHandler(ErrorCode,iStat=iStat)
+                        CALL ThisFile%IOStatHandler(ErrorCode,iStat,iErrorLine=ThisFile%AtLine,cDataType='integer')
                     END IF
                 END IF
             END DO
@@ -925,7 +951,7 @@ CONTAINS
     FiveChars = ''
     READ (ThisFile%UnitN,'(A)',IOSTAT=ErrorCode) FiveChars
     ACharacter = FiveChars(1:1)
-    IF (ErrorCode .NE. 0) CALL ThisFile%IOStatHandler(ErrorCode,iStat=iStat)
+    IF (ErrorCode .NE. 0) CALL ThisFile%IOStatHandler(ErrorCode,iStat,iErrorLine=ThisFile%AtLine)
     IF (iStat .EQ. -1) RETURN
     ThisFile%AtLine = ThisFile%AtLine + 1
 
@@ -950,7 +976,7 @@ CONTAINS
     IF (iStat .EQ. -1) RETURN
     DO
         READ (ThisFile%UnitN,'(A)',IOSTAT=ErrorCode) ACharacter
-        IF (ErrorCode .NE. 0) CALL ThisFile%IOStatHandler(ErrorCode,iStat=iStat)
+        IF (ErrorCode .NE. 0) CALL ThisFile%IOStatHandler(ErrorCode,iStat,iErrorLine=ThisFile%AtLine)
         IF (iStat .EQ. -1) RETURN
         ThisFile%AtLine = ThisFile%AtLine + 1
         IF (SCAN(f_cCommentIndicators,ACharacter) .NE. 0) THEN
@@ -976,6 +1002,7 @@ CONTAINS
     CHARACTER(LEN=ModNameLen+29) :: ThisProcedure = ModName // 'ReadSingleData_AsciiTSDInFile'
     INTEGER                      :: iData(1,1)
     REAL(8)                      :: rData(1,1)
+    CHARACTER(:),ALLOCATABLE     :: cData(:,:)
 
     !Initialize
     iStat = 0
@@ -997,6 +1024,15 @@ CONTAINS
                 CALL ThisFile%ReadMatrixData_AsciiTSDInFile(Time,rData,FileReadCode,iStat)
             END IF
             IF (FileReadCode .EQ. 0) Data = rData(1,1) !If any value is read, transfer that value to tyhe return variable
+
+        TYPE IS (CHARACTER(LEN=*))
+            ALLOCATE(CHARACTER(LEN=LEN(Data)) :: cData(1,1))
+            IF (PRESENT(TraceTime)) THEN
+                CALL ThisFile%ReadMatrixData_AsciiTSDInFile(Time,cData,FileReadCode,iStat,TraceTime)
+            ELSE
+                CALL ThisFile%ReadMatrixData_AsciiTSDInFile(Time,cData,FileReadCode,iStat)
+            END IF
+            IF (FileReadCode .EQ. 0) Data = cData(1,1) !If any value is read, transfer that value to tyhe return variable
 
         CLASS DEFAULT
             CALL SetLastMessage('Trying to read unrecognized data type from file '//ThisFile%Name//'!',f_iFatal,ThisProcedure)

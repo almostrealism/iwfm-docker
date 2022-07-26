@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -48,8 +48,11 @@ MODULE Class_GenericLandUseGW
   ! --- ROOT ZONE CORE DATA TYPE
   ! -------------------------------------------------------------
   TYPE,EXTENDS(GenericLandUseType) :: GenericLandUseGWType
-      REAL(8) :: ETFromGW_Max    = 0.0     !Potential maximum inflow from groundwater (unit rate)
-      REAL(8) :: ETFromGW_Actual = 0.0     !Actual inflow of groundwater into the root zone (volumetric rate)
+      REAL(8),ALLOCATABLE :: ETFromGW_Max(:,:)     !Potential maximum inflow from groundwater (unit rate)
+      REAL(8),ALLOCATABLE :: ETFromGW_Actual(:,:)  !Actual inflow of groundwater into the root zone (volumetric rate)
+  CONTAINS
+      PROCEDURE,PASS :: New
+      PROCEDURE,PASS :: Kill
   END TYPE GenericLandUseGWType
 
   
@@ -59,6 +62,72 @@ CONTAINS
     
     
 
+    
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+! ***
+! *** CONSTRUCTOR
+! ***
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+
+  ! -------------------------------------------------------------
+  ! --- ALLOCATE MEMORY FOR ARRAYS
+  ! -------------------------------------------------------------
+  SUBROUTINE New(GenericLandUse,iDim1,iDim2,iStat)
+    CLASS(GenericLandUseGWType),INTENT(OUT) :: GenericLandUse
+    INTEGER,INTENT(IN)                      :: iDim1,iDim2
+    INTEGER,INTENT(OUT)                     :: iStat
+    
+    ALLOCATE (GenericLandUse%ETFromGW_Max(iDim1,iDim2)    , &
+              GenericLandUse%ETFromGW_Actual(iDim1,iDim2) , &
+              STAT=iStat                                  )
+    IF (iStat .NE. 0) RETURN
+    
+    !Initialize
+    GenericLandUse%ETFromGW_Max    = 0.0
+    GenericLandUse%ETFromGW_Actual = 0.0
+    
+    !Also instantiate the parent class
+    CALL GenericLandUse%GenericLandUseType%New(iDim1,iDim2,iStat)
+    
+  END SUBROUTINE New
+    
+    
+
+    
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+! ***
+! *** DESTRUCTOR
+! ***
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+
+  ! -------------------------------------------------------------
+  ! --- DEALLOCATE MEMORY 
+  ! -------------------------------------------------------------
+  SUBROUTINE Kill(GenericLandUse)
+    CLASS(GenericLandUseGWType) :: GenericLandUse
+    
+    !Local variables
+    INTEGER :: iErrorCode
+    
+    DEALLOCATE (GenericLandUse%ETFromGW_Max    , &
+                GenericLandUse%ETFromGW_Actual , &
+                STAT=iErrorCode                )
+    
+    
+    !Also delete the parent class
+    CALL GenericLandUse%GenericLandUseType%Kill()
+    
+  END SUBROUTINE Kill  
+    
+    
     
 ! ******************************************************************
 ! ******************************************************************

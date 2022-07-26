@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021 
+!  Copyright (C) 2005-2022 
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -270,22 +270,22 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- COMPILE CONDUCTANCE FOR STREAM-GW CONNECTOR
   ! -------------------------------------------------------------
-  SUBROUTINE StrmGWConnector_v421_CompileConductance(Connector,InFile,AppGrid,Stratigraphy,NStrmNodes,iStrmNodeIDs,UpstrmNodes,DownstrmNodes,BottomElevs,iStat)
+  SUBROUTINE StrmGWConnector_v421_CompileConductance(Connector,InFile,AppGrid,Stratigraphy,NStrmNodes,iStrmNodeIDs,BottomElevs,rLength,iStat,rWetPerimeter)
     CLASS(StrmGWConnector_v421_Type)  :: Connector
     TYPE(GenericFileType)             :: InFile
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
-    INTEGER,INTENT(IN)                :: NStrmNodes,iStrmNodeIDs(NStrmNodes),UpstrmNodes(:),DownstrmNodes(:) 
-    REAL(8),INTENT(IN)                :: BottomElevs(:)
+    INTEGER,INTENT(IN)                :: NStrmNodes,iStrmNodeIDs(NStrmNodes) 
+    REAL(8),INTENT(IN)                :: BottomElevs(NStrmNodes),rLength(NStrmNodes)
     INTEGER,INTENT(OUT)               :: iStat
+    REAL(8),OPTIONAL,INTENT(OUT)      :: rWetPerimeter(NStrmNodes)
     
     !Local variables
     CHARACTER(LEN=ModNameLen+39) :: ThisProcedure = ModName // 'StrmGWConnector_v421_CompileConductance'
-    INTEGER                      :: indxNode,iGWNodeID,iStrmNodeID,iLoc,nGWNodes,iGWNode1,indxReach,iGWNode2,  &
-                                    indx,iUpstrmNode,iDownstrmNode,iGWUpstrmNode,iLayer,iNode,iGWNode,         &
-                                    iGWNodeIDs(AppGrid%NNodes),iInteractionType,iFace,indxFace
-    REAL(8)                      :: FACTK,FACTL,rDummyArray3(3),CA,CB,rDummyArray4(4),B_DISTANCE,F_DISTANCE,   &
-                                    Conductivity(MaxnGWNodes,NStrmNodes),BedThick(MaxnGWNodes,NStrmNodes)
+    INTEGER                      :: indxNode,iGWNodeID,iStrmNodeID,iLoc,nGWNodes,iGWNode1,iGWNode2,iFace,indxFace,    &
+                                    indx,iLayer,iNode,iGWNode,iGWNodeIDs(AppGrid%NNodes),iInteractionType
+    REAL(8)                      :: FACTK,FACTL,rDummyArray3(3),rDummyArray4(4),Conductivity(MaxnGWNodes,NStrmNodes), &
+                                    BedThick(MaxnGWNodes,NStrmNodes)
     CHARACTER                    :: ALine*1000
     LOGICAL                      :: lProcessed(NStrmNodes)
 
@@ -416,7 +416,7 @@ CONTAINS
                     !Check that bed thickness is not zero or less
                     IF (BedThick(indx,indxNode) .LE. 0.0) THEN
                         MessageArray(1) = 'Stream bed thickness at stream node ' // TRIM(IntToText(iStrmNodeID)) // ' and GW node '// TRIM(IntToText(iGWNodeID)) // ' is less than or equal to zero!'
-                        MessageArray(2) = 'Check the startigraphy and bed thickness at this location.'
+                        MessageArray(2) = 'Check the stratigraphy and bed thickness at this location.'
                         CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure) 
                         iStat = -1
                         RETURN
@@ -427,37 +427,22 @@ CONTAINS
     END IF
         
     !Compute conductance
-    DO indxReach=1,SIZE(UpstrmNodes)
-        iUpstrmNode   = UpstrmNodes(indxReach)
-        iDownstrmNode = DownstrmNodes(indxReach)
-        B_DISTANCE    = 0.0
-        DO indxNode=iUpstrmNode+1,iDownstrmNode
-            nGWNodes = Connector%GWNodeList(indxNode-1)%nGWNodes
-            !Effective stream length
-            iGWUpstrmNode = Connector%GWNodeList(indxNode-1)%iGWNodes(1)
-            iGWNode       = Connector%GWNodeList(indxNode)%iGWNodes(1)
-            CA            = AppGrid%X(iGWUpstrmNode) - AppGrid%X(iGWNode)
-            CB            = AppGrid%Y(iGWUpstrmNode) - AppGrid%Y(iGWNode)
-            F_DISTANCE    = SQRT(CA*CA + CB*CB)/2d0
-            !Conductivity
-            Connector%GWNodeList(indxNode-1)%Conductance = Conductivity(1:nGWNodes,indxNode-1) * (B_DISTANCE+F_DISTANCE) / BedThick(1:nGWNodes,indxNode-1)
-            !Bed thickness
-            Connector%GWNodeList(indxNode-1)%rBedThickness = BedThick(1:nGWNodes,indxNode-1)
-            !Advance distance
-            B_DISTANCE = F_DISTANCE
-        END DO
-        nGWNodes                                          = Connector%GWNodeList(iDownstrmNode)%nGWNodes
-        Connector%GWNodeList(iDownstrmNode)%Conductance   = Conductivity(1:nGWNodes,iDownstrmNode) * B_DISTANCE / BedThick(1:nGWNodes,iDownstrmNode)
-        Connector%GWNodeList(iDownstrmNode)%rBedThickness = BedThick(1:nGWNodes,iDownstrmNode)
-    END DO
-    
-    !Compute elevation where stream and gw disconnect
     DO indxNode=1,NStrmNodes
+        nGWNodes = Connector%GWNodeList(indxNode)%nGWNodes
+        
+        !Conductivity
+        Connector%GWNodeList(indxNode)%Conductance = Conductivity(1:nGWNodes,indxNode) * rLength(indxNode) / BedThick(1:nGWNodes,indxNode)
+        
+        !Bed thickness
+        Connector%GWNodeList(indxNode)%rBedThickness = BedThick(1:nGWNodes,indxNode)
+        
+        !Compute elevation where stream and gw disconnect
         IF (Connector%iInteractionType .EQ. iDisconnectAtBottomOfBed) THEN
             Connector%GWNodeList(indxNode)%rDisconnectElev = BottomElevs(indxNode) - Connector%GWNodeList(indxNode)%rBedThickness
         ELSE
             Connector%GWNodeList(indxNode)%rDisconnectElev = BottomElevs(indxNode)
         END IF
+
     END DO
     
   END SUBROUTINE StrmGWConnector_v421_CompileConductance

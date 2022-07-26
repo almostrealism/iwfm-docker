@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021 
+!  Copyright (C) 2005-2022 
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -158,11 +158,11 @@ CONTAINS
             nGWNodes = pData%nGWNodes
             iDim     = nGWNodes + SIZE(iGWNodes)
             ALLOCATE (iTempGWNodes(iDim) , iTempLayers(iDim) , rTempFractions(iDim))
-            iTempGWNodes(1:nGWNodes)    = pData%iGWNodes     
+            IF (ALLOCATED(pData%iGWNodes)) iTempGWNodes(1:nGWNodes)    = pData%iGWNodes     
             iTempGWNodes(nGWNodes+1:)   = iGWNodes  ;  CALL MOVE_ALLOC(iTempGWNodes   , pData%iGWNodes)
-            iTempLayers(1:nGWNodes)     = pData%iLayers                               
+            IF (ALLOCATED(pData%iLayers)) iTempLayers(1:nGWNodes)     = pData%iLayers                               
             iTempLayers(nGWNodes+1:)    = iLayers   ;  CALL MOVE_ALLOC(iTempLayers    , pData%iLayers)
-            rTempFractions(1:nGWNodes)  = pData%rFractionForGW
+            IF (ALLOCATED(pData%rFractionForGW)) rTempFractions(1:nGWNodes)  = pData%rFractionForGW
             rTempFractions(nGWNodes+1:) = 1.0       ;  CALL MOVE_ALLOC(rTempFractions , pData%rFractionForGW) 
             pData%nGWNodes              = iDim
         END ASSOCIATE
@@ -607,26 +607,25 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- COMPILE CONDUCTANCE FOR STREAM-GW CONNECTOR
   ! -------------------------------------------------------------
-  SUBROUTINE StrmGWConnector_v42_CompileConductance(Connector,InFile,AppGrid,Stratigraphy,NStrmNodes,iStrmNodeIDs,UpstrmNodes,DownstrmNodes,BottomElevs,iStat)
+  SUBROUTINE StrmGWConnector_v42_CompileConductance(Connector,InFile,AppGrid,Stratigraphy,NStrmNodes,iStrmNodeIDs,BottomElevs,rLength,iStat,rWetPerimeter)
     CLASS(StrmGWConnector_v42_Type)   :: Connector
     TYPE(GenericFileType)             :: InFile
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
-    INTEGER,INTENT(IN)                :: NStrmNodes,iStrmNodeIDs(NStrmNodes),UpstrmNodes(:),DownstrmNodes(:) 
-    REAL(8),INTENT(IN)                :: BottomElevs(:)
+    INTEGER,INTENT(IN)                :: NStrmNodes,iStrmNodeIDs(NStrmNodes) 
+    REAL(8),INTENT(IN)                :: BottomElevs(NStrmNodes),rLength(NStrmNodes)
     INTEGER,INTENT(OUT)               :: iStat
+    REAL(8),OPTIONAL,INTENT(OUT)      :: rWetPerimeter(NStrmNodes)
     
     !Local variables
     CHARACTER(LEN=ModNameLen+38) :: ThisProcedure = ModName // 'StrmGWConnector_v42_CompileConductance'
-    INTEGER                      :: indxNode,iGWNodeID,iElem,iStrmNodeID,iLoc,nGWNodes,indx1,iGWNode1,indxReach, &
-                                    indx,iUpstrmNode,iDownstrmNode,iGWUpstrmNode,iLayer,iNode,iGWNode,           &
-                                    iGWNodeIDs(AppGrid%NNodes),iInteractionType
-    REAL(8)                      :: FACTK,FACTL,DummyArray3(3),WetPerimeter(MaxnGWNodes,NStrmNodes),CA,CB,       &
-                                    Conductivity(MaxnGWNodes,NStrmNodes),BedThick(MaxnGWNodes,NStrmNodes),       &
-                                    Distance,X(2),Y(2),DummyArray5(5),Length(MaxnGWNodes-1),B_DISTANCE,          &
-                                    F_DISTANCE,rSumConductance
+    INTEGER                      :: indxNode,iGWNodeID,iElem,iStrmNodeID,iLoc,nGWNodes,indx1,iGWNode1,iNode,     &
+                                    indx,iLayer,iGWNode,iInteractionType,iGWNodeIDs(AppGrid%NNodes)
+    REAL(8)                      :: FACTK,FACTL,rDummyArray3(3),WetPerimeter(MaxnGWNodes,NStrmNodes),Distance,   &
+                                    Conductivity(MaxnGWNodes,NStrmNodes),BedThick(MaxnGWNodes,NStrmNodes),X(2),  &
+                                    Y(2),rDummyArray5(5),Length(MaxnGWNodes-1),rSumConductance,rDummyArray4(4)
     CHARACTER                    :: ALine*1000
-    LOGICAL                      :: lProcessed(NStrmNodes)
+    LOGICAL                      :: lProcessed(NStrmNodes),lWPForEachGWNode
 
     !Initialize
     lProcessed = .FALSE.
@@ -646,8 +645,8 @@ CONTAINS
     !Read data
     DO indxNode=1,NStrmNodes
         !Read data for the stream node
-        CALL InFile%ReadData(DummyArray5,iStat)  ;  IF (iStat .EQ. -1) RETURN
-        iStrmNodeID = INT(DummyArray5(1))
+        CALL InFile%ReadData(rDummyArray5,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        iStrmNodeID = INT(rDummyArray5(1))
         CALL ConvertID_To_Index(iStrmNodeID,iStrmNodeIDs,iNode)
         IF (iNode .EQ. 0) THEN
             CALL SetLastMessage('Stream node '//TRIM(IntToText(iStrmNodeID))//' listed for stream bed parameters is not in the model!',f_iFatal,ThisProcedure)
@@ -670,9 +669,22 @@ CONTAINS
         ALLOCATE (Connector%GWNodeList(iNode)%Conductance(nGWNodes) , Connector%GWNodeList(iNode)%StrmGWFlow(nGWNodes)  ,  Connector%GWNodeList(iNode)%rBedThickness(nGWNodes) ,  Connector%GWNodeList(iNode)%rDisconnectElev(nGWNodes) ,  Connector%GWNodeList(iNode)%rDistFrac(nGWNodes))
         Connector%GWNodeList(iNode)%StrmGWFlow(nGWNodes) = 0.0
         
+        !Check if there are 3 or 4 data entries; i.e. if wetted perimeter is provided for each gw node or for the entire stream node
+        lWPForEachGWNode = .TRUE.
+        IF (nGWNodes .GT. 1) THEN
+            CALL InFile%ReadData(ALine,iStat)  ;  IF (iStat .EQ. -1) RETURN
+            READ (ALine,*,IOSTAT=iStat) rDummyArray4
+            IF (iStat .EQ. 0) THEN
+                lWPForEachGWNode = .TRUE.
+            ELSE
+                lWPForEachGWNode = .FALSE.
+            END IF
+            CALL InFile%BackspaceFile()
+        END IF
+        
         !Parameters
-        WetPerimeter(1,iNode) = DummyArray5(2) * FACTL
-        iGWNodeID             = INT(DummyArray5(3))
+        WetPerimeter(1,iNode) = rDummyArray5(2) * FACTL
+        iGWNodeID             = INT(rDummyArray5(3))
         CALL ConvertID_To_Index(iGWNodeID,iGWNodeIDs,iGWNode)
         IF (iGWNode .EQ. 0) THEN
             CALL SetLastMessage('Groundwater node '//TRIM(IntToText(iGWNodeID))//' listed for stream node '//TRIM(IntToText(iStrmNodeID))//' for stream bed parameters is not in the model!',f_iFatal,ThisProcedure)
@@ -687,49 +699,91 @@ CONTAINS
             iStat = -1
             RETURN
         END IF
-        Conductivity(iLoc,iNode) = DummyArray5(4) * FACTK
-        BedThick(iLoc,iNode)     = DummyArray5(5) * FACTL
+        Conductivity(iLoc,iNode) = rDummyArray5(4) * FACTK
+        BedThick(iLoc,iNode)     = rDummyArray5(5) * FACTL
         DO indx=2,Connector%GWNodeList(iNode)%nGWNodes
-            CALL InFile%ReadData(DummyArray3,iStat)  ;  IF (iStat .EQ. -1) RETURN
-            iGWNodeID = INT(DummyArray3(1))  
-            CALL ConvertID_To_Index(iGWNodeID,iGWNodeIDs,iGWNode)
-            iLoc = LocateInList(iGWNode , Connector%GWNodeList(iNode)%iGWNodes)
-            IF (iLoc .EQ. 0) THEN
-                MessageArray(1) = 'Stream bed parameters at stream node '//TRIM(IntToText(iStrmNodeID))//' are listed for groundwater node '//TRIM(IntToText(iGWNodeID))//','
-                MessageArray(2) = 'but this groundwater node is not associated with the stream node!'
-                CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
-                iStat = -1
-                RETURN
+            !Wetted perimeter is specified for each gw node
+            IF (lWPForEachGWNode) THEN
+                CALL InFile%ReadData(ALine,iStat)       ;  IF (iStat .EQ. -1) RETURN
+                READ (ALine,*,IOSTAT=iStat) rDummyArray4
+                IF (iStat .NE. 0) THEN
+                    MessageArray(1) = 'Expecting to read 4 stream bed parameters at stream node '//TRIM(IntToText(iStrmNodeID))//'!'
+                    MessageArray(2) = 'Last read data line:'
+                    MessageArray(3) = TRIM(ALine)
+                    CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
+                    iStat = -1
+                    RETURN
+                END IF
+                iGWNodeID = INT(rDummyArray4(2))  
+                CALL ConvertID_To_Index(iGWNodeID,iGWNodeIDs,iGWNode)
+                iLoc = LocateInList(iGWNode , Connector%GWNodeList(iNode)%iGWNodes)
+                IF (iLoc .EQ. 0) THEN
+                    MessageArray(1) = 'Stream bed parameters at stream node '//TRIM(IntToText(iStrmNodeID))//' are listed for groundwater node '//TRIM(IntToText(iGWNodeID))//','
+                    MessageArray(2) = 'but this groundwater node is not associated with the stream node!'
+                    CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
+                    iStat = -1
+                    RETURN
+                END IF
+                WetPerimeter(iLoc,iNode) = rDummyArray4(1) * FACTL
+                Conductivity(iLoc,iNode) = rDummyArray4(3) * FACTK
+                BedThick(iLoc,iNode)     = rDummyArray4(4) * FACTL
+            !Wetted perimeter is given for the stream node and will be distributed to gw nodes by IWFM
+            ELSE
+                CALL InFile%ReadData(ALine,iStat)  ;  IF (iStat .EQ. -1) RETURN
+                READ (ALine,*,IOSTAT=iStat) rDummyArray3
+                IF (iStat .NE. 0) THEN
+                    MessageArray(1) = 'Expecting to read 3 stream bed parameters at stream node '//TRIM(IntToText(iStrmNodeID))//'!'
+                    MessageArray(2) = 'Last read data line:'
+                    MessageArray(3) = TRIM(ALine)
+                    CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
+                    iStat = -1
+                    RETURN
+                END IF
+                iGWNodeID = INT(rDummyArray3(1))  
+                CALL ConvertID_To_Index(iGWNodeID,iGWNodeIDs,iGWNode)
+                iLoc = LocateInList(iGWNode , Connector%GWNodeList(iNode)%iGWNodes)
+                IF (iLoc .EQ. 0) THEN
+                    MessageArray(1) = 'Stream bed parameters at stream node '//TRIM(IntToText(iStrmNodeID))//' are listed for groundwater node '//TRIM(IntToText(iGWNodeID))//','
+                    MessageArray(2) = 'but this groundwater node is not associated with the stream node!'
+                    CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
+                    iStat = -1
+                    RETURN
+                END IF
+                Conductivity(iLoc,iNode) = rDummyArray3(2) * FACTK
+                BedThick(iLoc,iNode)     = rDummyArray3(3) * FACTL
             END IF
-            Conductivity(iLoc,iNode) = DummyArray3(2) * FACTK
-            BedThick(iLoc,iNode)     = DummyArray3(3) * FACTL
         END DO
         
         !Distribute wetted perimeter to multiple gw nodes 
         IF (nGWNodes .GT. 1) THEN
-            !Find the effective length of each node 
-            Length(1:nGWNodes) = 0.0
-            DO indx=1,nGWNodes-1
-                iGWNode = Connector%GWNodeList(iNode)%iGWNodes(indx)
-                X(1)    = AppGrid%X(iGWNode)
-                Y(1)    = AppGrid%Y(iGWNode)
-                DO indx1=indx+1,nGWNodes
-                    iGWNode1 = Connector%GWNodeList(iNode)%iGWNodes(indx1)
-                    iElem    = AppGrid%GetElementGivenVertices([iGWNode,iGWNode1])
-                    IF (iElem .EQ. 0) CYCLE
-                    X(2)     = AppGrid%X(iGWNode1)
-                    Y(2)     = AppGrid%Y(iGWNode1)
-                    Distance = 0.5 * SQRT((X(1)-X(2))*(X(1)-X(2)) + (Y(1)-Y(2))*(Y(1)-Y(2)))
-                    Length(indx)  = Length(indx) + Distance
-                    Length(indx1) = Length(indx1) + Distance
+            IF (.NOT. lWPForEachGWNode) THEN
+                !Find the effective length of each node 
+                Length(1:nGWNodes) = 0.0
+                DO indx=1,nGWNodes-1
+                    iGWNode = Connector%GWNodeList(iNode)%iGWNodes(indx)
+                    X(1)    = AppGrid%X(iGWNode)
+                    Y(1)    = AppGrid%Y(iGWNode)
+                    DO indx1=indx+1,nGWNodes
+                        iGWNode1 = Connector%GWNodeList(iNode)%iGWNodes(indx1)
+                        iElem    = AppGrid%GetElementGivenVertices([iGWNode,iGWNode1])
+                        IF (iElem .EQ. 0) CYCLE
+                        X(2)     = AppGrid%X(iGWNode1)
+                        Y(2)     = AppGrid%Y(iGWNode1)
+                        Distance = 0.5 * SQRT((X(1)-X(2))*(X(1)-X(2)) + (Y(1)-Y(2))*(Y(1)-Y(2)))
+                        Length(indx)  = Length(indx) + Distance
+                        Length(indx1) = Length(indx1) + Distance
+                    END DO
                 END DO
-            END DO
-            !Distribute wetted perimeter to each gw node with respect to their associated length
-            CALL NormalizeArray(Length(1:nGWNodes))
-            WetPerimeter(1:nGWNodes,iNode) = WetPerimeter(1,iNode) * Length(1:nGWNodes)
+                !Distribute wetted perimeter to each gw node with respect to their associated length
+                CALL NormalizeArray(Length(1:nGWNodes))
+                WetPerimeter(1:nGWNodes,iNode) = WetPerimeter(1,iNode) * Length(1:nGWNodes)
+            END IF
         END IF
     END DO
     
+    !Return wetted perimeter, if requested
+    IF (PRESENT(rWetPerimeter)) rWetPerimeter(iNode) = SUM(WetPerimeter(:,iNode))
+
     !Assumption for stream-aquifer disconnection; BACKWARD COMPATIBILITY: Check if this part of the data file exists
     CALL InFile%ReadData(iInteractionType,iStat)
     IF (iStat .EQ. 0) THEN
@@ -756,7 +810,7 @@ CONTAINS
                     !Check that bed thickness is not zero or less
                     IF (BedThick(indx,indxNode) .LE. 0.0) THEN
                         MessageArray(1) = 'Stream bed thickness at stream node ' // TRIM(IntToText(iStrmNodeID)) // ' and GW node '// TRIM(IntToText(iGWNodeID)) // ' is less than or equal to zero!'
-                        MessageArray(2) = 'Check the startigraphy and bed thickness at this location.'
+                        MessageArray(2) = 'Check the stratigraphy and bed thickness at this location.'
                         CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure) 
                         iStat = -1
                         RETURN
@@ -767,45 +821,24 @@ CONTAINS
     END IF
         
     !Compute conductance
-    DO indxReach=1,SIZE(UpstrmNodes)
-        iUpstrmNode   = UpstrmNodes(indxReach)
-        iDownstrmNode = DownstrmNodes(indxReach)
-        B_DISTANCE    = 0.0
-        DO indxNode=iUpstrmNode+1,iDownstrmNode
-            nGWNodes = Connector%GWNodeList(indxNode-1)%nGWNodes
-            !Effective stream length
-            iGWUpstrmNode = Connector%GWNodeList(indxNode-1)%iGWNodes(1)
-            iGWNode       = Connector%GWNodeList(indxNode)%iGWNodes(1)
-            CA            = AppGrid%X(iGWUpstrmNode) - AppGrid%X(iGWNode)
-            CB            = AppGrid%Y(iGWUpstrmNode) - AppGrid%Y(iGWNode)
-            F_DISTANCE    = SQRT(CA*CA + CB*CB)/2d0
-            !Conductivity
-            Connector%GWNodeList(indxNode-1)%Conductance = Conductivity(1:nGWNodes,indxNode-1) * WetPerimeter(1:nGWNodes,indxNode-1) * (B_DISTANCE+F_DISTANCE) / BedThick(1:nGWNodes,indxNode-1)
-            !Stream flow distribution factors 
-            rSumConductance = SUM(Connector%GWNodeList(indxNode-1)%Conductance)
-            IF (rSumConductance .EQ. 0.0) THEN
-                Connector%GWNodeList(indxNode-1)%rDistFrac = 1D0 / REAL(nGWNodes,8)
-            ELSE
-                Connector%GWNodeList(indxNode-1)%rDistFrac = Connector%GWNodeList(indxNode-1)%Conductance / rSumConductance
-            END IF
-            !Bed thickness
-            Connector%GWNodeList(indxNode-1)%rBedThickness = BedThick(1:nGWNodes,indxNode-1)
-            !Advance distance
-            B_DISTANCE = F_DISTANCE
-        END DO
-        nGWNodes                                          = Connector%GWNodeList(iDownstrmNode)%nGWNodes
-        Connector%GWNodeList(iDownstrmNode)%Conductance   = Conductivity(1:nGWNodes,iDownstrmNode) * WetPerimeter(1:nGWNodes,iDownstrmNode) * B_DISTANCE / BedThick(1:nGWNodes,iDownstrmNode)
-        Connector%GWNodeList(iDownstrmNode)%rBedThickness = BedThick(1:nGWNodes,iDownstrmNode)
-        rSumConductance                                   = SUM(Connector%GWNodeList(iDownstrmNode)%Conductance)
-        IF (rSumConductance .EQ. 0.0) THEN
-            Connector%GWNodeList(iDownstrmNode)%rDistFrac = 1D0 / REAL(nGWNodes,8)
-        ELSE
-            Connector%GWNodeList(iDownstrmNode)%rDistFrac = Connector%GWNodeList(iDownstrmNode)%Conductance / rSumConductance
-        END IF
-    END DO
-    
-    !Compute elevation where stream and gw disconnect
     DO indxNode=1,NStrmNodes
+        nGWNodes = Connector%GWNodeList(indxNode)%nGWNodes
+        
+        !Conductivity
+        Connector%GWNodeList(indxNode)%Conductance = Conductivity(1:nGWNodes,indxNode) * WetPerimeter(1:nGWNodes,indxNode) * rLength(indxNode) / BedThick(1:nGWNodes,indxNode)
+        
+        !Stream flow distribution factors 
+        rSumConductance = SUM(Connector%GWNodeList(indxNode)%Conductance)
+        IF (rSumConductance .EQ. 0.0) THEN
+            Connector%GWNodeList(indxNode)%rDistFrac = 1D0 / REAL(nGWNodes,8)
+        ELSE
+            Connector%GWNodeList(indxNode)%rDistFrac = Connector%GWNodeList(indxNode)%Conductance / rSumConductance
+        END IF
+        
+        !Bed thickness
+        Connector%GWNodeList(indxNode)%rBedThickness = BedThick(1:nGWNodes,indxNode)
+        
+        !Compute elevation where stream and gw disconnect
         IF (Connector%iInteractionType .EQ. iDisconnectAtBottomOfBed) THEN
             Connector%GWNodeList(indxNode)%rDisconnectElev = BottomElevs(indxNode) - Connector%GWNodeList(indxNode)%rBedThickness
         ELSE

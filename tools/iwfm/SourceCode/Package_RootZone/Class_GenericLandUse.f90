@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -45,26 +45,29 @@ MODULE Class_GenericLandUse
   ! --- ROOT ZONE CORE DATA TYPE
   ! -------------------------------------------------------------
   TYPE GenericLandUseType
-    REAL(8) :: SMax                         = 0.0     !Maximum soil retention parameter
-    INTEGER :: iColETc                      = 0       !Column number in the ETc database
-    REAL(8) :: ETa                          = 0.0     !Actual ET
-    REAL(8) :: Runoff                       = 0.0     !Direct runoff due to precip
-    REAL(8) :: PrecipInfilt                 = 0.0     !Infiltration due to precipitation
-    REAL(8) :: SoilM_Precip_P_BeforeUpdate  = 0.0     !Soil moisture at the beginning of time step due to precipitation, but before it is possibly updated due to land use area change
-    REAL(8) :: SoilM_Precip_P               = 0.0     !Soil moisture at the beginning of time step due to precipitation
-    REAL(8) :: SoilM_Precip                 = 0.0     !Soil moisture at the end of time step due to precipitation
-    REAL(8) :: SoilM_AW_P_BeforeUpdate      = 0.0     !Soil moisture at the beginning of time step due to irrigation, but before it is possibly updated due to land use area change
-    REAL(8) :: SoilM_AW_P                   = 0.0     !Soil moisture at the beginning of time step due to irrigation
-    REAL(8) :: SoilM_AW                     = 0.0     !Soil moisture at the end of time step due to irrigation
-    REAL(8) :: SoilM_Oth_P_BeforeUpdate     = 0.0     !Soil moisture at the beginning of time step due to user-defined source of water, but before it is possibly updated due to land use area change
-    REAL(8) :: SoilM_Oth_P                  = 0.0     !Soil moisture at the beginning of time step due to user-defined source of water
-    REAL(8) :: SoilM_Oth                    = 0.0     !Soil moisture at the end of time step due to user-defined source of water
-    REAL(8) :: SoilMCh                      = 0.0     !Soil moisture chnage due to contraction/expansion of land use area
-    REAL(8) :: Area_P                       = 0.0     !Land use area before update from land use area data file at the beginning of time step
-    REAL(8) :: Area                         = 0.0     !Land use area after update from land use area data file at the beginning of time step
-    REAL(8) :: Perc                         = 0.0     !Percolation
-    REAL(8) :: PercCh                       = 0.0     !Percolation due to soil moisture exceeding total porosity when land use areas are modified and soil moisture redistributed
-    REAL(8) :: GMExcess                     = 0.0     !Excess general moisture inflow due to stoarge capacity of the root zone
+      REAL(8),ALLOCATABLE :: SMax(:,:)                            !Maximum soil retention parameter
+      INTEGER,ALLOCATABLE :: iColETc(:,:)                         !Column number in the ETc database
+      REAL(8),ALLOCATABLE :: ETa(:,:)                             !Actual ET
+      REAL(8),ALLOCATABLE :: Runoff(:,:)                          !Direct runoff due to precip
+      REAL(8),ALLOCATABLE :: PrecipInfilt(:,:)                    !Infiltration due to precipitation
+      REAL(8),ALLOCATABLE :: SoilM_Precip_P_BeforeUpdate(:,:)     !Soil moisture at the beginning of time step due to precipitation, but before it is possibly updated due to land use area change
+      REAL(8),ALLOCATABLE :: SoilM_Precip_P(:,:)                  !Soil moisture at the beginning of time step due to precipitation
+      REAL(8),ALLOCATABLE :: SoilM_Precip(:,:)                    !Soil moisture at the end of time step due to precipitation
+      REAL(8),ALLOCATABLE :: SoilM_AW_P_BeforeUpdate(:,:)         !Soil moisture at the beginning of time step due to irrigation, but before it is possibly updated due to land use area change
+      REAL(8),ALLOCATABLE :: SoilM_AW_P(:,:)                      !Soil moisture at the beginning of time step due to irrigation
+      REAL(8),ALLOCATABLE :: SoilM_AW(:,:)                        !Soil moisture at the end of time step due to irrigation
+      REAL(8),ALLOCATABLE :: SoilM_Oth_P_BeforeUpdate(:,:)        !Soil moisture at the beginning of time step due to user-defined source of water, but before it is possibly updated due to land use area change
+      REAL(8),ALLOCATABLE :: SoilM_Oth_P(:,:)                     !Soil moisture at the beginning of time step due to user-defined source of water
+      REAL(8),ALLOCATABLE :: SoilM_Oth(:,:)                       !Soil moisture at the end of time step due to user-defined source of water
+      REAL(8),ALLOCATABLE :: SoilMCh(:,:)                         !Soil moisture chnage due to contraction/expansion of land use area
+      REAL(8),ALLOCATABLE :: Area_P(:,:)                          !Land use area before update from land use area data file at the beginning of time step
+      REAL(8),ALLOCATABLE :: Area(:,:)                            !Land use area after update from land use area data file at the beginning of time step
+      REAL(8),ALLOCATABLE :: Perc(:,:)                            !Percolation
+      REAL(8),ALLOCATABLE :: PercCh(:,:)                          !Percolation due to soil moisture exceeding total porosity when land use areas are modified and soil moisture redistributed
+      REAL(8),ALLOCATABLE :: GMExcess(:,:)                        !Excess general moisture inflow due to stoarge capacity of the root zone
+  CONTAINS
+      PROCEDURE,PASS :: New
+      PROCEDURE,PASS :: Kill
   END TYPE GenericLandUseType
         
 
@@ -76,8 +79,9 @@ MODULE Class_GenericLandUse
   
   
   
-
+CONTAINS
   
+    
 
   
 ! ******************************************************************
@@ -89,11 +93,111 @@ MODULE Class_GenericLandUse
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************
-
+    
+  ! -------------------------------------------------------------
+  ! --- ALLOCATE MEMORY FOR ARRAYS
+  ! -------------------------------------------------------------
+  SUBROUTINE New(GenericLandUse,iDim1,iDim2,iStat)
+    CLASS(GenericLandUseType),INTENT(OUT) :: GenericLandUse
+    INTEGER,INTENT(IN)                    :: iDim1,iDim2
+    INTEGER,INTENT(OUT)                   :: iStat
+    
+    ALLOCATE(GenericLandUse%SMax(iDim1,iDim2)                        , &                            
+             GenericLandUse%iColETc(iDim1,iDim2)                     , &                        
+             GenericLandUse%ETa(iDim1,iDim2)                         , &                            
+             GenericLandUse%Runoff(iDim1,iDim2)                      , &                         
+             GenericLandUse%PrecipInfilt(iDim1,iDim2)                , &                   
+             GenericLandUse%SoilM_Precip_P_BeforeUpdate(iDim1,iDim2) , &    
+             GenericLandUse%SoilM_Precip_P(iDim1,iDim2)              , &                 
+             GenericLandUse%SoilM_Precip(iDim1,iDim2)                , &                   
+             GenericLandUse%SoilM_AW_P_BeforeUpdate(iDim1,iDim2)     , &        
+             GenericLandUse%SoilM_AW_P(iDim1,iDim2)                  , &                     
+             GenericLandUse%SoilM_AW(iDim1,iDim2)                    , &                       
+             GenericLandUse%SoilM_Oth_P_BeforeUpdate(iDim1,iDim2)    , &       
+             GenericLandUse%SoilM_Oth_P(iDim1,iDim2)                 , &                    
+             GenericLandUse%SoilM_Oth(iDim1,iDim2)                   , &                      
+             GenericLandUse%SoilMCh(iDim1,iDim2)                     , &                        
+             GenericLandUse%Area_P(iDim1,iDim2)                      , &                         
+             GenericLandUse%Area(iDim1,iDim2)                        , &                           
+             GenericLandUse%Perc(iDim1,iDim2)                        , &                           
+             GenericLandUse%PercCh(iDim1,iDim2)                      , &                         
+             GenericLandUse%GMExcess(iDim1,iDim2)                    , &
+             STAT=iStat                                              )  
+    IF (iStat .NE. 0) RETURN
+    
+    !Initialize all to zero
+    GenericLandUse%SMax                        = 0.0                                                   
+    GenericLandUse%iColETc                     = 0                                           
+    GenericLandUse%ETa                         = 0.0                                                    
+    GenericLandUse%Runoff                      = 0.0                                              
+    GenericLandUse%PrecipInfilt                = 0.0                                  
+    GenericLandUse%SoilM_Precip_P_BeforeUpdate = 0.0    
+    GenericLandUse%SoilM_Precip_P              = 0.0                              
+    GenericLandUse%SoilM_Precip                = 0.0                                  
+    GenericLandUse%SoilM_AW_P_BeforeUpdate     = 0.0            
+    GenericLandUse%SoilM_AW_P                  = 0.0                                      
+    GenericLandUse%SoilM_AW                    = 0.0                                          
+    GenericLandUse%SoilM_Oth_P_BeforeUpdate    = 0.0          
+    GenericLandUse%SoilM_Oth_P                 = 0.0                                    
+    GenericLandUse%SoilM_Oth                   = 0.0                                        
+    GenericLandUse%SoilMCh                     = 0.0                                            
+    GenericLandUse%Area_P                      = 0.0                                              
+    GenericLandUse%Area                        = 0.0                                                  
+    GenericLandUse%Perc                        = 0.0                                                  
+    GenericLandUse%PercCh                      = 0.0                                              
+    GenericLandUse%GMExcess                    = 0.0    
+    
+  END SUBROUTINE New
+  
   
 
 
-
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+! ***
+! *** DESTRUCTOR
+! ***
+! ******************************************************************
+! ******************************************************************
+! ******************************************************************
+    
+  ! -------------------------------------------------------------
+  ! --- DEALLOCATE MEMORY 
+  ! -------------------------------------------------------------
+  SUBROUTINE Kill(GenericLandUse)
+    CLASS(GenericLandUseType) :: GenericLandUse
+    
+    !LOcal variables
+    INTEGER :: iErrorCode
+    
+    DEALLOCATE(GenericLandUse%SMax                         , &                            
+               GenericLandUse%iColETc                      , &                        
+               GenericLandUse%ETa                          , &                            
+               GenericLandUse%Runoff                       , &                         
+               GenericLandUse%PrecipInfilt                 , &                   
+               GenericLandUse%SoilM_Precip_P_BeforeUpdate  , &    
+               GenericLandUse%SoilM_Precip_P               , &                 
+               GenericLandUse%SoilM_Precip                 , &                   
+               GenericLandUse%SoilM_AW_P_BeforeUpdate      , &        
+               GenericLandUse%SoilM_AW_P                   , &                     
+               GenericLandUse%SoilM_AW                     , &                       
+               GenericLandUse%SoilM_Oth_P_BeforeUpdate     , &       
+               GenericLandUse%SoilM_Oth_P                  , &                    
+               GenericLandUse%SoilM_Oth                    , &                      
+               GenericLandUse%SoilMCh                      , &                        
+               GenericLandUse%Area_P                       , &                         
+               GenericLandUse%Area                         , &                           
+               GenericLandUse%Perc                         , &                           
+               GenericLandUse%PercCh                       , &                         
+               GenericLandUse%GMExcess                     , &
+               STAT=iErrorCode                             )     
+    
+  END SUBROUTINE Kill
+  
+  
+  
+  
 ! ******************************************************************
 ! ******************************************************************
 ! ******************************************************************

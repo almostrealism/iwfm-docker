@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -163,7 +163,7 @@ MODULE Class_BaseAppLake
   ! -------------------------------------------------------------
   ! --- BUDGET RELATED DATA
   ! -------------------------------------------------------------
-  INTEGER,PARAMETER           :: f_iNLakeBudColumns = 13
+  INTEGER,PARAMETER           :: f_iNLakeBudColumns = 14
   CHARACTER(LEN=27),PARAMETER :: f_cBudgetColumnTitles(f_iNLakeBudColumns) = ['Beginning Storage (+)'       , &
                                                                               'Ending Storage (-)'          , &
                                                                               'Flow from Upstream Lake (+)' , &
@@ -171,6 +171,7 @@ MODULE Class_BaseAppLake
                                                                               'Flow from Bypasses (+)'      , &
                                                                               'Runoff (+)'                  , &
                                                                               'Return Flow (+)'             , &
+                                                                              'Pond Drain (+)'              , &
                                                                               'Precipitation (+)'           , &
                                                                               'Gain from Groundwater (+)'   , &
                                                                               'Lake Evaporation (-)'        , &
@@ -273,10 +274,10 @@ MODULE Class_BaseAppLake
      END FUNCTION Abstract_GetMaxElevs
      
      
-     SUBROUTINE Abstract_Simulate(AppLake,GSElevs,GWHeads,Runoff,ReturnFlow,LakeGWConnector,StrmLakeConnector,Matrix)
+     SUBROUTINE Abstract_Simulate(AppLake,GSElevs,GWHeads,Runoff,ReturnFlow,PondDrain,LakeGWConnector,StrmLakeConnector,Matrix)
       IMPORT                               :: BaseAppLakeType,LakeGWConnectorType,StrmLakeConnectorType,MatrixType
       CLASS(BaseAppLakeType)               :: AppLake
-      REAL(8),INTENT(IN)                   :: GSElevs(:),GWHeads(:,:),Runoff(:),ReturnFlow(:)
+      REAL(8),INTENT(IN)                   :: GSElevs(:),GWHeads(:,:),Runoff(:),ReturnFlow(:),PondDrain(:)
       TYPE(LakeGWConnectorType),INTENT(IN) :: LakeGWConnector
       TYPE(StrmLakeConnectorType)          :: StrmLakeConnector
       TYPE(MatrixType)                     :: Matrix
@@ -507,30 +508,31 @@ CONTAINS
     INTEGER,INTENT(OUT)                      :: iStat
     
     !Local variables
-    INTEGER,PARAMETER   :: iReadCols(11) = [1,2,3,4,5,6,7,8,9,10,11]
+    INTEGER,PARAMETER   :: iReadCols(12) = [1,2,3,4,5,6,7,8,9,10,11,12]
     INTEGER             :: iDimActual,iNTimeSteps
     REAL(8),ALLOCATABLE :: rValues(:,:)
     
     !Get simulation time steps and allocate array to read data
     iNTimeSteps = Budget%GetNTimeSteps()
-    ALLOCATE (rValues(12,iNTimeSteps)) !Adding 1 to the first dimension for Time column; it will be removed later
+    ALLOCATE (rValues(SIZE(iReadCols)+1,iNTimeSteps)) !Adding 1 to the first dimension for Time column; it will be removed later
     
     !Read data
     CALL Budget%ReadData(iLakeID,iReadCols,'1MON',cBeginDate,cEndDate,0d0,0d0,0d0,1d0,1d0,rFactVL,iDimActual,rValues,iStat)
     IF (iStat .NE. 0) RETURN
     
     !Store values in return argument
-    ALLOCATE (rFlows(10,iDimActual) , cFlowNames(10))
+    ALLOCATE (rFlows(11,iDimActual) , cFlowNames(11))
     rFlows(1,:)  = rValues(2,1:iDimActual) - rValues(3,1:iDimActual)   !Change in storage
     rFlows(2,:)  = rValues(4,1:iDimActual)                             !Flow from Upstream Lake (+)  
     rFlows(3,:)  = rValues(5,1:iDimActual)                             !Flow from Streams (+)      
     rFlows(4,:)  = rValues(6,1:iDimActual)                             !Flow from Bypasses (+)    
     rFlows(5,:)  = rValues(7,1:iDimActual)                             !Runoff (+)                
     rFlows(6,:)  = rValues(8,1:iDimActual)                             !Return Flow (+)           
-    rFlows(7,:)  = rValues(9,1:iDimActual)                             !Precipitation (+)         
-    rFlows(8,:)  = rValues(10,1:iDimActual)                            !Gain from Groundwater (+) 
-    rFlows(9,:)  = -rValues(11,1:iDimActual)                           !Lake Evaporation (-)      
-    rFlows(10,:) = -rValues(12,1:iDimActual)                           !Lake Outflow (-)          
+    rFlows(7,:)  = rValues(9,1:iDimActual)                             !Pond Drain (+)           
+    rFlows(8,:)  = rValues(10,1:iDimActual)                            !Precipitation (+)         
+    rFlows(9,:)  = rValues(11,1:iDimActual)                            !Gain from Groundwater (+) 
+    rFlows(10,:) = -rValues(12,1:iDimActual)                           !Lake Evaporation (-)      
+    rFlows(11,:) = -rValues(13,1:iDimActual)                           !Lake Outflow (-)          
     
     !Flow names
     cFlowNames     = ''
@@ -540,10 +542,11 @@ CONTAINS
     cFlowNames(4)  = 'Flow from Bypasses'        
     cFlowNames(5)  = 'Runoff'                    
     cFlowNames(6)  = 'Return Flow'               
-    cFlowNames(7)  = 'Precipitation'             
-    cFlowNames(8)  = 'Gain from Groundwater'      
-    cFlowNames(9)  = 'Evaporation'          
-    cFlowNames(10) = 'Outflow'              
+    cFlowNames(7)  = 'Pond Drain'               
+    cFlowNames(8)  = 'Precipitation'             
+    cFlowNames(9)  = 'Gain from Groundwater'      
+    cFlowNames(10) = 'Evaporation'          
+    cFlowNames(11) = 'Outflow'              
     
   END SUBROUTINE GetBudget_MonthlyFlows_GivenFile
 
@@ -990,11 +993,11 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- PRINT OUT APPLICATION LAKES SIMULATION RESULTS
   ! -------------------------------------------------------------
-  SUBROUTINE PrintResults(AppLake,TimeStep,lEndOfSimulation,Runoff,ReturnFlow,LakeGWConnector,StrmLakeConnector)
+  SUBROUTINE PrintResults(AppLake,TimeStep,lEndOfSimulation,Runoff,ReturnFlow,PondDrain,LakeGWConnector,StrmLakeConnector)
     CLASS(BaseAppLakeType)                 :: AppLake
     TYPE(TimeStepType),INTENT(IN)          :: TimeStep
     LOGICAL,INTENT(IN)                     :: lEndOfSimulation
-    REAL(8),INTENT(IN)                     :: Runoff(:),ReturnFlow(:)
+    REAL(8),INTENT(IN)                     :: Runoff(:),ReturnFlow(:),PondDrain(:)
     TYPE(LakeGWConnectorType),INTENT(IN)   :: LakeGWConnector
     TYPE(StrmLakeConnectorType),INTENT(IN) :: StrmLakeConnector
     
@@ -1025,6 +1028,7 @@ CONTAINS
              + BypassInflows                    &
              + Runoff                           &
              + ReturnFlow                       &
+             + PondDrain                        &
              + LakePrecip                       &
              - LakeGWFlows                      &
              - pLakes%ETa                       &
@@ -1036,12 +1040,13 @@ CONTAINS
       DummyArray(5,:)  = BypassInflows
       DummyArray(6,:)  = Runoff
       DummyArray(7,:)  = ReturnFlow      
-      DummyArray(8,:)  = LakePrecip
-      DummyArray(9,:)  = -LakeGWFlows
-      DummyArray(10,:) = pLakes%ETa
-      DummyArray(11,:) = pLakes%Outflow
-      DummyArray(12,:) = Error
-      DummyArray(13,:) = pLakes%Elev
+      DummyArray(8,:)  = PondDrain      
+      DummyArray(9,:)  = LakePrecip
+      DummyArray(10,:) = -LakeGWFlows
+      DummyArray(11,:) = pLakes%ETa
+      DummyArray(12,:) = pLakes%Outflow
+      DummyArray(13,:) = Error
+      DummyArray(14,:) = pLakes%Elev
     END ASSOCIATE
                  
     !Print out values to binary file
@@ -1181,7 +1186,7 @@ CONTAINS
     TYPE(BudgetHeaderType)        :: Header
    
     !Local variables
-    INTEGER,PARAMETER :: TitleLen           = 186  , &
+    INTEGER,PARAMETER :: TitleLen           = 199  , &
                          NTitles            = 4    , &
                          NColumnHeaderLines = 4    
     TYPE(TimeStepType):: TimeStepLocal
@@ -1200,16 +1205,18 @@ CONTAINS
                                                        'VOLUME' , &
                                                        'VOLUME' , &
                                                        'VOLUME' , &
+                                                       'VOLUME' , &
                                                        'ELEV'   ]
     CHARACTER(LEN=17),PARAMETER :: FParts(f_iNLakeBudColumns) = ['BEGIN_STORAGE'      ,&
                                                                  'END_STORAGE'        ,&
-                                                                 'FLOW_FROM_UP_LAKE'  ,&    
-                                                                 'FLOW_FROM_STRM'     ,&
-                                                                 'FLOW_FROM_BYPASS'   ,&
+                                                                 'FLOW_FRM_UPLAKE'    ,&    
+                                                                 'FLOW_FRM_STRM'      ,&
+                                                                 'FLOW_FRM_BYPASS'    ,&
                                                                  'RUNOFF'             ,&
                                                                  'RETURN_FLOW'        ,&
+                                                                 'POND_DRN'           ,&
                                                                  'PRECIP'             ,&
-                                                                 'GAIN_FROM_GW'       ,&
+                                                                 'GAIN_FRM_GW'        ,&
                                                                  'EVAPOTR'            ,&
                                                                  'OUTFLOW'            ,&
                                                                  'DISCREPANCY'        ,&
@@ -1282,7 +1289,8 @@ CONTAINS
                                                             f_iVR ,&  !Flow from streams
                                                             f_iVR ,&  !Flow from bypasses
                                                             f_iVR ,&  !Runoff into lake
-                                                            f_iVR ,&  !return flow into lake
+                                                            f_iVR ,&  !Return flow into lake
+                                                            f_iVR ,&  !Pond drain into lake
                                                             f_iVR ,&  !Precip
                                                             f_iVR ,&  !Gain from groundwater
                                                             f_iVR ,&  !Lake evaporation
@@ -1292,13 +1300,13 @@ CONTAINS
       pLocation%iColWidth                             = [17,(12,indx=1,f_iNLakeBudColumns)]
       ASSOCIATE (pColumnHeaders => pLocation%cColumnHeaders           , &
                  pFormatSpecs   => pLocation%cColumnHeadersFormatSpec )
-        pColumnHeaders(:,1) = (/'                 ','    Beginning','    Ending   ','  Flow from  ','  Flow from  ','  Flow from  ','             ','    Return   ','             ','   Gain from ','     Lake    ','      Lake   ','             ','Lake Surface '/)
-        pColumnHeaders(:,2) = (/'      Time       ','     Storage ','    Storage  ','Upstream Lake','   Streams   ','   Bypasses  ','     Runoff  ','     Flow    ','Precipitation','  Groundwater','  Evaporation','     Outflow ',' Discrepancy ','  Elevation  '/)
-        pColumnHeaders(:,3) = (/      TextTime     ,'       (+)   ','      (-)    ','     (+)     ','     (+)     ','     (+)     ','      (+)    ','      (+)    ','      (+)    ','      (+)    ','     (-)     ','       (-)   ','     (=)     ',          Text1/)
+        pColumnHeaders(:,1) = (/'                 ','    Beginning','    Ending   ','  Flow from  ','  Flow from  ','  Flow from  ','             ','    Return   ','      Pond   ','             ','   Gain from ','     Lake    ','      Lake   ','             ','Lake Surface '/)
+        pColumnHeaders(:,2) = (/'      Time       ','     Storage ','    Storage  ','Upstream Lake','   Streams   ','   Bypasses  ','     Runoff  ','     Flow    ','      Drain  ','Precipitation','  Groundwater','  Evaporation','     Outflow ',' Discrepancy ','  Elevation  '/)
+        pColumnHeaders(:,3) = (/      TextTime     ,'       (+)   ','      (-)    ','     (+)     ','     (+)     ','     (+)     ','      (+)    ','      (+)    ','      (+)    ','      (+)    ','      (+)    ','     (-)     ','       (-)   ','     (=)     ',          Text1/)
         pColumnHeaders(:,4) = ''
-        pFormatSpecs(1)     = '(A17,13A13)'
-        pFormatSpecs(2)     = '(A17,13A13)'
-        pFormatSpecs(3)     = '(A17,13A13)'
+        pFormatSpecs(1)     = '(A17,14A13)'
+        pFormatSpecs(2)     = '(A17,14A13)'
+        pFormatSpecs(3)     = '(A17,14A13)'
         pFormatSpecs(4)     = '('//TRIM(IntToText(TitleLen))//'(1H-),'//TRIM(IntToText(f_iNLakeBudColumns+1))//'A0)'
       END ASSOCIATE
     END ASSOCIATE

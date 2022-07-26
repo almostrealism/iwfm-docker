@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021
+!  Copyright (C) 2005-2022
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -96,13 +96,13 @@ CONTAINS
                  CHAR(186) // '                                                      ' // CHAR(186) ,&
                  CHAR(186) // '   Principal Contact:                                 ' // CHAR(186) ,&
                  CHAR(186) // '       Dr. Tariq N. Kadir ... Senior Engineer, DWR    ' // CHAR(186) ,&
-                 CHAR(186) // '                  (916) 653 3513                      ' // CHAR(186) ,&
-                 CHAR(186) // '                  kadir@water.ca.gov                  ' // CHAR(186) ,&
+                 CHAR(186) // '                  (916) 902 7786                      ' // CHAR(186) ,&
+                 CHAR(186) // '             tariq.kadir@water.ca.gov                 ' // CHAR(186) ,&
                  CHAR(186) // '                                                      ' // CHAR(186) ,&
                  CHAR(186) // '   Principal Programmer and Technical Support:        ' // CHAR(186) ,&
                  CHAR(186) // '       Dr. Emin Can Dogrul ... Senior Engineer, DWR   ' // CHAR(186) ,&
-                 CHAR(186) // '                  (916) 654 7018                      ' // CHAR(186) ,&
-                 CHAR(186) // '                  dogrul@water.ca.gov                 ' // CHAR(186) ,&
+                 CHAR(186) // '                  (916) 902 9914                      ' // CHAR(186) ,&
+                 CHAR(186) // '              can.dogrul@water.ca.gov                 ' // CHAR(186) ,&
                  CHAR(186) // '                                                      ' // CHAR(186) ,&
                  CHAR(186) // '                                                      ' // CHAR(186) ,&
                  CHAR(200) //            REPEAT(CHAR(205),f_RepeatCount_2)             // CHAR(188) ]  

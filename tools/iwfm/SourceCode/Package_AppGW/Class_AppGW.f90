@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,6 +21,7 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_AppGW
+  !$ USE OMP_LIB
   USE GenericLinkedList           , ONLY: GenericLinkedListType
   USE GeneralUtilities            , ONLY: IntToText                                          , &
                                           StripTextUntilCharacter                            , &
@@ -70,9 +71,7 @@ MODULE Class_AppGW
                                           SupplyDestinationConnectorType                     , &
                                           StrmGWConnectorType                                , &
                                           LakeGWConnectorType                                     
-  USE Package_Misc                , ONLY: RealTSDataInFileType                               , &
-                                          Real2DTSDataInFileType                             , &
-                                          FlowDestinationType                                , &
+  USE Package_Misc                , ONLY: FlowDestinationType                                , &
                                           f_iGWComp                                          , &
                                           f_rSmoothMaxP                                      , &
                                           f_rSmoothStepP                                     , &
@@ -146,12 +145,12 @@ MODULE Class_AppGW
   ! --- GW NODE DATA TYPE
   ! -------------------------------------------------------------
   TYPE GWNodeType
-      REAL(8) :: Kh          = 0.0    !Aquifer horizontal hydraulic conductivity
-      REAL(8) :: Kv          = 0.0    !Aquifer vertical hyadraulic conductivity
-      REAL(8) :: AquitardKv  = 0.0    !Aquitard vertical hydraulic conductivity   
-      REAL(8) :: LeakageV    = 0.0    !Vertical leakage between the aquifer and the aquifer above
-      REAL(8) :: Ss          = 0.0    !Aquifer specific storage
-      REAL(8) :: Sy          = 0.0    !Aquifer specific yield
+      REAL(8),ALLOCATABLE :: Kh(:,:)              !Aquifer horizontal hydraulic conductivity at each (node,layer)
+      REAL(8),ALLOCATABLE :: Kv(:,:)              !Aquifer vertical hyadraulic conductivity at each (node,layer)
+      REAL(8),ALLOCATABLE :: AquitardKv(:,:)      !Aquitard vertical hydraulic conductivity at each (node,layer)  
+      REAL(8),ALLOCATABLE :: LeakageV(:,:)        !Vertical leakage between the aquifer and the aquifer above at each (node,layer)
+      REAL(8),ALLOCATABLE :: Ss(:,:)              !Aquifer specific storage at each (node,layer)
+      REAL(8),ALLOCATABLE :: Sy(:,:)              !Aquifer specific yield at each (node,layer)
   END TYPE GWNodeType
  
   
@@ -161,7 +160,7 @@ MODULE Class_AppGW
   TYPE AppGWType
       PRIVATE
       CHARACTER(LEN=6)              :: VarTimeUnit                  = ''       !Time unit for aquifer variables
-      TYPE(GWNodeType),ALLOCATABLE  :: Nodes(:,:)                              !Groundwater data at each (node,layer) combination
+      TYPE(GWNodeType)              :: Nodes                                   !Groundwater data at each (node,layer) combination
       TYPE(GWStateType)             :: State                                   !Data type that stores the state of the groundwater
       REAL(8),ALLOCATABLE           :: ElemTransmissivity(:,:)                 !Element transmissivity at each (element,layer) combination computed using AppGW%State%Head
       REAL(8),ALLOCATABLE           :: RegionalStorage(:)                      !Subregional gw storage at the current time step (computed only when gw budget output is required)
@@ -398,8 +397,13 @@ CONTAINS
     NLayers   = Stratigraphy%GetNLayers()
     NRegions  = AppGrid%NSubregions
         
-    !Allocate memory
-    ALLOCATE (AppGW%Nodes(NNodes,NLayers)                 , &
+    !Allocate memory and initialize variables
+    ALLOCATE (AppGW%Nodes%Kh(NNodes,NLayers)              , &
+              AppGW%Nodes%Kv(NNodes,NLayers)              , &
+              AppGW%Nodes%AquitardKv(NNodes,NLayers)      , &
+              AppGW%Nodes%LeakageV(NNodes,NLayers)        , &
+              AppGW%Nodes%Ss(NNodes,NLayers)              , &
+              AppGW%Nodes%Sy(NNodes,NLayers)              , &
               AppGW%ElemTransmissivity(NElements,NLayers) , &
               STAT = ErrorCode                            , &
               ERRMSG = cErrorMsg                          )
@@ -410,7 +414,14 @@ CONTAINS
         iStat = -1
         RETURN
     END IF
-    
+    AppGW%Nodes%Kh           = 0.0
+    AppGW%Nodes%Kv           = 0.0
+    AppGW%Nodes%AquitardKv   = 0.0
+    AppGW%Nodes%LeakageV     = 0.0
+    AppGW%Nodes%Ss           = 0.0
+    AppGW%Nodes%Sy           = 0.0
+    AppGW%ElemTransmissivity = 0.0
+       
     !Instantiate State data
     CALL AppGW%State%New(NNodes,NLayers,iStat)  
     IF (iStat .NE. 0) RETURN
@@ -647,7 +658,12 @@ CONTAINS
     TYPE(AppGWType) :: Dummy
     
     !Deallocate allocatable arrays
-    DEALLOCATE (AppGW%Nodes              , &
+    DEALLOCATE (AppGW%Nodes%Kh           , &
+                AppGW%Nodes%Kv           , &
+                AppGW%Nodes%AquitardKv   , &
+                AppGW%Nodes%LeakageV     , &
+                AppGW%Nodes%Ss           , &
+                AppGW%Nodes%Sy           , &
                 AppGW%ElemTransmissivity , &
                 AppGW%RegionalStorage    , &
                 AppGW%RegionalStorage_P  , &
@@ -920,6 +936,8 @@ CONTAINS
                pSs         => AppGW%Nodes%Ss          , &
                pSy         => AppGW%Nodes%Sy          )
         !Compute storage
+        !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(indxLayer,indxNode) 
+        !$OMP DO COLLAPSE(2)
         DO indxLayer=1,Stratigraphy%NLayers
             DO indxNode=1,AppGrid%NNodes
                 IF (.NOT. Stratigraphy%ActiveNode(indxNode,indxLayer)) THEN
@@ -935,9 +953,11 @@ CONTAINS
                 END IF          
             END DO
         END DO
+        !$OMP END DO NOWAIT
         
         !Compute derivative of storage, if requested
         IF (PRESENT(rdNodalStor)) THEN
+            !$OMP DO COLLAPSE(2)
             DO indxLayer=1,Stratigraphy%NLayers
                 DO indxNode=1,AppGrid%NNodes
                     IF (.NOT. Stratigraphy%ActiveNode(indxNode,indxLayer)) THEN
@@ -952,7 +972,9 @@ CONTAINS
                     END IF          
                 END DO
             END DO
+            !$OMP END DO 
         END IF
+        !$OMP END PARALLEL 
     END ASSOCIATE
     
   END SUBROUTINE GetNodalStorages
@@ -1007,7 +1029,7 @@ CONTAINS
     
     DO indxLayer=1,SIZE(Sy,DIM=2)
         DO indxNode=1,AppGrid%NNodes
-            Sy(indxNode,indxLayer) = AppGW%Nodes(indxNode,indxLayer)%Sy / AppGrid%AppNode(indxNode)%Area
+            Sy(indxNode,indxLayer) = AppGW%Nodes%Sy(indxNode,indxLayer) / AppGrid%AppNode(indxNode)%Area
         END DO
     END DO
     
@@ -1027,7 +1049,7 @@ CONTAINS
     
     DO indxLayer=1,SIZE(Ss,DIM=2)
         DO indxNode=1,AppGrid%NNodes
-            Ss(indxNode,indxLayer) = AppGW%Nodes(indxNode,indxLayer)%Ss / AppGrid%AppNode(indxNode)%Area
+            Ss(indxNode,indxLayer) = AppGW%Nodes%Ss(indxNode,indxLayer) / AppGrid%AppNode(indxNode)%Area
         END DO
     END DO
     
@@ -1602,7 +1624,7 @@ CONTAINS
                 END IF
             END IF
         END IF
-        SyNode(indxNode) = AppGW%Nodes(indxNode,iLayerLocal)%Sy / AppGrid%AppNode(indxNode)%Area
+        SyNode(indxNode) = AppGW%Nodes%Sy(indxNode,iLayerLocal) / AppGrid%AppNode(indxNode)%Area
     END DO
     
     !Specific yield at each element
@@ -1799,9 +1821,9 @@ CONTAINS
         
         !Compute nodal storage
         IF (Head .GE. rTopElev) THEN  
-            rNodalStorage(indxNode) = (Head-rTopElev) * AppGW%Nodes(indxNode,iLayer)%Ss  +  (rTopElev-rBottomElev) * AppGW%Nodes(indxNode,iLayer)%Sy
+            rNodalStorage(indxNode) = (Head-rTopElev) * AppGW%Nodes%Ss(indxNode,iLayer)  +  (rTopElev-rBottomElev) * AppGW%Nodes%Sy(indxNode,iLayer)
         ELSE
-            rNodalStorage(indxNode) = (Head-rBottomElev) * AppGW%Nodes(indxNode,iLayer)%Sy 
+            rNodalStorage(indxNode) = (Head-rBottomElev) * AppGW%Nodes%Sy(indxNode,iLayer) 
         END IF
         
     END DO
@@ -1815,7 +1837,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- COMPUTE CHANGE IN STORAGE AT A LAYER
   ! -------------------------------------------------------------
-  PURE SUBROUTINE GetChangeInStorageAtLayer(AppGW,iLayer,NNodes,Stratigraphy,rStorChange,Storativity)
+  SUBROUTINE GetChangeInStorageAtLayer(AppGW,iLayer,NNodes,Stratigraphy,rStorChange,Storativity)
     CLASS(AppGWType),INTENT(IN)       :: AppGW
     INTEGER,INTENT(IN)                :: iLayer,NNodes
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
@@ -1826,6 +1848,7 @@ CONTAINS
     INTEGER :: indxNode
     REAL(8) :: rTopElev,rBottomElev,Head,Head_P,Storativity_P
   
+    !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(indxNode,rTopElev,rBottomElev,Head,Head_P,Storativity_P) 
     DO indxNode=1,NNodes
         !Cycle if node is inactive
         IF (.NOT. Stratigraphy%ActiveNode(indxNode,iLayer)) THEN
@@ -1843,9 +1866,9 @@ CONTAINS
         
         !Define storativity
         IF (Head .GE. rTopElev) THEN  
-            Storativity(indxNode) = AppGW%Nodes(indxNode,iLayer)%Ss
+            Storativity(indxNode) = AppGW%Nodes%Ss(indxNode,iLayer)
         ELSE
-            Storativity(indxNode) = AppGW%Nodes(indxNode,iLayer)%Sy
+            Storativity(indxNode) = AppGW%Nodes%Sy(indxNode,iLayer)
         END IF
         
         !Compute change in storage
@@ -1853,6 +1876,7 @@ CONTAINS
                               + Storativity_P         * (rTopElev-Head_P)  
         
     END DO
+    !$OMP END PARALLEL DO
     
   END SUBROUTINE GetChangeInStorageAtLayer
     
@@ -1874,7 +1898,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- COMPUTE UPWARD AND DOWNWARD VERTICAL FLOW AT ALL ELEMENTS IN A LAYER BETWEEN THAT LAYER AND THE ACTIVE LAYER BELOW
   ! -------------------------------------------------------------
-  PURE SUBROUTINE GetVerticalElementUpwardDownwardFlow_AtLayer(AppGW,iLayer,AppGrid,Stratigraphy,rVertFlow_Upward,rVertFlow_Downward)
+  SUBROUTINE GetVerticalElementUpwardDownwardFlow_AtLayer(AppGW,iLayer,AppGrid,Stratigraphy,rVertFlow_Upward,rVertFlow_Downward)
     CLASS(AppGWType),INTENT(IN)       :: AppGW
     INTEGER,INTENT(IN)                :: iLayer
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
@@ -2788,15 +2812,15 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE PrintAquiferParameters(iGWNodeIDs,GWNodes)
     INTEGER,INTENT(IN)          :: iGWNodeIDs(:)
-    TYPE(GWNodeType),INTENT(IN) :: GWNodes(:,:)
+    TYPE(GWNodeType),INTENT(IN) :: GWNodes
     
     !Local variables
     INTEGER   :: indxNode,indxLayer,NNodes,NLayers
     CHARACTER :: Text*500
     
     !Initialize
-    NNodes  = SIZE(GWNodes , DIM=1)
-    NLayers = SIZE(GWNodes , DIM=2)
+    NNodes  = SIZE(GWNodes%Kh , DIM=1)
+    NLayers = SIZE(GWNodes%Kh , DIM=2)
     
     !Print parameters
     CALL LogMessage('',f_iMessage,'',f_iFILE)
@@ -2816,10 +2840,10 @@ CONTAINS
       DO indxLayer=1,NLayers                                                                                          
         IF (indxLayer .EQ. 1) THEN                                                                                          
           WRITE (Text,'(I7,2X,5(1PG24.15E3,2X))')                                                               &                                                                                          
-               iGWNodeIDs(indxNode) ,GWNodes(indxNode,indxLayer)%Kh   ,GWNodes(indxNode,indxLayer)%Ss ,GWNodes(indxNode,indxLayer)%Sy ,GWNodes(indxNode,indxLayer)%AquitardKv   ,GWNodes(indxNode,indxLayer)%Kv                                                                                             
+               iGWNodeIDs(indxNode) ,GWNodes%Kh(indxNode,indxLayer)   ,GWNodes%Ss(indxNode,indxLayer) ,GWNodes%Sy(indxNode,indxLayer) ,GWNodes%AquitardKv(indxNode,indxLayer)   ,GWNodes%Kv(indxNode,indxLayer)                                                                                             
         ELSE                                                                                          
           WRITE (Text,'(9X,5(1PG24.15E3,2X))')                                                                  &                                                                                          
-                         GWNodes(indxNode,indxLayer)%Kh   ,GWNodes(indxNode,indxLayer)%Ss ,GWNodes(indxNode,indxLayer)%Sy ,GWNodes(indxNode,indxLayer)%AquitardKv   ,GWNodes(indxNode,indxLayer)%Kv                                                                                              
+                         GWNodes%Kh(indxNode,indxLayer)   ,GWNodes%Ss(indxNode,indxLayer) ,GWNodes%Sy(indxNode,indxLayer) ,GWNodes%AquitardKv(indxNode,indxLayer)   ,GWNodes%Kv(indxNode,indxLayer)                                                                                              
         END IF                                                                                          
         CALL LogMessage(TRIM(Text),f_iMessage,'',f_iFILE)                                                                                          
       END DO                                                                                          
@@ -3007,7 +3031,7 @@ CONTAINS
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
     TYPE(GenericFileType)         :: InFile
     CHARACTER(LEN=*),INTENT(OUT)  :: VarTimeUnit
-    TYPE(GWNodeType),INTENT(OUT)  :: GWNodes(:,:)
+    TYPE(GWNodeType)              :: GWNodes
     INTEGER,INTENT(OUT)           :: iStat
     
     !Local variables
@@ -3106,11 +3130,11 @@ CONTAINS
             ELSE
                 CALL InFile%ReadData(rDummyArray(2:),iStat)  ;  IF (iStat .EQ. -1) RETURN
             END IF
-            GWNodes(index,indxLayer)%Kh         = rDummyArray(2) * rFactors(2)
-            GWNodes(index,indxLayer)%Ss         = rDummyArray(3) * rFactors(3)
-            GWNodes(index,indxLayer)%Sy         = rDummyArray(4) * rFactors(4)
-            GWNodes(index,indxLayer)%AquitardKv = rDummyArray(5) * rFactors(5)
-            GWNodes(index,indxLayer)%Kv         = rDummyArray(6) * rFactors(6)
+            GWNodes%Kh(index,indxLayer)         = rDummyArray(2) * rFactors(2)
+            GWNodes%Ss(index,indxLayer)         = rDummyArray(3) * rFactors(3)
+            GWNodes%Sy(index,indxLayer)         = rDummyArray(4) * rFactors(4)
+            GWNodes%AquitardKv(index,indxLayer) = rDummyArray(5) * rFactors(5)
+            GWNodes%Kv(index,indxLayer)         = rDummyArray(6) * rFactors(6)
           END DO
         END DO
         
@@ -3134,11 +3158,11 @@ CONTAINS
         !Initialize parameter values
         DO indxLayer=1,NLayers
             DO indxNode=1,NNodes
-                GWNodes(indxNode,indxLayer)%Kh         = rDummy3DArray(indxNode,indxLayer,1)
-                GWNodes(indxNode,indxLayer)%Ss         = rDummy3DArray(indxNode,indxLayer,2)
-                GWNodes(indxNode,indxLayer)%Sy         = rDummy3DArray(indxNode,indxLayer,3)
-                GWNodes(indxNode,indxLayer)%AquitardKv = rDummy3DArray(indxNode,indxLayer,4)
-                GWNodes(indxNode,indxLayer)%Kv         = rDummy3DArray(indxNode,indxLayer,5)
+                GWNodes%Kh(indxNode,indxLayer)         = rDummy3DArray(indxNode,indxLayer,1)
+                GWNodes%Ss(indxNode,indxLayer)         = rDummy3DArray(indxNode,indxLayer,2)
+                GWNodes%Sy(indxNode,indxLayer)         = rDummy3DArray(indxNode,indxLayer,3)
+                GWNodes%AquitardKv(indxNode,indxLayer) = rDummy3DArray(indxNode,indxLayer,4)
+                GWNodes%Kv(indxNode,indxLayer)         = rDummy3DArray(indxNode,indxLayer,5)
             END DO
         END DO
     END IF
@@ -3162,7 +3186,7 @@ CONTAINS
         DO indxNode=1,AppGrid%NVertex(index)
             iNode = AppGrid%Vertex(indxNode,index)
             DO indxLayer=1,NLayers
-                GWNodes(iNode,indxLayer)%Kh = BK(indxLayer)
+                GWNodes%Kh(iNode,indxLayer) = BK(indxLayer)
             END DO
         END DO
     END DO
@@ -3237,7 +3261,7 @@ CONTAINS
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
     LOGICAL,INTENT(IN)                :: lSubsidence_Defined
     TYPE(AppSubsidenceType)           :: AppSubsidence
-    TYPE(GWNodeType)                  :: GWNodes(:,:)
+    TYPE(GWNodeType)                  :: GWNodes
     TYPE(GWStateType)                 :: GWState
     INTEGER,INTENT(OUT)               :: iStat
     
@@ -3292,24 +3316,24 @@ CONTAINS
                 END IF
                 
                 !Storage coefficient
-                GWNodes(indxNode,indxLayer)%Ss = GWNodes(indxNode,indxLayer)%Ss * (rAquiferThickness-InterbedThick(indxNode,indxLayer))
+                GWNodes%Ss(indxNode,indxLayer) = GWNodes%Ss(indxNode,indxLayer) * (rAquiferThickness-InterbedThick(indxNode,indxLayer))
                 !Check if Ss is greater than 1.0, if so add to reporting list
-                IF (GWNodes(indxNode,indxLayer)%Ss .GT. 1.0) THEN
+                IF (GWNodes%Ss(indxNode,indxLayer) .GT. 1.0) THEN
                     lProblemSsExists = .TRUE.
                     CALL ProblemSsNodeList%AddNode(ID,iStat)
                     IF (iStat .EQ. -1) RETURN
                 END IF
-                GWNodes(indxNode,indxLayer)%Ss = GWNodes(indxNode,indxLayer)%Ss * Area
+                GWNodes%Ss(indxNode,indxLayer) = GWNodes%Ss(indxNode,indxLayer) * Area
                 
                 !Specific yield
-                GWNodes(indxNode,indxLayer)%Sy = GWNodes(indxNode,indxLayer)%Sy * Area
+                GWNodes%Sy(indxNode,indxLayer) = GWNodes%Sy(indxNode,indxLayer) * Area
                 
                 !Make sure storage coefficient is less than or equal to specific yield (this is enforced so that a negative storage is not computed)
-                GWNodes(indxNode,indxLayer)%Ss = MIN(GWNodes(indxNode,indxLayer)%Ss , GWNodes(indxNode,indxLayer)%Sy)   
+                GWNodes%Ss(indxNode,indxLayer) = MIN(GWNodes%Ss(indxNode,indxLayer) , GWNodes%Sy(indxNode,indxLayer))   
                 
                 !If the top of the aquifer layer is equal to the ground surface elevation (i.e. unconfined aquifer)
                 ! then set storage coeff. equal to specific yield
-                IF (TopElev .EQ. Stratigraphy%GSElev(indxNode)) GWNodes(indxNode,indxLayer)%Ss = GWNodes(indxNode,indxLayer)%Sy
+                IF (TopElev .EQ. Stratigraphy%GSElev(indxNode)) GWNodes%Ss(indxNode,indxLayer) = GWNodes%Sy(indxNode,indxLayer)
                 
                 !Leakage coefficient
                 IF (indxLayer .GT. 1) THEN
@@ -3319,12 +3343,12 @@ CONTAINS
                         BottomElevAboveLayer = Stratigraphy%BottomElev(indxNode,iActiveLayerAbove)
                         DConfine             = BottomElevAboveLayer - TopElev  !Thickness of overlaying aquitard
                         IF (DConfine .GT. 0.0) THEN
-                            GWNodes(indxNode,indxLayer)%LeakageV = GWNodes(indxNode,indxLayer)%AquitardKv / DConfine * Area
+                            GWNodes%LeakageV(indxNode,indxLayer) = GWNodes%AquitardKv(indxNode,indxLayer) / DConfine * Area
                         ELSE
-                            IF (GWNodes(indxNode,iActiveLayerAbove)%Kv.GT.0.0  .AND.  GWNodes(indxNode,indxLayer)%Kv.GT.0.0) THEN
-                                ALU                                  = (TopElevAboveLayer-BottomElevAboveLayer) / GWNodes(indxNode,iActiveLayerAbove)%Kv
-                                ALL                                  = (TopElev-BottomElev) / GWNodes(indxNode,indxLayer)%Kv
-                                GWNodes(indxNode,indxLayer)%LeakageV = Area / (0.5*(ALU+ALL))
+                            IF (GWNodes%Kv(indxNode,iActiveLayerAbove).GT.0.0  .AND.  GWNodes%Kv(indxNode,indxLayer).GT.0.0) THEN
+                                ALU                                  = (TopElevAboveLayer-BottomElevAboveLayer) / GWNodes%Kv(indxNode,iActiveLayerAbove)
+                                ALL                                  = (TopElev-BottomElev) / GWNodes%Kv(indxNode,indxLayer)
+                                GWNodes%LeakageV(indxNode,indxLayer) = Area / (0.5*(ALU+ALL))
                             ELSE
                                 !Zero out vertical leakage
                                 !Do nothing; leakage is instantiated as zero by default
@@ -3341,42 +3365,42 @@ CONTAINS
                 
                 !Storage coeff. used for the previous time step
                 IF (rGWHead .GE. TopElev) THEN
-                    GWState%Storativity_P(indxNode,indxLayer) = GWNodes(indxNode,indxLayer)%Ss
+                    GWState%Storativity_P(indxNode,indxLayer) = GWNodes%Ss(indxNode,indxLayer)
                 ELSE
-                    GWState%Storativity_P(indxNode,indxLayer) = GWNodes(indxNode,indxLayer)%Sy
+                    GWState%Storativity_P(indxNode,indxLayer) = GWNodes%Sy(indxNode,indxLayer)
                 END IF
                 
                 !Make sure Kh is not negative
-                IF (GWNodes(indxNode,indxLayer)%Kh .LT. 0.0) THEN
+                IF (GWNodes%Kh(indxNode,indxLayer) .LT. 0.0) THEN
                     MessageArray(1) = 'Hydraulic conductivity is less than zero '
-                    WRITE (MessageArray(2),'(5A,F9.3,A)') 'at node',TRIM(IntToText(ID)),', layer ',TRIM(IntToText(indxLayer)),' (',GWNodes(indxNode,indxLayer)%Kh,')'
+                    WRITE (MessageArray(2),'(5A,F9.3,A)') 'at node',TRIM(IntToText(ID)),', layer ',TRIM(IntToText(indxLayer)),' (',GWNodes%Kh(indxNode,indxLayer),')'
                     CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
                     iStat = -1
                     RETURN
                 END IF
                 
                 !Make sure storage coeff. is not negative
-                IF (GWNodes(indxNode,indxLayer)%Ss .LT. 0.0) THEN
+                IF (GWNodes%Ss(indxNode,indxLayer) .LT. 0.0) THEN
                     MessageArray(1) = 'Specific storage is less than zero '
-                    WRITE (MessageArray(2),'(5A,F9.3,A)') 'at node',TRIM(IntToText(ID)),', layer ',TRIM(IntToText(indxLayer)),' (',GWNodes(indxNode,indxLayer)%Ss,')'
+                    WRITE (MessageArray(2),'(5A,F9.3,A)') 'at node',TRIM(IntToText(ID)),', layer ',TRIM(IntToText(indxLayer)),' (',GWNodes%Ss(indxNode,indxLayer),')'
                     CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
                     iStat = -1
                     RETURN
                 END IF
                 
                 !Make sure specific yield is not negative
-                IF (GWNodes(indxNode,indxLayer)%Sy .LT. 0.0) THEN
+                IF (GWNodes%Sy(indxNode,indxLayer) .LT. 0.0) THEN
                     MessageArray(1) = 'Specific yield is less than zero '
-                    WRITE (MessageArray(2),'(5A,F9.3,A)') 'at node',TRIM(IntToText(ID)),', layer ',TRIM(IntToText(indxLayer)),' (',GWNodes(indxNode,indxLayer)%Sy,')'
+                    WRITE (MessageArray(2),'(5A,F9.3,A)') 'at node',TRIM(IntToText(ID)),', layer ',TRIM(IntToText(indxLayer)),' (',GWNodes%Sy(indxNode,indxLayer),')'
                     CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
                     iStat = -1
                     RETURN
                 END IF
 
                 !Make sure vertical leakage is not negative
-                IF (GWNodes(indxNode,indxLayer)%LeakageV .LT. 0.0) THEN
+                IF (GWNodes%LeakageV(indxNode,indxLayer) .LT. 0.0) THEN
                     MessageArray(1) = 'Vertical leakage is less than zero '
-                    WRITE (MessageArray(2),'(5A,F9.3,A)') 'at node',TRIM(IntToText(ID)),', layer ',TRIM(IntToText(indxLayer)),' (',GWNodes(indxNode,indxLayer)%LeakageV,')'
+                    WRITE (MessageArray(2),'(5A,F9.3,A)') 'at node',TRIM(IntToText(ID)),', layer ',TRIM(IntToText(indxLayer)),' (',GWNodes%LeakageV(indxNode,indxLayer),')'
                     CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
                     iStat = -1
                     RETURN
@@ -3419,7 +3443,7 @@ CONTAINS
     CHARACTER(LEN=*),INTENT(IN) :: cFileName,VarTimeUnit
     INTEGER,INTENT(IN)          :: NodeIDs(:)
     LOGICAL,INTENT(IN)          :: TrackTime,lSubsidence_Defined
-    TYPE(GWNodeType)            :: GWNodes(:,:)
+    TYPE(GWNodeType)            :: GWNodes
     TYPE(AppSubsidenceType)     :: AppSubsidence
     INTEGER,INTENT(OUT)         :: iStat
     
@@ -3427,8 +3451,8 @@ CONTAINS
     CHARACTER(LEN=ModNameLen+19) :: ThisProcedure = ModName // 'OverwriteParameters'
     INTEGER                      :: NWrite,indx,iNode,iLayer,index
     REAL(8)                      :: rFactors(7),rDummyArrayNoSubs(7),rDummyArraySubs(9),Factor,   &
-                                    ElasticSC(SIZE(GWNodes,DIM=1),SIZE(GWNodes,DIM=2)),           &
-                                    InelasticSC(SIZE(GWNodes,DIM=1),SIZE(GWNodes,DIM=2))
+                                    ElasticSC(SIZE(GWNodes%Kh,DIM=1),SIZE(GWNodes%Kh,DIM=2)),           &
+                                    InelasticSC(SIZE(GWNodes%Kh,DIM=1),SIZE(GWNodes%Kh,DIM=2))
     CHARACTER                    :: ALine*500,cTimeUnit_Kh*6,cTimeUnit_AquitardV*6,cTimeUnit_Kv*6
     TYPE(GenericFileType)        :: OverwriteFile
     
@@ -3491,11 +3515,11 @@ CONTAINS
               CYCLE
           END IF
           iLayer = INT(rDummyArraySubs(2))
-          IF (rDummyArraySubs(3) .GE. 0.0)  GWNodes(index,iLayer)%Kh         = rDummyArraySubs(3) * rFactors(1) 
-          IF (rDummyArraySubs(4) .GE. 0.0)  GWNodes(index,iLayer)%Ss         = rDummyArraySubs(4) * rFactors(2) 
-          IF (rDummyArraySubs(5) .GE. 0.0)  GWNodes(index,iLayer)%Sy         = rDummyArraySubs(5) * rFactors(3) 
-          IF (rDummyArraySubs(6) .GE. 0.0)  GWNodes(index,iLayer)%AquitardKv = rDummyArraySubs(6) * rFactors(4) 
-          IF (rDummyArraySubs(7) .GE. 0.0)  GWNodes(index,iLayer)%Kv         = rDummyArraySubs(7) * rFactors(5) 
+          IF (rDummyArraySubs(3) .GE. 0.0)  GWNodes%Kh(index,iLayer)         = rDummyArraySubs(3) * rFactors(1) 
+          IF (rDummyArraySubs(4) .GE. 0.0)  GWNodes%Ss(index,iLayer)         = rDummyArraySubs(4) * rFactors(2) 
+          IF (rDummyArraySubs(5) .GE. 0.0)  GWNodes%Sy(index,iLayer)         = rDummyArraySubs(5) * rFactors(3) 
+          IF (rDummyArraySubs(6) .GE. 0.0)  GWNodes%AquitardKv(index,iLayer) = rDummyArraySubs(6) * rFactors(4) 
+          IF (rDummyArraySubs(7) .GE. 0.0)  GWNodes%Kv(index,iLayer)         = rDummyArraySubs(7) * rFactors(5) 
           IF (rDummyArraySubs(8) .GE. 0.0)  ElasticSC(index,iLayer)          = rDummyArraySubs(8) * rFactors(6) 
           IF (rDummyArraySubs(9) .GE. 0.0)  InelasticSC(index,iLayer)        = rDummyArraySubs(9) * rFactors(7) 
         END DO
@@ -3510,11 +3534,11 @@ CONTAINS
               CYCLE
           END IF
           iLayer = INT(rDummyArrayNoSubs(2))
-          IF (rDummyArrayNoSubs(3) .GE. 0.0)  GWNodes(index,iLayer)%Kh         = rDummyArrayNoSubs(3) * rFactors(1)   
-          IF (rDummyArrayNoSubs(4) .GE. 0.0)  GWNodes(index,iLayer)%Ss         = rDummyArrayNoSubs(4) * rFactors(2)   
-          IF (rDummyArrayNoSubs(5) .GE. 0.0)  GWNodes(index,iLayer)%Sy         = rDummyArrayNoSubs(5) * rFactors(3)   
-          IF (rDummyArrayNoSubs(6) .GE. 0.0)  GWNodes(index,iLayer)%AquitardKv = rDummyArrayNoSubs(6) * rFactors(4)   
-          IF (rDummyArrayNoSubs(7) .GE. 0.0)  GWNodes(index,iLayer)%Kv         = rDummyArrayNoSubs(7) * rFactors(5)   
+          IF (rDummyArrayNoSubs(3) .GE. 0.0)  GWNodes%Kh(index,iLayer)         = rDummyArrayNoSubs(3) * rFactors(1)   
+          IF (rDummyArrayNoSubs(4) .GE. 0.0)  GWNodes%Ss(index,iLayer)         = rDummyArrayNoSubs(4) * rFactors(2)   
+          IF (rDummyArrayNoSubs(5) .GE. 0.0)  GWNodes%Sy(index,iLayer)         = rDummyArrayNoSubs(5) * rFactors(3)   
+          IF (rDummyArrayNoSubs(6) .GE. 0.0)  GWNodes%AquitardKv(index,iLayer) = rDummyArrayNoSubs(6) * rFactors(4)   
+          IF (rDummyArrayNoSubs(7) .GE. 0.0)  GWNodes%Kv(index,iLayer)         = rDummyArrayNoSubs(7) * rFactors(5)   
         END DO
     END IF
     
@@ -3563,6 +3587,7 @@ CONTAINS
     
     !Effect of net source to top active layer
     CALL AppGrid%ElemData_To_NodeData(NetElemSource,NetElemSourceNode)
+    !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(indxNode,iLayer,iNodes,rUpdateRHS) 
     DO indxNode=1,NNodes
         iLayer = Stratigraphy%TopActiveLayer(indxNode)
         IF (iLayer .LT. 1) CYCLE
@@ -3570,6 +3595,7 @@ CONTAINS
         rUpdateRHS(1) = - NetElemSourceNode(indxNode)
         CALL Matrix%UpdateRHS(iCompIDs,iNodes,rUpdateRHS)
     END DO
+    !$OMP END PARALLEL DO
     
     !Simulate tile drains/subsurface irrigation
     IF (AppGW%lTileDrain_Defined)  &
@@ -3841,16 +3867,19 @@ CONTAINS
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
     
     !Local variables
-    INTEGER :: indxNode,indxLayer
+    INTEGER :: indxNode,indxLayer,iNLayers,iNNodes
     
-    DO indxLayer=1,Stratigraphy%NLayers
-        DO indxNode=1,SIZE(AppGW%State%Head,DIM=1)
-            AppGW%State%Head_P(indxNode,indxLayer) = AppGW%State%Head(indxNode,indxLayer)
-            IF (.NOT. Stratigraphy%ActiveNode(indxNode,indxLayer)) CYCLE
+    !Initialize
+    iNLayers = Stratigraphy%NLayers
+    iNNodes  = SIZE(AppGW%State%Head,DIM=1)
+    
+    AppGW%State%Head_P = AppGW%State%Head
+    DO indxLayer=1,iNLayers
+        DO indxNode=1,iNNodes
             IF (AppGW%State%Head(indxNode,indxLayer) .GE. Stratigraphy%TopElev(indxNode,indxLayer)) THEN
-                AppGW%State%Storativity_P(indxNode,indxLayer) = AppGW%Nodes(indxNode,indxLayer)%Ss
+                AppGW%State%Storativity_P(indxNode,indxLayer) = AppGW%Nodes%Ss(indxNode,indxLayer)
             ELSE
-                AppGW%State%Storativity_P(indxNode,indxLayer) = AppGW%Nodes(indxNode,indxLayer)%Sy
+                AppGW%State%Storativity_P(indxNode,indxLayer) = AppGW%Nodes%Sy(indxNode,indxLayer)
             END IF
         END DO
     END DO
@@ -3885,7 +3914,7 @@ CONTAINS
     !Aggregate the nodal storages over layers for each subregion
     AppGW%RegionalStorage = 0.0
     DO indxLayer=1,Stratigraphy%NLayers
-        AppGW%RegionalStorage = AppGW%RegionalStorage + AppGrid%AccumNodeValuesToSubregions(rNodalStor(:,indxLayer))
+        AppGW%RegionalStorage(1:AppGrid%NSubregions) = AppGW%RegionalStorage(1:AppGrid%NSubregions) + AppGrid%AccumNodeValuesToSubregions(rNodalStor(:,indxLayer))
     END DO
     
     !Model-wide storage
@@ -3912,22 +3941,22 @@ CONTAINS
     RSubFlow    = 0.0
     
     DO indxRegion=1,NSubregions
-      DO indxRegion2=indxRegion+1,NSubregions+1
-        CALL AppGrid%GetSubregionInterfaces(indxRegion,indxRegion2,Faces)
-        IF (.NOT. ALLOCATED(Faces)) CYCLE
-        DO indxFace=1,SIZE(Faces)
-          iFace    = Faces(indxFace)
-          iElem    = AppGrid%AppFace%Element(:,iFace)
-          WHERE (iElem .EQ. 0) 
-            iElemReg = NSubregions+1
-          ELSE WHERE
-            iElemReg = AppGrid%AppElement(iElem)%Subregion
-          END WHERE
-          NetFlowReg1_IN        = SUM(FaceFlows(iFace,:)) 
-          RSubFlow(iElemReg(1)) = RSubFlow(iElemReg(1)) + NetFlowReg1_IN
-          RSubFlow(iElemReg(2)) = RSubFlow(iElemReg(2)) - NetFlowReg1_IN 
+        DO indxRegion2=indxRegion+1,NSubregions+1
+            CALL AppGrid%GetSubregionInterfaces(indxRegion,indxRegion2,Faces)
+            IF (.NOT. ALLOCATED(Faces)) CYCLE
+            DO indxFace=1,SIZE(Faces)
+                iFace    = Faces(indxFace)
+                iElem    = AppGrid%AppFace%Element(:,iFace)
+                WHERE (iElem .EQ. 0) 
+                  iElemReg = NSubregions+1
+                ELSE WHERE
+                  iElemReg = AppGrid%AppElement(iElem)%Subregion
+                END WHERE
+                NetFlowReg1_IN        = SUM(FaceFlows(iFace,:)) 
+                RSubFlow(iElemReg(1)) = RSubFlow(iElemReg(1)) + NetFlowReg1_IN
+                RSubFlow(iElemReg(2)) = RSubFlow(iElemReg(2)) - NetFlowReg1_IN 
+            END DO
         END DO
-      END DO
     END DO
     
   END FUNCTION ComputeSubregionalGWFlowExchange
@@ -3961,6 +3990,7 @@ CONTAINS
     INTEGER :: indxElem,indxLayer,NVertex,Vertex(4),indxVertex,iNode
     REAL(8) :: TE,VertexArea(4),ElemArea,Kh,Head,TopElev,BottomElev 
     
+    !$OMP PARALLEL DO COLLAPSE(2) DEFAULT(PRIVATE) SHARED(Stratigraphy,AppGrid,AppGW) 
     DO indxLayer=1,Stratigraphy%NLayers
         DO indxElem=1,AppGrid%NElements
             !Initialize
@@ -3976,7 +4006,7 @@ CONTAINS
                 IF (.NOT. Stratigraphy%ActiveNode(iNode,indxLayer)) CYCLE
                 TopElev    = Stratigraphy%TopElev(iNode,indxLayer)
                 BottomElev = Stratigraphy%BottomElev(iNode,indxLayer)
-                Kh         = AppGW%Nodes(iNode,indxLayer)%Kh
+                Kh         = AppGW%Nodes%Kh(iNode,indxLayer)
                 Head       = AppGW%State%Head(iNode,indxLayer)
                 TE         = TE + VertexArea(indxVertex) * Kh * MAX(MIN(Head,TopElev)-BottomElev ,  0.0)
             END DO
@@ -3986,6 +4016,7 @@ CONTAINS
             
         END DO
     END DO
+    !$OMP END PARALLEL DO
     
   END SUBROUTINE ComputeElemTransmissivities
 
@@ -4001,7 +4032,7 @@ CONTAINS
     
     !Local variables
     INTEGER           :: indxLayer,indxElem,indxVertex_I,Vertex(4),NVertex,iNode,NNodes,iCount,       &
-                         indxVertex_J,indx,iRow,jCol,jNode,iBase,iGWNode,iNodes(4),iDim     
+                         indxVertex_J,indx,iRow,jCol,jNode,iGWNode,iNodes(4),iDim,iBase     
     REAL(8)           :: rHead_I,rHead_J,rAlpha,rValue,rHeadDiff,ElemTransmissivity,rUpdateCOEFF(4),  &
                          rFlow(4),rHeadArray(4),rUpdateRHS(AppGrid%NNodes*Stratigraphy%NLayers),      &
                          Integral_DELShpI_DELShpJ(6),rBottomElevs(4),rExp,rSaturatedThick,rFactor,    &
@@ -4017,7 +4048,6 @@ CONTAINS
     !*********
     DO indxLayer=1,Stratigraphy%NLayers
         iBase = (indxLayer-1) * NNodes
-        
         ELEMENT_LOOP:  &
         !***********
         DO indxElem=1,AppGrid%NElements
@@ -4086,7 +4116,6 @@ CONTAINS
                         ELSE
                             !This means there is no flow between the two nodes because node I is dry and no flow between nodes; no need to update matrix equation
                             rFlow(indxVertex_J) = 0.0
-                            CYCLE
                         END IF
                     !Inflow to node
                     ELSE
@@ -4103,7 +4132,6 @@ CONTAINS
                         ELSE
                             !This means there is no flow between the two nodes because node J is dry and no flow between nodes; no need to update matrix equation
                             rFlow(indxVertex_J) = 0.0
-                            CYCLE
                         END IF
                     END IF
                     
@@ -4136,17 +4164,21 @@ CONTAINS
     TYPE(MatrixType)                  :: Matrix
     
     !Local variables
-    INTEGER           :: indxLayer,indxNode,iBase,iNodeIDs(1),iGWNode
-    REAL(8)           :: Storativity(NNodes),rStorChange(NNodes),rUpdateValues(1), &
-                         rUpdateRHS(NNodes*Stratigraphy%NLayers)
+    INTEGER           :: indxLayer,indxNode,iNodeIDs(1),iGWNode
+    REAL(8)           :: Storativity(NNodes,Stratigraphy%NLayers),rStorChange(NNodes,Stratigraphy%NLayers),  &
+                         rUpdateValues(1),rUpdateRHS(NNodes*Stratigraphy%NLayers)
     INTEGER,PARAMETER :: iCompIDs(1) = [f_iGWComp]
     
+    !Compute nodal storativity and storage change
     DO indxLayer=1,Stratigraphy%NLayers
-        iBase = (indxLayer-1)*NNodes
-        CALL GetChangeInStorageAtLayer(AppGW,indxLayer,NNodes,Stratigraphy,rStorChange,Storativity)
+        CALL GetChangeInStorageAtLayer(AppGW,indxLayer,NNodes,Stratigraphy,rStorChange(:,indxLayer),Storativity(:,indxLayer))
+    END DO    
+    
+    !$OMP PARALLEL DO COLLAPSE(2) DEFAULT(SHARED) PRIVATE(indxLayer,indxNode,iGWNode,iNodeIDs,rUpdateValues) 
+    DO indxLayer=1,Stratigraphy%NLayers
         DO indxNode=1,NNodes            
             !GW Node
-            iGWNode = iBase + indxNode
+            iGWNode = (indxLayer-1)*NNodes + indxNode
             
             !Cycle if node is inactive, set the diagonal for the node to 1.0
             IF (.NOT. Stratigraphy%ActiveNode(indxNode,indxLayer)) THEN
@@ -4156,15 +4188,16 @@ CONTAINS
             END IF
             
             !R.H.S. value
-            rUpdateRHS(iGWNode) = rStorChange(indxNode)
+            rUpdateRHS(iGWNode) = rStorChange(indxNode,indxLayer)
             
             !Coefficient matrix
             iNodeIDs(1)      = iGWNode
-            rUpdateValues(1) = Storativity(indxNode)
+            rUpdateValues(1) = Storativity(indxNode,indxLayer)
             CALL Matrix%UpdateCOEFF(f_iGWComp,iGWNode,1,iCompIDs,iNodeIDs,rUpdateValues)
 
         END DO
     END DO
+    !$OMP END PARALLEL DO
     
     !Update RHS vector
     CALL Matrix%UpdateRHS(f_iGWComp,1,rUpdateRHS)
@@ -4197,6 +4230,7 @@ CONTAINS
         CALL VerticalFlow_ComputeAtNodesLayer(indxLayer,NNodes,Stratigraphy,State%Head,LeakageV,VerticalFlow)
         CALL VerticalFlow_ComputeDerivativesAtNodesLayer(indxLayer,NNodes,Stratigraphy,State%Head,LeakageV,VerticalFlow,rdVertFlow_dH,rdVertFlow_dHb)
         iBase             = (indxLayer-1) * NNodes
+        !$OMP PARALLEL DO DEFAULT(PRIVATE) SHARED(indxLayer,NNodes,iBase,Stratigraphy,iActiveLayerBelow,VerticalFlow,rdVertFlow_dH,rdVertFlow_dHb,Matrix,iCompIDs,rUpdateRHS) 
         DO indxNode=1,NNodes
             !Indices for node in consideration
             iGWNode   = iBase + indxNode
@@ -4228,6 +4262,7 @@ CONTAINS
             rUpdateRHS(iGWNode_Below) = rUpdateRHS(iGWNode_Below) + VerticalFlow(indxNode)
             
         END DO
+        !$OMP END PARALLEL DO
     END DO
     
     !Update RHS vector
@@ -4308,8 +4343,8 @@ CONTAINS
     INTEGER :: NNodes,NLayers
     
     !Initialize
-    NNodes  = SIZE(AppGW%Nodes , DIM=1)
-    NLayers = SIZE(AppGW%Nodes , DIM=2)
+    NNodes  = SIZE(AppGW%Nodes%Kh , DIM=1)
+    NLayers = SIZE(AppGW%Nodes%Kh , DIM=2)
     
     !Head at all nodes and user-specified hydrograph locations
     CALL AppGW%GWHyd%TransferOutputToHDF(NNodes,NLayers,NTIME,TimeStep,AppGW%FactHead,iStat)

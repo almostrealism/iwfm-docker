@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -1024,15 +1024,15 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- PRINT OUT APPLICATION LAKES SIMULATION RESULTS
   ! -------------------------------------------------------------
-  SUBROUTINE PrintResults(AppLake,TimeStep,lEndOfSimulation,Runoff,ReturnFlow,LakeGWConnector,StrmLakeConnector)
+  SUBROUTINE PrintResults(AppLake,TimeStep,lEndOfSimulation,Runoff,ReturnFlow,PondDrain,LakeGWConnector,StrmLakeConnector)
     CLASS(AppLakeType)                     :: AppLake
     TYPE(TimeStepType),INTENT(IN)          :: TimeStep
     LOGICAL,INTENT(IN)                     :: lEndOfSimulation
-    REAL(8),INTENT(IN)                     :: Runoff(:),ReturnFlow(:)
+    REAL(8),INTENT(IN)                     :: Runoff(:),ReturnFlow(:),PondDrain(:)
     TYPE(LakeGWConnectorType),INTENT(IN)   :: LakeGWConnector
     TYPE(StrmLakeConnectorType),INTENT(IN) :: StrmLakeConnector
     
-    IF (AppLake%lDefined) CALL AppLake%Me%PrintResults(TimeStep,lEndOfSimulation,Runoff,ReturnFlow,LakeGWConnector,StrmLakeConnector)
+    IF (AppLake%lDefined) CALL AppLake%Me%PrintResults(TimeStep,lEndOfSimulation,Runoff,ReturnFlow,PondDrain,LakeGWConnector,StrmLakeConnector)
     
   END SUBROUTINE PrintResults
   
@@ -1081,9 +1081,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- SIMULATE LAKES
   ! -------------------------------------------------------------
-  SUBROUTINE Simulate(AppLake,GSElevs,GWHeads,Runoff,ReturnFlow,LakeGWConnector,StrmLakeConnector,Matrix)
+  SUBROUTINE Simulate(AppLake,GSElevs,GWHeads,Runoff,ReturnFlow,PondDrain,LakeGWConnector,StrmLakeConnector,Matrix)
     CLASS(AppLakeType)                   :: AppLake
-    REAL(8),INTENT(IN)                   :: GSElevs(:),GWHeads(:,:),Runoff(:),ReturnFlow(:)
+    REAL(8),INTENT(IN)                   :: GSElevs(:),GWHeads(:,:),Runoff(:),ReturnFlow(:),PondDrain(:)
     TYPE(LakeGWConnectorType),INTENT(IN) :: LakeGWConnector
     TYPE(StrmLakeConnectorType)          :: StrmLakeConnector
     TYPE(MatrixType)                     :: Matrix
@@ -1093,7 +1093,7 @@ CONTAINS
         CALL EchoProgress('Simulating lakes')
     
         !Simulate
-        CALL AppLake%Me%Simulate(GSElevs,GWHeads,Runoff,ReturnFlow,LakeGWConnector,StrmLakeConnector,Matrix)
+        CALL AppLake%Me%Simulate(GSElevs,GWHeads,Runoff,ReturnFlow,PondDrain,LakeGWConnector,StrmLakeConnector,Matrix)
     END IF
     
   END SUBROUTINE Simulate

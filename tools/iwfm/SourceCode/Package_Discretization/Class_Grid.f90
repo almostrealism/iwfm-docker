@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021
+!  Copyright (C) 2005-2022
 !  State of California, Department of Water Resources
 !
 !  This program is free software; you can redistribute it and/or
@@ -1266,13 +1266,13 @@ CONTAINS
   FUNCTION InterpolationCoeffs(NVertex,XP,YP,X,Y) RESULT(Coeff)
     INTEGER,INTENT(IN) :: NVertex
     REAL(8),INTENT(IN) :: XP,YP,X(4),Y(4)
-        REAL(8)            :: Coeff(NVertex)
+    REAL(8)            :: Coeff(NVertex)
 
     !Local variables
-        REAL(8) :: XIJ,XJK,XKI,YIJ,YJK,YKI,XT,YT,A,B,BO,BX,BY,CO,CX,CY,C
+    REAL(8) :: XIJ,XJK,XKI,YIJ,YJK,YKI,XT,YT,A,B,BO,BX,BY,CO,CX,CY,C
 
     !Initialize
-        Coeff = -1.0
+    Coeff = -1.0
 
     !Triangular element
     IF (NVertex .EQ. 3) THEN
@@ -1388,94 +1388,9 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
-  ! --- FIND THE FIRST ELEMENT THAT A POINT (XP,YP) LIES IN - GATEWAY
-  ! -------------------------------------------------------------
-  FUNCTION ContainedInElement(Grid,XP,YP) RESULT(iElem)
-    TYPE(GridType),INTENT(IN) :: Grid
-    REAL(8),INTENT(IN)        :: XP,YP
-    INTEGER                   :: iElem
-
-!DIR$ IF (_OPENMP .NE. 0)
-    !$ iElem = ContainedInElement_OMP(Grid,XP,YP)
-!DIR$ ELSE
-    iElem = ContainedInElement_Sequential(Grid,XP,YP)
-!DIR$ END IF
-
-  END FUNCTION ContainedInElement
-
-
-  ! -------------------------------------------------------------
   ! --- FIND THE FIRST ELEMENT THAT A POINT (XP,YP) LIES IN - OPENMP VERSION
   ! -------------------------------------------------------------
-  FUNCTION ContainedInElement_OMP(Grid,XP,YP) RESULT(iElem)
-    TYPE(GridType),INTENT(IN) :: Grid
-    REAL(8),INTENT(IN)        :: XP,YP
-    INTEGER                   :: iElem
-
-    !Local variables
-    INTEGER           :: NVertex,indxElem,indxVertex,NElements,iEndElem,iBeginElem,Vertex(4)
-    REAL(8)           :: DotProduct,X1,Y1,X2,Y2,XX,YX,X(4),Y(4)
-    LOGICAL           :: lInThisElem
-    INTEGER,PARAMETER :: iChunkSize = 5000
-
-    !Initialize
-    iElem      = 0
-    NElements  = SIZE(Grid%NVertex)
-    iBeginElem = 0
-
-    DO
-        iEndElem = iBeginElem + iChunkSize
-        IF (iEndElem .GT. NElements) iEndElem = NElements
-        iBeginElem = iBeginElem + 1
-
-        !Iterate over elements
-        !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(indxElem,NVertex,Vertex,X,Y,lInThisElem,indxVertex,X1,Y1,X2,Y2,XX,YX,DotProduct) IF(NElements > iChunkSize)
-        DO indxElem=iBeginElem,iEndElem
-            IF (iElem .GT. 0) CYCLE
-            NVertex      = Grid%NVertex(indxElem)
-            Vertex       = Grid%Vertex(:,indxElem)
-            X(1:NVertex) = Grid%X(Vertex(1:NVertex))
-            Y(1:NVertex) = Grid%Y(Vertex(1:NVertex))
-            lInThisElem  = .TRUE.
-            DO indxVertex=1,NVertex
-                IF (XP .EQ. X(indxVertex)) THEN
-                    IF (YP .EQ. Y(indxVertex)) EXIT
-                END IF
-                X1 = X(indxVertex)
-                Y1 = Y(indxVertex)
-                IF (indxVertex .LT. NVertex) THEN
-                    X2 = X(indxVertex+1)
-                    Y2 = Y(indxVertex+1)
-                ELSE
-                    X2 = X(1)
-                    Y2 = Y(1)
-                END IF
-                CALL XPoint(X1,Y1,X2,Y2,XP,YP,XX,YX)
-                DotProduct = DOT_PRODUCT([(XP-XX),(YP-YX)] , [(Y1-Y2),(X2-X1)])
-                IF (DotProduct .LT. 0.0) THEN
-                    lInThisElem = .FALSE.
-                    EXIT
-                END IF
-            END DO
-            IF (lInThisElem) THEN
-                iElem = indxElem
-                !$OMP FLUSH(iElem)
-            END IF
-        END DO
-        !$OMP END PARALLEL DO
-
-        IF (iElem .GT. 0) EXIT
-        iBeginElem = iEndElem
-
-    END DO
-
-  END FUNCTION ContainedInElement_OMP
-
-
-  ! -------------------------------------------------------------
-  ! --- FIND THE FIRST ELEMENT THAT A POINT (XP,YP) LIES IN - SEQUENTIAL VERSION
-  ! -------------------------------------------------------------
-  FUNCTION ContainedInElement_Sequential(Grid,XP,YP) RESULT(iElem)
+  FUNCTION ContainedInElement(Grid,XP,YP) RESULT(iElem)
     TYPE(GridType),INTENT(IN) :: Grid
     REAL(8),INTENT(IN)        :: XP,YP
     INTEGER                   :: iElem
@@ -1489,7 +1404,11 @@ CONTAINS
     iElem = 0
 
     !Iterate over elements
+    !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(indxElem,NVertex,Vertex,X,Y,lInThisElem,indxVertex,X1,Y1,X2,Y2,XX,YX,DotProduct) 
     DO indxElem=1,SIZE(Grid%NVertex)
+!DIR$ IF (_OPENMP .NE. 0) 
+!$      IF (iElem .GT. 0) CYCLE
+!DIR$ END IF
         NVertex      = Grid%NVertex(indxElem)
         Vertex       = Grid%Vertex(:,indxElem)
         X(1:NVertex) = Grid%X(Vertex(1:NVertex))
@@ -1520,13 +1439,16 @@ CONTAINS
         END DO
         IF (lInThisElem) THEN
             iElem = indxElem
+!DIR$ IF (_OPENMP .EQ. 0) 
             RETURN
+!DIR$ END IF
         END IF
     END DO
+    !$OMP END PARALLEL DO
 
-  END FUNCTION ContainedInElement_Sequential
-  
-  
+  END FUNCTION ContainedInElement
+
+
   ! -------------------------------------------------------------
   ! --- SUBROUTINE THAT FINDS INTERSECTION BETWEEN A LINE GIVEN BY [(X1,Y1),(X2,Y2)]
   ! ---  AND A LINE PERPENDICULAR TO IT WHICH ALSO CROSSES (XP,YP)
@@ -1536,20 +1458,24 @@ CONTAINS
     REAL(8),INTENT(OUT) :: XX,YX
 
     !Local variables
-    REAL(8)::SLOPEL,SLOPEG
+    REAL(8) :: SLOPEL,SLOPEG
 
-    IF (X1.NE.X2 .AND. Y1.NE.Y2) THEN
-        SLOPEL = (Y2-Y1)/(X2-X1)
-        SLOPEG = -1D0/SLOPEL
-        XX     = (SLOPEL*X1-SLOPEG*XP+YP-Y1)/(SLOPEL-SLOPEG)
-        YX     = SLOPEG*XX - SLOPEG*XP + YP
-    ELSEIF (X1 .EQ. X2) THEN
+    IF (X1 .EQ. X2) THEN
         XX = X1
         YX = YP
-    ELSEIF (Y1 .EQ. Y2) THEN
+        RETURN
+    END IF
+    
+    IF (Y1 .EQ. Y2) THEN
         XX = XP
         YX = Y1
+        RETURN
     END IF
+    
+    SLOPEL = (Y2-Y1)/(X2-X1)
+    SLOPEG = -1D0/SLOPEL
+    XX     = (SLOPEL*X1-SLOPEG*XP+YP-Y1)/(SLOPEL-SLOPEG)
+    YX     = SLOPEG*XX - SLOPEG*XP + YP
 
   END SUBROUTINE XPoint
 

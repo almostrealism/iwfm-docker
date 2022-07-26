@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -22,6 +22,7 @@
 !***********************************************************************
 MODULE UnsatZoneOps
   USE GeneralUtilities   , ONLY: FEXP
+  USE Package_Misc       , ONLY: f_rSmoothMaxP
   USE RainfallRunoff     , ONLY: SCSMethod_HELP
   USE Class_Soil         , ONLY: f_iCampbell        , &
                                  f_ivanGenuchten
@@ -197,7 +198,7 @@ CONTAINS
               Runoff = MAX(Runoff - PondDepth  , 0.0)
             END IF
         END IF
-        Runoff = Precip - FILTRN
+        Runoff = MAX(Precip - FILTRN  ,  0.0)
     END IF
 
     !Pond drainage
@@ -615,11 +616,10 @@ CONTAINS
     REAL(8),INTENT(IN) :: ETc,WP,FC,SM
     REAL(8)            :: ETDeriv
     
-    ETDeriv = 0.0
     IF (SM.GE.WP .AND. SM.LT.5d-1*(FC+WP)) THEN
-      ETDeriv = 2d0 * ETc / (FC-WP)
+       ETDeriv = 2d0 * ETc / (FC-WP)
     ELSE
-      ETDeriv = 0.0
+       ETDeriv = 0.0
     END IF
     
   END FUNCTION dET

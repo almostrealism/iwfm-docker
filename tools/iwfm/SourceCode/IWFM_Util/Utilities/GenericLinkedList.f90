@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -185,7 +185,10 @@ CONTAINS
     iStat = 0
     
     !Make sure that the list is not empty
-    IF (List%NNodes .EQ. 0) RETURN
+    IF (List%NNodes .EQ. 0) THEN
+        ALLOCATE (iArray(0))
+        RETURN
+    END IF
     
     !Allocate return array
     ALLOCATE (iArray(List%NNodes) , STAT=ErrorCode , ERRMSG=cErrorMsg)

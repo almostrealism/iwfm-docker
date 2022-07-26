@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,11 +21,9 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Class_AtmosphericData
-  USE IOInterface
+  USE IOInterface          , ONLY: RealTSDataInFileType
   USE TimeSeriesUtilities  , ONLY: TimeStepType
   USE MessageLogger        , ONLY: EchoProgress       
-  USE Package_Misc         , ONLY: RealTSDataInFileType , &
-                                   ReadTSData
   IMPLICIT NONE
 
 
@@ -60,11 +58,10 @@ MODULE Class_AtmosphericData
       PROCEDURE,PASS :: Kill
       PROCEDURE,PASS :: GetValues       
       PROCEDURE,PASS :: AtmosphericData_ReadTSData  
-      PROCEDURE,PASS :: AtmosphericData_ReadData_ForTimeRange
-      PROCEDURE,PASS :: IsUpdated       
+      PROCEDURE,PASS :: AtmosphericData_ReadTSData_ForTimeRange
       PROCEDURE,PASS :: IsDefined
-      GENERIC        :: ReadTSData                             => AtmosphericData_ReadTSData            , &
-                                                                  AtmosphericData_ReadData_ForTimeRange
+      GENERIC        :: ReadTSData                              => AtmosphericData_ReadTSData              , &
+                                                                   AtmosphericData_ReadTSData_ForTimeRange
   END TYPE AtmosphericDataType
 
 
@@ -196,7 +193,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ DATA FOR A TIME RANGE FOR A COLUMN
   ! -------------------------------------------------------------
-  SUBROUTINE AtmosphericData_ReadData_ForTimeRange(AtmosphericData,iCol,lForInquiry,cBeginDateAndTime,cEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,FileReadCode,iStat)
+  SUBROUTINE AtmosphericData_ReadTSData_ForTimeRange(AtmosphericData,iCol,lForInquiry,cBeginDateAndTime,cEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,FileReadCode,iStat)
     CLASS(AtmosphericDataType)  :: AtmosphericData
     INTEGER,INTENT(IN)          :: iCol       
     LOGICAL,INTENT(IN)          :: lForInquiry
@@ -206,7 +203,7 @@ CONTAINS
     INTEGER,INTENT(OUT)         :: FileReadCode,iStat
     
     !Read data
-    CALL AtmosphericData%ReadData(iCol,cBeginDateAndTime,cEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,FileReadCode,iStat)
+    CALL AtmosphericData%ReadTSData(iCol,cBeginDateAndTime,cEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,FileReadCode,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Unit conversion
@@ -215,7 +212,7 @@ CONTAINS
     !Rewind file if necessary
     IF (lForInquiry) CALL AtmosphericData%File%RewindFile_To_BeginningOfTSData(iStat)
 
-  END SUBROUTINE AtmosphericData_ReadData_ForTimeRange
+  END SUBROUTINE AtmosphericData_ReadTSData_ForTimeRange
   
   
   ! -------------------------------------------------------------
@@ -233,7 +230,7 @@ CONTAINS
     CALL EchoProgress('Reading time series '//AtmosphericData%cDataName//' data')
 
     !Read data
-    CALL ReadTSData(TimeStep,AtmosphericData%cDataName,AtmosphericData%RealTSDataInFileType,FileReadCode,iStat)
+    CALL AtmosphericData%ReadTSData(TimeStep,AtmosphericData%cDataName,FileReadCode,iStat)
     IF (iStat .EQ. -1) RETURN
 
     !If error code returned was zero (data read successfully), scale atmospheric data
@@ -253,18 +250,6 @@ CONTAINS
 ! ******************************************************************
 ! ******************************************************************
 
-  ! -------------------------------------------------------------
-  ! --- CHECK IF DATA IS UPDATED
-  ! -------------------------------------------------------------
-  PURE FUNCTION IsUpdated(AtmosphericData) RESULT(lUpdated)
-    CLASS(AtmosphericDataType),INTENT(IN) :: AtmosphericData
-    LOGICAL                               :: lUpdated
-    
-    lUpdated = AtmosphericData%lUpdated
-    
-  END FUNCTION IsUpdated
-  
-  
   ! -------------------------------------------------------------
   ! --- CHECK IF DATA IS DEFINED
   ! -------------------------------------------------------------

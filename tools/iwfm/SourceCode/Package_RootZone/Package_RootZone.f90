@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -58,6 +58,7 @@ MODULE Package_RootZone
   USE RootZone_v401              , ONLY : RootZone_v401_Type
   USE RootZone_v41               , ONLY : RootZone_v41_Type
   USE RootZone_v411              , ONLY : RootZone_v411_Type
+  USE RootZone_v412              , ONLY : RootZone_v412_Type
   USE RootZone_v50               , ONLY : RootZone_v50_Type 
   USE Package_PrecipitationET    , ONLY : PrecipitationType                  ,  &
                                           ETType
@@ -268,6 +269,9 @@ CONTAINS
         CASE ('4.11')
             ALLOCATE(RootZone_v411_Type :: RootZone%Me)
             RootZone%iVersion = 411
+        CASE ('4.12')
+            ALLOCATE(RootZone_v412_Type :: RootZone%Me)
+            RootZone%iVersion = 412
         CASE DEFAULT
             CALL SetLastMessage('Root Zone Component version number is not recognized ('//TRIM(cVersion)//')!',f_iFatal,ThisProcedure)
             iStat = -1
@@ -486,6 +490,8 @@ CONTAINS
             ALLOCATE(RootZone_v41_Type :: RootZone%Me)
         CASE ('4.11')
             ALLOCATE(RootZone_v411_Type :: RootZone%Me)
+        CASE ('4.12')
+            ALLOCATE(RootZone_v412_Type :: RootZone%Me)
         CASE ('5.0')
             ALLOCATE(RootZone_v50_Type :: RootZone%Me)
         CASE DEFAULT
@@ -540,6 +546,14 @@ CONTAINS
       IF (iLoc .GT. 0) THEN
           ALLOCATE (CHARACTER(4) :: cVersion)
           cVersion = '4.01'
+          RETURN
+      END IF  
+
+      !Check for version 4.02
+      CALL FindSubStringInString('v4.02.',TRIM(cTitlesConc),iLoc)
+      IF (iLoc .GT. 0) THEN
+          ALLOCATE (CHARACTER(4) :: cVersion)
+          cVersion = '4.02'
           RETURN
       END IF  
 
@@ -1169,27 +1183,35 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET SURFACE FLOW DESTINATIONS
   ! -------------------------------------------------------------
-  PURE FUNCTION GetSurfaceFlowDestinations(RootZone,NLocations) RESULT(Dest)
+  SUBROUTINE GetSurfaceFlowDestinations(RootZone,iLUType,NLocations,Dest)
     CLASS(RootZoneType),INTENT(IN) :: RootZone
-    INTEGER,INTENT(IN)             :: NLocations
-    INTEGER                        :: Dest(NLocations)
+    INTEGER,INTENT(IN)             :: iLUType,NLocations
+    INTEGER,INTENT(OUT)            :: Dest(NLocations)
     
-    Dest = RootZone%Me%GetSurfaceFlowDestinations(NLocations)
+    IF (RootZone%iVersion .NE. 0) THEN
+        CALL RootZone%Me%GetSurfaceFlowDestinations(iLUType,NLocations,Dest)
+    ELSE
+        Dest = 0
+    END IF
 
-  END FUNCTION GetSurfaceFlowDestinations
+  END SUBROUTINE GetSurfaceFlowDestinations
   
   
   ! -------------------------------------------------------------
   ! --- GET SURFACE FLOW DESTINATION TYPES
   ! -------------------------------------------------------------
-  PURE FUNCTION GetSurfaceFlowDestinationTypes(RootZone,NLocations) RESULT(DestTypes)
+  SUBROUTINE GetSurfaceFlowDestinationTypes(RootZone,iLUType,NLocations,DestTypes)
     CLASS(RootZoneType),INTENT(IN) :: RootZone
-    INTEGER,INTENT(IN)             :: NLocations
-    INTEGER                        :: DestTypes(NLocations)
+    INTEGER,INTENT(IN)             :: iLUType,NLocations
+    INTEGER,INTENT(OUT)            :: DestTypes(NLocations)
     
-    DestTypes = RootZone%Me%GetSurfaceFlowDestinationTypes(NLocations)
+    IF (RootZone%iVersion .NE. 0) THEN
+        CALL RootZone%Me%GetSurfaceFlowDestinationTypes(iLUType,NLocations,DestTypes)
+    ELSE
+        DestTypes = 0
+    END IF
     
-  END FUNCTION GetSurfaceFlowDestinationTypes
+  END SUBROUTINE GetSurfaceFlowDestinationTypes
   
   
   ! -------------------------------------------------------------
@@ -1233,13 +1255,13 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET DIRECT RUNOFF AND RETURN FLOW TO STREAMS
   ! -------------------------------------------------------------
-  SUBROUTINE GetFlowsToStreams(RootZone,AppGrid,DirectRunoff,ReturnFlow,RiparianET)
+  SUBROUTINE GetFlowsToStreams(RootZone,AppGrid,DirectRunoff,ReturnFlow,PondDrain,RiparianET)
     CLASS(RootZoneType),INTENT(IN) :: RootZone
     TYPE(AppGridType),INTENT(IN)   :: AppGrid
-    REAL(8),INTENT(OUT)            :: DirectRunoff(:),ReturnFlow(:)
+    REAL(8),INTENT(OUT)            :: DirectRunoff(:),ReturnFlow(:),PondDrain(:)
     REAL(8),INTENT(INOUT)          :: RiparianET(:)
     
-    IF (RootZone%iVersion .NE. 0) CALL RootZone%Me%GetFlowsToStreams(AppGrid,DirectRunoff,ReturnFlow,RiparianET)
+    IF (RootZone%iVersion .NE. 0) CALL RootZone%Me%GetFlowsToStreams(AppGrid,DirectRunoff,ReturnFlow,PondDrain,RiparianET)
     
   END SUBROUTINE GetFlowsToStreams
   
@@ -1247,12 +1269,12 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET DIRECT RUNOFF AND RETURN FLOW TO LAKES
   ! -------------------------------------------------------------
-  SUBROUTINE GetFlowsToLakes(RootZone,AppGrid,DirectRunoff,ReturnFlow)
+  SUBROUTINE GetFlowsToLakes(RootZone,AppGrid,DirectRunoff,ReturnFlow,PondDrain)
     CLASS(RootZoneType),INTENT(IN) :: RootZone
     TYPE(AppGridType),INTENT(IN)   :: AppGrid
-    REAL(8),INTENT(OUT)            :: DirectRunoff(:),ReturnFlow(:)
+    REAL(8),INTENT(OUT)            :: DirectRunoff(:),ReturnFlow(:),PondDrain(:)
     
-    IF (RootZone%iVersion .NE. 0) CALL RootZone%Me%GetFlowsToLakes(AppGrid,DirectRunoff,ReturnFlow)
+    IF (RootZone%iVersion .NE. 0) CALL RootZone%Me%GetFlowsToLakes(AppGrid,DirectRunoff,ReturnFlow,PondDrain)
     
   END SUBROUTINE GetFlowsToLakes
   
@@ -1269,10 +1291,11 @@ CONTAINS
     TYPE(RootZone_v401_Type) :: v401
     TYPE(RootZone_v41_Type)  :: v41
     TYPE(RootZone_v411_Type) :: v411
+    TYPE(RootZone_v412_Type) :: v412
     TYPE(VersionType)        :: MyVersion
     
     MyVersion = MyVersion%New(iLenVersion,cVersion,cRevision)
-    cVrs      = TRIM(MyVersion%GetVersion()) // ' (Interface) ; ' // TRIM(v40%GetVersion()) // ', ' // TRIM(v401%GetVersion()) //  ', ' // TRIM(v41%GetVersion()) //  ', ' // TRIM(v411%GetVersion()) // ', ' // TRIM(v50%GetVersion()) // ' (Components)'
+    cVrs      = TRIM(MyVersion%GetVersion()) // ' (Interface) ; ' // TRIM(v40%GetVersion()) // ', ' // TRIM(v401%GetVersion()) // ', ' // TRIM(v41%GetVersion()) //  ', ' // TRIM(v411%GetVersion()) // ', ' // TRIM(v412%GetVersion()) // ', ' // TRIM(v50%GetVersion()) // ' (Components)'
     
   END FUNCTION GetVersion
 
@@ -1290,7 +1313,7 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
-  ! --- GET SUBREGIONAL PERCOLATION
+  ! --- GET SUBREGIONAL TOTAL PERCOLATION FROM ALL LAND USES
   ! -------------------------------------------------------------
   FUNCTION GetRegionalPerc(RootZone,AppGrid) RESULT(RPERC)
     CLASS(RootZoneType),INTENT(IN) :: RootZone

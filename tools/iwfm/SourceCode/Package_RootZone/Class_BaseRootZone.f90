@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -25,7 +25,8 @@ MODULE Class_BaseRootZone
   USE Class_Version               , ONLY: VersionType
   USE MessageLogger               , ONLY: SetLastMessage                       , &
                                           f_iFatal                               
-  USE IOInterface                 , ONLY: GenericFileType                      
+  USE IOInterface                 , ONLY: GenericFileType                      , &
+                                          RealTSDataInFileType
   USE TimeSeriesUtilities         , ONLY: TimeStepType                         , &
                                           TimeStampToJulian                    , &
                                           OPERATOR(.TSGE.)                     , &  
@@ -34,8 +35,7 @@ MODULE Class_BaseRootZone
                                           LocateInList                         , &
                                           IntToText                            
   USE GenericLinkedList           , ONLY: GenericLinkedListType                
-  USE Package_Misc                , ONLY: RealTSDataInFileType                 , &
-                                          f_iRootZoneComp                      , &
+  USE Package_Misc                , ONLY: f_iRootZoneComp                      , &
                                           f_iLocationType_Subregion            , &
                                           f_iFlowDest_Outside                  , &
                                           f_iFlowDest_StrmNode                 , &
@@ -43,8 +43,8 @@ MODULE Class_BaseRootZone
                                           f_iFlowDest_Subregion                , &
                                           f_iFlowDest_Lake                     , &
                                           f_iFlowDest_GWElement                , &
-                                          f_iAg                                , &
-                                          f_iUrb                               
+                                          f_iLandUse_Ag                        , &
+                                          f_iLandUse_Urb                               
   USE Package_Budget              , ONLY: BudgetType                           
   USE Package_Discretization      , ONLY: AppGridType                          
   USE Package_PrecipitationET     , ONLY: PrecipitationType                    , &
@@ -503,20 +503,20 @@ MODULE Class_BaseRootZone
      END FUNCTION Abstract_GetPercElement
      
      
-     SUBROUTINE Abstract_GetFlowsToStreams(RootZone,AppGrid,DirectRunoff,ReturnFlow,RiparianET)
+     SUBROUTINE Abstract_GetFlowsToStreams(RootZone,AppGrid,DirectRunoff,ReturnFlow,PondDrain,RiparianET)
         IMPORT                             :: BaseRootZoneType,AppGridType
         CLASS(BaseRootZoneType),INTENT(IN) :: RootZone
         TYPE(AppGridType),INTENT(IN)       :: AppGrid
-        REAL(8),INTENT(OUT)                :: DirectRunoff(:),ReturnFlow(:)
+        REAL(8),INTENT(OUT)                :: DirectRunoff(:),ReturnFlow(:),PondDrain(:)
         REAL(8),INTENT(INOUT)              :: RiparianET(:)
      END SUBROUTINE Abstract_GetFlowsToStreams
      
      
-     SUBROUTINE Abstract_GetFlowsToLakes(RootZone,AppGrid,DirectRunoff,ReturnFlow)
+     SUBROUTINE Abstract_GetFlowsToLakes(RootZone,AppGrid,DirectRunoff,ReturnFlow,PondDrain)
         IMPORT                             :: BaseRootZoneType,AppGridType
         CLASS(BaseRootZoneType),INTENT(IN) :: RootZone
         TYPE(AppGridType),INTENT(IN)       :: AppGrid
-        REAL(8),INTENT(OUT)                :: DirectRunoff(:),ReturnFlow(:)
+        REAL(8),INTENT(OUT)                :: DirectRunoff(:),ReturnFlow(:),PondDrain(:)
      END SUBROUTINE Abstract_GetFlowsToLakes
      
      
@@ -565,7 +565,7 @@ MODULE Class_BaseRootZone
      
      SUBROUTINE Abstract_ReadTSData(RootZone,AppGrid,TimeStep,Precip,ETData,iStat,RegionLUAreas)
         IMPORT                             :: BaseRootZoneType,AppGridType,TimeStepType,PrecipitationType,ETType
-        CLASS(BaseRootZoneType),TARGET     :: RootZone
+        CLASS(BaseRootZoneType)            :: RootZone
         TYPE(AppGridType),INTENT(IN)       :: AppGrid
         TYPE(TimeStepType),INTENT(IN)      :: TimeStep
         TYPE(PrecipitationType),INTENT(IN) :: Precip
@@ -843,7 +843,7 @@ CONTAINS
             
         CASE DEFAULT
             CALL RootZone%GetBudget_TSData_RZImplementation(iBudgetType,iSubregionID,iCols,cBeginDate,cEndDate,cInterval,rFactLT,rFactAR,rFactVL,rOutputDates,rOutputValues,iDataTypes,inActualOutput,iStat)
-            
+            RETURN
     END SELECT
     
     !Return if no budget file
@@ -968,12 +968,12 @@ CONTAINS
     rSupplyShortAtDest = 0.0
     
     !Get demands and water shortage to meet demand at each demand location
-    IF (iSupplyFor .EQ. f_iAg) THEN
-        CALL RootZone%GetWaterDemandAll(f_iAg,rSupplyReq)
-        CALL RootZone%GetWaterSupply(AppGrid,f_iAg,rSupply)
+    IF (iSupplyFor .EQ. f_iLandUse_Ag) THEN
+        CALL RootZone%GetWaterDemandAll(f_iLandUse_Ag,rSupplyReq)
+        CALL RootZone%GetWaterSupply(AppGrid,f_iLandUse_Ag,rSupply)
     ELSE
-        CALL RootZone%GetWaterDemandAll(f_iUrb,rSupplyReq)
-        CALL RootZone%GetWaterSupply(AppGrid,f_iUrb,rSupply)
+        CALL RootZone%GetWaterDemandAll(f_iLandUse_Urb,rSupplyReq)
+        CALL RootZone%GetWaterSupply(AppGrid,f_iLandUse_Urb,rSupply)
     END IF
     
     !Supply short
@@ -1012,10 +1012,10 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET SURFACE FLOW DESTINATIONS
   ! -------------------------------------------------------------
-  PURE FUNCTION GetSurfaceFlowDestinations(RootZone,NElements) RESULT(Dest)
-    CLASS(BaseRootZoneType),INTENT(IN) :: RootZone
-    INTEGER,INTENT(IN)                 :: NElements
-    INTEGER                            :: Dest(NElements)
+  SUBROUTINE GetSurfaceFlowDestinations(RootZone,iLUType,NElements,Dest)
+    CLASS(BaseRootZoneType),TARGET,INTENT(IN) :: RootZone
+    INTEGER,INTENT(IN)                        :: iLUType,NElements
+    INTEGER,INTENT(OUT)                       :: Dest(NElements)
     
     !Local variables
     INTEGER :: indx,iElem
@@ -1044,16 +1044,16 @@ CONTAINS
     !To groundwater
     Dest(RootZone%ElemFlowToGW) = RootZone%ElemFlowToGW
 
-  END FUNCTION GetSurfaceFlowDestinations
+  END SUBROUTINE GetSurfaceFlowDestinations
   
   
   ! -------------------------------------------------------------
   ! --- GET SURFACE FLOW DESTINATION TYPES
   ! -------------------------------------------------------------
-  PURE FUNCTION GetSurfaceFlowDestinationTypes(RootZone,NElements) RESULT(DestTypes)
-    CLASS(BaseRootZoneType),INTENT(IN) :: RootZone
-    INTEGER,INTENT(IN)                 :: NElements
-    INTEGER                            :: DestTypes(NElements)
+  SUBROUTINE GetSurfaceFlowDestinationTypes(RootZone,iLUType,NElements,DestTypes)
+    CLASS(BaseRootZoneType),TARGET,INTENT(IN) :: RootZone
+    INTEGER,INTENT(IN)                        :: iLUType,NElements
+    INTEGER,INTENT(OUT)                       :: DestTypes(NElements)
     
     !Local variables
     INTEGER :: indx,iElem
@@ -1082,7 +1082,7 @@ CONTAINS
     !To groundwater
     DestTypes(RootZone%ElemFlowToGW) = f_iFlowDest_GWElement
 
-  END FUNCTION GetSurfaceFlowDestinationTypes
+  END SUBROUTINE GetSurfaceFlowDestinationTypes
   
   
   ! -------------------------------------------------------------
@@ -1346,7 +1346,7 @@ CONTAINS
     NLandUse = SIZE(ExIntAreas,DIM=1)
     
     !Initial estimate for element areas
-    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(AppGrid,lLakeElems,t1,t2,ElemObsAreas1,ElemObsAreas2,ExIntAreas,indxForNV,rCurrentDateAndTimeJulian,NLandUse) NUM_THREADS(OMP_GET_NUM_PROCS()-1)
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(AppGrid,lLakeElems,t1,t2,ElemObsAreas1,ElemObsAreas2,ExIntAreas,indxForNV,rCurrentDateAndTimeJulian,NLandUse) 
     !$OMP DO SCHEDULE(STATIC,500)
     DO indxElem=1,AppGrid%NElements
         !Time interval between observation Julian dates
@@ -1468,28 +1468,27 @@ CONTAINS
     NRegions = SIZE(ComputedLandUse,DIM=2)
    
     IF (iMeasuredLUDataFlag .EQ. iMeasuredLUDataForSubregion) THEN
-      DO indxRegion=1,NRegions
-        DO indxLU=1,NLandUse
-          ASSOCIATE (pDiff            => DiffArray(indxLU,indxRegion)       , &
-                     pComputedLandUse => ComputedLandUse(indxLU,indxRegion) )
-            pDiff = MeasuredLandUSeArea(indxRegion,indxLU) - pComputedLandUse
-            IF (pComputedLandUse .GT. 0.0) THEN
-              IF (ABS(pDiff)/pComputedLandUse .LT. 1D-7) pDiff = 0.0
-            END IF
-          END ASSOCIATE 
+        DO indxRegion=1,NRegions
+            DO indxLU=1,NLandUse
+                ASSOCIATE (pDiff            => DiffArray(indxLU,indxRegion)       , &
+                           pComputedLandUse => ComputedLandUse(indxLU,indxRegion) )
+                    pDiff = MeasuredLandUSeArea(indxRegion,indxLU) - pComputedLandUse
+                    IF (pComputedLandUse .GT. 0.0) THEN
+                        IF (ABS(pDiff)/pComputedLandUse .LT. 1D-7) pDiff = 0.0
+                    END IF
+                END ASSOCIATE 
+            END DO
         END DO
-      END DO
-      
     ELSE
-      DO indxLU=1,NLandUse
-        ASSOCIATE (pDiff            => DiffArray(indxLU,1)       , &
-                   pComputedLandUse => ComputedLandUse(indxLU,1) )
-          pDiff = MeasuredLandUSeArea(1,indxLU) - pComputedLandUse
-          IF (pComputedLandUse .GT. 0.0) THEN
-            IF (ABS(pDiff)/pComputedLandUse .LT. 1D-7) pDiff = 0.0
-          END IF
-        END ASSOCIATE
-      END DO
+        DO indxLU=1,NLandUse
+            ASSOCIATE (pDiff            => DiffArray(indxLU,1)       , &
+                       pComputedLandUse => ComputedLandUse(indxLU,1) )
+                pDiff = MeasuredLandUSeArea(1,indxLU) - pComputedLandUse
+                IF (pComputedLandUse .GT. 0.0) THEN
+                    IF (ABS(pDiff)/pComputedLandUse .LT. 1D-7) pDiff = 0.0
+                END IF
+            END ASSOCIATE
+        END DO
     END IF
    
   END SUBROUTINE ComputeDiscrepancy
@@ -1548,10 +1547,12 @@ CONTAINS
     iElemWork = 0
     
     !Find elements where land-use area can be increased
+    !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(indxElem,iElem)
     DO indxElem=1,iDim
-      iElem     =  pElems(indxElem)
-      IF (SPACING(AppGrid%AppElement(iElem)%Area) .LT. ABS(AppGrid%AppElement(iElem)%Area-SUM(ElemAreas(:,iElem)))) iElemWork(iElem) = 1
+        iElem     =  pElems(indxElem)
+        IF (SPACING(AppGrid%AppElement(iElem)%Area) .LT. ABS(AppGrid%AppElement(iElem)%Area-SUM(ElemAreas(:,iElem)))) iElemWork(iElem) = 1
     END DO
+    !$OMP END PARALLEL DO
     
     !Make sure that there is at least one element for land-use adjustment
     IF (LocateInList(1,iElemWork) .EQ. 0) THEN
@@ -1565,36 +1566,40 @@ CONTAINS
     !Find total area of land use for these elements
     TotalArea = 0.0
     DO indxElem=1,iDim
-      iElem = pElems(indxElem)
-      IF (iElemWork(iElem) .EQ. 0) CYCLE
-      TotalArea = TotalArea + ElemAreas(iLandUse,iElem)
+        iElem = pElems(indxElem)
+        IF (iElemWork(iElem) .EQ. 0) CYCLE
+        TotalArea = TotalArea + ElemAreas(iLandUse,iElem)
     END DO
     
     !Distribute the discrepancy to elements that can take it up to the total element area
     IF (TotalArea .GT. 0.0) THEN
-      DO indxElem=1,iDim
-        iElem                     = pElems(indxElem)
-        IF (iElemWork(iElem) .EQ. 0) CYCLE
-        rAvailableArea            = AppGrid%AppElement(iElem)%Area - SUM(ElemAreas(:,iElem))
-        rAdjust                   = MIN(Diff * ElemAreas(iLandUse,iElem) / TotalArea  , rAvailableArea)
-        ElemAreas(iLandUse,iElem) = ElemAreas(iLandUse,iElem) + rAdjust 
-      END DO
+        !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(indxElem,iElem,rAvailableArea,rAdjust) 
+        DO indxElem=1,iDim
+            iElem                     = pElems(indxElem)
+            IF (iElemWork(iElem) .EQ. 0) CYCLE
+            rAvailableArea            = AppGrid%AppElement(iElem)%Area - SUM(ElemAreas(:,iElem))
+            rAdjust                   = MIN(Diff * ElemAreas(iLandUse,iElem) / TotalArea  , rAvailableArea)
+            ElemAreas(iLandUse,iElem) = ElemAreas(iLandUse,iElem) + rAdjust 
+        END DO
+        !$OMP END PARALLEL DO
       
     ELSEIF (TotalArea .EQ. 0.0) THEN
-      !Find the total area of empty lands
-      DO indxElem=1,iDim
-        iElem = pElems(indxElem)
-        IF (iElemWork(iElem) .EQ. 0) CYCLE
-        TotalArea = TotalArea + AppGrid%AppElement(iElem)%Area - SUM(ElemAreas(:,iElem))
-      END DO
-      !Now distribute
-      DO indxElem=1,iDim
-        iElem                     = pElems(indxElem)
-        IF (iElemWork(iElem) .EQ. 0) CYCLE
-        rAvailableArea            = AppGrid%AppElement(iElem)%Area - SUM(ElemAreas(:,iElem))
-        rAdjust                   = MIN(Diff * rAvailableArea / TotalArea  , rAvailableArea)
-        ElemAreas(iLandUse,iElem) = ElemAreas(iLandUse,iElem) + rAdjust 
-      END DO
+        !Find the total area of empty lands
+        DO indxElem=1,iDim
+          iElem = pElems(indxElem)
+          IF (iElemWork(iElem) .EQ. 0) CYCLE
+          TotalArea = TotalArea + AppGrid%AppElement(iElem)%Area - SUM(ElemAreas(:,iElem))
+        END DO
+        !Now distribute
+        !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(indxElem,iElem,rAvailableArea,rAdjust)
+        DO indxElem=1,iDim
+            iElem                     = pElems(indxElem)
+            IF (iElemWork(iElem) .EQ. 0) CYCLE
+            rAvailableArea            = AppGrid%AppElement(iElem)%Area - SUM(ElemAreas(:,iElem))
+            rAdjust                   = MIN(Diff * rAvailableArea / TotalArea  , rAvailableArea)
+            ElemAreas(iLandUse,iElem) = ElemAreas(iLandUse,iElem) + rAdjust 
+        END DO
+        !$OMP END PARALLEL DO
       
     ELSE
         iSubregionID = AppGrid%AppSubregion(iRegion)%ID
@@ -1639,6 +1644,7 @@ CONTAINS
     !First decrease areas on elements that don't have only this land use (assuming the interpoltaion says this land use stays constant)
     DO
         !Calculate reduction fractions for each element
+        !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(indxElem,iElem)
         DO indxElem=1,iDim
             iElem = pElems(indxElem)
             
@@ -1649,6 +1655,7 @@ CONTAINS
                 rFractions(indxElem) = ElemAreas(iLandUse,iElem)
             END IF
         END DO
+        !$OMP END PARALLEL DO
         
         !If all fractions are zero, nothing can be done; exit loop
         IF (SUM(rFractions(1:iDim)) .EQ. 0.0) EXIT
@@ -1657,15 +1664,17 @@ CONTAINS
         CALL NormalizeArray(rFractions(1:iDim))
  
         !Distribute discrepancy to elements
+        !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(indxElem,iElem,rAdjust)
         DO indxElem=1,iDim
-          iElem = pElems(indxElem)
-          
-          !Compute adjustment area
-          rAdjust = DiffWork * rFractions(indxElem)
-          
-          !Adjust element land use area only if this land use is not the only land use in the element
-          ElemAreas(iLandUse,iElem) = MAX(ElemAreas(iLandUse,iElem) + rAdjust  , 0.0)
+            iElem = pElems(indxElem)
+            
+            !Compute adjustment area
+            rAdjust = DiffWork * rFractions(indxElem)
+            
+            !Adjust element land use area only if this land use is not the only land use in the element
+            ElemAreas(iLandUse,iElem) = MAX(ElemAreas(iLandUse,iElem) + rAdjust  , 0.0)
         END DO
+        !$OMP END PARALLEL DO
         
         !New land use area
         NewArea = SUM(ElemAreas(iLandUse,pElems))
@@ -1680,7 +1689,7 @@ CONTAINS
     END DO
     
     !If made it to this point, it is necessary to decrease land use in elements with only this land use
-    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(iDim,pElems,AppGrid,DiffWork,ElemAreas,NewArea,iLandUse) 
+    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(indxElem,iElem,rAdjust)
     !$OMP DO SCHEDULE(STATIC,500)
     DO indxElem=1,iDim
         iElem                     = pElems(indxElem)

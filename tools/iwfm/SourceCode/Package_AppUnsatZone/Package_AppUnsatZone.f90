@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,6 +21,7 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Package_AppUnsatZone
+  !$ USE OMP_LIB
   USE MessageLogger          , ONLY: SetLastMessage                , &
                                      EchoProgress                  , &
                                      MessageArray                  , &
@@ -1349,7 +1350,8 @@ CONTAINS
     !Local variables
     CHARACTER(LEN=ModNameLen+8) :: ThisProcedure = ModName // 'Simulate'
     INTEGER                     :: indxElem,indxLayer,NUZLayers,iElemID
-    REAL(8)                     :: Inflow,D,TotalPorosity,Excess,Outflow,AchievedConv,Area,D_P,SoilM_P,Toler
+    REAL(8)                     :: D,TotalPorosity,Excess,Outflow,AchievedConv,D_P,SoilM_P,Toler, &
+                                   Area(AppGrid%NElements),Inflow(AppGrid%NElements)
     
     !Initialize
     iStat = 0
@@ -1362,6 +1364,8 @@ CONTAINS
     
     !Initailize
     NUZLayers = AppUnsatZone%NUnsatLayers
+    Area      = AppGrid%AppElement%Area
+    Inflow    = Perc / Area
     
     !Update layer thicknesses, if necessary
     IF (.NOT. AppUnsatZone%lThicknessUpdated) THEN
@@ -1371,9 +1375,8 @@ CONTAINS
     
     !Route moisture through unsat zone
     ASSOCIATE (pUnsatElems => AppUnsatZone%UnsatElems)
+        !$OMP PARALLEL DO DEFAULT(PRIVATE) SHARED(pUnsatElems,AppUnsatZone,AppGrid,NUZLayers,Area,Inflow) 
         DO indxElem=1,AppGrid%NElements
-            Area   = AppGrid%AppElement(indxElem)%Area
-            Inflow = Perc(indxElem)/Area
             DO indxLayer=1,NUZLayers
                 D       = pUnsatElems(indxLayer,indxElem)%Thickness
                 D_P     = pUnsatElems(indxLayer,indxElem)%Thickness_P 
@@ -1386,8 +1389,8 @@ CONTAINS
                         SoilM_P = pUnsatElems(indxLayer,indxElem)%SoilM_P * D_P
                     END IF
                     TotalPorosity = pUnsatElems(indxLayer,indxElem)%TotalPorosity * D
-                    Toler         = MAX(TotalPorosity * AppUnsatZone%SolverData%Tolerance / Area , 1D-12)
-                    CALL VadoseZoneMoistureRouter(Inflow                                       ,  &
+                    Toler         = MAX(TotalPorosity * AppUnsatZone%SolverData%Tolerance / Area(indxElem) , 1D-12)
+                    CALL VadoseZoneMoistureRouter(Inflow(indxElem)                             ,  &
                                                   pUnsatElems(indxLayer,indxElem)%HydCond      ,  &
                                                   TotalPorosity                                ,  &
                                                   pUnsatElems(indxLayer,indxElem)%Lambda       ,  &
@@ -1407,7 +1410,6 @@ CONTAINS
                         WRITE (MessageArray(3),'(A,F11.8)') 'Achieved convergence = ',ABS(AchievedConv)
                         CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
                         iStat = -1
-                        RETURN
                     END IF
                     pUnsatElems(indxLayer,indxElem)%SoilM   = pUnsatElems(indxLayer,indxElem)%SoilM / D  !Convert moisture depth back to moisture content
                 ELSE
@@ -1415,11 +1417,12 @@ CONTAINS
                     pUnsatElems(indxLayer,indxElem)%Outflow = 0.0
                     CYCLE
                 END IF
-                Inflow                                  = Outflow + Excess
-                pUnsatElems(indxLayer,indxElem)%Outflow = Inflow * Area
+                Inflow(indxElem)                        = Outflow + Excess
+                pUnsatElems(indxLayer,indxElem)%Outflow = Inflow(indxElem) * Area(indxElem)
             END DO
-            AppUnsatZone%DeepPerc(indxElem) = Inflow * Area + SUM(pUnsatElems(:,indxElem)%SoilM_To_GW)
+            AppUnsatZone%DeepPerc(indxElem) = Inflow(indxElem) * Area(indxElem) + SUM(pUnsatElems(:,indxElem)%SoilM_To_GW)
         END DO
+        !$OMP END PARALLEL DO
     END ASSOCIATE
 
   END SUBROUTINE Simulate
@@ -1441,6 +1444,7 @@ CONTAINS
     NUZLayers = SIZE(UnsatElems , DIM=1)
     
     !Compute thicknesses
+    !$OMP PARALLEL DO DEFAULT(PRIVATE) SHARED(AppGrid,NUZLayers,UnsatElems,DepthToGW) 
     DO indxElem=1,AppGrid%NElements
         Area = AppGrid%AppElement(indxElem)%Area
         DT   = 0.0
@@ -1468,6 +1472,7 @@ CONTAINS
             END IF            
         END DO
     END DO
+    !$OMP END PARALLEL DO
     
   END SUBROUTINE ComputeLayerThickness
   

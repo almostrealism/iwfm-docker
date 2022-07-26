@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -40,6 +40,9 @@ MODULE Class_AgLandUse_v50
                                       f_iFatal                                , &
                                       f_iInfo
   USE IOInterface             , ONLY: GenericFileType                         , &
+                                      RealTSDataInFileType                    , &
+                                      IntTSDataInFileType                     , &
+                                      PrepareTSDOutputFile                    , &
                                       f_iUNKNOWN 
   USE Package_Discretization  , ONLY: AppGridType
   USE Class_GenericLandUse    , ONLY: GenericLandUseType
@@ -47,11 +50,7 @@ MODULE Class_AgLandUse_v50
   USE Package_UnsatZone       , ONLY: RootZoneSoilType                        , &
                                       NonPondedLUMoistureRouter               , &
                                       NonPondedCropDemand
-  USE Package_Misc            , ONLY: SolverDataType                          , &
-                                      RealTSDataInFileType                    , &
-                                      IntTSDataInFileType                     , &
-                                      PrepareTSDOutputFile                    , &
-                                      TSDataFile_ReadData => ReadTSData 
+  USE Package_Misc            , ONLY: SolverDataType 
   USE Class_BaseRootZone      , ONLY: TrackMoistureDueToSource
   USE Util_Package_RootZone   , ONLY: ReadRealData                            , &
                                       ReadPointerData                         , &
@@ -87,14 +86,14 @@ MODULE Class_AgLandUse_v50
   ! --- AG LAND DATA TYPE
   ! -------------------------------------------------------------
   TYPE,EXTENDS(GenericLandUseType) :: AgType
-      REAL(8) :: IrigInfilt              = 0.0     !Infiltration due to irrigation
-      REAL(8) :: Reuse                   = 0.0     !Reused return flow 
-      REAL(8) :: ReturnFlow              = 0.0     !Return flow
-      REAL(8) :: DemandRaw               = 0.0     !Ag demand before net return flow is computed
-      REAL(8) :: Demand                  = 0.0     !Ag demand after net return flow is included
-      REAL(8) :: ETAW                    = 0.0     !ET of applied water
-      REAL(8) :: ETP                     = 0.0     !ET of precipitation
-      REAL(8) :: ETOth                   = 0.0     !ET from sources other than irrigtaion and precipitation
+      REAL(8),ALLOCATABLE :: IrigInfilt(:,:)              !Infiltration due to irrigation
+      REAL(8),ALLOCATABLE :: Reuse(:,:)                   !Reused return flow 
+      REAL(8),ALLOCATABLE :: ReturnFlow(:,:)              !Return flow
+      REAL(8),ALLOCATABLE :: DemandRaw(:,:)               !Ag demand before net return flow is computed
+      REAL(8),ALLOCATABLE :: Demand(:,:)                  !Ag demand after net return flow is included
+      REAL(8),ALLOCATABLE :: ETAW(:,:)                    !ET of applied water
+      REAL(8),ALLOCATABLE :: ETP(:,:)                     !ET of precipitation
+      REAL(8),ALLOCATABLE :: ETOth(:,:)                   !ET from sources other than irrigtaion and precipitation
   END TYPE AgType
   
   
@@ -114,7 +113,7 @@ MODULE Class_AgLandUse_v50
   ! --- AG LAND DATABASE TYPE
   ! -------------------------------------------------------------
   TYPE AgDatabase_v50_Type
-      TYPE(AgType),ALLOCATABLE      :: AgData(:,:)                                         !Ag data for each (soil,subregion) combination
+      TYPE(AgType)                  :: AgData                                              !Ag data for each (soil,subregion) combination
       INTEGER                       :: NCrops                 = 0                          !Number of simulated crops
       TYPE(AvgCropType),ALLOCATABLE :: AvgCrop(:)                                          !Average crop parameters at each (subregion)
       INTEGER                       :: iDemandFromMoist       = f_iDemandFromMoistAtBegin  !Flag to check if demand is computed based on moisture at the beginning or at the end of timestep
@@ -227,8 +226,16 @@ CONTAINS
     AgLand%NCrops = NCrops
     
     !Allocate memory
-    ALLOCATE (AgLand%RootDepth(NCrops)                            , &
-              AgLand%AgData(NSoils,NSubregions)                   , &
+    CALL AgLand%AgData%New(NSoils,NSubregions,iStat)
+    ALLOCATE (AgLand%AgData%IrigInfilt(NSoils,NSubregions)        , &
+              AgLand%AgData%Reuse(NSoils,NSubregions)             , &
+              AgLand%AgData%ReturnFlow(NSoils,NSubregions)        , &
+              AgLand%AgData%DemandRaw(NSoils,NSubregions)         , &
+              AgLand%AgData%Demand(NSoils,NSubregions)            , &
+              AgLand%AgData%ETAW(NSoils,NSubregions)              , &
+              AgLand%AgData%ETP(NSoils,NSubregions)               , &
+              AgLand%AgData%ETOth(NSoils,NSubregions)             , &
+              AgLand%RootDepth(NCrops)                            , &
               AgLand%AvgCrop(NSubregions)                         , &
               AgLand%iColReturnFrac(NSubregions)                  , &
               AgLand%iColReuseFrac(NSubregions)                   , &
@@ -243,15 +250,35 @@ CONTAINS
               AgLand%SubregionalDemand(NSubregions)               , &
               AgLand%RegionETPot(NSubregions)                     , &
               STAT=ErrorCode                                      )
-    IF (ErrorCode .NE. 0) THEN
+    IF (ErrorCode+iStat .NE. 0) THEN
         CALL SetLastMessage('Error in allocating memory for agricultural data!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
-
-    !Initialize elemental area to zero
-    AgLand%ElementalArea = 0.0
     
+    !Initialize arrays
+    AgLand%AgData%IrigInfilt       = 0.0  
+    AgLand%AgData%Reuse            = 0.0  
+    AgLand%AgData%ReturnFlow       = 0.0  
+    AgLand%AgData%DemandRaw        = 0.0  
+    AgLand%AgData%Demand           = 0.0  
+    AgLand%AgData%ETAW             = 0.0  
+    AgLand%AgData%ETP              = 0.0  
+    AgLand%AgData%ETOth            = 0.0  
+    AgLand%RootDepth               = 0.0              
+    AgLand%iColReturnFrac          = 0         
+    AgLand%iColReuseFrac           = 0         
+    AgLand%iColETcCrop             = 0     
+    AgLand%iColIrigPeriod          = 0     
+    AgLand%iColMinSoilM            = 0     
+    AgLand%iColTargetSoilM         = 0     
+    AgLand%ElementalArea           = 0.0             
+    AgLand%ElementalArea_P         = 0.0             
+    AgLand%SubregionalArea         = 0.0         
+    AgLand%SubregionalCropAreaFrac = 0.0     
+    AgLand%SubregionalDemand       = 0.0         
+    AgLand%RegionETPot             = 0.0         
+
     !Subregional crop area data file
     CALL AgDataFile%ReadData(ALine,iStat)  ;  IF (iStat .EQ. -1) RETURN  
     ALine = StripTextUntilCharacter(ALine,'/') 
@@ -309,7 +336,7 @@ CONTAINS
             RETURN
         END IF
         lProcessed(iRegion)           = .TRUE.
-        AgLand%AgData(:,iRegion)%SMax = (1000.0/DummyArray(indxRegion,2:)-10.0) * FACTCN
+        AgLand%AgData%SMax(:,iRegion) = (1000.0/DummyArray(indxRegion,2:)-10.0) * FACTCN
     END DO
     
     !Read ETc column pointers
@@ -494,12 +521,12 @@ CONTAINS
             RETURN
         END IF
         lProcessed(iRegion)                                  = .TRUE.
-        AgLand%AgData(:,iRegion)%SoilM_Precip                = DummyArray(indxRegion,2::2) * DummyArray(indxRegion,3::2)
-        AgLand%AgData(:,iRegion)%SoilM_AW                    = DummyArray(indxRegion,3::2) - AgLand%AgData(:,iRegion)%SoilM_Precip
-        AgLand%AgData(:,iRegion)%SoilM_Precip_P              = AgLand%AgData(:,iRegion)%SoilM_Precip 
-        AgLand%AgData(:,iRegion)%SoilM_AW_P                  = AgLand%AgData(:,iRegion)%SoilM_AW
-        AgLand%AgData(:,iRegion)%SoilM_Precip_P_BeforeUpdate = AgLand%AgData(:,iRegion)%SoilM_Precip 
-        AgLand%AgData(:,iRegion)%SoilM_AW_P_BeforeUpdate     = AgLand%AgData(:,iRegion)%SoilM_AW
+        AgLand%AgData%SoilM_Precip(:,iRegion)                = DummyArray(indxRegion,2::2) * DummyArray(indxRegion,3::2)
+        AgLand%AgData%SoilM_AW(:,iRegion)                    = DummyArray(indxRegion,3::2) - AgLand%AgData%SoilM_Precip(:,iRegion)
+        AgLand%AgData%SoilM_Precip_P(:,iRegion)              = AgLand%AgData%SoilM_Precip(:,iRegion) 
+        AgLand%AgData%SoilM_AW_P(:,iRegion)                  = AgLand%AgData%SoilM_AW(:,iRegion)
+        AgLand%AgData%SoilM_Precip_P_BeforeUpdate(:,iRegion) = AgLand%AgData%SoilM_Precip(:,iRegion) 
+        AgLand%AgData%SoilM_AW_P_BeforeUpdate(:,iRegion)     = AgLand%AgData%SoilM_AW(:,iRegion)
     END DO
     
     !Close ag data file
@@ -534,7 +561,15 @@ CONTAINS
     TYPE(AgDatabase_v50_Type) :: DefaultAgLand
     
     !Clear memory
-    DEALLOCATE (AgLand%AgData                  , &
+    CALL AgLand%AgData%Kill()
+    DEALLOCATE (AgLand%AgData%IrigInfilt       , &
+                AgLand%AgData%Reuse            , &
+                AgLand%AgData%ReturnFlow       , &
+                AgLand%AgData%DemandRaw        , &
+                AgLand%AgData%Demand           , &
+                AgLand%AgData%ETAW             , &
+                AgLand%AgData%ETP              , &
+                AgLand%AgData%ETOth            , &
                 AgLand%AvgCrop                 , &
                 AgLand%RootDepth               , &
                 AgLand%iColReturnFrac          , &
@@ -605,8 +640,8 @@ CONTAINS
     !Loop through timesteps and read return flow fractions
     DO
         !Read data
-        CALL TSDataFile_ReadData(TimeStep,'Return flow fractions data',ReturnFracFile,FileReadCode_Return,iStat)  ;  IF (iStat .EQ. -1) RETURN
-        CALL TSDataFile_ReadData(TimeStep,'Reuse fractions data',ReuseFracFile,FileReadCode_Reuse,iStat)          ;  IF (iStat .EQ. -1) RETURN
+        CALL ReturnFracFile%ReadTSData(TimeStep,'Return flow fractions data',FileReadCode_Return,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL ReuseFracFile%ReadTSData(TimeStep,'Reuse fractions data',FileReadCode_Reuse,iStat)          ;  IF (iStat .EQ. -1) RETURN
         
         !If new data is read, find min and max
         IF (FileReadCode_Return.EQ.0  .OR.  FileReadCode_Reuse.EQ.0) THEN
@@ -663,7 +698,7 @@ CONTAINS
     DO indxElem=1,AppGrid%NElements
         iRegion                           = AppGrid%AppElement(indxElem)%Subregion
         iSoil                             = iSoilType(indxElem)
-        AgLand%AgData(iSoil,iRegion)%Area = AgLand%AgData(iSoil,iRegion)%Area + AreaElem(indxElem)
+        AgLand%AgData%Area(iSoil,iRegion) = AgLand%AgData%Area(iSoil,iRegion) + AreaElem(indxElem)
     END DO
     
     !Update subregional areas
@@ -755,7 +790,7 @@ CONTAINS
     END IF
     
     !Irrigation period
-    CALL TSDataFile_ReadData(TimeStep,'Crop irrigation period data',AgLand%IrigPeriodFile,FileReadCode,iStat)  
+    CALL AgLand%IrigPeriodFile%ReadTSData(TimeStep,'Crop irrigation period data',FileReadCode,iStat)  
     IF (iStat .EQ. -1) RETURN
     IF (AgLand%IrigPeriodFile%lUpdated) THEN
         DO indxCol=1,AgLand%IrigPeriodFile%iSize
@@ -768,11 +803,11 @@ CONTAINS
     END IF
     
     !Min. soil moisture data as irrigation trigger
-    CALL TSDataFile_ReadData(TimeStep,'Minimum soil moisture requirement data',AgLand%MinSoilMFile,FileReadCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL AgLand%MinSoilMFile%ReadTSData(TimeStep,'Minimum soil moisture requirement data',FileReadCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
     lMinSoilM_Updated = AgLand%MinSoilMFile%lUpdated
     
     !Irrigation target soil moisture data
-    CALL TSDataFile_ReadData(TimeStep,'Irrigation target soil moisture data',AgLand%TargetSoilMFile,FileReadCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL AgLand%TargetSoilMFile%ReadTSData(TimeStep,'Irrigation target soil moisture data',FileReadCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
     lTargetSoilM_Updated = AgLand%TargetSoilMFile%lUpdated
     
     !Make sure that irrigation target soil moisture is not less than minimum soil moisture
@@ -820,7 +855,7 @@ CONTAINS
     
     !Specified water demand
     IF (AgLand%lWaterDemand_Defined) THEN
-        CALL TSDataFile_ReadData(TimeStep,'Agricultural water supply requirement data',AgLand%WaterDemandFile,FileReadCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL AgLand%WaterDemandFile%ReadTSData(TimeStep,'Agricultural water supply requirement data',FileReadCode,iStat)  ;  IF (iStat .EQ. -1) RETURN
         IF (AgLand%WaterDemandFile%lUpdated) THEN
             DO indxRegion=1,AppGrid%NSubregions
                 IF (AgLand%iColWaterDemand(indxRegion) .EQ. 0) CYCLE
@@ -997,14 +1032,16 @@ CONTAINS
     
     !Local variables
     CHARACTER(LEN=ModNameLen+8) :: ThisProcedure = ModName // 'Simulate'
-    INTEGER                     :: indxRegion,indxSoil,KunsatMethod
+    INTEGER                     :: indxRegion,indxSoil,KunsatMethod,iNSoils,iNSubregions
     REAL(8)                     :: RootDepth,ETc,WiltingPoint,FieldCapacity,TotalPorosity,HydCond,Lambda,GM,PrecipD,  &
                                    Supply,SoilM_P,fRF,fRU,Inflow,SoilM,Excess,AchievedConv,ratio(3),SoilM_P_Array(3), &
                                    Infilt(3),SoilM_Array(3),ETPartition(3)
     LOGICAL                     :: lNegativeMoist
     
     !Initialize
-    iStat = 0
+    iStat        = 0
+    iNSoils      = SIZE(AgLand%AgData%SMax , DIM=1)
+    iNSubregions = SIZE(AgLand%AgDAta%SMax , DIM=2)
     
     !Inform user
     CALL EchoProgress('Simulating flows at agricultural lands...')
@@ -1012,7 +1049,7 @@ CONTAINS
     ASSOCIATE (pAgData  => AgLand%AgData   , &
                pAvgCrop => AgLand%AvgCrop  )
         
-        DO indxRegion=1,SIZE(pAgData , DIM=2)
+        DO indxRegion=1,iNSubregions
             
             !Initialize subregion-level values
             RootDepth = pAvgCrop(indxRegion)%RootDepth
@@ -1022,111 +1059,108 @@ CONTAINS
             !Infiltration and return flow due to applied water
             fRF                              = ReturnFrac(AgLand%iColReturnFrac(indxRegion))
             fRU                              = ReuseFrac(AgLand%iColReuseFrac(indxRegion))
-            pAgData(:,indxRegion)%IrigInfilt = MIN(Supply*(1d0-(fRF-fRU)) , Supply)
-            pAgData(:,indxRegion)%ReturnFlow = Supply - pAgData(1,indxRegion)%IrigInfilt   !IrigInfilt is the same for all soils in the same subregion
+            pAgData%IrigInfilt(:,indxRegion) = MIN(Supply*(1d0-(fRF-fRU)) , Supply)
+            pAgData%ReturnFlow(:,indxRegion) = Supply - pAgData%IrigInfilt(1,indxRegion)   !IrigInfilt is the same for all soils in the same subregion
                       
-            DO indxSoil=1,SIZE(pAgData , DIM=1)
-                ASSOCIATE (pAg => pAgData(indxSoil,indxRegion))
-                    !Cycle if area is zero
-                    IF (pAg%Area .EQ. 0.0) CYCLE
-                    
-                    !Soil parameters
-                    WiltingPoint  = SubregionSoilsData(indxSoil,indxRegion)%WiltingPoint  * RootDepth
-                    FieldCapacity = SubregionSoilsData(indxSoil,indxRegion)%FieldCapacity * RootDepth
-                    TotalPorosity = SubregionSoilsData(indxSoil,indxRegion)%TotalPorosity * RootDepth
-                    HydCond       = SubregionSoilsData(indxSoil,indxRegion)%HydCond
-                    Lambda        = SubregionSoilsData(indxSoil,indxRegion)%Lambda
-                    KunsatMethod  = SubregionSoilsData(indxSoil,indxRegion)%KunsatMethod
-                    
-                    !Moisture related values
-                    GM            = GenericMoisture(indxSoil,indxRegion) * RootDepth * DeltaT
-                    PrecipD       = Precip(indxSoil,indxRegion) * DeltaT
-                    SoilM_P       = pAg%SoilM_Precip_P + pAg%SoilM_AW_P + pAg%SoilM_Oth_P
+            DO indxSoil=1,iNSoils
+                !Cycle if area is zero
+                IF (pAgData%Area(indxSoil,indxRegion) .EQ. 0.0) CYCLE
+                
+                !Soil parameters
+                WiltingPoint  = SubregionSoilsData(indxSoil,indxRegion)%WiltingPoint  * RootDepth
+                FieldCapacity = SubregionSoilsData(indxSoil,indxRegion)%FieldCapacity * RootDepth
+                TotalPorosity = SubregionSoilsData(indxSoil,indxRegion)%TotalPorosity * RootDepth
+                HydCond       = SubregionSoilsData(indxSoil,indxRegion)%HydCond
+                Lambda        = SubregionSoilsData(indxSoil,indxRegion)%Lambda
+                KunsatMethod  = SubregionSoilsData(indxSoil,indxRegion)%KunsatMethod
+                
+                !Moisture related values
+                GM            = GenericMoisture(indxSoil,indxRegion) * RootDepth * DeltaT
+                PrecipD       = Precip(indxSoil,indxRegion) * DeltaT
+                SoilM_P       = pAgData%SoilM_Precip_P(indxSoil,indxRegion) + pAgData%SoilM_AW_P(indxSoil,indxRegion) + pAgData%SoilM_Oth_P(indxSoil,indxRegion)
             
-                    !Total inflow to the root zone
-                    Inflow = GM + pAg%IrigInfilt
-                    
-                    !Simulate
-                    CALL NonPondedLUMoistureRouter(PrecipD                                 ,  &
-                                                   pAg%SMax                                ,  &
-                                                   SoilM_P                                 ,  &
-                                                   ETc                                     ,  & 
-                                                   HydCond                                 ,  & 
-                                                   TotalPorosity                           ,  & 
-                                                   FieldCapacity                           ,  & 
-                                                   WiltingPoint                            ,  &
-                                                   Lambda                                  ,  & 
-                                                   Inflow                                  ,  &
-                                                   SolverData%Tolerance*TotalPorosity      ,  &
-                                                   KunsatMethod                            ,  &
-                                                   SolverData%IterMax                      ,  &
-                                                   SoilM                                   ,  & 
-                                                   pAg%Runoff                              ,  & 
-                                                   pAg%PrecipInfilt                        ,  & 
-                                                   pAg%ETa                                 ,  & 
-                                                   pAg%Perc                                ,  & 
-                                                   Excess                                  ,  &
-                                                   AchievedConv                            ) 
-                    
-                    !Generate error if convergence is not achieved
-                    IF (AchievedConv .NE. 0.0) THEN
-                        MessageArray(1) = 'Convergence error in soil moisture routing for agricultural lands!'
-                        MessageArray(2) =                   'Soil type            = '//TRIM(IntToText(indxSoil))
-                        MessageArray(3) =                   'Subregion            = '//TRIM(IntToText(iSubregionIDs(indxRegion)))
-                        WRITE (MessageArray(4),'(A,F11.8)') 'Desired convergence  = ',SolverData%Tolerance*TotalPorosity
-                        WRITE (MessageArray(5),'(A,F11.8)') 'Achieved convergence = ',ABS(AchievedConv)
-                        CALL SetLastMessage(MessageArray(1:5),f_iFatal,ThisProcedure)
-                        iStat = -1
-                        RETURN
-                    END IF
+                !Total inflow to the root zone
+                Inflow = GM + pAgData%IrigInfilt(indxSoil,indxRegion)
+                
+                !Simulate
+                CALL NonPondedLUMoistureRouter(PrecipD                                    ,  &
+                                               pAgData%SMax(indxSoil,indxRegion)          ,  &
+                                               SoilM_P                                    ,  &
+                                               ETc                                        ,  & 
+                                               HydCond                                    ,  & 
+                                               TotalPorosity                              ,  & 
+                                               FieldCapacity                              ,  & 
+                                               WiltingPoint                               ,  &
+                                               Lambda                                     ,  & 
+                                               Inflow                                     ,  &
+                                               SolverData%Tolerance*TotalPorosity         ,  &
+                                               KunsatMethod                               ,  &
+                                               SolverData%IterMax                         ,  &
+                                               SoilM                                      ,  & 
+                                               pAgData%Runoff(indxSoil,indxRegion)        ,  & 
+                                               pAgData%PrecipInfilt(indxSoil,indxRegion)  ,  & 
+                                               pAgData%ETa(indxSoil,indxRegion)           ,  & 
+                                               pAgData%Perc(indxSoil,indxRegion)          ,  & 
+                                               Excess                                     ,  &
+                                               AchievedConv                               ) 
+                
+                !Generate error if convergence is not achieved
+                IF (AchievedConv .NE. 0.0) THEN
+                    MessageArray(1) = 'Convergence error in soil moisture routing for agricultural lands!'
+                    MessageArray(2) =                   'Soil type            = '//TRIM(IntToText(indxSoil))
+                    MessageArray(3) =                   'Subregion            = '//TRIM(IntToText(iSubregionIDs(indxRegion)))
+                    WRITE (MessageArray(4),'(A,F11.8)') 'Desired convergence  = ',SolverData%Tolerance*TotalPorosity
+                    WRITE (MessageArray(5),'(A,F11.8)') 'Achieved convergence = ',ABS(AchievedConv)
+                    CALL SetLastMessage(MessageArray(1:5),f_iFatal,ThisProcedure)
+                    iStat = -1
+                    RETURN
+                END IF
  
-                    !Reduce inflows based on correction for total porosity
-                    IF (Excess .NE. 0.0) THEN
-                        ratio = [pAg%PrecipInfilt , pAg%IrigInfilt , GM]
-                        CALL NormalizeArray(ratio)
-                        pAg%Runoff       = pAg%Runoff     + Excess * ratio(1) 
-                        pAg%ReturnFlow   = pAg%ReturnFlow + Excess * ratio(2)
-                        pAg%GMExcess     = Excess * ratio(3)
-                        pAg%PrecipInfilt = PrecipD - pAg%Runoff
-                        pAg%IrigInfilt   = Supply  - pAg%ReturnFlow
-                    END IF
+                !Reduce inflows based on correction for total porosity
+                IF (Excess .NE. 0.0) THEN
+                    ratio = [pAgData%PrecipInfilt(indxSoil,indxRegion) , pAgData%IrigInfilt(indxSoil,indxRegion) , GM]
+                    CALL NormalizeArray(ratio)
+                    pAgData%Runoff(indxSoil,indxRegion)       = pAgData%Runoff(indxSoil,indxRegion)     + Excess * ratio(1) 
+                    pAgData%ReturnFlow(indxSoil,indxRegion)   = pAgData%ReturnFlow(indxSoil,indxRegion) + Excess * ratio(2)
+                    pAgData%GMExcess(indxSoil,indxRegion)     = Excess * ratio(3)
+                    pAgData%PrecipInfilt(indxSoil,indxRegion) = PrecipD - pAgData%Runoff(indxSoil,indxRegion)
+                    pAgData%IrigInfilt(indxSoil,indxRegion)   = Supply  - pAgData%ReturnFlow(indxSoil,indxRegion)
+                END IF
 
-                    !Compute re-use based on return flow
-                    IF (fRF .GT. 0.0) pAg%Reuse = pAg%ReturnFlow * fRU / fRF
+                !Compute re-use based on return flow
+                IF (fRF .GT. 0.0) pAgData%Reuse(indxSoil,indxRegion) = pAgData%ReturnFlow(indxSoil,indxRegion) * fRU / fRF
           
-                    !Compute moisture from precip and irrigation
-                    SoilM_P_Array = [pAg%SoilM_Precip_P , pAg%SoilM_AW_P , pAg%SoilM_Oth_P  ]
-                    Infilt        = [pAg%PrecipInfilt   , pAg%IrigInfilt , GM - pAg%GMExcess]
-                    CALL TrackMoistureDueToSource(SoilM_P_Array   ,  &
-                                                  Infilt          ,  &
-                                                  pAg%Perc        ,  &
-                                                  pAg%ETa         ,  &
-                                                  0d0             ,  &
-                                                  SoilM_Array     ,  &
-                                                  ETPartition     )
-                    pAg%SoilM_Precip = SoilM_Array(1)
-                    pAg%SoilM_AW     = SoilM_Array(2)
-                    pAg%SoilM_Oth    = SoilM_Array(3)
-                    pAg%ETP          = ETPartition(1)                
-                    pAg%ETAW         = ETPartition(2)
-                    pAg%ETOth        = ETPartition(3)                    
+                !Compute moisture from precip and irrigation
+                SoilM_P_Array = [pAgData%SoilM_Precip_P(indxSoil,indxRegion) , pAgData%SoilM_AW_P(indxSoil,indxRegion) , pAgData%SoilM_Oth_P(indxSoil,indxRegion)  ]
+                Infilt        = [pAgData%PrecipInfilt(indxSoil,indxRegion)   , pAgData%IrigInfilt(indxSoil,indxRegion) , GM - pAgData%GMExcess(indxSoil,indxRegion)]
+                CALL TrackMoistureDueToSource(SoilM_P_Array                     ,  &
+                                              Infilt                            ,  &
+                                              pAgData%Perc(indxSoil,indxRegion) ,  &
+                                              pAgData%ETa(indxSoil,indxRegion)  ,  &
+                                              0d0                               ,  &
+                                              SoilM_Array                       ,  &
+                                              ETPartition                       )
+                pAgData%SoilM_Precip(indxSoil,indxRegion) = SoilM_Array(1)
+                pAgData%SoilM_AW(indxSoil,indxRegion)     = SoilM_Array(2)
+                pAgData%SoilM_Oth(indxSoil,indxRegion)    = SoilM_Array(3)
+                pAgData%ETP(indxSoil,indxRegion)          = ETPartition(1)                
+                pAgData%ETAW(indxSoil,indxRegion)         = ETPartition(2)
+                pAgData%ETOth(indxSoil,indxRegion)        = ETPartition(3)                    
 
-                    !Make sure soil moisture is not less than zero
-                    lNegativeMoist = .FALSE.
-                    IF (pAg%SoilM_Precip .LT. 0.0) lNegativeMoist = .TRUE.
-                    IF (pAg%SoilM_AW     .LT. 0.0) lNegativeMoist = .TRUE.
-                    IF (pAg%SoilM_Oth    .LT. 0.0) lNegativeMoist = .TRUE.
-                    IF (lNegativeMoist) THEN
-                        MessageArray(1) = 'Soil moisture content becomes negative at subregion '//TRIM(IntToText(iSubregionIDs(indxRegion)))//'.'
-                        MessageArray(2) = 'This may be due to a too high convergence criteria set for the iterative solution.'
-                        MessageArray(3) = 'Try using a smaller value for RZCONV and a higher value for RZITERMX parameters'
-                        MessageArray(4) = 'in the Root Zone Main Input File.'
-                        CALL SetLastMessage(MessageArray(1:4),f_iFatal,ThisProcedure)
-                        iStat = -1
-                        RETURN
-                    END IF
- 
-                END ASSOCIATE
+                !Make sure soil moisture is not less than zero
+                lNegativeMoist = .FALSE.
+                IF (pAgData%SoilM_Precip(indxSoil,indxRegion) .LT. 0.0) lNegativeMoist = .TRUE.
+                IF (pAgData%SoilM_AW(indxSoil,indxRegion)     .LT. 0.0) lNegativeMoist = .TRUE.
+                IF (pAgData%SoilM_Oth(indxSoil,indxRegion)    .LT. 0.0) lNegativeMoist = .TRUE.
+                IF (lNegativeMoist) THEN
+                    MessageArray(1) = 'Soil moisture content becomes negative at subregion '//TRIM(IntToText(iSubregionIDs(indxRegion)))//'.'
+                    MessageArray(2) = 'This may be due to a too high convergence criteria set for the iterative solution.'
+                    MessageArray(3) = 'Try using a smaller value for RZCONV and a higher value for RZITERMX parameters'
+                    MessageArray(4) = 'in the Root Zone Main Input File.'
+                    CALL SetLastMessage(MessageArray(1:4),f_iFatal,ThisProcedure)
+                    iStat = -1
+                    RETURN
+                END IF 
             END DO
         END DO
     
@@ -1148,18 +1182,21 @@ CONTAINS
     
     !Local variables
     CHARACTER(LEN=ModNameLen+18) :: ThisProcedure = ModName // 'ComputeWaterDemand'
-    INTEGER                      :: indxRegion,indxSoil,KunsatMethod
+    INTEGER                      :: indxRegion,indxSoil,KunsatMethod,iNSoils,iNSubregions
     REAL(8)                      :: RootDepth,ETc,fRF,fRU,WiltingPoint,FieldCapacity,TotalPorosity,Lambda, &
                                     HydCond,GM,PrecipD,SoilM_P,TAW,MinSoilM,TargetSoilM,SoilM,Runoff,      &
                                     PrecipInfilt,ETa,Perc,Excess,AchievedConv,TargetSoilM_Soil
     
     !Initialize
-    iStat = 0
+    iStat        = 0
+    iNSoils      = SIZE(AgLand%AgData%SMax , DIM=1)
+    iNSubregions = SIZE(AgLand%AgData%SMax , DIM=2)
+    
         
     ASSOCIATE (pAgData  => AgLand%AgData  , &
                pAvgCrop => AgLand%AvgCrop )
         
-        DO indxRegion=1,SIZE(pAgData , DIM=2)
+        DO indxRegion=1,iNSubregions
             
             !Cycle if demand is specified
             IF (AgLand%lWaterDemand_Defined) THEN
@@ -1168,8 +1205,8 @@ CONTAINS
             
             !Cycle if it is not an irrigation period
             IF (pAvgCrop(indxRegion)%IrigPeriod .EQ. f_iNoIrigPeriod) THEN
-                pAgData(:,indxRegion)%DemandRaw = 0.0
-                pAgData(:,indxRegion)%Demand    = 0.0
+                pAgData%DemandRaw(:,indxRegion) = 0.0
+                pAgData%Demand(:,indxRegion)    = 0.0
                 CYCLE
             END IF
             
@@ -1183,115 +1220,112 @@ CONTAINS
             fRF = ReturnFrac(AgLand%iColReturnFrac(indxRegion))
             fRU = ReuseFrac(AgLand%iColReuseFrac(indxRegion))
             
-            DO indxSoil=1,SIZE(pAgData , DIM=1)
-                ASSOCIATE (pAg => pAgData(indxSoil,indxRegion))
-                    
-                    !Cycle if area is zero
-                    IF (pAg%Area .EQ. 0.0) CYCLE
-                    
-                    !Soil parameters
-                    WiltingPoint  = SoilsData(indxSoil,indxRegion)%WiltingPoint  * RootDepth
-                    FieldCapacity = SoilsData(indxSoil,indxRegion)%FieldCapacity * RootDepth
-                    TAW           = FieldCapacity - WiltingPoint
-                    TotalPorosity = SoilsData(indxSoil,indxRegion)%TotalPorosity * RootDepth
-                    HydCond       = SoilsData(indxSoil,indxRegion)%HydCond
-                    Lambda        = SoilsData(indxSoil,indxRegion)%Lambda
-                    KunsatMethod  = SoilsData(indxSoil,indxRegion)%KunsatMethod
-                    
-                    !Moisture related values
-                    GM            = GenericMoisture(indxSoil,indxRegion) * RootDepth * DeltaT
-                    PrecipD       = Precip(indxSoil,indxRegion) * DeltaT
-                    SoilM_P       = pAg%SoilM_Precip_P + pAg%SoilM_AW_P + pAg%SoilM_Oth_P
-                    
-                    !Check if there is a need to compute water demand
-                    SELECT CASE (AgLand%iDemandFromMoist)
-                        CASE (f_iDemandFromMoistAtBegin)
-                            IF (SoilM_P  .GE.  MinSoilM*TAW + WiltingPoint) THEN
-                                pAg%DemandRaw = 0.0
-                                pAg%Demand    = 0.0
-                                CYCLE
-                            END IF
+            DO indxSoil=1,iNSoils
+                !Cycle if area is zero
+                IF (pAgData%Area(indxSoil,indxRegion) .EQ. 0.0) CYCLE
+                
+                !Soil parameters
+                WiltingPoint  = SoilsData(indxSoil,indxRegion)%WiltingPoint  * RootDepth
+                FieldCapacity = SoilsData(indxSoil,indxRegion)%FieldCapacity * RootDepth
+                TAW           = FieldCapacity - WiltingPoint
+                TotalPorosity = SoilsData(indxSoil,indxRegion)%TotalPorosity * RootDepth
+                HydCond       = SoilsData(indxSoil,indxRegion)%HydCond
+                Lambda        = SoilsData(indxSoil,indxRegion)%Lambda
+                KunsatMethod  = SoilsData(indxSoil,indxRegion)%KunsatMethod
+                
+                !Moisture related values
+                GM            = GenericMoisture(indxSoil,indxRegion) * RootDepth * DeltaT
+                PrecipD       = Precip(indxSoil,indxRegion) * DeltaT
+                SoilM_P       = pAgData%SoilM_Precip_P(indxSoil,indxRegion) + pAgData%SoilM_AW_P(indxSoil,indxRegion) + pAgData%SoilM_Oth_P(indxSoil,indxRegion)
+                
+                !Check if there is a need to compute water demand
+                SELECT CASE (AgLand%iDemandFromMoist)
+                    CASE (f_iDemandFromMoistAtBegin)
+                        IF (SoilM_P  .GE.  MinSoilM*TAW + WiltingPoint) THEN
+                            pAgData%DemandRaw(indxSoil,indxRegion) = 0.0
+                            pAgData%Demand(indxSoil,indxRegion)    = 0.0
+                            CYCLE
+                        END IF
 
-                        CASE (f_iDemandFromMoistAtEnd)
-                            CALL NonPondedLUMoistureRouter(PrecipD                                ,  &
-                                                           pAg%SMax                               ,  &
-                                                           SoilM_P                                ,  &
-                                                           ETc                                    ,  & 
-                                                           HydCond                                ,  & 
-                                                           TotalPorosity                          ,  & 
-                                                           FieldCapacity                          ,  &
-                                                           WiltingPoint                           ,  & 
-                                                           Lambda                                 ,  & 
-                                                           GM                                     ,  &
-                                                           SolverData%Tolerance * TotalPorosity   ,  &
-                                                           KunsatMethod                           ,  &
-                                                           SolverData%IterMax                     ,  &
-                                                           SoilM                                  ,  & 
-                                                           Runoff                                 ,  & 
-                                                           PrecipInfilt                           ,  & 
-                                                           ETa                                    ,  & 
-                                                           Perc                                   ,  & 
-                                                           Excess                                 ,  &
-                                                           AchievedConv                           )
-                            !Generate error if convergence is not achieved
-                            IF (AchievedConv .NE. 0.0) THEN
-                                MessageArray(1) = 'Convergence error in water demand calculations for agricultural crops!'
-                                MessageArray(2) =                   'Soil type            = '//TRIM(IntToText(indxSoil))
-                                MessageArray(3) =                   'Subregion            = '//TRIM(IntToText(iSubregionIDs(indxRegion)))
-                                WRITE (MessageArray(4),'(A,F11.8)') 'Desired convergence  = ',SolverData%Tolerance*TotalPorosity
-                                WRITE (MessageArray(5),'(A,F11.8)') 'Achieved convergence = ',ABS(AchievedConv)
-                                CALL SetLastMessage(MessageArray(1:5),f_iFatal,ThisProcedure)
-                                iStat = -1
-                                RETURN
-                            END IF
-                            !Check if demand calculation is necessary
-                            IF (SoilM  .GE.  MinSoilM*TAW + WiltingPoint) THEN
-                                pAg%DemandRaw = 0.0
-                                pAg%Demand    = 0.0
-                                CYCLE
-                            END IF
-                    END SELECT
-                        
-                    !Compute demand
-                    SoilM            = pAg%SoilM_Precip_P + pAg%SoilM_AW_P + pAg%SoilM_Oth_P
-                    TargetSoilM_Soil = MIN(FieldCapacity * TargetSoilM , TotalPorosity)
-                    CALL NonPondedCropDemand(PrecipD                               ,  &
-                                             pAg%SMax                              ,  &
-                                             GM                                    ,  &
-                                             fRF                                   ,  &
-                                             fRU                                   ,  &
-                                             0d0                                   ,  &
-                                             ETc                                   ,  &
-                                             HydCond                               ,  &
-                                             TotalPorosity                         ,  &
-                                             FieldCapacity                         ,  &
-                                             WiltingPoint                          ,  &      
-                                             TargetSoilM_Soil                      ,  & 
-                                             Lambda                                ,  & 
-                                             SoilM                                 ,  &
-                                             SolverData%Tolerance * TotalPorosity  ,  &
-                                             KunsatMethod                          ,  &
-                                             SolverData%IterMax                    ,  &
-                                             pAg%DemandRaw                         ,  &
-                                             pAg%Demand                            ,  &
-                                             AchievedConv                          )
-                        
-                    !Generate error if convergence is not achieved
-                    IF (AchievedConv .NE. 0.0) THEN
-                        MessageArray(1) = 'Convergence error in calculating agricultural water demand '
-                        MessageArray(2) = 'for soil type '//TRIM(IntToText(indxSoil))//' in subregion '//TRIM(IntToText(iSubregionIDs(indxRegion)))//'!'
-                        WRITE (MessageArray(3),'(A,F11.8)') 'Desired convergence  = ',SolverData%Tolerance*TotalPorosity
-                        WRITE (MessageArray(4),'(A,F11.8)') 'Achieved convergence = ',ABS(AchievedConv)
-                        CALL SetLastMessage(MessageArray(1:4),f_iFatal,ThisProcedure)
-                        iStat = -1
-                        RETURN
-                    END IF
+                    CASE (f_iDemandFromMoistAtEnd)
+                        CALL NonPondedLUMoistureRouter(PrecipD                                ,  &
+                                                       pAgData%SMax(indxSoil,indxRegion)      ,  &
+                                                       SoilM_P                                ,  &
+                                                       ETc                                    ,  & 
+                                                       HydCond                                ,  & 
+                                                       TotalPorosity                          ,  & 
+                                                       FieldCapacity                          ,  &
+                                                       WiltingPoint                           ,  & 
+                                                       Lambda                                 ,  & 
+                                                       GM                                     ,  &
+                                                       SolverData%Tolerance * TotalPorosity   ,  &
+                                                       KunsatMethod                           ,  &
+                                                       SolverData%IterMax                     ,  &
+                                                       SoilM                                  ,  & 
+                                                       Runoff                                 ,  & 
+                                                       PrecipInfilt                           ,  & 
+                                                       ETa                                    ,  & 
+                                                       Perc                                   ,  & 
+                                                       Excess                                 ,  &
+                                                       AchievedConv                           )
+                        !Generate error if convergence is not achieved
+                        IF (AchievedConv .NE. 0.0) THEN
+                            MessageArray(1) = 'Convergence error in water demand calculations for agricultural crops!'
+                            MessageArray(2) =                   'Soil type            = '//TRIM(IntToText(indxSoil))
+                            MessageArray(3) =                   'Subregion            = '//TRIM(IntToText(iSubregionIDs(indxRegion)))
+                            WRITE (MessageArray(4),'(A,F11.8)') 'Desired convergence  = ',SolverData%Tolerance*TotalPorosity
+                            WRITE (MessageArray(5),'(A,F11.8)') 'Achieved convergence = ',ABS(AchievedConv)
+                            CALL SetLastMessage(MessageArray(1:5),f_iFatal,ThisProcedure)
+                            iStat = -1
+                            RETURN
+                        END IF
+                        !Check if demand calculation is necessary
+                        IF (SoilM  .GE.  MinSoilM*TAW + WiltingPoint) THEN
+                            pAgData%DemandRaw(indxSoil,indxRegion) = 0.0
+                            pAgData%Demand(indxSoil,indxRegion)    = 0.0
+                            CYCLE
+                        END IF
+                END SELECT
                     
-                    !Convert demand related values to volumetric rates and compute subregional values
-                    pAg%DemandRaw = pAg%DemandRaw * pAg%Area * DeltaT
-                    pAg%Demand    = pAg%Demand * pAg%Area * DeltaT
+                !Compute demand
+                SoilM            = pAgData%SoilM_Precip_P(indxSoil,indxRegion) + pAgData%SoilM_AW_P(indxSoil,indxRegion) + pAgData%SoilM_Oth_P(indxSoil,indxRegion)
+                TargetSoilM_Soil = MIN(FieldCapacity * TargetSoilM , TotalPorosity)
+                CALL NonPondedCropDemand(PrecipD                               ,  &
+                                         pAgData%SMax(indxSoil,indxRegion)     ,  &
+                                         GM                                    ,  &
+                                         fRF                                   ,  &
+                                         fRU                                   ,  &
+                                         0d0                                   ,  &
+                                         ETc                                   ,  &
+                                         HydCond                               ,  &
+                                         TotalPorosity                         ,  &
+                                         FieldCapacity                         ,  &
+                                         WiltingPoint                          ,  &      
+                                         TargetSoilM_Soil                      ,  & 
+                                         Lambda                                ,  & 
+                                         SoilM                                 ,  &
+                                         SolverData%Tolerance * TotalPorosity  ,  &
+                                         KunsatMethod                          ,  &
+                                         SolverData%IterMax                    ,  &
+                                         pAgData%DemandRaw(indxSoil,indxRegion),  &
+                                         pAgData%Demand(indxSoil,indxRegion)   ,  &
+                                         AchievedConv                          )
                     
-                END ASSOCIATE
+                !Generate error if convergence is not achieved
+                IF (AchievedConv .NE. 0.0) THEN
+                    MessageArray(1) = 'Convergence error in calculating agricultural water demand '
+                    MessageArray(2) = 'for soil type '//TRIM(IntToText(indxSoil))//' in subregion '//TRIM(IntToText(iSubregionIDs(indxRegion)))//'!'
+                    WRITE (MessageArray(3),'(A,F11.8)') 'Desired convergence  = ',SolverData%Tolerance*TotalPorosity
+                    WRITE (MessageArray(4),'(A,F11.8)') 'Achieved convergence = ',ABS(AchievedConv)
+                    CALL SetLastMessage(MessageArray(1:4),f_iFatal,ThisProcedure)
+                    iStat = -1
+                    RETURN
+                END IF
+                
+                !Convert demand related values to volumetric rates and compute subregional values
+                pAgData%DemandRaw(indxSoil,indxRegion) = pAgData%DemandRaw(indxSoil,indxRegion) * pAgData%Area(indxSoil,indxRegion) * DeltaT
+                pAgData%Demand(indxSoil,indxRegion)    = pAgData%Demand(indxSoil,indxRegion) * pAgData%Area(indxSoil,indxRegion) * DeltaT
+                    
             END DO            
         END DO
     
@@ -1321,7 +1355,7 @@ CONTAINS
     iStat = 0
     
     !Return if ag lands are not simulated
-    IF (SIZE(AgLand%AgData) .EQ. 0) RETURN
+    IF (.NOT.ALLOCATED(AgLand%AgData%SMax) .EQ. 0) RETURN
     
     !Initialize
     RootDepth = AgLand%AvgCrop%RootDepth
@@ -1330,17 +1364,17 @@ CONTAINS
     ASSOCIATE (pAgData => AgLand%AgData) 
         DO indxRegion=1,NRegions
             DO indxSoil=1,NSoils
-                IF ((pAgData(indxSoil,indxRegion)%SoilM_Precip + pAgData(indxSoil,indxRegion)%SoilM_AW + pAgData(indxSoil,indxRegion)%SoilM_Oth) .GT. TotalPorosity(indxSoil,indxRegion)) THEN
+                IF ((pAgData%SoilM_Precip(indxSoil,indxRegion) + pAgData%SoilM_AW(indxSoil,indxRegion) + pAgData%SoilM_Oth(indxSoil,indxRegion)) .GT. TotalPorosity(indxSoil,indxRegion)) THEN
                     CALL SetLastMessage('Initial moisture content for agricultural lands with soil type ' // TRIM(IntToText(indxSoil)) // ' at subregion ' // TRIM(IntToText(iSubregionIDs(indxRegion))) // ' is greater than total porosity!',f_iFatal,ThisProcedure)
                     iStat = -1
                     RETURN
                 END IF
-                pAgData(indxSoil,indxRegion)%SoilM_Precip   = pAgData(indxSoil,indxRegion)%SoilM_Precip * RootDepth(indxRegion)
-                pAgData(indxSoil,indxRegion)%SoilM_AW       = pAgData(indxSoil,indxRegion)%SoilM_AW * RootDepth(indxRegion)
-                pAgData(indxSoil,indxRegion)%SoilM_Oth      = pAgData(indxSoil,indxRegion)%SoilM_Oth * RootDepth(indxRegion)
-                pAgData(indxSoil,indxRegion)%SoilM_Precip_P = pAgData(indxSoil,indxRegion)%SoilM_Precip
-                pAgData(indxSoil,indxRegion)%SoilM_AW_P     = pAgData(indxSoil,indxRegion)%SoilM_AW
-                pAgData(indxSoil,indxRegion)%SoilM_Oth_P    = pAgData(indxSoil,indxRegion)%SoilM_Oth
+                pAgData%SoilM_Precip(indxSoil,indxRegion)   = pAgData%SoilM_Precip(indxSoil,indxRegion) * RootDepth(indxRegion)
+                pAgData%SoilM_AW(indxSoil,indxRegion)       = pAgData%SoilM_AW(indxSoil,indxRegion) * RootDepth(indxRegion)
+                pAgData%SoilM_Oth(indxSoil,indxRegion)      = pAgData%SoilM_Oth(indxSoil,indxRegion) * RootDepth(indxRegion)
+                pAgData%SoilM_Precip_P(indxSoil,indxRegion) = pAgData%SoilM_Precip(indxSoil,indxRegion)
+                pAgData%SoilM_AW_P(indxSoil,indxRegion)     = pAgData%SoilM_AW(indxSoil,indxRegion)
+                pAgData%SoilM_Oth_P(indxSoil,indxRegion)    = pAgData%SoilM_Oth(indxSoil,indxRegion)
             END DO
         END DO 
     END ASSOCIATE
@@ -1532,19 +1566,19 @@ CONTAINS
     CALL AgLand%ElemAgAreaDataFile%ReadTSData('Elemental agricultural areas',TimeStep,rRegionAreas,iSubregionIDs,iStat)   ;  IF (iStat .NE. 0) RETURN
 
     CALL AgLand%IrigPeriodFile%File%RewindFile_To_BeginningOfTSData(iStat)                                      ;  IF (iStat .NE. 0) RETURN
-    CALL TSDataFile_ReadData(TimeStep,'Crop irrigation period data',AgLand%IrigPeriodFile,iFileReadCode,iStat)  ;  IF (iStat .NE. 0) RETURN
+    CALL AgLand%IrigPeriodFile%ReadTSData(TimeStep,'Crop irrigation period data',iFileReadCode,iStat)  ;  IF (iStat .NE. 0) RETURN
 
     CALL AgLand%MinSoilMFile%File%RewindFile_To_BeginningOfTSData(iStat)                                                 ;  IF (iStat .NE. 0) RETURN
-    CALL TSDataFile_ReadData(TimeStep,'Minimum soil moisture requirement data',AgLand%MinSoilMFile,iFileReadCode,iStat)  ;  IF (iStat .NE. 0) RETURN
+    CALL AgLand%MinSoilMFile%ReadTSData(TimeStep,'Minimum soil moisture requirement data',iFileReadCode,iStat)  ;  IF (iStat .NE. 0) RETURN
 
     IF (AgLand%TargetSoilMFile%File%iGetFileType() .NE. f_iUNKNOWN) THEN
         CALL AgLand%TargetSoilMFile%File%RewindFile_To_BeginningOfTSData(iStat)                                               ;  IF (iStat .NE. 0) RETURN
-        CALL TSDataFile_ReadData(TimeStep,'Irrigation target soil moisture data',AgLand%TargetSoilMFile,iFileReadCode,iStat)  ;  IF (iStat .NE. 0) RETURN
+        CALL AgLand%TargetSoilMFile%ReadTSData(TimeStep,'Irrigation target soil moisture data',iFileReadCode,iStat)  ;  IF (iStat .NE. 0) RETURN
     END IF
     
     IF (AgLand%lWaterDemand_Defined) THEN
         CALL AgLand%WaterDemandFile%File%RewindFile_To_BeginningOfTSData(iStat)                                                     ;  IF (iStat .NE. 0) RETURN
-        CALL TSDataFile_ReadData(TimeStep,'Agricultural water supply requirement data',AgLand%WaterDemandFile,iFileReadCode,iStat)  ;  IF (iStat .NE. 0) RETURN
+        CALL AgLand%WaterDemandFile%ReadTSData(TimeStep,'Agricultural water supply requirement data',iFileReadCode,iStat)  ;  IF (iStat .NE. 0) RETURN
     END IF
     
     CALL AgLand%SubregionCropAreaDataFile%File%RewindFile_To_BeginningOfTSData(iStat)                                                  ;  IF (iStat .NE. 0) RETURN

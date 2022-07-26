@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -725,7 +725,8 @@ CONTAINS
                     rValues(indxCol) = rTempValues(indxCol,iTimeCounter) * FactVolume
                 ELSE
                     !Special accumulation method 
-                    rValues(indxCol) = rValues(indxCol) + (rAgSupReq_Modified - rTempValues(iAgPumpCol,iTimeCounter) - rTempValues(iAgDivCol,iTimeCounter) - rTempValues(iAgOtherInflowCol,iTimeCounter)) * FactVolume
+                    rValues(indxCol) = rValues(indxCol) + (rAgSupReq_Modified - rTempValues(iAgPumpCol,iTimeCounter) - rTempValues(iAgDivCol,iTimeCounter)) * FactVolume
+                    IF (iAgOtherInflowCol .GT. 0) rValues(indxCol) = rValues(indxCol) - rTempValues(iAgOtherInflowCol,iTimeCounter) * FactVolume
                 END IF
             CASE (f_iVLB)
                 IF (lFirstAfterPrint) rValues(indxCol) = rTempValues(indxCol,iTimeCounter) * FactVolume
@@ -760,8 +761,14 @@ CONTAINS
             CurrentTime        = CurrentTime + DeltaT
         END IF
         
-        !If Land & Water Use Budget, store Agrilcultural Shortage from previous timestep
-        IF (lLWUBudget) rAgShortPrevious = rTempValues(iAgShortCol,iTimeCounter)
+        !If Land & Water Use Budget, zero out cumulative Agricultural Shortage if necessary
+        IF (lLWUBudget) THEN
+            IF (lFirstAfterPrint) THEN
+                rAgShortPrevious = 0.0
+            ELSE
+                rAgShortPrevious = rTempValues(iAgShortCol,iTimeCounter)
+            END IF
+        END IF
         
         !Increment time counter for data read from file and stored in memory
         IF (iTimeCounter .EQ. nReadTimes) THEN
@@ -1103,8 +1110,13 @@ CONTAINS
         indxPos = indxPos + iTotalStorUnits 
         
         !If Land & Water Use Budget, store Agrilcultural Shortage from previous timestep
-        IF (lLWUBudget) rAgShortPrevious = rTempValues(iAgShortCol)
-
+        IF (lLWUBudget) THEN
+            IF (lFirstAfterPrint) THEN
+                rAgShortPrevious = 0.0
+            ELSE
+                rAgShortPrevious = rTempValues(iAgShortCol)
+            END IF
+        END IF
       END DO
       
       !For ASCII output print an empty line

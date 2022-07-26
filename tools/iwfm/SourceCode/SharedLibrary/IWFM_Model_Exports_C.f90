@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,11 +21,10 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE IWFM_Model_Exports
+  !$ USE OMP_LIB
   USE,INTRINSIC :: ISO_C_BINDING  , ONLY: C_INT                                    , &
                                           C_DOUBLE                                 , &
                                           C_CHAR
-  USE MessageLogger               , ONLY: SetLastMessage                           , &
-                                          f_iFatal
   USE GeneralUtilities            , ONLY: FirstLocation                            , &
                                           GetFileDirectory                         , &
                                           String_Copy_C_F                          , &
@@ -38,8 +37,8 @@ MODULE IWFM_Model_Exports
                                           IsTimeIntervalValid                      , &
                                           f_cRecognizedIntervals                   , &
                                           f_iTimeStampLength                          
-  USE Package_Misc                , ONLY: f_iAg                                    , &
-                                          f_iUrb                                   , &
+  USE Package_Misc                , ONLY: f_iLandUse_Ag                            , &
+                                          f_iLandUse_Urb                           , &
                                           f_iLocationType_StrmNode                 , &
                                           f_iLocationType_Element                  , &
                                           f_iLocationType_Lake                     , &
@@ -102,13 +101,17 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_New(LenPPFileName,cPPFileName,LenSimFileName,cSimFileName,IsRoutedStreams,IsForInquiry,iStat) BIND(C,NAME='IW_Model_New')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_New
-    INTEGER(C_INT),INTENT(IN)    :: LenPPFileName,LenSimFileName,IsRoutedStreams,IsForInquiry
-    CHARACTER(C_CHAR),INTENT(IN) :: cPPFileName(LenPPFileName),cSimFileName(LenSimFileName)
-    INTEGER(C_INT),INTENT(OUT)   :: iStat
+    INTEGER(C_INT),INTENT(IN)         :: LenPPFileName,LenSimFileName,IsRoutedStreams,IsForInquiry
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cPPFileName(LenPPFileName),cSimFileName(LenSimFileName)
+    INTEGER(C_INT),INTENT(OUT)        :: iStat
     
     !Local variables
     CHARACTER :: cPPFileName_F*LenPPFileName,cSimFileName_F*LenSimFileName
     LOGICAL   :: lRoutedStreams,lForInquiry
+    
+    !Set environmentt for parallel processing
+    !$ CALL KMP_SET_BLOCKTIME(0)
+    !$ CALL OMP_SET_NUM_THREADS(OMP_GET_NUM_PROCS()-1)
     
     !Initialize
     iStat = 0
@@ -206,6 +209,60 @@ CONTAINS
 ! ******************************************************************
 
   ! -------------------------------------------------------------
+  ! --- GET NUMBER OF WELLS 
+  ! -------------------------------------------------------------
+  SUBROUTINE IW_Model_GetNWells(iNWells,iStat) BIND(C,NAME='IW_Model_GetNWells')
+    !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetNWells
+    INTEGER(C_INT),INTENT(OUT) :: iNWells,iStat
+    
+    iNWells = Model%GetNWells()
+    iStat   = 0
+    
+  END SUBROUTINE IW_Model_GetNWells
+  
+   
+  ! -------------------------------------------------------------
+  ! --- GET WELL IDs
+  ! -------------------------------------------------------------
+  SUBROUTINE IW_Model_GetWellIDs(iNWells,IDs,iStat) BIND(C,NAME='IW_Model_GetWellIDs')
+    !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetWellIDs
+    INTEGER(C_INT),INTENT(IN)  :: iNWells
+    INTEGER(C_INT),INTENT(OUT) :: IDs(iNWells),iStat
+    
+    CALL Model%GetWellIDs(IDs)
+    iStat = 0
+    
+  END SUBROUTINE IW_Model_GetWellIDs
+  
+   
+  ! -------------------------------------------------------------
+  ! --- GET NUMBER OF ELEMENT PUMPING 
+  ! -------------------------------------------------------------
+  SUBROUTINE IW_Model_GetNElemPumps(iNElemPumps,iStat) BIND(C,NAME='IW_Model_GetNElemPumps')
+    !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetNElemPumps
+    INTEGER(C_INT),INTENT(OUT) :: iNElemPumps,iStat
+    
+    iNElemPumps = Model%GetNElemPumps()
+    iStat       = 0
+    
+  END SUBROUTINE IW_Model_GetNElemPumps
+  
+   
+  ! -------------------------------------------------------------
+  ! --- GET ELEMENT PUMPING IDs
+  ! -------------------------------------------------------------
+  SUBROUTINE IW_Model_GetElemPumpIDs(iNElemPumps,IDs,iStat) BIND(C,NAME='IW_Model_GetElemPumpIDs')
+    !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetElemPumpIDs
+    INTEGER(C_INT),INTENT(IN)  :: iNElemPumps
+    INTEGER(C_INT),INTENT(OUT) :: IDs(iNElemPumps),iStat
+    
+    CALL Model%GetElemPumpIDs(IDs)
+    iStat = 0
+    
+  END SUBROUTINE IW_Model_GetElemPumpIDs
+  
+   
+  ! -------------------------------------------------------------
   ! --- GET FUTURE WATER DEMANDS FOR A DIVERSION AT A SPECIFIED DATE
   ! --- NOTE: This must be called after IW_ReadTSData or 
   ! ---       IW_ReadTSData_Overwrite procedures
@@ -215,11 +272,11 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetFutureWaterDemand_ForDiversion(iDiversion,iLenDate,cDemandDate,rFactor,rDemand,iStat) BIND(C,NAME='IW_Model_GetFutureWaterDemand_ForDiversion')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetFutureWaterDemand_ForDiversion
-    INTEGER(C_INT),INTENT(IN)    :: iDiversion,iLenDate
-    CHARACTER(C_CHAR),INTENT(IN) :: cDemandDate(iLenDate)
-    REAL(C_DOUBLE),INTENT(IN)    :: rFactor
-    REAL(C_DOUBLE),INTENT(OUT)   :: rDemand
-    INTEGER(C_INT),INTENT(OUT)   :: iStat
+    INTEGER(C_INT),INTENT(IN)         :: iDiversion,iLenDate
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cDemandDate(iLenDate)
+    REAL(C_DOUBLE),INTENT(IN)         :: rFactor
+    REAL(C_DOUBLE),INTENT(OUT)        :: rDemand
+    INTEGER(C_INT),INTENT(OUT)        :: iStat
     
     !Local variables
     CHARACTER :: cDemandDate_F*iLenDate
@@ -239,9 +296,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetCurrentDateAndTime(iLenDateTime,cCurrentDateAndTime,iStat) BIND(C,NAME='IW_Model_GetCurrentDateAndTime')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetCurrentDateAndTime
-    INTEGER(C_INT),INTENT(IN)     :: iLenDateTime
-    CHARACTER(C_CHAR),INTENT(OUT) :: cCurrentDateAndTime(iLenDateTime)
-    INTEGER(C_INT),INTENT(OUT)    :: iStat
+    INTEGER(C_INT),INTENT(IN)          :: iLenDateTime
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cCurrentDateAndTime(iLenDateTime)
+    INTEGER(C_INT),INTENT(OUT)         :: iStat
     
     !Local variables
     CHARACTER :: cCurrentDateAndTime_F*f_iTimeStampLength
@@ -282,9 +339,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetTimeSpecs(cDataDatesAndTimes,iLenDates,cInterval,iLenInterval,NData,iLocArray,iStat) BIND(C,NAME='IW_Model_GetTimeSpecs')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetTimeSpecs
-    INTEGER(C_INT),INTENT(IN)     :: iLenDates,iLenInterval,NData
-    CHARACTER(C_CHAR),INTENT(OUT) :: cDataDatesAndTimes(iLenDates),cInterval(iLenInterval)
-    INTEGER(C_INT),INTENT(OUT)    :: iLocArray(NData),iStat
+    INTEGER(C_INT),INTENT(IN)          :: iLenDates,iLenInterval,NData
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cDataDatesAndTimes(iLenDates),cInterval(iLenInterval)
+    INTEGER(C_INT),INTENT(OUT)         :: iLocArray(NData),iStat
     
     !Local variables
     TYPE(TimeStepType) :: TimeStep
@@ -325,10 +382,10 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetOutputIntervals(cOutputIntervals,iLenOutputIntervals,iLocArray,iDim_LocArray_In,iDim_LocArray_Out,iStat) BIND(C,NAME='IW_Model_GetOutputIntervals')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetOutputIntervals
-    INTEGER(C_INT),INTENT(IN)     :: iLenOutputIntervals,iDim_LocArray_In
-    CHARACTER(C_CHAR),INTENT(OUT) :: cOutputIntervals(iLenOutputIntervals)
-    INTEGER(C_INT),INTENT(OUT)    :: iDim_LocArray_Out
-    INTEGER(C_INT),INTENT(OUT)    :: iLocArray(iDim_LocArray_In),iStat
+    INTEGER(C_INT),INTENT(IN)          :: iLenOutputIntervals,iDim_LocArray_In
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cOutputIntervals(iLenOutputIntervals)
+    INTEGER(C_INT),INTENT(OUT)         :: iDim_LocArray_Out
+    INTEGER(C_INT),INTENT(OUT)         :: iLocArray(iDim_LocArray_In),iStat
     
     !Local variables
     INTEGER                      :: indx,iDim,iCount,nTime
@@ -385,9 +442,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetBudget_List(iNBudgets,iLocArray,iLenBudgetList,cBudgetList,iBudgetTypeList,iBudgetLocationTypeList,iStat) BIND(C,NAME='IW_Model_GetBudget_List')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetBudget_List
-    INTEGER(C_INT),INTENT(IN)     :: iNBudgets,iLenBudgetList
-    INTEGER(C_INT),INTENT(OUT)    :: iLocArray(iNBudgets),iBudgetTypeList(iNBudgets),iBudgetLocationTypeList(iNBudgets),iStat
-    CHARACTER(C_CHAR),INTENT(OUT) :: cBudgetList(iLenBudgetList)
+    INTEGER(C_INT),INTENT(IN)          :: iNBudgets,iLenBudgetList
+    INTEGER(C_INT),INTENT(OUT)         :: iLocArray(iNBudgets),iBudgetTypeList(iNBudgets),iBudgetLocationTypeList(iNBudgets),iStat
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cBudgetList(iLenBudgetList)
     
     !Local variables
     CHARACTER                      :: cBudgetList_F*iLenBudgetList
@@ -436,10 +493,10 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetBudget_ColumnTitles(iBudgetType,iLocIndex,iLenUnit,cUnitLT,cUnitAR,cUnitVL,iNCols,iLocArray,iLenTitles,cColTitles,iStat) BIND(C,NAME='IW_Model_GetBudget_ColumnTitles')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetBudget_ColumnTitles
-    INTEGER(C_INT),INTENT(IN)     :: iBudgetType,iLocIndex,iLenUnit,iNCols,iLenTitles
-    CHARACTER(C_CHAR),INTENT(IN)  :: cUnitLT(iLenUnit),cUnitAR(iLenUnit),cUnitVL(iLenUnit)
-    CHARACTER(C_CHAR),INTENT(OUT) :: cColTitles(iLenTitles)
-    INTEGER(C_INT),INTENT(OUT)    :: iLocArray(iNCols),iStat
+    INTEGER(C_INT),INTENT(IN)          :: iBudgetType,iLocIndex,iLenUnit,iNCols,iLenTitles
+    CHARACTER(KIND=C_CHAR),INTENT(IN)  :: cUnitLT(iLenUnit),cUnitAR(iLenUnit),cUnitVL(iLenUnit)
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cColTitles(iLenTitles)
+    INTEGER(C_INT),INTENT(OUT)         :: iLocArray(iNCols),iStat
     
     !Local variables
     CHARACTER(LEN=200),ALLOCATABLE :: cColTitles_Local(:)
@@ -468,12 +525,12 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetBudget_MonthlyAverageFlows(iBudgetType,iLocationIndex,iLUType,iSWShedBudCompRZ,iLenDate,cBeginDate,cEndDate,rFactVL,iNFlows_In,rFlows,rSDFlows,iNFlows_Out,iLenFlowNames,cFlowNames,iLocArray,iStat) BIND(C,NAME='IW_Model_GetBudget_MonthlyAverageFlows')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetBudget_MonthlyAverageFlows
-    INTEGER(C_INT),INTENT(IN)     :: iBudgetType,iLocationIndex,iLUType,iSWShedBudCompRZ,iLenDate,iNFlows_In,iLenFlowNames
-    CHARACTER(C_CHAR),INTENT(IN)  :: cBeginDate(iLenDate),cEndDate(iLenDate)
-    REAL(C_DOUBLE),INTENT(IN)     :: rFactVL
-    REAL(C_DOUBLE),INTENT(OUT)    :: rFlows(iNFlows_In,12),rSDFlows(iNFlows_In,12)
-    CHARACTER(C_CHAR),INTENT(OUT) :: cFlowNames(iLenFlowNames)
-    INTEGER(C_INT),INTENT(OUT)    :: iNFlows_Out,iLocArray(iNFlows_In),iStat
+    INTEGER(C_INT),INTENT(IN)          :: iBudgetType,iLocationIndex,iLUType,iSWShedBudCompRZ,iLenDate,iNFlows_In,iLenFlowNames
+    CHARACTER(KIND=C_CHAR),INTENT(IN)  :: cBeginDate(iLenDate),cEndDate(iLenDate)
+    REAL(C_DOUBLE),INTENT(IN)          :: rFactVL
+    REAL(C_DOUBLE),INTENT(OUT)         :: rFlows(iNFlows_In,12),rSDFlows(iNFlows_In,12)
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cFlowNames(iLenFlowNames)
+    INTEGER(C_INT),INTENT(OUT)         :: iNFlows_Out,iLocArray(iNFlows_In),iStat
     
     !Local variables
     INTEGER                       :: indxMon,iSWShedBudType
@@ -515,12 +572,12 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetBudget_AnnualFlows(iBudgetType,iLocationIndex,iLUType,iSWShedBudCompRZ,iLenDate,cBeginDate,cEndDate,rFactVL,iNFlows_In,iNTimes_In,rFlows,iNFlows_Out,iNTimes_Out,iLenFlowNames,cFlowNames,iLocArray,iWaterYears,iStat) BIND(C,NAME='IW_Model_GetBudget_AnnualFlows')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetBudget_AnnualFlows
-    INTEGER(C_INT),INTENT(IN)     :: iBudgetType,iLocationIndex,iLUType,iSWShedBudCompRZ,iLenDate,iNFlows_In,iNTimes_In,iLenFlowNames
-    CHARACTER(C_CHAR),INTENT(IN)  :: cBeginDate(iLenDate),cEndDate(iLenDate)
-    REAL(C_DOUBLE),INTENT(IN)     :: rFactVL
-    REAL(C_DOUBLE),INTENT(OUT)    :: rFlows(iNFlows_In,iNTimes_In)
-    CHARACTER(C_CHAR),INTENT(OUT) :: cFlowNames(iLenFlowNames)
-    INTEGER(C_INT),INTENT(OUT)    :: iNFlows_Out,iNTimes_Out,iLocArray(iNFlows_In),iWaterYears(iNTimes_In),iStat
+    INTEGER(C_INT),INTENT(IN)          :: iBudgetType,iLocationIndex,iLUType,iSWShedBudCompRZ,iLenDate,iNFlows_In,iNTimes_In,iLenFlowNames
+    CHARACTER(KIND=C_CHAR),INTENT(IN)  :: cBeginDate(iLenDate),cEndDate(iLenDate)
+    REAL(C_DOUBLE),INTENT(IN)          :: rFactVL
+    REAL(C_DOUBLE),INTENT(OUT)         :: rFlows(iNFlows_In,iNTimes_In)
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cFlowNames(iLenFlowNames)
+    INTEGER(C_INT),INTENT(OUT)         :: iNFlows_Out,iNTimes_Out,iLocArray(iNFlows_In),iWaterYears(iNTimes_In),iStat
     
     !Local variables
     INTEGER                       :: iSWShedBudType,indxYear
@@ -564,11 +621,11 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetBudget_TSData(iBudgetType,iLocationIndex,iNCols,iCols,iLenDate,cBeginDate,cEndDate,iLenInterval,cInterval,rFactLT,rFactAR,rFactVL,rOutputDates,iNTimes_In,rOutputValues,iDataTypes,iNTimes_Out,iStat) BIND(C,NAME="IW_Model_GetBudget_TSData")
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetBudget_TSData
-    INTEGER(C_INT),INTENT(IN)    :: iBudgetType,iLocationIndex,iNCols,iCols(iNCols),iNTimes_In,iLenDate,iLenInterval
-    CHARACTER(C_CHAR),INTENT(IN) :: cBeginDate(iLenDate),cEndDate(iLenDate),cInterval(iLenInterval)
-    REAL(C_DOUBLE),INTENT(IN)    :: rFactLT,rFactAR,rFactVL
-    REAL(C_DOUBLE),INTENT(OUT)   :: rOutputDates(iNTimes_In),rOutputValues(iNTimes_In,iNCols)    
-    INTEGER,INTENT(OUT)          :: iDataTypes(iNCols),iNTimes_Out,iStat
+    INTEGER(C_INT),INTENT(IN)         :: iBudgetType,iLocationIndex,iNCols,iCols(iNCols),iNTimes_In,iLenDate,iLenInterval
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cBeginDate(iLenDate),cEndDate(iLenDate),cInterval(iLenInterval)
+    REAL(C_DOUBLE),INTENT(IN)         :: rFactLT,rFactAR,rFactVL
+    REAL(C_DOUBLE),INTENT(OUT)        :: rOutputDates(iNTimes_In),rOutputValues(iNTimes_In,iNCols)    
+    INTEGER,INTENT(OUT)               :: iDataTypes(iNCols),iNTimes_Out,iStat
     
     !Local variables
     CHARACTER :: cBeginDate_F*iLenDate,cEndDate_F*iLenDate,cInterval_F*iLenInterval
@@ -593,11 +650,11 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetBudget_CumGWStorChange(iSubregionIndex,iLenDate,cBeginDate,cEndDate,iLenInterval,cInterval,rFactVL,rOutputDates,iNTimes_In,rCumGWStorChange,iNTimes_Out,iStat) BIND(C,NAME='IW_Model_GetBudget_CumGWStorChange')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetBudget_CumGWStorChange
-    INTEGER(C_INT),INTENT(IN)    :: iSubregionIndex,iNTimes_In,iLenDate,iLenInterval
-    CHARACTER(C_CHAR),INTENT(IN) :: cBeginDate(iLenDate),cEndDate(iLenDate),cInterval(iLenInterval)
-    REAL(C_DOUBLE),INTENT(IN)    :: rFactVL
-    REAL(C_DOUBLE),INTENT(OUT)   :: rOutputDates(iNTimes_In),rCumGWStorChange(iNTimes_In)    
-    INTEGER,INTENT(OUT)          :: iNTimes_Out,iStat
+    INTEGER(C_INT),INTENT(IN)         :: iSubregionIndex,iNTimes_In,iLenDate,iLenInterval
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cBeginDate(iLenDate),cEndDate(iLenDate),cInterval(iLenInterval)
+    REAL(C_DOUBLE),INTENT(IN)         :: rFactVL
+    REAL(C_DOUBLE),INTENT(OUT)        :: rOutputDates(iNTimes_In),rCumGWStorChange(iNTimes_In)    
+    INTEGER,INTENT(OUT)               :: iNTimes_Out,iStat
     
     !Local variables
     CHARACTER           :: cBeginDate_F*iLenDate,cEndDate_F*iLenDate,cInterval_F*iLenInterval
@@ -628,11 +685,11 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetBudget_AnnualCumGWStorChange(iSubregionIndex,iLenDate,cBeginDate,cEndDate,rFactVL,iNTimes_In,rCumGWStorChange,iWaterYears,iNTimes_Out,iStat) BIND(C,NAME='IW_Model_GetBudget_AnnualCumGWStorChange')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetBudget_AnnualCumGWStorChange
-    INTEGER(C_INT),INTENT(IN)    :: iSubregionIndex,iNTimes_In,iLenDate
-    CHARACTER(C_CHAR),INTENT(IN) :: cBeginDate(iLenDate),cEndDate(iLenDate)
-    REAL(C_DOUBLE),INTENT(IN)    :: rFactVL
-    REAL(C_DOUBLE),INTENT(OUT)   :: rCumGWStorChange(iNTimes_In)    
-    INTEGER,INTENT(OUT)          :: iWaterYears(iNTimes_In),iNTimes_Out,iStat
+    INTEGER(C_INT),INTENT(IN)         :: iSubregionIndex,iNTimes_In,iLenDate
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cBeginDate(iLenDate),cEndDate(iLenDate)
+    REAL(C_DOUBLE),INTENT(IN)         :: rFactVL
+    REAL(C_DOUBLE),INTENT(OUT)        :: rCumGWStorChange(iNTimes_In)    
+    INTEGER,INTENT(OUT)               :: iWaterYears(iNTimes_In),iNTimes_Out,iStat
     
     !Local variables
     CHARACTER           :: cBeginDate_F*iLenDate,cEndDate_F*iLenDate
@@ -673,9 +730,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetZBudget_List(iNZBudgets,iLocArray,iLenZBudgetList,cZBudgetList,iZBudgetTypeList,iStat) BIND(C,NAME='IW_Model_GetZBudget_List')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetZBudget_List
-    INTEGER(C_INT),INTENT(IN)     :: iNZBudgets,iLenZBudgetList
-    INTEGER(C_INT),INTENT(OUT)    :: iLocArray(iNZBudgets),iZBudgetTypeList(iNZBudgets),iStat
-    CHARACTER(C_CHAR),INTENT(OUT) :: cZBudgetList(iLenZBudgetList)
+    INTEGER(C_INT),INTENT(IN)          :: iNZBudgets,iLenZBudgetList
+    INTEGER(C_INT),INTENT(OUT)         :: iLocArray(iNZBudgets),iZBudgetTypeList(iNZBudgets),iStat
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cZBudgetList(iLenZBudgetList)
     
     !Local variables
     CHARACTER                      :: cZBudgetList_F*iLenZBudgetList
@@ -723,10 +780,10 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetZBudget_ColumnTitles(iZBudgetType,iZoneID,iZExtent,iDimZones,iElems,iLayers,iZoneIDs,iLenUnit,cUnitAR,cUnitVL,iNCols,iLocArray,iLenTitles,cColTitles,iStat) BIND(C,NAME='IW_Model_GetZBudget_ColumnTitles')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetZBudget_ColumnTitles
-    INTEGER(C_INT),INTENT(IN)     :: iZBudgetType,iZoneID,iZExtent,iDimZones,iElems(iDimZones),iLayers(iDimZones),iZoneIDs(iDimZones),iLenUnit,iNCols,iLenTitles
-    CHARACTER(C_CHAR),INTENT(IN)  :: cUnitAR(iLenUnit),cUnitVL(iLenUnit)
-    CHARACTER(C_CHAR),INTENT(OUT) :: cColTitles(iLenTitles)
-    INTEGER(C_INT),INTENT(OUT)    :: iLocArray(iNCols),iStat
+    INTEGER(C_INT),INTENT(IN)          :: iZBudgetType,iZoneID,iZExtent,iDimZones,iElems(iDimZones),iLayers(iDimZones),iZoneIDs(iDimZones),iLenUnit,iNCols,iLenTitles
+    CHARACTER(KIND=C_CHAR),INTENT(IN)  :: cUnitAR(iLenUnit),cUnitVL(iLenUnit)
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cColTitles(iLenTitles)
+    INTEGER(C_INT),INTENT(OUT)         :: iLocArray(iNCols),iStat
     
     !Local variables
     CHARACTER(LEN=200),ALLOCATABLE :: cColTitles_Local(:)
@@ -753,12 +810,12 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetZBudget_MonthlyAverageFlows(iZBudgetType,iZoneID,iLUType,iZExtent,iNZones,iElems,iLayers,iZoneIDs,iLenDate,cBeginDate,cEndDate,rFactVL,iNFlows_In,rFlows,rSDFlows,iNFlows_Out,iLenFlowNames,cFlowNames,iLocArray,iStat) BIND(C,NAME='IW_Model_GetZBudget_MonthlyAverageFlows')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetZBudget_MonthlyAverageFlows
-    INTEGER(C_INT),INTENT(IN)     :: iZBudgetType,iZoneID,iLUType,iZExtent,iNZones,iElems(iNZones),iLayers(iNZones),iZoneIDs(iNZones),iLenDate,iNFlows_In,iLenFlowNames
-    CHARACTER(C_CHAR),INTENT(IN)  :: cBeginDate(iLenDate),cEndDate(iLenDate)
-    REAL(C_DOUBLE),INTENT(IN)     :: rFactVL
-    REAL(C_DOUBLE),INTENT(OUT)    :: rFlows(iNFlows_In,12),rSDFlows(iNFlows_In,12)
-    CHARACTER(C_CHAR),INTENT(OUT) :: cFlowNames(iLenFlowNames)
-    INTEGER(C_INT),INTENT(OUT)    :: iNFlows_Out,iLocArray(iNFlows_In),iStat
+    INTEGER(C_INT),INTENT(IN)          :: iZBudgetType,iZoneID,iLUType,iZExtent,iNZones,iElems(iNZones),iLayers(iNZones),iZoneIDs(iNZones),iLenDate,iNFlows_In,iLenFlowNames
+    CHARACTER(KIND=C_CHAR),INTENT(IN)  :: cBeginDate(iLenDate),cEndDate(iLenDate)
+    REAL(C_DOUBLE),INTENT(IN)          :: rFactVL
+    REAL(C_DOUBLE),INTENT(OUT)         :: rFlows(iNFlows_In,12),rSDFlows(iNFlows_In,12)
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cFlowNames(iLenFlowNames)
+    INTEGER(C_INT),INTENT(OUT)         :: iNFlows_Out,iLocArray(iNFlows_In),iStat
     
     !Local variables
     INTEGER                       :: indxMon
@@ -792,12 +849,12 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetZBudget_AnnualFlows(iZBudgetType,iZoneID,iLUType,iZExtent,iNZones,iElems,iLayers,iZoneIDs,iLenDate,cBeginDate,cEndDate,rFactVL,iNFlows_In,iNTimes_In,rFlows,iNFlows_Out,iNTimes_Out,iLenFlowNames,cFlowNames,iLocArray,iWaterYears,iStat) BIND(C,NAME='IW_Model_GetZBudget_AnnualFlows')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetZBudget_AnnualFlows
-    INTEGER(C_INT),INTENT(IN)     :: iZBudgetType,iZoneID,iLUType,iZExtent,iNZones,iElems(iNZones),iLayers(iNZones),iZoneIDs(iNZones),iLenDate,iNFlows_In,iNTimes_In,iLenFlowNames
-    CHARACTER(C_CHAR),INTENT(IN)  :: cBeginDate(iLenDate),cEndDate(iLenDate)
-    REAL(C_DOUBLE),INTENT(IN)     :: rFactVL
-    REAL(C_DOUBLE),INTENT(OUT)    :: rFlows(iNFlows_In,iNTimes_In)
-    CHARACTER(C_CHAR),INTENT(OUT) :: cFlowNames(iLenFlowNames)
-    INTEGER(C_INT),INTENT(OUT)    :: iNFlows_Out,iNTimes_Out,iLocArray(iNFlows_In),iWaterYears(iNTimes_In),iStat
+    INTEGER(C_INT),INTENT(IN)          :: iZBudgetType,iZoneID,iLUType,iZExtent,iNZones,iElems(iNZones),iLayers(iNZones),iZoneIDs(iNZones),iLenDate,iNFlows_In,iNTimes_In,iLenFlowNames
+    CHARACTER(KIND=C_CHAR),INTENT(IN)  :: cBeginDate(iLenDate),cEndDate(iLenDate)
+    REAL(C_DOUBLE),INTENT(IN)          :: rFactVL
+    REAL(C_DOUBLE),INTENT(OUT)         :: rFlows(iNFlows_In,iNTimes_In)
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cFlowNames(iLenFlowNames)
+    INTEGER(C_INT),INTENT(OUT)         :: iNFlows_Out,iNTimes_Out,iLocArray(iNFlows_In),iWaterYears(iNTimes_In),iStat
     
     !Local variables
     INTEGER                       :: indxYear
@@ -833,11 +890,11 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetZBudget_TSData(iZBudgetType,iZoneID,iNCols,iCols,iZExtent,iNZones,iElems,iLayers,iZoneIDs,iLenDate,cBeginDate,cEndDate,iLenInterval,cInterval,rFactAR,rFactVL,rOutputDates,iNTimes_In,rOutputValues,iDataTypes,iNTimes_Out,iStat) BIND(C,NAME="IW_Model_GetZBudget_TSData")
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetZBudget_TSData
-    INTEGER(C_INT),INTENT(IN)    :: iZBudgetType,iZoneID,iNCols,iCols(iNCols),iZExtent,iNZones,iElems(iNZones),iLayers(iNZones),iZoneIDs(iNZones),iNTimes_In,iLenDate,iLenInterval
-    CHARACTER(C_CHAR),INTENT(IN) :: cBeginDate(iLenDate),cEndDate(iLenDate),cInterval(iLenInterval)
-    REAL(C_DOUBLE),INTENT(IN)    :: rFactAR,rFactVL
-    REAL(C_DOUBLE),INTENT(OUT)   :: rOutputDates(iNTimes_In),rOutputValues(iNTimes_In,iNCols)    
-    INTEGER,INTENT(OUT)          :: iDataTypes(iNCols),iNTimes_Out,iStat
+    INTEGER(C_INT),INTENT(IN)         :: iZBudgetType,iZoneID,iNCols,iCols(iNCols),iZExtent,iNZones,iElems(iNZones),iLayers(iNZones),iZoneIDs(iNZones),iNTimes_In,iLenDate,iLenInterval
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cBeginDate(iLenDate),cEndDate(iLenDate),cInterval(iLenInterval)
+    REAL(C_DOUBLE),INTENT(IN)         :: rFactAR,rFactVL
+    REAL(C_DOUBLE),INTENT(OUT)        :: rOutputDates(iNTimes_In),rOutputValues(iNTimes_In,iNCols)    
+    INTEGER,INTENT(OUT)               :: iDataTypes(iNCols),iNTimes_Out,iStat
     
     !Local variables
     CHARACTER :: cBeginDate_F*iLenDate,cEndDate_F*iLenDate,cInterval_F*iLenInterval
@@ -862,11 +919,11 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetZBudget_CumGWStorChange(iZoneID,iZExtent,iNZones,iElems,iLayers,iZoneIDs,iLenDate,cBeginDate,cEndDate,iLenInterval,cInterval,rFactVL,rOutputDates,iNTimes_In,rCumGWStorChange,iNTimes_Out,iStat) BIND(C,NAME='IW_Model_GetZBudget_CumGWStorChange')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetZBudget_CumGWStorChange
-    INTEGER(C_INT),INTENT(IN)    :: iZoneID,iZExtent,iNZones,iElems(iNZones),iLayers(iNZones),iZoneIDs(iNZones),iNTimes_In,iLenDate,iLenInterval
-    CHARACTER(C_CHAR),INTENT(IN) :: cBeginDate(iLenDate),cEndDate(iLenDate),cInterval(iLenInterval)
-    REAL(C_DOUBLE),INTENT(IN)    :: rFactVL
-    REAL(C_DOUBLE),INTENT(OUT)   :: rOutputDates(iNTimes_In),rCumGWStorChange(iNTimes_In)    
-    INTEGER,INTENT(OUT)          :: iNTimes_Out,iStat
+    INTEGER(C_INT),INTENT(IN)         :: iZoneID,iZExtent,iNZones,iElems(iNZones),iLayers(iNZones),iZoneIDs(iNZones),iNTimes_In,iLenDate,iLenInterval
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cBeginDate(iLenDate),cEndDate(iLenDate),cInterval(iLenInterval)
+    REAL(C_DOUBLE),INTENT(IN)         :: rFactVL
+    REAL(C_DOUBLE),INTENT(OUT)        :: rOutputDates(iNTimes_In),rCumGWStorChange(iNTimes_In)    
+    INTEGER,INTENT(OUT)               :: iNTimes_Out,iStat
     
     !Local variables
     CHARACTER           :: cBeginDate_F*iLenDate,cEndDate_F*iLenDate,cInterval_F*iLenInterval
@@ -897,11 +954,11 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetZBudget_AnnualCumGWStorChange(iZoneID,iZExtent,iNZones,iElems,iLayers,iZoneIDs,iLenDate,cBeginDate,cEndDate,rFactVL,iNTimes_In,rCumGWStorChange,iWaterYears,iNTimes_Out,iStat) BIND(C,NAME='IW_Model_GetZBudget_AnnualCumGWStorChange')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetZBudget_AnnualCumGWStorChange
-    INTEGER(C_INT),INTENT(IN)    :: iZoneID,iZExtent,iNZones,iElems(iNZones),iLayers(iNZones),iZoneIDs(iNZones),iNTimes_In,iLenDate
-    CHARACTER(C_CHAR),INTENT(IN) :: cBeginDate(iLenDate),cEndDate(iLenDate)
-    REAL(C_DOUBLE),INTENT(IN)    :: rFactVL
-    REAL(C_DOUBLE),INTENT(OUT)   :: rCumGWStorChange(iNTimes_In)    
-    INTEGER,INTENT(OUT)          :: iWaterYears(iNTimes_In),iNTimes_Out,iStat
+    INTEGER(C_INT),INTENT(IN)         :: iZoneID,iZExtent,iNZones,iElems(iNZones),iLayers(iNZones),iZoneIDs(iNZones),iNTimes_In,iLenDate
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cBeginDate(iLenDate),cEndDate(iLenDate)
+    REAL(C_DOUBLE),INTENT(IN)         :: rFactVL
+    REAL(C_DOUBLE),INTENT(OUT)        :: rCumGWStorChange(iNTimes_In)    
+    INTEGER,INTENT(OUT)               :: iWaterYears(iNTimes_In),iNTimes_Out,iStat
     
     !Local variables
     CHARACTER           :: cBeginDate_F*iLenDate,cEndDate_F*iLenDate
@@ -929,9 +986,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetNames(iLocationType,iDimLocArray,iLocArray,iLenNamesList,cNamesList,iStat) BIND(C,NAME='IW_Model_GetNames')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetNames
-    INTEGER(C_INT),INTENT(IN)     :: iLocationType,iDimLocArray,iLenNamesList
-    INTEGER(C_INT),INTENT(OUT)    :: iLocArray(iDimLocArray),iStat
-    CHARACTER(C_CHAR),INTENT(OUT) :: cNamesList(iLenNamesList)
+    INTEGER(C_INT),INTENT(IN)          :: iLocationType,iDimLocArray,iLenNamesList
+    INTEGER(C_INT),INTENT(OUT)         :: iLocArray(iDimLocArray),iStat
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cNamesList(iLenNamesList)
     
     !Local variables
     CHARACTER(LEN=250) :: cLocalNamesList(iDimLocArray)
@@ -952,11 +1009,11 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetGWHeads_ForALayer(iLayer,cOutputBeginDateAndTime,cOutputEndDateAndTime,iLenDateAndTime,rFact_LT,iNNodes,iNTime,rOutputDates,rGWHeads,iStat) BIND(C,NAME='IW_Model_GetGWHeads_ForALayer')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetGWHeads_ForALayer
-    INTEGER(C_INT),INTENT(IN)    :: iLayer,iLenDateAndTime,iNNodes,iNTime
-    CHARACTER(C_CHAR),INTENT(IN) :: cOutputBeginDateAndTime(iLenDateAndTime),cOutputEndDateAndTime(iLenDateAndTime)
-    REAL(C_DOUBLE),INTENT(IN)    :: rFact_LT
-    REAL(C_DOUBLE),INTENT(OUT)   :: rOutputDates(iNTime),rGWHeads(iNNodes,iNTime)
-    INTEGER(C_INT),INTENT(OUT)   :: iStat
+    INTEGER(C_INT),INTENT(IN)         :: iLayer,iLenDateAndTime,iNNodes,iNTime
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cOutputBeginDateAndTime(iLenDateAndTime),cOutputEndDateAndTime(iLenDateAndTime)
+    REAL(C_DOUBLE),INTENT(IN)         :: rFact_LT
+    REAL(C_DOUBLE),INTENT(OUT)        :: rOutputDates(iNTime),rGWHeads(iNNodes,iNTime)
+    INTEGER(C_INT),INTENT(OUT)        :: iStat
     
     !Local variables
     CHARACTER :: cOutputBeginDateAndTime_F*iLenDateAndTime,cOutputEndDateAndTime_F*iLenDateAndTime
@@ -1158,9 +1215,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetHydrographTypeList(iNHydTypes,iLocArray,iLenHydTypeList,cHydTypeList,iHydLocationTypeList,iStat) BIND(C,NAME='IW_Model_GetHydrographTypeList')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetHydrographTypeList
-    INTEGER(C_INT),INTENT(IN)     :: iNHydTypes,iLenHydTypeList
-    CHARACTER(C_CHAR),INTENT(OUT) :: cHydTypeList(iLenHydTypeList)
-    INTEGER(C_INT),INTENT(OUT)    :: iLocArray(iNHydTypes),iHydLocationTypeList(iNHydTypes),iStat
+    INTEGER(C_INT),INTENT(IN)          :: iNHydTypes,iLenHydTypeList
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cHydTypeList(iLenHydTypeList)
+    INTEGER(C_INT),INTENT(OUT)         :: iLocArray(iNHydTypes),iHydLocationTypeList(iNHydTypes),iStat
     
     !Local variables
     INTEGER,ALLOCATABLE            :: iHydLocTypeList_Local(:),iHydCompList_Local(:) 
@@ -1231,11 +1288,11 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetHydrograph(iHydType,iHydIndex,iLayer,iLenDate,cBeginDate,cEndDate,iLenInterval,cInterval,rFactLT,rFactVL,iNTimes_In,rOutputDates,rOutputValues,iDataUnitType,iNTimes_Out,iStat) BIND(C,NAME='IW_Model_GetHydrograph')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetHydrograph
-    INTEGER(C_INT),INTENT(IN)    :: iHydType,iHydIndex,iLayer,iLenDate,iLenInterval,iNTimes_In
-    CHARACTER(C_CHAR),INTENT(IN) :: cBeginDate(iLenDate),cEndDate(iLenDate),cInterval(iLenInterval)
-    REAL(C_DOUBLE),INTENT(IN)    :: rFactLT,rFactVL
-    REAL(C_DOUBLE),INTENT(OUT)   :: rOutputDates(iNTimes_In),rOutputValues(iNTimes_In)
-    INTEGER(C_INT),INTENT(OUT)   :: iDataUnitType,iNTimes_Out,iStat
+    INTEGER(C_INT),INTENT(IN)         :: iHydType,iHydIndex,iLayer,iLenDate,iLenInterval,iNTimes_In
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cBeginDate(iLenDate),cEndDate(iLenDate),cInterval(iLenInterval)
+    REAL(C_DOUBLE),INTENT(IN)         :: rFactLT,rFactVL
+    REAL(C_DOUBLE),INTENT(OUT)        :: rOutputDates(iNTimes_In),rOutputValues(iNTimes_In)
+    INTEGER(C_INT),INTENT(OUT)        :: iDataUnitType,iNTimes_Out,iStat
     
     !Local variables
     CHARACTER           :: cBeginDate_F*iLenDate,cEndDate_F*iLenDate,cInterval_F*iLenInterval
@@ -1373,9 +1430,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetSubregionName(iRegion,iLen,cName,iStat) BIND(C,NAME='IW_Model_GetSubregionName')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetSubregionName
-    INTEGER(C_INT),INTENT(IN)     :: iRegion,iLen
-    CHARACTER(C_CHAR),INTENT(OUT) :: cName(iLen)
-    INTEGER(C_INT),INTENT(OUT)    :: iStat    
+    INTEGER(C_INT),INTENT(IN)          :: iRegion,iLen
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cName(iLen)
+    INTEGER(C_INT),INTENT(OUT)         :: iStat    
     
     !Local variables
     CHARACTER :: cName_F*iLen
@@ -2088,6 +2145,28 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
+  ! --- GET POND DRAINS INTO ALL STREAM NODES
+  ! -------------------------------------------------------------
+  SUBROUTINE IW_Model_GetStrmPondDrains(iNNodes,rConvFactor,rFlows,iStat) BIND(C,NAME='IW_Model_GetStrmPondDrains')
+    !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetStrmPondDrains
+    INTEGER(C_INT),INTENT(IN)  :: iNNodes
+    REAL(C_DOUBLE),INTENT(IN)  :: rConvFactor
+    REAL(C_DOUBLE),INTENT(OUT) :: rFlows(iNNodes)
+    INTEGER(C_INT),INTENT(OUT) :: iStat
+    
+    CALL Model%GetStrmPondDrains(rFlows,iStat)
+    IF (iStat .EQ. -1) THEN
+        rFlows = 0.0
+        RETURN
+    END IF
+    
+    !Unit conversion
+    rFlows = rFlows * rConvFactor
+    
+  END SUBROUTINE IW_Model_GetStrmPondDrains
+  
+  
+  ! -------------------------------------------------------------
   ! --- GET TILE DRAINS INTO ALL STREAM NODES
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetStrmTileDrains(iNNodes,rConvFactor,rFlows,iStat) BIND(C,NAME='IW_Model_GetStrmTileDrains')
@@ -2256,13 +2335,46 @@ CONTAINS
 
 
   ! -------------------------------------------------------------
+  ! --- GET NUMBER OF ELEMENTS SERVED BY A DIVERSION
+  ! -------------------------------------------------------------
+  SUBROUTINE IW_Model_GetStrmDiversionNElems(iDiv,iNElems,iStat) BIND(C,NAME='IW_Model_GetStrmDiversionNElems')
+    !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetStrmDiversionNElems
+    INTEGER(C_INT),INTENT(IN)  :: iDiv
+    INTEGER(C_INT),INTENT(OUT) :: iNElems,iStat
+    
+    iStat   = 0
+    iNElems = Model%GetStrmDiversionNElems(iDiv)
+    
+  END SUBROUTINE IW_Model_GetStrmDiversionNElems
+
+
+  ! -------------------------------------------------------------
+  ! --- GET INDICES OF ELEMENTS SERVED BY A DIVERSION
+  ! -------------------------------------------------------------
+  SUBROUTINE IW_Model_GetStrmDiversionElems(iDiv,iNElems,iElems,iStat) BIND(C,NAME='IW_Model_GetStrmDiversionElems')
+    !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetStrmDiversionElems
+    INTEGER(C_INT),INTENT(IN)  :: iDiv,iNElems
+    INTEGER(C_INT),INTENT(OUT) :: iElems(iNElems),iStat
+    
+    !Local variables
+    INTEGER,ALLOCATABLE :: iELems_Local(:)
+    
+    iStat = 0
+    CALL Model%GetStrmDiversionElems(iDiv,iElems_Local)
+    iElems = iElems_Local
+    
+  END SUBROUTINE IW_Model_GetStrmDiversionElems
+
+
+  ! -------------------------------------------------------------
   ! --- GET NUMBER OF DIVERSIONS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetNDiversions(iNDiversions,iStat) BIND(C,NAME='IW_Model_GetNDiversions')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetNDiversions
     INTEGER(C_INT),INTENT(OUT) :: iNDiversions,iStat
     
-    CALL Model%GetNDiversions(iNDiversions,iStat)
+    iNDiversions = Model%GetNDiversions()
+    iStat        = 0
         
   END SUBROUTINE IW_Model_GetNDiversions
 
@@ -2327,6 +2439,25 @@ CONTAINS
 
 
   ! -------------------------------------------------------------
+  ! --- GET EXPORT STREAM NODE INDICES, DESTINATION TYPES AND INDICIES FOR A GIVEN SET OF BYPASS INDICES
+  ! -------------------------------------------------------------
+  SUBROUTINE IW_Model_GetBypassExportDestinationData(iNBypass,iBypassList,iExpStrmNodeList,iDestTypeList,iDestList,iStat) BIND(C,NAME='IW_Model_GetBypassExportDestinationData')
+    !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetBypassExportDestinationData
+    INTEGER(C_INT),INTENT(IN)  :: iNBypass,iBypassList(iNBypass)
+    INTEGER(C_INT),INTENT(OUT) :: iExpStrmNodeList(iNBypass),iDestTypeList(iNBypass),iDestList(iNBypass),iStat
+    
+    !Local variables
+    INTEGER :: indx,iDummy
+    
+    iStat = 0
+    DO indx=1,iNBypass
+        CALL Model%GetBypassDiversionOriginDestData(.TRUE.,iBypassList(indx),iExpStrmNodeList(indx),iDestTypeList(indx),iDestList(indx))
+    END DO
+    
+  END SUBROUTINE IW_Model_GetBypassExportDestinationData
+
+
+  ! -------------------------------------------------------------
   ! --- GET BYPASS OUTFLOWS AT ALL BYPASSES
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_GetBypassOutflows(iNBypass,rConvFactor,rOutflows,iStat) BIND(C,NAME='IW_Model_GetBypassOutflows')
@@ -2341,6 +2472,36 @@ CONTAINS
     rOutflows = rConvFactor * rOutflows
     
   END SUBROUTINE IW_Model_GetBypassOutflows
+
+  
+  ! -------------------------------------------------------------
+  ! --- GET RECOVERABLE LOSS FACTOR FOR A GIVEN BYPASS
+  ! -------------------------------------------------------------
+  SUBROUTINE IW_Model_GetBypassRecoverableLossFactor(iBypass,rFactor,iStat) BIND(C,NAME='IW_Model_GetBypassRecoverableLossFactor')
+    !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetBypassRecoverableLossFactor
+    INTEGER(C_INT),INTENT(IN)  :: iBypass
+    REAL(C_DOUBLE),INTENT(OUT) :: rFactor
+    INTEGER(C_INT),INTENT(OUT) :: iStat
+    
+    iStat   = 0
+    rFactor = Model%GetBypassRecoverableLossFactor(iBypass)
+    
+  END SUBROUTINE IW_Model_GetBypassRecoverableLossFactor
+
+  
+  ! -------------------------------------------------------------
+  ! --- GET NON-RECOVERABLE LOSS FACTOR FOR A GIVEN BYPASS
+  ! -------------------------------------------------------------
+  SUBROUTINE IW_Model_GetBypassNonRecoverableLossFactor(iBypass,rFactor,iStat) BIND(C,NAME='IW_Model_GetBypassNonRecoverableLossFactor')
+    !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_GetBypassNonRecoverableLossFactor
+    INTEGER(C_INT),INTENT(IN)  :: iBypass
+    REAL(C_DOUBLE),INTENT(OUT) :: rFactor
+    INTEGER(C_INT),INTENT(OUT) :: iStat
+    
+    iStat   = 0
+    rFactor = Model%GetBypassNonRecoverableLossFactor(iBypass)
+    
+  END SUBROUTINE IW_Model_GetBypassNonRecoverableLossFactor
 
   
   ! -------------------------------------------------------------
@@ -2509,7 +2670,7 @@ CONTAINS
     REAL(C_DOUBLE),INTENT(OUT) :: rSupplyReq(iNLocations)
     INTEGER(C_INT),INTENT(OUT) :: iStat
     
-    CALL Model%GetSupplyRequirement(iLocationTypeID,iLocationList,f_iAg,rFactor,rSupplyReq,iStat)
+    CALL Model%GetSupplyRequirement(iLocationTypeID,iLocationList,f_iLandUse_Ag,rFactor,rSupplyReq,iStat)
     
   END SUBROUTINE IW_Model_GetSupplyRequirement_Ag
   
@@ -2524,7 +2685,7 @@ CONTAINS
     REAL(C_DOUBLE),INTENT(OUT) :: rSupplyReq(iNLocations)
     INTEGER(C_INT),INTENT(OUT) :: iStat
     
-    CALL Model%GetSupplyRequirement(iLocationTypeID,iLocationList,f_iUrb,rFactor,rSupplyReq,iStat)
+    CALL Model%GetSupplyRequirement(iLocationTypeID,iLocationList,f_iLandUse_Urb,rFactor,rSupplyReq,iStat)
     
   END SUBROUTINE IW_Model_GetSupplyRequirement_Urb
  
@@ -2539,7 +2700,7 @@ CONTAINS
     REAL(C_DOUBLE),INTENT(OUT) :: rSupplyShort(iNSupplies)
     INTEGER(C_INT),INTENT(OUT) :: iStat
     
-    CALL Model%GetSupplyShortAtOrigin_ForSomeSupplies(iSupplyTypeID,iSupplyList,f_iAg,rFactor,rSupplyShort,iStat)
+    CALL Model%GetSupplyShortAtOrigin_ForSomeSupplies(iSupplyTypeID,iSupplyList,f_iLandUse_Ag,rFactor,rSupplyShort,iStat)
     
   END SUBROUTINE IW_Model_GetSupplyShortAtOrigin_Ag
   
@@ -2554,7 +2715,7 @@ CONTAINS
     REAL(C_DOUBLE),INTENT(OUT) :: rSupplyShort(iNSupplies)
     INTEGER(C_INT),INTENT(OUT) :: iStat
     
-    CALL Model%GetSupplyShortAtOrigin_ForSomeSupplies(iSupplyTypeID,iSupplyList,f_iUrb,rFactor,rSupplyShort,iStat)
+    CALL Model%GetSupplyShortAtOrigin_ForSomeSupplies(iSupplyTypeID,iSupplyList,f_iLandUse_Urb,rFactor,rSupplyShort,iStat)
     
   END SUBROUTINE IW_Model_GetSupplyShortAtOrigin_Urb
   
@@ -2611,9 +2772,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_SetPreProcessorPath(iLen,cPath,iStat) BIND(C,NAME='IW_Model_SetPreProcessorPath')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_SetPreProcessorPath
-    INTEGER(C_INT),INTENT(IN)    :: iLen
-    CHARACTER(C_CHAR),INTENT(IN) :: cPath(iLen)
-    INTEGER(C_INT),INTENT(OUT)   :: iStat
+    INTEGER(C_INT),INTENT(IN)         :: iLen
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cPath(iLen)
+    INTEGER(C_INT),INTENT(OUT)        :: iStat
     
     !Local variables
     CHARACTER :: cPath_F*iLen
@@ -2647,9 +2808,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_SetSimulationPath(iLen,cPath,iStat) BIND(C,NAME='IW_Model_SetSimulationPath')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_SetSimulationPath
-    INTEGER(C_INT),INTENT(IN)    :: iLen
-    CHARACTER(C_CHAR),INTENT(IN) :: cPath(iLen)
-    INTEGER(C_INT),INTENT(OUT)   :: iStat
+    INTEGER(C_INT),INTENT(IN)         :: iLen
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cPath(iLen)
+    INTEGER(C_INT),INTENT(OUT)        :: iStat
     
     !Local variables
     CHARACTER :: cPath_F*iLen
@@ -2721,9 +2882,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_DeleteInquiryDataFile(iLenSimFileName,cSimFileName,iStat) BIND(C,NAME='IW_Model_DeleteInquiryDataFile')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_DeleteInquiryDataFile
-    INTEGER(C_INT),INTENT(IN)    :: iLenSimFileName
-    CHARACTER(C_CHAR),INTENT(IN) :: cSimFileName(iLenSimFileName)
-    INTEGER(C_INT),INTENT(OUT)   :: iStat
+    INTEGER(C_INT),INTENT(IN)         :: iLenSimFileName
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cSimFileName(iLenSimFileName)
+    INTEGER(C_INT),INTENT(OUT)        :: iStat
     
     !Local variables
     CHARACTER(LEN=iLenSimFileName) :: cSimFileName_F
@@ -2775,9 +2936,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_SimulateForAnInterval(iLen,cInterval,iStat) BIND(C,NAME='IW_Model_SimulateForAnInterval')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_SimulateForAnInterval
-    INTEGER(C_INT),INTENT(IN)    :: iLen
-    CHARACTER(C_CHAR),INTENT(IN) :: cInterval(iLen)
-    INTEGER(C_INT),INTENT(OUT)   :: iStat
+    INTEGER(C_INT),INTENT(IN)         :: iLen
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cInterval(iLen)
+    INTEGER(C_INT),INTENT(OUT)        :: iStat
   
     !Local variables
     CHARACTER :: cInterval_F*iLen
@@ -2949,9 +3110,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Model_ComputeFutureWaterDemands(iLenDate,cEndComputeDate,iStat) BIND(C,NAME='IW_Model_ComputeFutureWaterDemands')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Model_ComputeFutureWaterDemands
-    INTEGER(C_INT),INTENT(IN)    :: iLenDate
-    CHARACTER(C_CHAR),INTENT(IN) :: cEndComputeDate(iLenDate)
-    INTEGER(C_INT),INTENT(OUT)   :: iStat
+    INTEGER(C_INT),INTENT(IN)         :: iLenDate
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cEndComputeDate(iLenDate)
+    INTEGER(C_INT),INTENT(OUT)        :: iStat
     
     !Local variables
     CHARACTER(LEN=iLenDate) :: cEndComputeDate_F

@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -283,16 +283,18 @@ CONTAINS
             END IF
         END IF
         
-        !Make sure there is only one bypass from a node
-        DO indxBypass1=1,indxBypass-1
-            IF (pBypass%iNode_Exp .EQ. Bypasses(indxBypass1)%iNode_Exp) THEN
-                MessageArray(1) = 'There are multiple bypassses defined at stream node '//TRIM(IntToText(iNode_Exp_ID))//'.'
-                MessageArray(2) = 'Only one bypass is allowed from a stream node!'
-                CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
-                iStat = -1
-                RETURN
-            END IF
-        END DO
+        !Make sure there is only one bypass from a node (except it is an import bypass)
+        IF (pBypass%iNode_Exp .GT. 0) THEN
+            DO indxBypass1=1,indxBypass-1
+                IF (pBypass%iNode_Exp .EQ. Bypasses(indxBypass1)%iNode_Exp) THEN
+                    MessageArray(1) = 'There are multiple bypassses defined at stream node '//TRIM(IntToText(iNode_Exp_ID))//'.'
+                    MessageArray(2) = 'Only one bypass is allowed from a stream node!'
+                    CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
+                    iStat = -1
+                    RETURN
+                END IF
+            END DO
+        END IF
         
         !Compute and save the points in rating table for bypass flows
         IF (iNum .LT. 0) THEN

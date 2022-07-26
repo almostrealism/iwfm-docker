@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -83,9 +83,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_ZBudget_OpenFile(cFileName,iLen,iStat) BIND(C,NAME='IW_ZBudget_OpenFile')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_ZBudget_OpenFile
-    INTEGER(C_INT),INTENT(IN)    :: iLen
-    CHARACTER(C_CHAR),INTENT(IN) :: cFileName(iLen)
-    INTEGER(C_INT),INTENT(OUT)   :: iStat
+    INTEGER(C_INT),INTENT(IN)         :: iLen
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cFileName(iLen)
+    INTEGER(C_INT),INTENT(OUT)        :: iStat
     
     !Local variables
     CHARACTER :: cFileName_F*iLen
@@ -115,9 +115,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_ZBudget_GenerateZoneList_FromFile(cFileName,iLen,iStat) BIND(C,NAME='IW_ZBudget_GenerateZoneList_FromFile')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_ZBudget_GenerateZoneList_FromFile
-    INTEGER(C_INT),INTENT(IN)    :: iLen
-    CHARACTER(C_CHAR),INTENT(IN) :: cFileName(iLen)
-    INTEGER(C_INT),INTENT(OUT)   :: iStat
+    INTEGER(C_INT),INTENT(IN)         :: iLen
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cFileName(iLen)
+    INTEGER(C_INT),INTENT(OUT)        :: iStat
   
     !Local variables
     CHARACTER :: cFileName_F*iLen
@@ -139,9 +139,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_ZBudget_GenerateZoneList(iZExtent,iNElems,iElems,iLayers,iZones,nZonesWithNames,iZonesWithNames,iLenZoneNames,cZoneNames,iLocArray,iStat) BIND(C,NAME='IW_ZBudget_GenerateZoneList')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_ZBudget_GenerateZoneList
-    INTEGER(C_INT),INTENT(IN)    :: iZExtent,iNElems,nZonesWithNames,iElems(iNElems),iLayers(iNElems),iZones(iNElems),iZonesWithNames(nZonesWithNames),iLenZoneNames,iLocArray(nZonesWithNames)
-    CHARACTER(C_CHAR),INTENT(IN) :: cZoneNames(iLenZoneNames)
-    INTEGER(C_INT),INTENT(OUT)   :: iStat
+    INTEGER(C_INT),INTENT(IN)         :: iZExtent,iNElems,nZonesWithNames,iElems(iNElems),iLayers(iNElems),iZones(iNElems),iZonesWithNames(nZonesWithNames),iLenZoneNames,iLocArray(nZonesWithNames)
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cZoneNames(iLenZoneNames)
+    INTEGER(C_INT),INTENT(OUT)        :: iStat
     
     !LOcal variables
     INTEGER                      :: indx
@@ -210,11 +210,11 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_ZBudget_GetValues_ForSomeZones_ForAnInterval(iNZones,iZones,iNDiversifiedReadColsMax,iDiversifiedReadCols,cDateAndTimeBegin,iLenDateAndTime,cOutputInterval,iLenInterval,rFact_AR,rFact_VL,rValues,iStat) BIND(C,NAME='IW_ZBudget_GetValues_ForSomeZones_ForAnInterval') !) 
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_ZBudget_GetValues_ForSomeZones_ForAnInterval
-    INTEGER(C_INT),INTENT(IN)    :: iNZones,iZones(iNZones),iNDiversifiedReadColsMax,iDiversifiedReadCols(iNDiversifiedReadColsMax,iNZones),iLenDateAndTime,iLenInterval
-    CHARACTER(C_CHAR),INTENT(IN) :: cDateAndTimeBegin(iLenDateAndTime),cOutputInterval(iLenInterval)
-    REAL(C_DOUBLE),INTENT(IN)    :: rFact_AR,rFact_VL
-    REAL(C_DOUBLE),INTENT(OUT)   :: rValues(iNDiversifiedReadColsMax,iNZones)
-    INTEGER(C_INT),INTENT(OUT)   :: iStat
+    INTEGER(C_INT),INTENT(IN)         :: iNZones,iZones(iNZones),iNDiversifiedReadColsMax,iDiversifiedReadCols(iNDiversifiedReadColsMax,iNZones),iLenDateAndTime,iLenInterval
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cDateAndTimeBegin(iLenDateAndTime),cOutputInterval(iLenInterval)
+    REAL(C_DOUBLE),INTENT(IN)         :: rFact_AR,rFact_VL
+    REAL(C_DOUBLE),INTENT(OUT)        :: rValues(iNDiversifiedReadColsMax,iNZones)
+    INTEGER(C_INT),INTENT(OUT)        :: iStat
     
     !!Local variables
     CHARACTER :: cDateAndTimeBegin_F*iLenDateAndTime,cOutputInterval_F*iLenInterval
@@ -243,11 +243,11 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_ZBudget_GetValues_ForAZone(iZone,iNDiversifiedReadCols,iDiversifiedReadCols,cDateAndTimeBegin,cDateAndTimeEnd,iLenDateAndTime,cOutputInterval,iLenInterval,rFact_AR,rFact_VL,iNTimes_In,rValues,iNTimes_Out,iStat) BIND(C,NAME='IW_ZBudget_GetValues_ForAZone')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_ZBudget_GetValues_ForAZone
-    INTEGER(C_INT),INTENT(IN)    :: iZone,iNDiversifiedReadCols,iDiversifiedReadCols(iNDiversifiedReadCols),iLenDateAndTime,iLenInterval,iNTimes_In
-    CHARACTER(C_CHAR),INTENT(IN) :: cDateAndTimeBegin(iLenDateAndTime),cDateAndTimeEnd(iLenDateAndTime),cOutputInterval(iLenInterval)
-    REAL(C_DOUBLE),INTENT(IN)    :: rFact_AR,rFact_VL
-    REAL(C_DOUBLE),INTENT(OUT)   :: rValues(iNDiversifiedReadCols,iNTimes_In)
-    INTEGER(C_INT),INTENT(OUT)   :: iNTimes_Out,iStat
+    INTEGER(C_INT),INTENT(IN)         :: iZone,iNDiversifiedReadCols,iDiversifiedReadCols(iNDiversifiedReadCols),iLenDateAndTime,iLenInterval,iNTimes_In
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cDateAndTimeBegin(iLenDateAndTime),cDateAndTimeEnd(iLenDateAndTime),cOutputInterval(iLenInterval)
+    REAL(C_DOUBLE),INTENT(IN)         :: rFact_AR,rFact_VL
+    REAL(C_DOUBLE),INTENT(OUT)        :: rValues(iNDiversifiedReadCols,iNTimes_In)
+    INTEGER(C_INT),INTENT(OUT)        :: iNTimes_Out,iStat
     
     !Local variables
     CHARACTER :: cDateAndTimeBegin_F*iLenDateAndTime,cDateAndTimeEnd_F*iLenDateAndTime,cOutputInterval_F*iLenInterval
@@ -274,12 +274,12 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_ZBudget_GetValues_WithCallback(pCallbackFun_C,iZone,iNDiversifiedReadCols,iDiversifiedReadCols,cDateAndTimeBegin,cDateAndTimeEnd,iLenDateAndTime,cOutputInterval,iLenInterval,rFact_AR,rFact_VL,iNTimes_In,rValues,iNTimes_Out,iStat) BIND(C,NAME='IW_ZBudget_GetValues_WithCallback')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_ZBudget_GetValues_WithCallback
-    PROCEDURE(Abstract_CallbackFun) :: pCallbackFun_C
-    INTEGER(C_INT),INTENT(IN)       :: iZone,iNDiversifiedReadCols,iDiversifiedReadCols(iNDiversifiedReadCols),iLenDateAndTime,iLenInterval,iNTimes_In
-    CHARACTER(C_CHAR),INTENT(IN)    :: cDateAndTimeBegin(iLenDateAndTime),cDateAndTimeEnd(iLenDateAndTime),cOutputInterval(iLenInterval)
-    REAL(C_DOUBLE),INTENT(IN)       :: rFact_AR,rFact_VL
-    REAL(C_DOUBLE),INTENT(OUT)      :: rValues(iNDiversifiedReadCols,iNTimes_In)
-    INTEGER(C_INT),INTENT(OUT)      :: iNTimes_Out,iStat
+    PROCEDURE(Abstract_CallbackFun)   :: pCallbackFun_C
+    INTEGER(C_INT),INTENT(IN)         :: iZone,iNDiversifiedReadCols,iDiversifiedReadCols(iNDiversifiedReadCols),iLenDateAndTime,iLenInterval,iNTimes_In
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cDateAndTimeBegin(iLenDateAndTime),cDateAndTimeEnd(iLenDateAndTime),cOutputInterval(iLenInterval)
+    REAL(C_DOUBLE),INTENT(IN)         :: rFact_AR,rFact_VL
+    REAL(C_DOUBLE),INTENT(OUT)        :: rValues(iNDiversifiedReadCols,iNTimes_In)
+    INTEGER(C_INT),INTENT(OUT)        :: iNTimes_Out,iStat
     
     !Local variables
     CHARACTER                               :: cDateAndTimeBegin_F*iLenDateAndTime,cDateAndTimeEnd_F*iLenDateAndTime,cOutputInterval_F*iLenInterval
@@ -328,10 +328,10 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_ZBudget_GetTimeSpecs(cDataDatesAndTimes,iLenDates,cInterval,iLenInterval,NData,iLocArray,iStat) BIND(C,NAME='IW_ZBudget_GetTimeSpecs')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_ZBudget_GetTimeSpecs
-    INTEGER(C_INT),INTENT(IN)     :: iLenDates,iLenInterval,NData
-    CHARACTER(C_CHAR),INTENT(OUT) :: cDataDatesAndTimes(iLenDates)
-    CHARACTER(C_CHAR),INTENT(OUT) :: cInterval(iLenInterval)
-    INTEGER(C_INT),INTENT(OUT)    :: iLocArray(NData),iStat
+    INTEGER(C_INT),INTENT(IN)          :: iLenDates,iLenInterval,NData
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cDataDatesAndTimes(iLenDates)
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cInterval(iLenInterval)
+    INTEGER(C_INT),INTENT(OUT)         :: iLocArray(NData),iStat
     
     !Local variables
     TYPE(TimeStepType) :: TimeStep
@@ -372,10 +372,10 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_ZBudget_GetColumnHeaders_General(NColumnsMax,AreaUnit,VolumeUnit,iLenUnit,iLenColumnHeaders,cColumnHeaders,NColumns,iLocArray,iStat) BIND(C,NAME='IW_ZBudget_GetColumnHeaders_General')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_ZBudget_GetColumnHeaders_General
-    INTEGER(C_INT),INTENT(IN)     :: iLenColumnHeaders,NColumnsMax,iLenUnit
-    CHARACTER(C_CHAR),INTENT(IN)  :: AreaUnit(iLenUnit),VolumeUnit(iLenUnit)
-    CHARACTER(C_CHAR),INTENT(OUT) :: cColumnHeaders(iLenColumnHeaders)
-    INTEGER(C_INT),INTENT(OUT)    :: NColumns,iLocArray(NColumnsMax),iStat
+    INTEGER(C_INT),INTENT(IN)          :: iLenColumnHeaders,NColumnsMax,iLenUnit
+    CHARACTER(KIND=C_CHAR),INTENT(IN)  :: AreaUnit(iLenUnit),VolumeUnit(iLenUnit)
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cColumnHeaders(iLenColumnHeaders)
+    INTEGER(C_INT),INTENT(OUT)         :: NColumns,iLocArray(NColumnsMax),iStat
     
     !Local variables
     INTEGER                                       :: indx
@@ -415,10 +415,10 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_ZBudget_GetColumnHeaders_ForAZone(iZone,NColumnsList,iColumnsList,NColumnsMax,AreaUnit,VolumeUnit,iLenUnit,iLenColumnHeaders,cColumnHeaders,NColumns,iLocArray,iColumnsListDiversified,iStat) BIND(C,NAME='IW_ZBudget_GetColumnHeaders_ForAZone')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_ZBudget_GetColumnHeaders_ForAZone
-    INTEGER(C_INT),INTENT(IN)     :: iZone,iLenColumnHeaders,NColumnsMax,iLenUnit,NColumnsList,iColumnsList(NColumnsList)
-    CHARACTER(C_CHAR),INTENT(IN)  :: AreaUnit(iLenUnit),VolumeUnit(iLenUnit)
-    CHARACTER(C_CHAR),INTENT(OUT) :: cColumnHeaders(iLenColumnHeaders)
-    INTEGER(C_INT),INTENT(OUT)    :: NColumns,iLocArray(NColumnsMax),iColumnsListDiversified(NColumnsMax),iStat
+    INTEGER(C_INT),INTENT(IN)          :: iZone,iLenColumnHeaders,NColumnsMax,iLenUnit,NColumnsList,iColumnsList(NColumnsList)
+    CHARACTER(KIND=C_CHAR),INTENT(IN)  :: AreaUnit(iLenUnit),VolumeUnit(iLenUnit)
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cColumnHeaders(iLenColumnHeaders)
+    INTEGER(C_INT),INTENT(OUT)         :: NColumns,iLocArray(NColumnsMax),iColumnsListDiversified(NColumnsMax),iStat
     
     !Local variables
     INTEGER                                       :: indx
@@ -526,9 +526,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_ZBudget_GetZoneNames(iNZones,iLenZoneNames,cZoneNames,iLocArray,iStat) BIND(C,NAME='IW_ZBudget_GetZoneNames')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_ZBudget_GetZoneNames
-    INTEGER(C_INT),INTENT(IN)     :: iNZones,iLenZoneNames
-    CHARACTER(C_CHAR),INTENT(OUT) :: cZoneNames(iLenZoneNames)
-    INTEGER(C_INT),INTENT(OUT)    :: iLocArray(iNZones),iStat
+    INTEGER(C_INT),INTENT(IN)          :: iNZones,iLenZoneNames
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cZoneNames(iLenZoneNames)
+    INTEGER(C_INT),INTENT(OUT)         :: iLocArray(iNZones),iStat
     
     !Local variables
     INTEGER                       :: indx,iCount
@@ -579,11 +579,11 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_ZBudget_GetTitleLines(iNTitles,iZone,rFact_AR,cUnit_AR,cUnit_VL,iLenUnit,cTitles,iLenTitles,iLocArray,iStat) BIND(C,NAME='IW_ZBudget_GetTitleLines')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_ZBudget_GetTitleLines
-    INTEGER(C_INT),INTENT(IN)     :: iNTitles,iZone,iLenUnit,iLenTitles
-    REAL(C_DOUBLE),INTENT(IN)     :: rFact_AR
-    CHARACTER(C_CHAR),INTENT(IN)  :: cUnit_AR(iLenUnit),cUnit_VL(iLenUnit)
-    CHARACTER(C_CHAR),INTENT(OUT) :: cTitles(iLenTitles)
-    INTEGER(C_INT),INTENT(OUT)    :: iLocArray(iNTitles),iStat
+    INTEGER(C_INT),INTENT(IN)          :: iNTitles,iZone,iLenUnit,iLenTitles
+    REAL(C_DOUBLE),INTENT(IN)          :: rFact_AR
+    CHARACTER(KIND=C_CHAR),INTENT(IN)  :: cUnit_AR(iLenUnit),cUnit_VL(iLenUnit)
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cTitles(iLenTitles)
+    INTEGER(C_INT),INTENT(OUT)         :: iLocArray(iNTitles),iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+24),PARAMETER :: ThisProcedure = ModName // 'IW_ZBudget_GetTitleLines'

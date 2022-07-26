@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -1357,7 +1357,7 @@ CONTAINS
     INTEGER                                         :: ErrorCode,iSize,indx,nDatasets,iBytes,HDims_NativeInt(2)
     INTEGER(HID_T)                                  :: iChunkPropID,iAccessPropID
     INTEGER(HSIZE_T)                                :: HDims(2),iDims(1)
-    INTEGER(SIZE_T)                                 :: iCacheSize,iMaxCacheSize
+    INTEGER(SIZE_T)                                 :: iCacheSize
     TYPE(DatasetType),ALLOCATABLE                   :: TempDatasets(:)
     CHARACTER(LEN=f_iMaxDatasetNameLen),ALLOCATABLE :: cTempDatasetNames(:)
     
@@ -1436,13 +1436,13 @@ CONTAINS
             !Set chunk size so that there are NColumns and one year worth of timesesteps or as many as that fits into max cache size, whicever is smaller
             HDims(1) = MAX(1 , pDataset%nColumns)
             HDims(2) = MIN(MAX(1 , 525600/TimeStep%DeltaT_InMinutes)  , NTime)   !525600 = one year in minutes
-            IF (PRODUCT(HDims)*iBytes .GT. iMaxCacheSize) THEN
-                HDims(2) = MAX(1 , iMaxCacheSize/(HDims(1)*iBytes))
+            IF (PRODUCT(HDims)*iBytes .GT. f_iMaxCacheSize) THEN
+                HDims(2) = MAX(1 , f_iMaxCacheSize/(HDims(1)*iBytes))
             END IF
             CALL H5PSET_CHUNK_F(iChunkPropID,2,HDims,ErrorCode)
             
             !Set chunk cache size equal to chunk size or maximum cache size, whichever is smaller
-            iCacheSize = MIN(PRODUCT(HDims)*iBytes , iMaxCacheSize)
+            iCacheSize = MIN(PRODUCT(HDims)*iBytes , f_iMaxCacheSize)
             CALL H5PSET_CHUNK_CACHE_F(iAccessPropID,101,iCacheSize,1.0,ErrorCode)
             
             !Create dataset

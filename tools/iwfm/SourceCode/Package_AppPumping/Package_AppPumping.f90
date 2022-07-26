@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,6 +21,7 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE Package_AppPumping
+  !$ USE OMP_LIB
   USE Class_Version               , ONLY: ReadVersion
   USE MessageLogger               , ONLY: SetLastMessage                           , &
                                           LogMessage                               , &
@@ -37,14 +38,13 @@ MODULE Package_AppPumping
                                           ArrangeText                              , &
                                           f_cLineFeed
   USE IOInterface                 , ONLY: GenericFileType                          , & 
+                                          RealTSDataInFileType                     , &
+                                          PrepareTSDOutputFile                     , &
                                           iGetFileType_FromName                    , &
                                           f_iTXT                                   , &
                                           f_iDSS                                   , & 
                                           f_iUNKNOWN
-  USE Package_Misc                , ONLY: RealTSDataInFileType                     , &
-                                          FlowDestinationType                      , &
-                                          ReadTSData                               , &
-                                          PrepareTSDOutputFile                     , &
+  USE Package_Misc                , ONLY: FlowDestinationType                      , &
                                           f_rSmoothMaxP                            , &
                                           f_iGWComp                                , &
                                           f_iFlowDest_Outside                      , &
@@ -148,7 +148,7 @@ MODULE Package_AppPumping
       PROCEDURE,PASS :: IsDestinationToModelDomain   
       PROCEDURE,PASS :: SetIrigFracsRead             
       PROCEDURE,PASS :: SetSupplySpecs               
-      PROCEDURE,PASS :: ReadTSData                    => AppPumping_ReadTSData        
+      PROCEDURE,PASS :: ReadTSData                            
       PROCEDURE,PASS :: UpdatePumpDistFactors        
       PROCEDURE,PASS :: ResetIrigFracs               
       PROCEDURE,PASS :: CheckSupplyDestinationConnection 
@@ -1056,7 +1056,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ TIME SERIES PUMPING DATA
   ! -------------------------------------------------------------
-  SUBROUTINE AppPumping_ReadTSData(AppPumping,AppGrid,Stratigraphy,HHydCond,HeadGW,lPumpAdjusted,TimeStep,iStat)
+  SUBROUTINE ReadTSData(AppPumping,AppGrid,Stratigraphy,HHydCond,HeadGW,lPumpAdjusted,TimeStep,iStat)
     CLASS(AppPumpingType)             :: AppPumping
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
@@ -1078,7 +1078,7 @@ CONTAINS
     END IF
     
     !Read time series data
-    CALL ReadTSData(TimeStep,'Pumping data',AppPumping%TSPumpFile,FileReadCode,iStat)
+    CALL AppPumping%TSPumpFile%ReadTSData(TimeStep,'Pumping data',FileReadCode,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Proceeed based on returned error code
@@ -1121,7 +1121,7 @@ CONTAINS
         END DO
     END IF
       
-  END SUBROUTINE AppPumping_ReadTSData
+  END SUBROUTINE ReadTSData
   
   
   
@@ -1411,47 +1411,49 @@ CONTAINS
     TYPE(MatrixType)                  :: Matrix
     
     !Local variables
-    INTEGER                                                      :: indxNode,indxLayer,iGWNode(1),NLayers,indx
+    INTEGER                                                      :: indxNode,indxLayer,iGWNode(1),NNodes,NLayers,indx
     REAL(8)                                                      :: rUpdateCOEFF(1),rDiffQ,rDiffQSQRT,rPumpRequired, &
                                                                     rUpdateRHS(AppGrid%NNodes*Stratigraphy%NLayers), &
-                                                                    rStoragePos,rStor,rStorSQRT
-    REAL(8),DIMENSION(SIZE(rStorage,DIM=1),SIZE(rStorage,DIM=2)) :: rNodalPumpActual_New,rNodalPumpActual_Old
+                                                                    rStoragePos,rStor,rStorSQRT,rNodalPumpActual_New
+    REAL(8),DIMENSION(SIZE(rStorage,DIM=1),SIZE(rStorage,DIM=2)) :: rNodalPumpActual_Old
     INTEGER,PARAMETER                                            :: iCompIDs(1) = [f_iGWComp]
     
     !Initialize
+    NNodes  = AppGrid%NNodes
     NLayers = Stratigraphy%NLayers
     
     !Keep the original actual pumping
     rNodalPumpActual_Old = AppPumping%NodalPumpActual
     
     !Loop through nodes and layers
-    indx = 0
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NNodes,NLayers,AppPumping,rUpdateRHS,rStorage,rdStorage,Matrix,iCompIDs) 
+    !$OMP DO COLLAPSE(2) SCHEDULE(DYNAMIC,200)
     DO indxLayer=1,NLayers
-        DO indxNode=1,AppGrid%NNodes
-            indx = indx + 1
+        DO indxNode=1,NNodes
+            indx = (indxLayer-1)*NNodes + indxNode
             
             !Convert the sign of required pumping to be compared to storage and applied to RHS
             rPumpRequired = -AppPumping%NodalPumpRequired(indxNode,indxLayer)
             
             !If pumping is zero, cycle
             IF (rPumpRequired .EQ. 0.0) THEN
-                rNodalPumpActual_New(indxNode,indxLayer) = 0.0
-                rUpdateRHS(indx)                         = 0.0
+                AppPumping%NodalPumpActual(indxNode,indxLayer) = 0.0
+                rUpdateRHS(indx)                               = 0.0
                 CYCLE
             END IF
             
             !If this is recharge, cycle (negative sign means recharge)
             IF (rPumpRequired .LT. 0.0) THEN
-                rNodalPumpActual_New(indxNode,indxLayer) = -rPumpRequired
-                rUpdateRHS(indx)                         = rPumpRequired
+                AppPumping%NodalPumpActual(indxNode,indxLayer) = rPumpRequired
+                rUpdateRHS(indx)                               = rPumpRequired
                 CYCLE
             END IF
             
             !Actual pumping, limited by available storage
-            rStor                                    = rStorage(indxNode,indxLayer)
-            rStoragePos                              = MAX(rStor , 0.0)
-            rNodalPumpActual_New(indxNode,indxLayer) = rPumpRequired - MAX(rPumpRequired-rStoragePos , 0.0)
-            rUpdateRHS(indx)                         = rNodalPumpActual_New(indxNode,indxLayer)
+            rStor                = rStorage(indxNode,indxLayer)
+            rStoragePos          = MAX(rStor , 0.0)
+            rNodalPumpActual_New = rPumpRequired - MAX(rPumpRequired-rStoragePos , 0.0)
+            rUpdateRHS(indx)     = rNodalPumpActual_New
             
             !Update Jacobian; use Jacobian smoothing
             rDiffQ          = rPumpRequired - rStoragePos
@@ -1461,24 +1463,23 @@ CONTAINS
             iGWNode(1)      = indx
             CALL Matrix%UpdateCOEFF(f_iGWComp,iGWNode(1),1,iCompIDs,iGWNode,rUpdateCOEFF)
 
-            !Convert sign of actual pumping back to what it is supposed to be
-            rNodalPumpActual_New(indxNode,indxLayer) = -rNodalPumpActual_New(indxNode,indxLayer)
-
             !Store the newly computed actual pumping
-            AppPumping%NodalPumpActual(indxNode,indxLayer) = rNodalPumpActual_New(indxNode,indxLayer)
+            AppPumping%NodalPumpActual(indxNode,indxLayer) = -rNodalPumpActual_New
         END DO
     END DO
+    !$OMP END DO
+    !$OMP END PARALLEL
     
     !Update RHS vector
     CALL Matrix%UpdateRHS(f_iGWComp,1,rUpdateRHS)
        
     !Update element pumping and corresponding node-layer distribution factors based on new actual nodal pumping
     IF (AppPumping%NElemPumps .GT. 0) &
-        CALL ComputePumpActual(AppPumping%ElemPumps,AppGrid,NLayers,rNodalPumpActual_New,AppPumping%NodalPumpRequired)
+        CALL ComputePumpActual(AppPumping%ElemPumps,AppGrid,NLayers,AppPumping%NodalPumpActual,AppPumping%NodalPumpRequired)
     
     !Update well pumping and corresponding node-layer distribution factors based on new actual nodal pumping
     IF (AppPumping%NWells .GT. 0) &
-        CALL ComputePumpActual(AppPumping%Wells,AppGrid,NLayers,rNodalPumpActual_New,AppPumping%NodalPumpRequired)
+        CALL ComputePumpActual(AppPumping%Wells,AppGrid,NLayers,AppPumping%NodalPumpActual,AppPumping%NodalPumpRequired)
     
   END SUBROUTINE Simulate
   

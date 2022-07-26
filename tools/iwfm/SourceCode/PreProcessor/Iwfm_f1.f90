@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,6 +21,7 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 PROGRAM IWFM_F1
+  !$ USE OMP_LIB
   USE ProgramTimer    , ONLY: StartTimer       , &
                               StopTimer
   USE MessageLogger   , ONLY: PrintRunTime     , &
@@ -33,6 +34,11 @@ PROGRAM IWFM_F1
   !Local variables
   TYPE(ModelType) :: Model
   INTEGER         :: iStat
+  
+  
+  !Set environment for parallel processing
+  !$ CALL KMP_SET_BLOCKTIME(0)
+  !$ CALL OMP_SET_NUM_THREADS(OMP_GET_NUM_PROCS()-1)
   
   
   !Start timer

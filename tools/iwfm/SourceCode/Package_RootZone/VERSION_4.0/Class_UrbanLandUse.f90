@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -26,7 +26,9 @@ MODULE Class_UrbanLandUse
                                       MessageArray                    , &
                                       EchoProgress                    , &
                                       f_iFatal
-  USE IOInterface             , ONLY: GenericFileType                 
+  USE IOInterface             , ONLY: GenericFileType                 , &
+                                      RealTSDataInFileType            , &
+                                      IntTSDataInFileType  
   USE TimeSeriesUtilities     , ONLY: TimeStepType                    , &
                                       IncrementTimeStamp              , &
                                       CTimeStep_To_RTimeStep          , &
@@ -38,10 +40,7 @@ MODULE Class_UrbanLandUse
                                       LocateInList                    , &
                                       EstablishAbsolutePathFileName   , &
                                       UpperCase
-  USE Package_Misc            , ONLY: RealTSDataInFileType            , &
-                                      IntTSDataInFileType             , &
-                                      SolverDataType                  , & 
-                                      ReadTimeSeriesData => ReadTSData                      
+  USE Package_Misc            , ONLY: SolverDataType                                       
   USE Class_BaseRootZone      , ONLY: TrackMoistureDueToSource        , &
                                       CalculateUrbanFracDemand
   USE Class_GenericLandUse    , ONLY: GenericLandUseType
@@ -76,18 +75,18 @@ MODULE Class_UrbanLandUse
   ! --- URBAN LAND DATA TYPE
   ! -------------------------------------------------------------
   TYPE,EXTENDS(GenericLandUseType) :: UrbanType
-    INTEGER :: iColReturnFrac       = 0       !Column number in the return flow fraction data file
-    INTEGER :: iColReuseFrac        = 0       !Column number in the re-use fraction data file
-    INTEGER :: iColPopulation       = 0       !Column number in the population data file
-    INTEGER :: iColPerCapitaWaterUse= 0       !Column number in the per capita water use data file
-    INTEGER :: iColWaterUseSpec     = 0       !Column number in the urban water use specs data file
-    REAL(8) :: FracDemand           = 1.0     !Relative proportion of demand computed by multiplying popultaion with per capita water use to be applied to an element
-    REAL(8) :: Demand               = 0.0     !Urban water demand
-    REAL(8) :: PerviousFrac         = 0.0     !Fraction of pervious area to total urban area
-    REAL(8) :: IrigInfilt           = 0.0     !Infiltration due to irrigation
-    REAL(8) :: Reuse                = 0.0     !Reused return flow 
-    REAL(8) :: ReturnFlow           = 0.0     !Return flow
-    REAL(8) :: ElemDemandFrac       = 0.0     !Ratio of urban demand to the total demand at the element it is located at
+    INTEGER,ALLOCATABLE :: iColReturnFrac(:,:)           !Column number in the return flow fraction data file
+    INTEGER,ALLOCATABLE :: iColReuseFrac(:,:)            !Column number in the re-use fraction data file
+    INTEGER,ALLOCATABLE :: iColPopulation(:,:)           !Column number in the population data file
+    INTEGER,ALLOCATABLE :: iColPerCapitaWaterUse(:,:)    !Column number in the per capita water use data file
+    INTEGER,ALLOCATABLE :: iColWaterUseSpec(:,:)         !Column number in the urban water use specs data file
+    REAL(8),ALLOCATABLE :: FracDemand(:,:)               !Relative proportion of demand computed by multiplying popultaion with per capita water use to be applied to an element
+    REAL(8),ALLOCATABLE :: Demand(:,:)                   !Urban water demand
+    REAL(8),ALLOCATABLE :: PerviousFrac(:,:)             !Fraction of pervious area to total urban area
+    REAL(8),ALLOCATABLE :: IrigInfilt(:,:)               !Infiltration due to irrigation
+    REAL(8),ALLOCATABLE :: Reuse(:,:)                    !Reused return flow 
+    REAL(8),ALLOCATABLE :: ReturnFlow(:,:)               !Return flow
+    REAL(8),ALLOCATABLE :: ElemDemandFrac(:,:)           !Ratio of urban demand to the total demand at the element it is located at
   END TYPE UrbanType
   
   
@@ -95,7 +94,7 @@ MODULE Class_UrbanLandUse
   ! --- URBAN LAND DATABASE TYPE
   ! -------------------------------------------------------------
   TYPE UrbanDatabaseType
-    TYPE(UrbanType),ALLOCATABLE :: UrbData(:)                      !Urban data for each element
+    TYPE(UrbanType)             :: UrbData                         !Urban data for each element
     REAL(8)                     :: RootDepth               = 0.0   !Urban root depth
     REAL(8)                     :: PerCapitaWaterUseFactor = 1.0   !Conversion factor for water demand
     LOGICAL                     :: lFracDemand_wrt_Area = .FALSE.  !Flag to see if FracDemand is specified by the user as a constant or with respect to urban area in each element
@@ -178,14 +177,41 @@ CONTAINS
     IF (iStat .EQ. -1) RETURN
     
     !Allocate memory
-    ALLOCATE (UrbLand%UrbData(NElements)       , &
-              UrbLand%RegionETPot(NSubregions) , &
-              STAT=ErrorCode                   )
-    IF (ErrorCode .NE. 0) THEN
+    CALL UrbLand%UrbData%New(NElements,1,iStat) 
+    ALLOCATE (UrbLand%UrbData%iColReturnFrac(NElements,1)           , &
+              UrbLand%UrbData%iColReuseFrac(NElements,1)            , &
+              UrbLand%UrbData%iColPopulation(NElements,1)           , &
+              UrbLand%UrbData%iColPerCapitaWaterUse(NElements,1)    , &
+              UrbLand%UrbData%iColWaterUseSpec(NElements,1)         , &
+              UrbLand%UrbData%FracDemand(NElements,1)               , &
+              UrbLand%UrbData%Demand(NElements,1)                   , &
+              UrbLand%UrbData%PerviousFrac(NElements,1)             , &
+              UrbLand%UrbData%IrigInfilt(NElements,1)               , &
+              UrbLand%UrbData%Reuse(NElements,1)                    , &
+              UrbLand%UrbData%ReturnFlow(NElements,1)               , &
+              UrbLand%UrbData%ElemDemandFrac(NElements,1)           , &
+              UrbLand%RegionETPot(NSubregions)                      , &
+              STAT=ErrorCode                                        )
+    IF (ErrorCode+iStat .NE. 0) THEN
         CALL SetLastMessage('Error in allocating memory for urban data!',f_iFatal,ThisProcedure)
         iStat = -1
         RETURN
     END IF
+    
+    !Initialize variables
+    UrbLand%UrbData%iColReturnFrac        = 0
+    UrbLand%UrbData%iColReuseFrac         = 0
+    UrbLand%UrbData%iColPopulation        = 0
+    UrbLand%UrbData%iColPerCapitaWaterUse = 0
+    UrbLand%UrbData%iColWaterUseSpec      = 0
+    UrbLand%UrbData%FracDemand            = 1.0
+    UrbLand%UrbData%Demand                = 0.0
+    UrbLand%UrbData%PerviousFrac          = 0.0
+    UrbLand%UrbData%IrigInfilt            = 0.0
+    UrbLand%UrbData%Reuse                 = 0.0
+    UrbLand%UrbData%ReturnFlow            = 0.0
+    UrbLand%UrbData%ElemDemandFrac        = 0.0
+    UrbLand%RegionETPot                   = 0.0
     
     !Land use data file
     CALL UrbanDataFile%ReadData(ALine,iStat)  ;  IF (iStat .EQ. -1) RETURN  
@@ -238,25 +264,25 @@ CONTAINS
             END IF
             lProcessed(iElem) = .TRUE.
             
-            pUrbData(iElem)%PerviousFrac          =     DummyArray(indxElem,2)
-            pUrbData(iElem)%SMax                  = (1000.0/DummyArray(indxElem,3)-10.0) * FACTCN
-            pUrbData(iElem)%iColPopulation        = INT(DummyArray(indxElem,4))
-            pUrbData(iElem)%iColPerCapitaWaterUse = INT(DummyArray(indxElem,5))
-            pUrbData(iElem)%FracDemand            =     DummyArray(indxElem,6)
-            pUrbData(iElem)%iColETc               = INT(DummyArray(indxElem,7))
-            pUrbData(iElem)%iColReturnFrac        = INT(DummyArray(indxElem,8))
-            pUrbData(iElem)%iColReuseFrac         = INT(DummyArray(indxElem,9))
-            pUrbData(iElem)%iColWaterUseSpec      = INT(DummyArray(indxElem,10))
+            pUrbData%PerviousFrac(iElem,1)          =     DummyArray(indxElem,2)
+            pUrbData%SMax(iElem,1)                  = (1000.0/DummyArray(indxElem,3)-10.0) * FACTCN
+            pUrbData%iColPopulation(iElem,1)        = INT(DummyArray(indxElem,4))
+            pUrbData%iColPerCapitaWaterUse(iElem,1) = INT(DummyArray(indxElem,5))
+            pUrbData%FracDemand(iElem,1)            =     DummyArray(indxElem,6)
+            pUrbData%iColETc(iElem,1)               = INT(DummyArray(indxElem,7))
+            pUrbData%iColReturnFrac(iElem,1)        = INT(DummyArray(indxElem,8))
+            pUrbData%iColReuseFrac(iElem,1)         = INT(DummyArray(indxElem,9))
+            pUrbData%iColWaterUseSpec(iElem,1)      = INT(DummyArray(indxElem,10))
         END DO
       
         !Make sure FRACDM is either entered all negative or all greater than (or equal to) zero
         lError = .FALSE.
-        IF (pUrbData(1)%FracDemand .LT. 0.0) THEN
+        IF (pUrbData%FracDemand(1,1) .LT. 0.0) THEN
             UrbLand%lFracDemand_wrt_Area = .TRUE.
-            IF (ANY(pUrbData(2:)%FracDemand.GE.0.0)) lError = .TRUE.
+            IF (ANY(pUrbData%FracDemand(2:,1).GE.0.0)) lError = .TRUE.
         ELSE
             UrbLand%lFracDemand_wrt_Area = .FALSE.
-            IF (ANY(pUrbData(2:)%FracDemand.LT.0.0)) lError = .TRUE.
+            IF (ANY(pUrbData%FracDemand(2:,1).LT.0.0)) lError = .TRUE.
         END IF
         IF (lError) THEN
             MessageArray(1) = 'FRACDM variable in urban main data file must be all specified '
@@ -273,48 +299,47 @@ CONTAINS
         !Check for timeseries column pointer errors
         DO indxElem=1,NElements
             ID = iElemIDs(indxElem)
-            CALL UrbLand%PopulationFile%CheckColNum('Urban population file as referenced by element '//TRIM(IntToText(ID)),[pUrbData(indxElem)%iColPopulation],.TRUE.,iStat)                          ;  IF (iStat .EQ. -1) RETURN
-            CALL UrbLand%PerCapitaWaterUseFile%CheckColNum('Urban per capita water use file as referenced by element '//TRIM(IntToText(ID)),[pUrbData(indxElem)%iColPerCapitaWaterUse],.TRUE.,iStat)  ;  IF (iStat .EQ. -1) RETURN
-            CALL UrbLand%WaterUseSpecsFile%CheckColNum('Urban water use specifications file as referenced by element '//TRIM(IntToText(ID)),[pUrbData(indxElem)%iColWaterUseSpec],.TRUE.,iStat)       ;  IF (iStat .EQ. -1) RETURN
+            CALL UrbLand%PopulationFile%CheckColNum('Urban population file as referenced by element '//TRIM(IntToText(ID)),[pUrbData%iColPopulation(indxElem,1)],.TRUE.,iStat)                          ;  IF (iStat .EQ. -1) RETURN
+            CALL UrbLand%PerCapitaWaterUseFile%CheckColNum('Urban per capita water use file as referenced by element '//TRIM(IntToText(ID)),[pUrbData%iColPerCapitaWaterUse(indxElem,1)],.TRUE.,iStat)  ;  IF (iStat .EQ. -1) RETURN
+            CALL UrbLand%WaterUseSpecsFile%CheckColNum('Urban water use specifications file as referenced by element '//TRIM(IntToText(ID)),[pUrbData%iColWaterUseSpec(indxElem,1)],.TRUE.,iStat)       ;  IF (iStat .EQ. -1) RETURN
         END DO
 
-    END ASSOCIATE
-
-    !Initial conditions
-    CALL ReadRealData(UrbanDataFile,'initial conditions for urban lands','elements',NElements,3,iElemIDs,DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    IF (MINVAL(DummyArray(:,2)) .LT. 0.0   .OR.  &
-        MAXVAL(DummyArray(:,2)) .GT. 1.0         ) THEN
-        MessageArray(1) = 'Some fractions of initial soil moisture due to precipitation is less '
-        MessageArray(2) = 'than 0.0 or greater than 1.0 for urban areas!'
-        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)      
-        iStat = -1
-        RETURN
-    END IF
-    IF (MINVAL(DummyArray(:,3:)) .LT. 0.0   .OR.  &
-        MAXVAL(DummyArray(:,3:)) .GT. 1.0          ) THEN
-        MessageArray(1) = 'Some or all initial root zone moisture contents are less than'
-        MessageArray(2) = '0.0 or greater than 1.0 for urban areas!'
-        CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)      
-        iStat = -1
-        RETURN
-    END IF
-    lProcessed = .FALSE.
-    DO indxElem=1,NElements
-        iElem = INT(DummyArray(indxElem,1))
-        IF (lProcessed(iElem)) THEN
-            ID = iElemIDs(iElem)
-            CALL SetLastMessage('initial conditions for urban lands at element '//TRIM(IntToText(ID))//' is defined more than once!',f_iFatal,ThisProcedure)
+        !Initial conditions
+        CALL ReadRealData(UrbanDataFile,'initial conditions for urban lands','elements',NElements,3,iElemIDs,DummyArray,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        IF (MINVAL(DummyArray(:,2)) .LT. 0.0   .OR.  &
+            MAXVAL(DummyArray(:,2)) .GT. 1.0         ) THEN
+            MessageArray(1) = 'Some fractions of initial soil moisture due to precipitation is less '
+            MessageArray(2) = 'than 0.0 or greater than 1.0 for urban areas!'
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)      
             iStat = -1
             RETURN
         END IF
-        lProcessed(iElem)                                  = .TRUE.
-        UrbLand%UrbData(iElem)%SoilM_Precip                = DummyArray(indxElem,2) * DummyArray(indxElem,3)
-        UrbLand%UrbData(iElem)%SoilM_AW                    = DummyArray(indxElem,3) - UrbLand%UrbData(iElem)%SoilM_Precip
-        UrbLand%UrbData(iElem)%SoilM_Precip_P_BeforeUpdate = UrbLand%UrbData(iElem)%SoilM_Precip 
-        UrbLand%UrbData(iElem)%SoilM_Precip_P              = UrbLand%UrbData(iElem)%SoilM_Precip 
-        UrbLand%UrbData(iElem)%SoilM_AW_P_BeforeUpdate     = UrbLand%UrbData(iElem)%SoilM_AW 
-        UrbLand%UrbData(iElem)%SoilM_AW_P                  = UrbLand%UrbData(iElem)%SoilM_AW 
-    END DO
+        IF (MINVAL(DummyArray(:,3:)) .LT. 0.0   .OR.  &
+            MAXVAL(DummyArray(:,3:)) .GT. 1.0          ) THEN
+            MessageArray(1) = 'Some or all initial root zone moisture contents are less than'
+            MessageArray(2) = '0.0 or greater than 1.0 for urban areas!'
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)      
+            iStat = -1
+            RETURN
+        END IF
+        lProcessed = .FALSE.
+        DO indxElem=1,NElements
+            iElem = INT(DummyArray(indxElem,1))
+            IF (lProcessed(iElem)) THEN
+                ID = iElemIDs(iElem)
+                CALL SetLastMessage('initial conditions for urban lands at element '//TRIM(IntToText(ID))//' is defined more than once!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            lProcessed(iElem)                             = .TRUE.
+            pUrbData%SoilM_Precip(iElem,1)                = DummyArray(indxElem,2) * DummyArray(indxElem,3)
+            pUrbData%SoilM_AW(iElem,1)                    = DummyArray(indxElem,3) - pUrbData%SoilM_Precip(iElem,1)
+            pUrbData%SoilM_Precip_P_BeforeUpdate(iElem,1) = pUrbData%SoilM_Precip(iElem,1) 
+            pUrbData%SoilM_Precip_P(iElem,1)              = pUrbData%SoilM_Precip(iElem,1) 
+            pUrbData%SoilM_AW_P_BeforeUpdate(iElem,1)     = pUrbData%SoilM_AW(iElem,1) 
+            pUrbData%SoilM_AW_P(iElem,1)                  = pUrbData%SoilM_AW(iElem,1) 
+        END DO
+    END ASSOCIATE
     
     !Close file
     CALL UrbanDataFile%Kill()
@@ -345,8 +370,21 @@ CONTAINS
     TYPE(UrbanDatabaseType) :: Dummy
     
     !Deallocate arrays
-    DEALLOCATE (UrbLand%UrbData  , &
-                STAT = ErrorCode )
+    CALL UrbLand%UrbData%Kill()
+    DEALLOCATE (UrbLand%UrbData%iColReturnFrac            , &
+                UrbLand%UrbData%iColReuseFrac             , &
+                UrbLand%UrbData%iColPopulation            , &
+                UrbLand%UrbData%iColPerCapitaWaterUse     , &
+                UrbLand%UrbData%iColWaterUseSpec          , &
+                UrbLand%UrbData%FracDemand                , &
+                UrbLand%UrbData%Demand                    , &
+                UrbLand%UrbData%PerviousFrac              , &
+                UrbLand%UrbData%IrigInfilt                , &
+                UrbLand%UrbData%Reuse                     , &
+                UrbLand%UrbData%ReturnFlow                , &
+                UrbLand%UrbData%ElemDemandFrac            , &
+                UrbLand%RegionETPot                       , & 
+                STAT = ErrorCode                          )
     
     !Close files
     CALL UrbLand%LandUseDataFile%Kill()
@@ -398,14 +436,14 @@ CONTAINS
     !Loop through timesteps and read return flow fractions
     DO
         !Read data
-        CALL ReadTimeSeriesData(TimeStep,'Return flow fractions data',ReturnFracFile,FileReadCode_Return,iStat)  ;  IF (iStat .EQ. -1) RETURN
-        CALL ReadTimeSeriesData(TimeStep,'Reuse fractions data',ReuseFracFile,FileReadCode_Reuse,iStat)          ;  IF (iStat .EQ. -1) RETURN
+        CALL ReturnFracFile%ReadTSData(TimeStep,'Return flow fractions data',FileReadCode_Return,iStat)  ;  IF (iStat .EQ. -1) RETURN
+        CALL ReuseFracFile%ReadTSData(TimeStep,'Reuse fractions data',FileReadCode_Reuse,iStat)          ;  IF (iStat .EQ. -1) RETURN
         
         !If new data is read, find min and max
         IF (FileReadCode_Return.EQ.0  .OR.  FileReadCode_Reuse.EQ.0) THEN
-            DO indxElem=1,SIZE(UrbLand%UrbData)
-                rRT      = ReturnFracFile%rValues(UrbLand%UrbData(indxElem)%iColReturnFrac)
-                rRU      = ReuseFracFile%rValues(UrbLand%UrbData(indxElem)%iColReuseFrac)
+            DO indxElem=1,SIZE(UrbLand%UrbData%SMax , DIM=1)
+                rRT      = ReturnFracFile%rValues(UrbLand%UrbData%iColReturnFrac(indxElem,1))
+                rRU      = ReuseFracFile%rValues(UrbLand%UrbData%iColReuseFrac(indxElem,1))
                 rMaxFrac = MAX(rMaxFrac , rRT-rRU)
                 rMinFrac = MIN(rMinFrac , rRT-rRU)
             END DO
@@ -441,7 +479,7 @@ CONTAINS
     CLASS(UrbanDatabaseType) :: UrbLand
     REAL(8),INTENT(IN)       :: Area(:)
    
-    UrbLand%UrbData%Area = Area
+    UrbLand%UrbData%Area(:,1) = Area
     
   END SUBROUTINE SetAreas
   
@@ -502,18 +540,18 @@ CONTAINS
     
     !Land use areas
     CALL UrbanLand%LandUseDataFile%ReadTSData('Urban areas',TimeStep,rElemAreas,iElemIDs,iStat)  ;  IF (iStat .EQ. -1) RETURN
-    IF (UrbanLand%LandUseDataFile%lUpdated) UrbanLand%UrbData%Area = UrbanLand%LandUseDataFile%rValues(:,2)
+    IF (UrbanLand%LandUseDataFile%lUpdated) UrbanLand%UrbData%Area(:,1) = UrbanLand%LandUseDataFile%rValues(:,2)
     
     !Population
-    CALL ReadTimeSeriesData(TimeStep,'Population data',UrbanLand%PopulationFile,FileReadCode,iStat)
+    CALL UrbanLand%PopulationFile%ReadTSData(TimeStep,'Population data',FileReadCode,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Water use
-    CALL ReadTimeSeriesData(TimeStep,'Per capita water use data',UrbanLand%PerCapitaWaterUseFile,FileReadCode1,iStat)  ;  IF (iStat .EQ. -1) RETURN
+    CALL UrbanLand%PerCapitaWaterUseFile%ReadTSData(TimeStep,'Per capita water use data',FileReadCode1,iStat)  ;  IF (iStat .EQ. -1) RETURN
     IF (FileReadCode1 .EQ. 0) UrbanLand%PerCapitaWaterUseFile%rValues = UrbanLand%PerCapitaWaterUseFile%rValues * UrbanLand%PerCapitaWaterUseFactor
     
     !Water use specifications
-    CALL ReadTimeSeriesData(TimeStep,'Urban water use specifications',UrbanLand%WaterUseSpecsFile,FileReadCode,iStat)
+    CALL UrbanLand%WaterUseSpecsFile%ReadTSData(TimeStep,'Urban water use specifications',FileReadCode,iStat)
     
   END SUBROUTINE ReadTSData
   
@@ -534,7 +572,7 @@ CONTAINS
     INTEGER :: ErrorCode
     
     !ReadData
-    CALL UrbanLand%LandUseDataFile%ReadData(iElem,2,iElem,cReadBeginDateAndTime,cReadEndDateAndTime,nActualOutput,ElemLandUse,rOutputDates,ErrorCode,iStat)  
+    CALL UrbanLand%LandUseDataFile%ReadTSData(iElem,2,iElem,cReadBeginDateAndTime,cReadEndDateAndTime,nActualOutput,ElemLandUse,rOutputDates,ErrorCode,iStat)  
     IF (iStat .EQ. -1) RETURN
 
     !Unit conversion
@@ -595,7 +633,7 @@ CONTAINS
   ! --- SIMULATE FLOW PROCESSES AT URBAN AREAS
   ! -------------------------------------------------------------
   SUBROUTINE Simulate(UrbanLand,AppGrid,ETData,DeltaT,Precip,GenericMoisture,SoilsData,ElemSupply,ReuseFrac,ReturnFrac,ElemsToGW,SolverData,lLakeElem,iStat)
-    CLASS(UrbanDatabaseType),TARGET   :: UrbanLand
+    CLASS(UrbanDatabaseType)          :: UrbanLand
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
     TYPE(ETType),INTENT(IN)           :: ETData
     TYPE(RootZoneSoilType),INTENT(IN) :: SoilsData(AppGrid%NElements)
@@ -607,194 +645,183 @@ CONTAINS
     
     !Local variables
     CHARACTER(LEN=ModNameLen+8),PARAMETER :: ThisProcedure = ModName // 'Simulate'
-    !$ INTEGER                            :: iChunk
     INTEGER                               :: indxElem,iColETc(1),KunsatMethod,iElemID
     REAL(8)                               :: AchievedConv,Area,ETc(1),HydCond,TotalPorosity,Area_Indoors,Area_Outdoors, &
                                              FieldCapacity,TotalPorosityUrban,FieldCapacityUrban,RootDepth,Lambda,      &
                                              AW_Outdoors,AW_Indoors,WiltingPoint,WiltingPointUrban,SoilM_P,SoilM,       &
                                              GM,PrecipD,rMultip,Excess,Inflow,Supply,fRU,fRF,ratio(3),SoilM_P_Array(3), &
                                              SoilM_Array(3),Infilt(3),ETPartition(3),rIndoorFrac
-    LOGICAL                               :: lNegativeMoist
-    TYPE(UrbanType),POINTER               :: pUrban
     
     !Initialize
-    iStat     = 0
-    !$ iChunk = MAX(1 , AppGrid%NElements/(OMP_GET_MAX_THREADS()-1)/10)
+    iStat = 0
   
     !Inform user
     CALL EchoProgress('Simulating flows at urban lands')
     
-    !Initialize
-    UrbanLand%UrbData%Runoff          = 0.0
-    UrbanLand%UrbData%PrecipInfilt    = 0.0                     
-    UrbanLand%UrbData%ETa             = 0.0                     
-    UrbanLand%UrbData%Perc            = 0.0                    
-    UrbanLand%UrbData%ReturnFlow      = 0.0
-    UrbanLand%UrbData%IrigInfilt      = 0.0
-    UrbanLand%UrbData%GMExcess        = 0.0
-    UrbanLand%UrbData%Reuse           = 0.0
-    RootDepth                         = UrbanLand%RootDepth   
-
-    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(AppGrid,UrbanLand,lLakeElem,SoilsData,ETData,Precip,DeltaT,GenericMoisture, &
-    !$OMP                                  ReturnFrac,ReuseFrac,SolverData,ElemSupply,ElemsToGW,iStat,RootDepth)       &
-    !$OMP          NUM_THREADS(OMP_GET_MAX_THREADS()-1)
-    !$OMP DO SCHEDULE(DYNAMIC,iChunk)
-    DO indxElem=1,AppGrid%NElements
-        IF (iStat .EQ. -1) CYCLE
-        
-        !Cycle if Area is zero
-        Area = UrbanLand%UrbData(indxElem)%Area
-        IF (Area .EQ. 0.0) CYCLE
-          
-        !Cycle is it is a lake element
-        IF (lLakeElem(indxElem)) CYCLE
-        
-        !Pointer to urban land data
-        pUrban => UrbanLand%UrbData(indxElem)
-
+    ASSOCIATE (pUrban => UrbanLand%UrbData)
         !Initialize
-        WiltingPoint       = SoilsData(indxElem)%WiltingPoint
-        FieldCapacity      = SoilsData(indxElem)%FieldCapacity
-        TotalPorosity      = SoilsData(indxElem)%TotalPorosity
-        HydCond            = SoilsData(indxElem)%HydCond
-        Lambda             = SoilsData(indxElem)%Lambda
-        KunsatMethod       = SoilsData(indxElem)%KunsatMethod
-        iColETc(1)         = pUrban%iColETc
-        ETc                = ETData%GetValues(iColETc)
-        PrecipD            = Precip(indxElem) * DeltaT
-        GM                 = GenericMoisture(1,indxElem) * RootDepth * DeltaT
-        Area_Outdoors      = Area * pUrban%PerviousFrac
-        Area_Indoors       = Area - Area_Outdoors 
-        WiltingPointUrban  = WiltingPoint  * RootDepth
-        FieldCapacityUrban = FieldCapacity * RootDepth
-        TotalPorosityUrban = TotalPorosity * RootDepth
-        SoilM_P            = pUrban%SoilM_Precip_P + pUrban%SoilM_AW_P + pUrban%SoilM_Oth_P
-        IF (Area_Indoors .EQ. 0.0) THEN
-            AW_Indoors  = 0.0
-            AW_Outdoors = ElemSupply(indxElem) / Area_Outdoors
-        ELSEIF (Area_Outdoors .EQ. 0.0) THEN
-            AW_Indoors  = ElemSupply(indxElem) / Area_Indoors
-            AW_Outdoors = 0.0
-        ELSE
-            rIndoorFrac = UrbanLand%WaterUseSpecsFile%rValues(pUrban%iColWaterUseSpec)
-            AW_Indoors  = ElemSupply(indxElem)*rIndoorFrac        / Area_Indoors
-            AW_Outdoors = ElemSupply(indxElem)*(1d0-rIndoorFrac ) / Area_Outdoors
-        END IF
+        pUrban%Runoff          = 0.0
+        pUrban%PrecipInfilt    = 0.0                     
+        pUrban%ETa             = 0.0                     
+        pUrban%Perc            = 0.0                    
+        pUrban%ReturnFlow      = 0.0
+        pUrban%IrigInfilt      = 0.0
+        pUrban%GMExcess        = 0.0
+        pUrban%Reuse           = 0.0
+        RootDepth              = UrbanLand%RootDepth   
         
-        !Infiltration and return flow due to applied water
-        Supply            = AW_Outdoors * DeltaT
-        fRF               = ReturnFrac(pUrban%iColReturnFrac)
-        fRU               = ReuseFrac(pUrban%iColReuseFrac)
-        pUrban%IrigInfilt = MIN(Supply*(1d0-(fRF-fRU)) , Supply)
-        pUrban%ReturnFlow = Supply - pUrban%IrigInfilt
-          
-        !Total inflow to the root zone
-        Inflow = GM + pUrban%IrigInfilt
-          
-        !Simulate
-        CALL NonPondedLUMoistureRouter(PrecipD                                 ,  &
-                                       pUrban%SMax                             ,  &
-                                       SoilM_P                                 ,  &
-                                       ETc(1)*DeltaT                           ,  & 
-                                       HydCond                                 ,  & 
-                                       TotalPorosityUrban                      ,  & 
-                                       FieldCapacityUrban                      ,  & 
-                                       WiltingPointUrban                       ,  &
-                                       Lambda                                  ,  & 
-                                       Inflow                                  ,  &
-                                       SolverData%Tolerance*TotalPorosityUrban ,  &
-                                       KunsatMethod                            ,  &
-                                       SolverData%IterMax                      ,  &
-                                       SoilM                                   ,  & 
-                                       pUrban%Runoff                           ,  & 
-                                       pUrban%PrecipInfilt                     ,  & 
-                                       pUrban%ETa                              ,  & 
-                                       pUrban%Perc                             ,  & 
-                                       Excess                                  ,  &
-                                       AchievedConv                            ) 
- 
-        !Generate error if convergence is not achieved
-        IF (AchievedConv .NE. 0.0) THEN
-            !$OMP CRITICAL
-            iElemID         = AppGrid%AppElement(indxElem)%ID
-            MessageArray(1) = 'Convergence error in soil moisture routing for urban lands!'
-            MessageArray(2) = 'Element              = '//TRIM(IntToText(iElemID))
-            WRITE (MessageArray(3),'(A,F11.8)') 'Desired convergence  = ',SolverData%Tolerance*TotalPorosityUrban
-            WRITE (MessageArray(4),'(A,F11.8)') 'Achieved convergence = ',ABS(AchievedConv)
-            CALL SetLastMessage(MessageArray(1:4),f_iFatal,ThisProcedure)
-            iStat = -1
-            !$OMP END CRITICAL
-            CYCLE
-        END IF
- 
-        !Reduce inflows based on correction for total porosity
-        IF (Excess .NE. 0.0) THEN
-            ratio = [pUrban%PrecipInfilt , pUrban%IrigInfilt , GM]
-            CALL NormalizeArray(ratio)
-            pUrban%Runoff       = pUrban%Runoff     + Excess * ratio(1) 
-            pUrban%ReturnFlow   = pUrban%ReturnFlow + Excess * ratio(2)
-            pUrban%GMExcess     = Excess * ratio(3)
-            pUrban%PrecipInfilt = PrecipD - pUrban%Runoff
-            pUrban%IrigInfilt   = Supply  - pUrban%ReturnFlow
-        END IF
+        !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(AppGrid,UrbanLand,lLakeElem,SoilsData,ETData,Precip,DeltaT,GenericMoisture, &
+        !$OMP                                  pUrban,ReturnFrac,ReuseFrac,SolverData,ElemSupply,ElemsToGW,iStat,RootDepth)       
+        !$OMP DO SCHEDULE(NONMONOTONIC:DYNAMIC,96)
+        DO indxElem=1,AppGrid%NElements
+            
+            !Cycle if Area is zero
+            Area = pUrban%Area(indxElem,1)
+            IF (Area .EQ. 0.0) CYCLE
+              
+            !Cycle is it is a lake element
+            IF (lLakeElem(indxElem)) CYCLE
+            
+            !Initialize
+            WiltingPoint       = SoilsData(indxElem)%WiltingPoint
+            FieldCapacity      = SoilsData(indxElem)%FieldCapacity
+            TotalPorosity      = SoilsData(indxElem)%TotalPorosity
+            HydCond            = SoilsData(indxElem)%HydCond
+            Lambda             = SoilsData(indxElem)%Lambda
+            KunsatMethod       = SoilsData(indxElem)%KunsatMethod
+            iColETc(1)         = pUrban%iColETc(indxElem,1)
+            ETc                = ETData%GetValues(iColETc)
+            PrecipD            = Precip(indxElem) * DeltaT
+            GM                 = GenericMoisture(1,indxElem) * RootDepth * DeltaT
+            Area_Outdoors      = Area * pUrban%PerviousFrac(indxElem,1)
+            Area_Indoors       = Area - Area_Outdoors 
+            WiltingPointUrban  = WiltingPoint  * RootDepth
+            FieldCapacityUrban = FieldCapacity * RootDepth
+            TotalPorosityUrban = TotalPorosity * RootDepth
+            SoilM_P            = pUrban%SoilM_Precip_P(indxElem,1) + pUrban%SoilM_AW_P(indxElem,1) + pUrban%SoilM_Oth_P(indxElem,1)
+            IF (Area_Indoors .EQ. 0.0) THEN
+                AW_Indoors  = 0.0
+                AW_Outdoors = ElemSupply(indxElem) / Area_Outdoors
+            ELSEIF (Area_Outdoors .EQ. 0.0) THEN
+                AW_Indoors  = ElemSupply(indxElem) / Area_Indoors
+                AW_Outdoors = 0.0
+            ELSE
+                rIndoorFrac = UrbanLand%WaterUseSpecsFile%rValues(pUrban%iColWaterUseSpec(indxElem,1))
+                AW_Indoors  = ElemSupply(indxElem)*rIndoorFrac        / Area_Indoors
+                AW_Outdoors = ElemSupply(indxElem)*(1d0-rIndoorFrac ) / Area_Outdoors
+            END IF
+            
+            !Infiltration and return flow due to applied water
+            Supply                        = AW_Outdoors * DeltaT
+            fRF                           = ReturnFrac(pUrban%iColReturnFrac(indxElem,1))
+            fRU                           = ReuseFrac(pUrban%iColReuseFrac(indxElem,1))
+            pUrban%IrigInfilt(indxElem,1) = MIN(Supply*(1d0-(fRF-fRU)) , Supply)
+            pUrban%ReturnFlow(indxElem,1) = Supply - pUrban%IrigInfilt(indxElem,1)
+              
+            !Total inflow to the root zone
+            Inflow = GM + pUrban%IrigInfilt(indxElem,1)
+              
+            !Simulate
+            CALL NonPondedLUMoistureRouter(PrecipD                                 ,  &
+                                           pUrban%SMax(indxElem,1)                 ,  &
+                                           SoilM_P                                 ,  &
+                                           ETc(1)*DeltaT                           ,  & 
+                                           HydCond                                 ,  & 
+                                           TotalPorosityUrban                      ,  & 
+                                           FieldCapacityUrban                      ,  & 
+                                           WiltingPointUrban                       ,  &
+                                           Lambda                                  ,  & 
+                                           Inflow                                  ,  &
+                                           SolverData%Tolerance*TotalPorosityUrban ,  &
+                                           KunsatMethod                            ,  &
+                                           SolverData%IterMax                      ,  &
+                                           SoilM                                   ,  & 
+                                           pUrban%Runoff(indxElem,1)               ,  & 
+                                           pUrban%PrecipInfilt(indxElem,1)         ,  & 
+                                           pUrban%ETa(indxElem,1)                  ,  & 
+                                           pUrban%Perc(indxElem,1)                 ,  & 
+                                           Excess                                  ,  &
+                                           AchievedConv                            ) 
         
-        !Compute re-use based on return flow
-        IF (fRF .GT. 0.0) pUrban%Reuse = pUrban%ReturnFlow * fRU / fRF
-          
-        !Compute moisture from precip and irrigation
-        SoilM_P_Array = [pUrban%SoilM_Precip_P , pUrban%SoilM_AW_P , pUrban%SoilM_Oth_P  ]
-        Infilt        = [pUrban%PrecipInfilt   , pUrban%IrigInfilt , GM - pUrban%GMExcess]
-        CALL TrackMoistureDueToSource(SoilM_P_Array   ,  &
-                                      Infilt          ,  &
-                                      pUrban%Perc     ,  &
-                                      pUrban%ETa      ,  &
-                                      0d0             ,  &
-                                      SoilM_Array     ,  &
-                                      ETPartition     )
-        pUrban%SoilM_Precip = SoilM_Array(1)
-        pUrban%SoilM_AW     = SoilM_Array(2)
-        pUrban%SoilM_Oth    = SoilM_Array(3)
- 
-        !Make sure soil moisture is not less than zero
-        lNegativeMoist = .FALSE.
-        IF (pUrban%SoilM_Precip .LT. 0.0) lNegativeMoist = .TRUE.
-        IF (pUrban%SoilM_AW     .LT. 0.0) lNegativeMoist = .TRUE.
-        IF (pUrban%SoilM_Oth    .LT. 0.0) lNegativeMoist = .TRUE.
-        IF (lNegativeMoist) THEN
-            !$OMP CRITICAL
-            iElemID         = AppGrid%AppElement(indxElem)%ID
-            MessageArray(1) = 'Soil moisture content becomes negative at element '//TRIM(IntToText(iElemID))//'.'
-            MessageArray(2) = 'This may be due to a too high convergence criteria set for the iterative solution.'
-            MessageArray(3) = 'Try using a smaller value for RZCONV and a higher value for RZITERMX parameters'
-            MessageArray(4) = 'in the Root Zone Main Input File.'
-            CALL SetLastMessage(MessageArray(1:4),f_iFatal,ThisProcedure)
-            iStat = -1
-            !$OMP END CRITICAL
-            CYCLE
-        END IF
- 
-        !Convert depths to volumetric rates
-        rMultip             = Area_Outdoors / DeltaT
-        pUrban%Runoff       = pUrban%Runoff       * rMultip + Precip(indxElem) * Area_Indoors
-        pUrban%ReturnFlow   = pUrban%ReturnFlow   * rMultip + AW_Indoors       * Area_Indoors
-        pUrban%PrecipInfilt = pUrban%PrecipInfilt * rMultip
-        pUrban%IrigInfilt   = pUrban%IrigInfilt   * rMultip
-        pUrban%ETa          = pUrban%ETa          * rMultip
-        pUrban%Perc         = pUrban%Perc         * rMultip
-        pUrban%Reuse        = pUrban%Reuse        * rMultip
-          
-        !If surface flow goes to groundwater, update the runoff processes
-        IF (LocateInList(indxElem,ElemsToGW) .GT. 0) THEN
-            pUrban%Perc         = pUrban%Perc + pUrban%Runoff + pUrban%ReturnFlow
-            pUrban%PrecipInfilt = pUrban%PrecipInfilt + pUrban%Runoff        !Runoff and 
-            pUrban%IrigInfilt   = pUrban%IrigInfilt + pUrban%ReturnFlow      ! return flow are assumed to bypass root zone for proper mass balance       
-            pUrban%Runoff       = 0.0
-            pUrban%ReturnFlow   = 0.0
-        END IF
-    END DO
-    !$OMP END DO
-    !$OMP END PARALLEL
-
+            !Generate error if convergence is not achieved
+            IF (AchievedConv .NE. 0.0) THEN
+                !$OMP CRITICAL
+                iElemID         = AppGrid%AppElement(indxElem)%ID
+                MessageArray(1) = 'Convergence error in soil moisture routing for urban lands!'
+                MessageArray(2) = 'Element              = '//TRIM(IntToText(iElemID))
+                WRITE (MessageArray(3),'(A,F11.8)') 'Desired convergence  = ',SolverData%Tolerance*TotalPorosityUrban
+                WRITE (MessageArray(4),'(A,F11.8)') 'Achieved convergence = ',ABS(AchievedConv)
+                CALL SetLastMessage(MessageArray(1:4),f_iFatal,ThisProcedure)
+                iStat = -1
+                !$OMP END CRITICAL
+                CYCLE
+            END IF
+        
+            !Reduce inflows based on correction for total porosity
+            IF (Excess .NE. 0.0) THEN
+                ratio = [pUrban%PrecipInfilt(indxElem,1) , pUrban%IrigInfilt(indxElem,1) , GM]
+                CALL NormalizeArray(ratio)
+                pUrban%Runoff(indxElem,1)       = pUrban%Runoff(indxElem,1)     + Excess * ratio(1) 
+                pUrban%ReturnFlow(indxElem,1)   = pUrban%ReturnFlow(indxElem,1) + Excess * ratio(2)
+                pUrban%GMExcess(indxElem,1)     = Excess * ratio(3)
+                pUrban%PrecipInfilt(indxElem,1) = PrecipD - pUrban%Runoff(indxElem,1)
+                pUrban%IrigInfilt(indxElem,1)   = Supply  - pUrban%ReturnFlow(indxElem,1)
+            END IF
+            
+            !Compute re-use based on return flow
+            IF (fRF .GT. 0.0) pUrban%Reuse(indxElem,1) = pUrban%ReturnFlow(indxElem,1) * fRU / fRF
+              
+            !Compute moisture from precip and irrigation
+            SoilM_P_Array = [pUrban%SoilM_Precip_P(indxElem,1) , pUrban%SoilM_AW_P(indxElem,1) , pUrban%SoilM_Oth_P(indxElem,1)  ]
+            Infilt        = [pUrban%PrecipInfilt(indxElem,1)   , pUrban%IrigInfilt(indxElem,1) , GM - pUrban%GMExcess(indxElem,1)]
+            CALL TrackMoistureDueToSource(SoilM_P_Array           ,  &
+                                          Infilt                  ,  &
+                                          pUrban%Perc(indxElem,1) ,  &
+                                          pUrban%ETa(indxElem,1)  ,  &
+                                          0d0                     ,  &
+                                          SoilM_Array             ,  &
+                                          ETPartition             )
+            pUrban%SoilM_Precip(indxElem,1) = SoilM_Array(1)
+            pUrban%SoilM_AW(indxElem,1)     = SoilM_Array(2)
+            pUrban%SoilM_Oth(indxElem,1)    = SoilM_Array(3)
+        
+            !Make sure soil moisture is not less than zero
+            IF (ANY(SoilM_Array.LT.0.0)) THEN
+                !$OMP CRITICAL
+                iElemID         = AppGrid%AppElement(indxElem)%ID
+                MessageArray(1) = 'Soil moisture content becomes negative at element '//TRIM(IntToText(iElemID))//'.'
+                MessageArray(2) = 'This may be due to a too high convergence criteria set for the iterative solution.'
+                MessageArray(3) = 'Try using a smaller value for RZCONV and a higher value for RZITERMX parameters'
+                MessageArray(4) = 'in the Root Zone Main Input File.'
+                CALL SetLastMessage(MessageArray(1:4),f_iFatal,ThisProcedure)
+                iStat = -1
+                !$OMP END CRITICAL
+                CYCLE
+            END IF
+        
+            !Convert depths to volumetric rates
+            rMultip                         = Area_Outdoors / DeltaT
+            pUrban%Runoff(indxElem,1)       = pUrban%Runoff(indxElem,1)       * rMultip + Precip(indxElem) * Area_Indoors
+            pUrban%ReturnFlow(indxElem,1)   = pUrban%ReturnFlow(indxElem,1)   * rMultip + AW_Indoors       * Area_Indoors
+            pUrban%PrecipInfilt(indxElem,1) = pUrban%PrecipInfilt(indxElem,1) * rMultip
+            pUrban%IrigInfilt(indxElem,1)   = pUrban%IrigInfilt(indxElem,1)   * rMultip
+            pUrban%ETa(indxElem,1)          = pUrban%ETa(indxElem,1)          * rMultip
+            pUrban%Perc(indxElem,1)         = pUrban%Perc(indxElem,1)         * rMultip
+            pUrban%Reuse(indxElem,1)        = pUrban%Reuse(indxElem,1)        * rMultip
+              
+            !If surface flow goes to groundwater, update the runoff processes
+            IF (LocateInList(indxElem,ElemsToGW) .GT. 0) THEN
+                pUrban%Perc(indxElem,1)         = pUrban%Perc(indxElem,1) + pUrban%Runoff(indxElem,1) + pUrban%ReturnFlow(indxElem,1)
+                pUrban%PrecipInfilt(indxElem,1) = pUrban%PrecipInfilt(indxElem,1) + pUrban%Runoff(indxElem,1)        !Runoff and 
+                pUrban%IrigInfilt(indxElem,1)   = pUrban%IrigInfilt(indxElem,1) + pUrban%ReturnFlow(indxElem,1)      ! return flow are assumed to bypass root zone for proper mass balance       
+                pUrban%Runoff(indxElem,1)       = 0.0
+                pUrban%ReturnFlow(indxElem,1)   = 0.0
+            END IF
+        END DO
+        !$OMP END DO
+        !$OMP END PARALLEL
+    END ASSOCIATE
+    
   END SUBROUTINE Simulate
   
   
@@ -829,29 +856,27 @@ CONTAINS
     iStat = 0
     
     !Return if urban lands are not simulated
-    IF (SIZE(UrbanLand%UrbData) .EQ. 0) RETURN
+    IF (.NOT.ALLOCATED(UrbanLand%UrbData%SMax) .EQ. 0) RETURN
     
     !Initialize
     RootDepth = UrbanLand%RootDepth
     
     !Check if initial conditions are greater than total porosity, if not convert conetnts to depths and equate SoilM_P to SoilM
-    DO indxElem=1,NElements
-      ASSOCIATE (pUrbData => UrbanLand%UrbData(indxElem)) 
-                 
-        IF ((pUrbData%SoilM_Precip + pUrbData%SoilM_AW + pUrbData%SoilM_Oth) .GT. TotalPorosity(indxElem)) THEN
-            CALL SetLastMessage('Initial moisture content for urban land at element ' // TRIM(IntToText(iElemIDs(indxElem))) // ' is greater than total porosity!',f_iFatal,ThisProcedure)
-            iStat = -1
-            RETURN
-        END IF
-        pUrbData%SoilM_Precip   = pUrbData%SoilM_Precip * RootDepth
-        pUrbData%SoilM_AW       = pUrbData%SoilM_AW * RootDepth
-        pUrbData%SoilM_Oth      = pUrbData%SoilM_Oth * RootDepth
-        pUrbData%SoilM_Precip_P = pUrbData%SoilM_Precip
-        pUrbData%SoilM_AW_P     = pUrbData%SoilM_AW
-        pUrbData%SoilM_Oth_P    = pUrbData%SoilM_Oth
-   
-      END ASSOCIATE
-    END DO 
+    ASSOCIATE (pUrbData => UrbanLand%UrbData) 
+        DO indxElem=1,NElements
+            IF ((pUrbData%SoilM_Precip(indxElem,1) + pUrbData%SoilM_AW(indxElem,1) + pUrbData%SoilM_Oth(indxElem,1)) .GT. TotalPorosity(indxElem)) THEN
+                CALL SetLastMessage('Initial moisture content for urban land at element ' // TRIM(IntToText(iElemIDs(indxElem))) // ' is greater than total porosity!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            pUrbData%SoilM_Precip(indxElem,1)   = pUrbData%SoilM_Precip(indxElem,1) * RootDepth
+            pUrbData%SoilM_AW(indxElem,1)       = pUrbData%SoilM_AW(indxElem,1) * RootDepth
+            pUrbData%SoilM_Oth(indxElem,1)      = pUrbData%SoilM_Oth(indxElem,1) * RootDepth
+            pUrbData%SoilM_Precip_P(indxElem,1) = pUrbData%SoilM_Precip(indxElem,1)
+            pUrbData%SoilM_AW_P(indxElem,1)     = pUrbData%SoilM_AW(indxElem,1)
+            pUrbData%SoilM_Oth_P(indxElem,1)    = pUrbData%SoilM_Oth(indxElem,1)
+        END DO 
+    END ASSOCIATE
     
   END SUBROUTINE SoilMContent_To_Depth
   
@@ -886,13 +911,13 @@ CONTAINS
                 END IF
                 
                 !Calculate demand
-                pUrbData%Demand = UrbanLand%PopulationFile%iValues(pUrbData%iColPopulation) * UrbanLand%PerCapitaWaterUseFile%rValues(pUrbData%iColPerCapitaWaterUse)* pUrbData%FracDemand                
+                pUrbData%Demand(:,1) = UrbanLand%PopulationFile%iValues(pUrbData%iColPopulation(:,1)) * UrbanLand%PerCapitaWaterUseFile%rValues(pUrbData%iColPerCapitaWaterUse(:,1))* pUrbData%FracDemand(:,1)                
             END IF
             
         !Element demand is calculated based on user-specified static fractions
         ELSE
             IF (UrbanLand%PopulationFile%lUpdated  .OR.  UrbanLand%PerCapitaWaterUseFile%lUpdated) THEN
-                pUrbData%Demand = UrbanLand%PopulationFile%iValues(pUrbData%iColPopulation) * UrbanLand%PerCapitaWaterUseFile%rValues(pUrbData%iColPerCapitaWaterUse)* pUrbData%FracDemand
+                pUrbData%Demand(:,1) = UrbanLand%PopulationFile%iValues(pUrbData%iColPopulation(:,1)) * UrbanLand%PerCapitaWaterUseFile%rValues(pUrbData%iColPerCapitaWaterUse(:,1))* pUrbData%FracDemand(:,1)
             END IF
             
         END IF
@@ -918,14 +943,14 @@ CONTAINS
     CALL UrbanLand%LandUseDataFile%ReadTSData('Urban areas',TimeStep,rElemAreas,iElemIDs,iStat)  ;  IF (iStat .NE. 0) RETURN
 
     CALL UrbanLand%PopulationFile%File%RewindFile_To_BeginningOfTSData(iStat)                         ;  IF (iStat .NE. 0) RETURN
-    CALL ReadTimeSeriesData(TimeStep,'Population data',UrbanLand%PopulationFile,iFileReadCode,iStat)  ;  IF (iStat .NE. 0) RETURN
+    CALL UrbanLand%PopulationFile%ReadTSData(TimeStep,'Population data',iFileReadCode,iStat)  ;  IF (iStat .NE. 0) RETURN
 
     CALL UrbanLand%PerCapitaWaterUseFile%File%RewindFile_To_BeginningOfTSData(iStat)                                   ;  IF (iStat .NE. 0) RETURN
-    CALL ReadTimeSeriesData(TimeStep,'Per capita water use data',UrbanLand%PerCapitaWaterUseFile,iFileReadCode,iStat)  ;  IF (iStat .NE. 0) RETURN
+    CALL UrbanLand%PerCapitaWaterUseFile%ReadTSData(TimeStep,'Per capita water use data',iFileReadCode,iStat)  ;  IF (iStat .NE. 0) RETURN
     IF (iFileReadCode .EQ. 0) UrbanLand%PerCapitaWaterUseFile%rValues = UrbanLand%PerCapitaWaterUseFile%rValues * UrbanLand%PerCapitaWaterUseFactor
 
     CALL UrbanLand%WaterUseSpecsFile%File%RewindFile_To_BeginningOfTSData(iStat)                                       ;  IF (iStat .NE. 0) RETURN
-    CALL ReadTimeSeriesData(TimeStep,'Urban water use specifications',UrbanLand%WaterUseSpecsFile,iFileReadCode,iStat)
+    CALL UrbanLand%WaterUseSpecsFile%ReadTSData(TimeStep,'Urban water use specifications',iFileReadCode,iStat)
     
   END SUBROUTINE RewindTSInputFilesToTimeStamp
 

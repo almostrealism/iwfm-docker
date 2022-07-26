@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -21,7 +21,8 @@
 !  For tecnical support, e-mail: IWFMtechsupport@water.ca.gov 
 !***********************************************************************
 MODULE VerticalFlow
-  USE IOInterface              , ONLY: GenericFileType        
+  USE IOInterface              , ONLY: GenericFileType      , &  
+                                       PrepareTSDOutputFile
   USE MessageLogger            , ONLY: LogMessage           , &
                                        MessageArray         , &
                                        f_iWarn                
@@ -30,8 +31,7 @@ MODULE VerticalFlow
                                        ArrangeText          , &
                                        PrepareTitle
   USE TimeSeriesUtilities      , ONLY: TimeStepType
-  USE Package_Misc             , ONLY: PrepareTSDOutputFile , &
-                                       f_rSmoothStepP       , &
+  USE Package_Misc             , ONLY: f_rSmoothStepP       , &
                                        f_rSmoothMaxP        
   USE Package_Discretization   , ONLY: AppGridType          , &
                                        StratigraphyType
@@ -412,6 +412,9 @@ CONTAINS
                 rdVertFlow_dH(indxNode)  = rdFactor * rThisLeakage * (MAX(rHeadBelow,rDisconnectElev) - MAX(rThisHead,rBottomElev))  &
                                          - rFactor * rThisLeakage * 0.5d0 * (1d0 + rHeadDiff/SQRT(rHeadDiff*rHeadDiff + f_rSmoothMaxP))
                 rdVertFlow_dHb(indxNode) = rFactor * rThisLeakage * 0.5d0 *(1d0 + rHeadDiffBelow / SQRT(rHeadDiffBelow*rHeadDiffBelow + f_rSmoothMaxP))
+            ELSE
+                rdVertFlow_dH(indxNode)  = 0.0
+                rdVertFlow_dHb(indxNode) = 0.0
             END IF
         ELSE
             rdVertFlow_dH(indxNode)  = -rThisLeakage * 0.5d0 * (1d0 + rHeadDiff/SQRT(rHeadDiff*rHeadDiff + f_rSmoothMaxP))
@@ -425,7 +428,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- COMPUTE UPWARD AND DOWNWARD VERTICAL FLOWS AT ELEMENTS OF A LAYER BETWEEN THAT LAYER AND LAYER BELOW
   ! -------------------------------------------------------------
-  PURE SUBROUTINE VerticalFlow_ComputeElementsUpwardDownward_AtLayer(iLayer,AppGrid,Stratigraphy,Head,LeakageV,rVertFlow_Downward,rVertFlow_Upward)
+  SUBROUTINE VerticalFlow_ComputeElementsUpwardDownward_AtLayer(iLayer,AppGrid,Stratigraphy,Head,LeakageV,rVertFlow_Downward,rVertFlow_Upward)
     INTEGER,INTENT(IN)                :: iLayer
     TYPE(AppGridType),INTENT(IN)      :: AppGrid
     TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy

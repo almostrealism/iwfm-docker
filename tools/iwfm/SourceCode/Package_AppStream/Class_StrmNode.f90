@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -52,6 +52,7 @@ MODULE Class_StrmNode
   ! -------------------------------------------------------------
   TYPE StrmNodeType
       INTEGER                    :: ID           = 0                !Stream node ID
+      REAL(8)                    :: rLength      = 0.0              !Length of stream associated with node
       REAL(8)                    :: BottomElev                      !Stream bottom elevation
       TYPE(PairedDataType)       :: RatingTable                     !Stage vs. flow rating table
       TYPE(ConnectivityListType) :: Connectivity                    !List of stream nodes upstream from this node
@@ -96,6 +97,7 @@ CONTAINS
     
     DO indxNode=1,NNodes
       CALL InFile%ReadData(Nodes(indxNode)%ID,iStat)          ;  IF (iStat .EQ. -1) RETURN
+      CALL InFile%ReadData(Nodes(indxNode)%rLength,iStat)     ;  IF (iStat .EQ. -1) RETURN
       CALL InFile%ReadData(Nodes(indxNode)%BottomElev,iStat)  ;  IF (iStat .EQ. -1) RETURN
       CALL Nodes(indxNode)%RatingTable%New(InFile,iStat)      ;  IF (iStat .EQ. -1) RETURN
       CALL InFile%ReadData(NUpstrmNodes,iStat)                ;  IF (iStat .EQ. -1) RETURN  ;  Nodes(indxNode)%Connectivity%nConnectedNodes = NUpstrmNodes
@@ -132,6 +134,7 @@ CONTAINS
     
     DO indxNode=1,SIZE(Nodes)
       CALL Outfile%WriteData(Nodes(indxNode)%ID)
+      CALL OutFile%WriteData(Nodes(indxNode)%rLength)
       CALL Outfile%WriteData(Nodes(indxNode)%BottomElev)
       CALL Nodes(indxNode)%RatingTable%WriteToFile(Outfile)
       CALL Outfile%WriteData(Nodes(indxNode)%Connectivity%nConnectedNodes)

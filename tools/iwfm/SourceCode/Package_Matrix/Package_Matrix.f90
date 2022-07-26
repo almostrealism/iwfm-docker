@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -33,6 +33,11 @@ MODULE Package_Matrix
   USE IOInterface      , ONLY: GenericFileType
   USE Package_Misc     , ONLY: SolverDataType           , &
                                f_cCompNames
+  USE Module_pgmres    , ONLY: ILUT                     , &
+                               AMUX                     , &
+                               LUSOL                    , &
+                               DNRM2                    , &
+                               GMRES
   IMPLICIT NONE
   
 
@@ -312,8 +317,6 @@ CONTAINS
   FUNCTION GetRHSL2(Matrix) RESULT(RHSL2)
     CLASS(MatrixType),INTENT(IN) :: Matrix
     REAL(8)                      :: RHSL2
-    
-    REAL(8),EXTERNAL :: DNRM2
     
     RHSL2 = DNRM2(SIZE(Matrix%RHS),Matrix%RHS,1)
     
@@ -1158,7 +1161,6 @@ CONTAINS
     INTEGER              :: ErrorCode,NRow
     INTEGER, ALLOCATABLE :: NJD_CRS(:),JND_CRS(:)                       ! INTERMEDIATE CRS FORMAT STORAGE ARRAYS
     REAL(8), ALLOCATABLE :: COEFF_CRS(:)
-    REAL(8),EXTERNAL     :: DNRM2
     
     !Initialize
     IF (Matrix%Solver%ZeroReset) Matrix%HDelta = 0.0
@@ -1288,8 +1290,7 @@ CONTAINS
     !Local variables    
     CHARACTER(LEN=ModNameLen+14) :: ThisProcedure = ModName // 'SOR_Sequential'
     INTEGER                      :: IROW,INDX,INDX_S,INDX_L,NODEMAX,Iter,indxDiag
-    REAL(8)                      :: DIFF_L2,ADIFFMAX,U_INT,ACCUM,DIFF, DNRM2
-    EXTERNAL                     :: DNRM2
+    REAL(8)                      :: DIFF_L2,ADIFFMAX,U_INT,ACCUM,DIFF
     
     !Initialize
     iStat = 0
@@ -1362,17 +1363,16 @@ CONTAINS
     !Local variables    
     CHARACTER(LEN=ModNameLen+7) :: ThisProcedure = ModName // 'SOR_OMP'
     INTEGER                     :: IROW,INDX,INDX_S,INDX_L,NODEMAX,Iter,indxDiag,iNThreads,iThread
-    REAL(8)                     :: DIFF_L2,ADIFFMAX,U_INT,ACCUM,DIFF, DNRM2
+    REAL(8)                     :: DIFF_L2,ADIFFMAX,U_INT,ACCUM,DIFF
     REAL(8),ALLOCATABLE,SAVE    :: DIFF_L2_Thread(:),ADIFFMAX_Thread(:)
     INTEGER,ALLOCATABLE,SAVE    :: NODEMAX_Thread(:)
     INTEGER,SAVE                :: iChunkSize
-    EXTERNAL                    :: DNRM2
     
     !Initialize
     iStat     = 0
     Iter      = 0
     iNThreads = 1
-    !$ iNThreads = OMP_GET_NUM_PROCS()-1
+    !$ iNThreads = OMP_GET_NUM_THREADS()
     IF (.NOT. ALLOCATED(DIFF_L2_Thread)) THEN
         ALLOCATE(DIFF_L2_Thread(iNThreads) , ADIFFMAX_Thread(iNThreads) , NODEMAX_Thread(iNThreads))
         iChunkSize = NRow / iNThreads
@@ -1392,7 +1392,7 @@ CONTAINS
         DIFF_L2_Thread  = 0.0
         ADIFFMAX_Thread = 0.0
         
-        !$OMP PARALLEL DO SCHEDULE(STATIC,iChunkSize) DEFAULT(SHARED) PRIVATE(IROW,indxDiag,INDX_S,INDX_L,U_INT,ACCUM,INDX,DIFF,iThread) NUM_THREADS(iNThreads)
+        !$OMP PARALLEL DO SCHEDULE(STATIC,iChunkSize) DEFAULT(SHARED) PRIVATE(IROW,indxDiag,INDX_S,INDX_L,U_INT,ACCUM,INDX,DIFF,iThread) 
         DO IROW=1,NRow
             !$ iThread  = OMP_GET_THREAD_NUM() + 1
             indxDiag = IndexDiag(IROW)
@@ -1482,9 +1482,8 @@ CONTAINS
     CHARACTER(LEN=ModNameLen+6) :: ThisProcedure=ModName // 'PGMRES'
     INTEGER, ALLOCATABLE        :: JLU(:)
     REAL(8), ALLOCATABLE        :: COEFFLU(:),W(:)
-    REAL(8)                     :: DNRM2, DROPTOL, RES, FPAR(16)
+    REAL(8)                     :: DROPTOL, RES, FPAR(16)
     INTEGER                     :: LFIL, IM, IWK, IERR, Iter,IPAR(16),JU(N),IW(3*N)  
-    EXTERNAL                    :: DNRM2
     
     !Initialize
     iStat = 0
@@ -1554,57 +1553,54 @@ CONTAINS
         
     END SELECT
 
-    Iter         =      0                                           ! INITIALIZE THE NUMBER OF ITERATIONS
+    Iter = 0                                           ! INITIALIZE THE NUMBER OF ITERATIONS
    
-
-10  CALL GMRES(N, RHS, U, IPAR, FPAR, W)                ! CALL SPARSKIT IMPLEMENTATION OF GMRES(M) IN THE FILE iters.f
-
-    IF (IPAR(7) .NE. Iter) THEN
-         Iter = IPAR(7)
-         !!write(80,'(a21,i4,E16.6)')'      PGMRES ITS,RES',Iter,FPAR(5)
-    ENDIF
-    RES = FPAR(5)
-!
- 
-    IF (IPAR(1).EQ.1) THEN
-         CALL AMUX(N, W(IPAR(8)), W(IPAR(9)), COEFF, JND, NJD)  !MATRIX-VECTOR MULTIPLICATION
-         GOTO 10
-    ELSE IF (IPAR(1).EQ.3 .OR. IPAR(1).EQ.5) THEN
-         CALL LUSOL(N,W(IPAR(8)),W(IPAR(9)),COEFFLU,JLU,JU)         !LU SOLVE
-         GOTO 10 
-    ELSE IF (IPAR(1).LT.0) THEN
-
-         IF (IPAR(1).EQ.-1) THEN
-           MessageArray(1) = 'Convergence problem in the solution of equation system using PGMRES(M).'     
-           WRITE(MessageArray(2),'(A,I8)')     'Iteration =', Iter
-           WRITE (MessageArray(3),'(A,E12.3)') 'Residual  =', RES
-           CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
-           iStat = -1
-           RETURN
-
-         ELSE IF (IPAR(1).EQ.-2) THEN
-            MessageArray(1)='ITERATIVE SOLVER WAS NOT GIVEN ENOUGH WORK SPACE.'
-            WRITE (MessageArray(2),'(A,I12,A)') 'THE WORK SPACE SHOULD AT LEAST HAVE ', IPAR(4),' ELEMENTS.'
-            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
-            iStat = -1
-            RETURN
+    DO
+        CALL GMRES(N, RHS, U, IPAR, FPAR, W)                ! CALL SPARSKIT IMPLEMENTATION OF GMRES(M) IN THE FILE iters.f
+        
+        IF (IPAR(7) .NE. Iter) THEN
+             Iter = IPAR(7)
+             !!write(80,'(a21,i4,E16.6)')'      PGMRES ITS,RES',Iter,FPAR(5)
+        ENDIF
+        RES = FPAR(5)
+!       
+        
+        IF (IPAR(1).EQ.1) THEN
+            CALL AMUX(N, W(IPAR(8):), W(IPAR(9):), COEFF, JND, NJD)  !MATRIX-VECTOR MULTIPLICATION
+        ELSE IF (IPAR(1).EQ.3 .OR. IPAR(1).EQ.5) THEN
+            CALL LUSOL(N,W(IPAR(8)),W(IPAR(9)),COEFFLU,JLU,JU)         !LU SOLVE
+        ELSE IF (IPAR(1).LT.0) THEN
+            IF (IPAR(1).EQ.-1) THEN
+                MessageArray(1) = 'Convergence problem in the solution of equation system using PGMRES(M).'     
+                WRITE(MessageArray(2),'(A,I8)')     'Iteration =', Iter
+                WRITE (MessageArray(3),'(A,E12.3)') 'Residual  =', RES
+                CALL SetLastMessage(MessageArray(1:3),f_iFatal,ThisProcedure)
+                iStat = -1
+                EXIT
             
-         ELSE IF (IPAR(1).EQ.-3) THEN
-           CALL SetLastMessage('ITERATIVE SOLVER IS FACING A BREAK-DOWN.',f_iFatal,ThisProcedure)
-           iStat = -1
-           RETURN
-           
-         ELSE
-           WRITE(MessageArray(1),'(A,I8)') 'ITERATIVE SOLVER TERMINATED. CODE =', IPAR(1) 
-           CALL SetLastMessage(MessageArray(1),f_iFatal,ThisProcedure)
-           iStat = -1
-           RETURN
-           
-         ENDIF
-    ELSE IF (IPAR(1).EQ.0) THEN
-       !WRITE(*,*) 'GMRES Iteration: ', Iter, ' : Residual: ', RES, ' : ||x|| : ', DNRM2(N, U, 1)
-
-    ENDIF
+            ELSE IF (IPAR(1).EQ.-2) THEN
+                MessageArray(1)='ITERATIVE SOLVER WAS NOT GIVEN ENOUGH WORK SPACE.'
+                WRITE (MessageArray(2),'(A,I12,A)') 'THE WORK SPACE SHOULD AT LEAST HAVE ', IPAR(4),' ELEMENTS.'
+                CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
+                iStat = -1
+                EXIT
+               
+            ELSE IF (IPAR(1).EQ.-3) THEN
+                CALL SetLastMessage('ITERATIVE SOLVER IS FACING A BREAK-DOWN.',f_iFatal,ThisProcedure)
+                iStat = -1
+                EXIT
+              
+            ELSE
+                WRITE(MessageArray(1),'(A,I8)') 'ITERATIVE SOLVER TERMINATED. CODE =', IPAR(1) 
+                CALL SetLastMessage(MessageArray(1),f_iFatal,ThisProcedure)
+                iStat = -1
+                EXIT
+            ENDIF
+        ELSE IF (IPAR(1).EQ.0) THEN
+           !WRITE(*,*) 'GMRES Iteration: ', Iter, ' : Residual: ', RES, ' : ||x|| : ', DNRM2(N, U, 1)
+           EXIT
+        END IF
+    END DO
     
     DEALLOCATE(COEFFLU, JLU, W)
 

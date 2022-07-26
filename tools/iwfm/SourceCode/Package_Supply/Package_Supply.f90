@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -25,8 +25,8 @@ MODULE Package_Supply
   USE Package_Misc                , ONLY: f_iFlowDest_Element               , &
                                           f_iSupply_Diversion               , &
                                           f_iSupply_Pumping                 , &
-                                          f_iAg                             , &
-                                          f_iUrb
+                                          f_iLandUse_Ag                     , &
+                                          f_iLandUse_Urb
   USE Package_Discretization      , ONLY: AppGridType
   USE Package_AppGW               , ONLY: AppGWType
   USE Package_AppStream           , ONLY: AppStreamType
@@ -107,15 +107,15 @@ CONTAINS
     !      since deliveries, fractions, etc do change during adjustment.
     IF (AppStream%GetNDiver() .GT. 0) THEN
       CALL AppStream%GetSupply(DiverDestConnector,pDiver_Ag,pDiver_Urb)
-      CALL RootZone%SetSupply(pDiver_Ag,f_iSupply_Diversion,f_iAg) 
-      CALL RootZone%SetSupply(pDiver_Urb,f_iSupply_Diversion,f_iUrb) 
+      CALL RootZone%SetSupply(pDiver_Ag,f_iSupply_Diversion,f_iLandUse_Ag) 
+      CALL RootZone%SetSupply(pDiver_Urb,f_iSupply_Diversion,f_iLandUse_Urb) 
     END IF
     
     !Applied water due to pumping
     IF (AppGW%IsPumpingDefined()) THEN
       CALL AppGW%GetSupply(WellDestConnector,ElemPumpDestConnector,pPump_Ag,pPump_Urb)
-      CALL RootZone%SetSupply(pPump_Ag,f_iSupply_Pumping,f_iAg) 
-      CALL RootZone%SetSupply(pPump_Urb,f_iSupply_Pumping,f_iUrb) 
+      CALL RootZone%SetSupply(pPump_Ag,f_iSupply_Pumping,f_iLandUse_Ag) 
+      CALL RootZone%SetSupply(pPump_Urb,f_iSupply_Pumping,f_iLandUse_Urb) 
     END IF
   
   END SUBROUTINE Supply

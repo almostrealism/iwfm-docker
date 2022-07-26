@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -22,6 +22,7 @@
 !***********************************************************************
 MODULE Class_BaseFileType
   USE MessageLogger     , ONLY: SetLastMessage  , &
+                                MessageArray    , & 
                                 f_iFatal
   USE GeneralUtilities
   USE,INTRINSIC :: ISO_FORTRAN_ENV
@@ -174,14 +175,18 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- HANDLE IOSTAT
   ! -------------------------------------------------------------
-  SUBROUTINE IOStatHandler(ThisFile,Error,Status,iStat)
-    CLASS(BaseFileType),INTENT(IN) :: ThisFile
-    INTEGER,INTENT(IN)             :: Error
-    INTEGER,OPTIONAL,INTENT(OUT)   :: Status
-    INTEGER,INTENT(OUT)            :: iStat
+  SUBROUTINE IOStatHandler(ThisFile,Error,iStat,Status,iErrorLine,cDataType)
+    CLASS(BaseFileType),INTENT(IN)       :: ThisFile
+    INTEGER,INTENT(IN)                   :: Error
+    INTEGER,INTENT(OUT)                  :: iStat
+    INTEGER,OPTIONAL,INTENT(OUT)         :: Status
+    INTEGER,OPTIONAL,INTENT(IN)          :: iErrorLine
+    CHARACTER(LEN=*),OPTIONAL,INTENT(IN) :: cDataType
     
     !Local varaibles
     CHARACTER(LEN=ModNameLen+13),PARAMETER :: ThisProcedure = ModName // 'IOStatHandler'
+    CHARACTER(LEN=50)                      :: cDataType_Local
+    INTEGER                                :: iLen
     
     !Initialize
     iStat = 0
@@ -192,16 +197,28 @@ CONTAINS
     END IF
 
     IF (Error .EQ. 0) THEN
-      !Do nothing; read/write action was successful
+        !Do nothing; read/write action was successful
     ELSEIF (IS_IOSTAT_END(Error)) THEN
-      CALL SetLastMessage('Error in reading data! End-of-file reached in file '//TRIM(ThisFile%Name),f_iFatal,ThisProcedure)
-      iStat = -1
+        CALL SetLastMessage('Error in reading data! End-of-file reached in file '//TRIM(ThisFile%Name),f_iFatal,ThisProcedure)
+        iStat = -1
     ELSEIF (Error .EQ. 47) THEN
-      CALL SetLastMessage('Error in writing out to file! File '//TRIM(ThisFile%Name)//' is read-only',f_iFatal,ThisProcedure)
-      iStat = -1
+        CALL SetLastMessage('Error in writing out to file! File '//TRIM(ThisFile%Name)//' is read-only',f_iFatal,ThisProcedure)
+        iStat = -1
     ELSE
-      CALL SetLastMessage('Error in reading data from file '//TRIM(ThisFile%Name),f_iFatal,ThisProcedure)
-      iStat = -1
+        IF (PRESENT(iErrorLine)) THEN
+            IF (PRESENT(cDataType)) THEN
+                cDataType_Local         = ''
+                iLen                    = LEN(cDataType)
+                cDataType_Local(1:iLen) = LowerCase(cDataType)
+                cDataType_Local         = ADJUSTL(cDataType_Local)
+                CALL SetLastMessage('Error in reading '//TRIM(cDataType_Local)//' data from file '//TRIM(ThisFile%Name)//' at or around line '//TRIM(IntToText(iErrorLine))//'!',f_iFatal,ThisProcedure)
+            ELSE 
+                CALL SetLastMessage('Error in reading data from file '//TRIM(ThisFile%Name)//' at or around line '//TRIM(IntToText(iErrorLine))//'!',f_iFatal,ThisProcedure)
+            END IF
+        ELSE
+            CALL SetLastMessage('Error in reading data from file '//TRIM(ThisFile%Name)//'!',f_iFatal,ThisProcedure)
+        END IF
+        iStat = -1
     END IF 
 
   END SUBROUTINE IOStatHandler

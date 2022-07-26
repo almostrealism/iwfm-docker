@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -387,31 +387,33 @@ CONTAINS
     INTEGER,INTENT(OUT)                      :: iStat
     
     !Local variables
-    INTEGER,PARAMETER   :: iReadCols(12) = [1,2,3,4,5,6,7,8,9,10,11,12]
+    INTEGER,PARAMETER   :: iReadCols(14) = [1,2,3,4,5,6,7,8,9,10,11,12,13,14]
     INTEGER             :: iDimActual,iNTimeSteps
     REAL(8),ALLOCATABLE :: rValues(:,:)
     
     !Get simulation time steps and allocate array to read data
     iNTimeSteps = Budget%GetNTimeSteps()
-    ALLOCATE (rValues(13,iNTimeSteps)) !Adding 1 to the first dimension for Time column; it will be removed later
+    ALLOCATE (rValues(SIZE(iReadCols)+1,iNTimeSteps)) !Adding 1 to the first dimension for Time column; it will be removed later
     
     !Read data
     CALL Budget%ReadData(iStrmNodeID,iReadCols,'1MON',cBeginDate,cEndDate,0d0,0d0,0d0,1d0,1d0,rFactVL,iDimActual,rValues,iStat)
     IF (iStat .NE. 0) RETURN
     
     !Store values in return argument
-    ALLOCATE (rFlows(11,iDimActual) , cFlowNames(11))
+    ALLOCATE (rFlows(13,iDimActual) , cFlowNames(13))
     rFlows(1,:)  = rValues(2,1:iDimActual)                             !Upstream Inflow              
     rFlows(2,:)  = -rValues(3,1:iDimActual)                            !Downstream Outflow          
     rFlows(3,:)  = rValues(4,1:iDimActual)                             !Tributary Inflow            
     rFlows(4,:)  = rValues(5,1:iDimActual)                             !Tile Drain                  
     rFlows(5,:)  = rValues(6,1:iDimActual)                             !Runoff                      
     rFlows(6,:)  = rValues(7,1:iDimActual)                             !Return Flow                  
-    rFlows(7,:)  = rValues(8,1:iDimActual) + rValues(9,1:iDimActual)   !Gain from GW    
-    rFlows(8,:)  = rValues(10,1:iDimActual)                            !Gain from Lake               
-    rFlows(9,:) = -rValues(11,1:iDimActual)                            !Riparian ET                  
-    rFlows(10,:) = -rValues(12,1:iDimActual)                           !Diversion                    
-    rFlows(11,:) = -rValues(13,1:iDimActual)                           !By-pass Flow                 
+    rFlows(7,:)  = rValues(8,1:iDimActual)                             !Pond drain                 
+    rFlows(8,:)  = rValues(9,1:iDimActual) + rValues(10,1:iDimActual)  !Gain from GW    
+    rFlows(9,:)  = rValues(11,1:iDimActual)                            !Gain from Lake               
+    rFlows(10,:) = -rValues(12,1:iDimActual)                           !Riparian ET 
+    rFlows(11,:) = -rValues(13,1:iDimActual)                           !Surface evaporation 
+    rFlows(12,:) = -rValues(14,1:iDimActual)                           !Diversion                    
+    rFlows(13,:) = -rValues(15,1:iDimActual)                           !By-pass Flow                 
     
     !Flow names
     cFlowNames     = ''
@@ -421,11 +423,13 @@ CONTAINS
     cFlowNames(4)  = 'Tile Drain'         
     cFlowNames(5)  = 'Runoff'             
     cFlowNames(6)  = 'Return Flow'        
-    cFlowNames(7)  = 'Gain from GW'    
-    cFlowNames(8)  = 'Gain from Lake'     
-    cFlowNames(9)  = 'Riparian ET'        
-    cFlowNames(10) = 'Diversion'          
-    cFlowNames(11) = 'Bypass Flow'       
+    cFlowNames(7)  = 'Pond Drain'        
+    cFlowNames(8)  = 'Gain from GW'    
+    cFlowNames(9)  = 'Gain from Lake'     
+    cFlowNames(10) = 'Riparian ET'
+    cFlowNames(11) = 'Surface Evaporation'
+    cFlowNames(12) = 'Diversion'          
+    cFlowNames(13) = 'Bypass Flow'       
     
   END SUBROUTINE GetBudget_MonthlyFlows_GivenFile
 

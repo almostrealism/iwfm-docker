@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -888,14 +888,14 @@ CONTAINS
     DO indxModel=2,iNModels
         iImage = indxModel + 1
         !Check beginning time 
-        IF (TimeStep_Check%CurrentDateAndTime .NE. TimeStep[iImage]%CurrentDateAndTime) THEN
+        IF (TRIM(TimeStep_Check%CurrentDateAndTime) .NE. TRIM(TimeStep[iImage]%CurrentDateAndTime)) THEN
             CALL SetLastMessage('Simulation beginning date must be the same for all models!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
         
         !Check timestep length
-        IF (TimeStep_Check%Unit .NE. TimeStep[iImage]%Unit) THEN
+        IF (TRIM(TimeStep_Check%Unit) .NE. TRIM(TimeStep[iImage]%Unit)) THEN
             CALL SetLastMessage('Simulation timestep length must be the same for all models!',f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
@@ -1090,7 +1090,7 @@ CONTAINS
     !=====================================
     !=== Prepare diversions
     !=====================================
-    CALL Model%GetNDiversions(iNDiver,iStat)  ;  IF (iStat .NE. 0) RETURN 
+    iNDiver = Model%GetNDiversions()  
     ALLOCATE (iDiverIDs(iNDiver))
     CALL Model%GetDiversionIDs(iDiverIDs)
     DO indx=1,Connections[1]%iNLinkNodesDiv

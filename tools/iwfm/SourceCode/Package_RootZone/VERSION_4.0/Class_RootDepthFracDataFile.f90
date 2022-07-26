@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -23,8 +23,7 @@
 MODULE Class_RootDepthFracDataFile
   USE MessageLogger        , ONLY: SetLastMessage        , &
                                    f_iFatal
-  USE Package_Misc         , ONLY: RealTSDataInFileType  , &
-                                   ReadTSData
+  USE IOInterface          , ONLY: RealTSDataInFileType  
   USE TimeseriesUtilities  , ONLY: TimeStepType
   IMPLICIT NONE
   
@@ -45,10 +44,7 @@ MODULE Class_RootDepthFracDataFile
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC :: RootDepthFracDataFileType        , &
-            RootDepthFracDataFile_New        , &
-            RootDepthFracDataFile_Kill       , &
-            RootDepthFracDataFile_ReadTSData  
+  PUBLIC :: RootDepthFracDataFileType      
 
 
   ! -------------------------------------------------------------
@@ -56,6 +52,11 @@ MODULE Class_RootDepthFracDataFile
   ! -------------------------------------------------------------
   TYPE,EXTENDS(RealTSDataInFileType) :: RootDepthFracDataFileType
     !No additional attributes
+  CONTAINS
+      PROCEDURE,PASS :: New
+      PROCEDURE,PASS :: Kill
+      PROCEDURE,PASS :: RootDepthFracDataFile_ReadTSData
+      GENERIC        :: ReadTSData                       => RootDepthFracDataFile_ReadTSData
   END TYPE RootDepthFracDataFileType
   
   
@@ -76,11 +77,11 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW ROOT DEPTH FRACTIONS DATA FILE
   ! -------------------------------------------------------------
-  SUBROUTINE RootDepthFracDataFile_New(cFileName,cWorkingDirectory,TrackTime,RootDepthFracDataFile,iStat)
-    CHARACTER(LEN=*),INTENT(IN)     :: cFileName,cWorkingDirectory
-    LOGICAL,INTENT(IN)              :: TrackTime
-    TYPE(RootDepthFracDataFileType) :: RootDepthFracDataFile
-    INTEGER,INTENT(OUT)             :: iStat
+  SUBROUTINE New(RootDepthFracDataFile,cFileName,cWorkingDirectory,TrackTime,iStat)
+    CLASS(RootDepthFracDataFileType) :: RootDepthFracDataFile
+    CHARACTER(LEN=*),INTENT(IN)      :: cFileName,cWorkingDirectory
+    LOGICAL,INTENT(IN)               :: TrackTime
+    INTEGER,INTENT(OUT)              :: iStat
     
     !Local variables
     REAL(8) :: Factor(1)
@@ -94,27 +95,27 @@ CONTAINS
     !Instantiate
     CALL RootDepthFracDataFile%Init(cFileName,cWorkingDirectory,'root depth fractions data',TrackTime,BlocksToSkip=1,lFactorDefined=.FALSE.,Factor=Factor,iStat=iStat)
 
-  END SUBROUTINE RootDepthFracDataFile_New
+  END SUBROUTINE New
 
     
   ! -------------------------------------------------------------
   ! --- KILL ROOT DEPTH FRACTIONS DATA FILE
   ! -------------------------------------------------------------
-  SUBROUTINE RootDepthFracDataFile_Kill(RootDepthFracDataFile)
-    TYPE(RootDepthFracDataFileType) :: RootDepthFracDataFile
+  SUBROUTINE Kill(RootDepthFracDataFile)
+    CLASS(RootDepthFracDataFileType) :: RootDepthFracDataFile
     
     CALL RootDepthFracDataFile%Close()
     
-  END SUBROUTINE RootDepthFracDataFile_Kill
+  END SUBROUTINE Kill
   
   
   ! -------------------------------------------------------------
   ! --- SUBROUTINE TO READ ROOT DEPTH FRACTIONS DATA
   ! -------------------------------------------------------------
   SUBROUTINE RootDepthFracDataFile_ReadTSData(RootDepthFracDataFile,TimeStep,iStat)
-    TYPE(RootDepthFracDataFileType) :: RootDepthFracDataFile
-    TYPE(TimeStepType),INTENT(IN)   :: TimeStep
-    INTEGER,INTENT(OUT)             :: iStat
+    CLASS(RootDepthFracDataFileType) :: RootDepthFracDataFile
+    TYPE(TimeStepType),INTENT(IN)    :: TimeStep
+    INTEGER,INTENT(OUT)              :: iStat
     
     !Local variables
     CHARACTER(LEN=ModNameLen+32) :: ThisProcedure = ModName // 'RootDepthFracDataFile_ReadTSData'
@@ -124,7 +125,7 @@ CONTAINS
     iStat = 0
     
     !Read data
-    CALL ReadTSData(TimeStep,'root depth fractions data',RootDepthFracDataFile%RealTSDataInFileType,FileErrorCode,iStat)
+    CALL RootDepthFracDataFile%ReadTSData(TimeStep,'root depth fractions data',FileErrorCode,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Return if new data is not read

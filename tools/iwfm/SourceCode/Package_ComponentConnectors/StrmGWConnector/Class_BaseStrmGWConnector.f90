@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -124,15 +124,16 @@ MODULE Class_BaseStrmGWConnector
       END SUBROUTINE Abstract_StrmGWConnector_Simulate
       
       
-      SUBROUTINE Abstract_StrmGWConnector_CompileConductance(Connector,InFile,AppGrid,Stratigraphy,NStrmNodes,iStrmNodeIDs,UpstrmNodes,DownstrmNodes,BottomElevs,iStat)
+      SUBROUTINE Abstract_StrmGWConnector_CompileConductance(Connector,InFile,AppGrid,Stratigraphy,NStrmNodes,iStrmNodeIDs,BottomElevs,rLength,iStat,rWetPerimeter)
         IMPORT                            :: BaseStrmGWConnectorType,GenericFileType,AppGridType,StratigraphyType
         CLASS(BaseStrmGWConnectorType)    :: Connector
         TYPE(GenericFileType)             :: InFile
         TYPE(AppGridType),INTENT(IN)      :: AppGrid
         TYPE(StratigraphyType),INTENT(IN) :: Stratigraphy
-        INTEGER,INTENT(IN)                :: NStrmNodes,iStrmNodeIDs(NStrmNodes),UpstrmNodes(:),DownstrmNodes(:)
-        REAL(8),INTENT(IN)                :: BottomElevs(:)
+        INTEGER,INTENT(IN)                :: NStrmNodes,iStrmNodeIDs(NStrmNodes)
+        REAL(8),INTENT(IN)                :: BottomElevs(NStrmNodes),rLength(NStrmNodes)
         INTEGER,INTENT(OUT)               :: iStat
+        REAL(8),OPTIONAL,INTENT(OUT)      :: rWetPerimeter(NStrmNodes)
       END SUBROUTINE Abstract_StrmGWConnector_CompileConductance
       
   END INTERFACE

@@ -48,6 +48,8 @@ set(IWFM_Util
   ${SOURCE_DIR}/IWFM_Util/IOInterface${DSS}/Class_FortBinaryFileType.f90
   ${SOURCE_DIR}/IWFM_Util/IOInterface${DSS}/Class_HDF5FileType.f90
   ${SOURCE_DIR}/IWFM_Util/IOInterface${DSS}/IOInterface${DSS}.f90
+  ${SOURCE_DIR}/IWFM_Util/IOInterface${DSS}/IOInterface_Local.f90
+  ${SOURCE_DIR}/IWFM_Util/IOInterface${DSS}/TSDFileHandler.f90
   ${SOURCE_DIR}/IWFM_Util/Utilities${DSS}/Class_BinaryTree.f90
   ${SOURCE_DIR}/IWFM_Util/Utilities${DSS}/Class_LinkedListNode.f90
   ${SOURCE_DIR}/IWFM_Util/Utilities${DSS}/Class_Version.f90
@@ -112,6 +114,7 @@ set(Package_AppStream
   ${SOURCE_DIR}/Package_AppStream/Class_Diversion.f90
   ${SOURCE_DIR}/Package_AppStream/Class_ElemToRecvLoss.f90
   ${SOURCE_DIR}/Package_AppStream/Class_RechargeZone.f90
+  ${SOURCE_DIR}/Package_AppStream/Class_StrmEvap.f90
   ${SOURCE_DIR}/Package_AppStream/Class_StrmInflow.f90
   ${SOURCE_DIR}/Package_AppStream/Class_StrmNode.f90
   ${SOURCE_DIR}/Package_AppStream/Class_StrmNodeBudget.f90
@@ -215,7 +218,7 @@ set(Package_Matrix
   ${SOURCE_DIR}/Package_Matrix/Ludcmp.f90
   ${SOURCE_DIR}/Package_Matrix/Package_Matrix.f90
   ${SOURCE_DIR}/Package_Matrix/Package_Matrix_Revision.fi
-  ${SOURCE_DIR}/Package_Matrix/pgmres.f
+  ${SOURCE_DIR}/Package_Matrix/pgmres.f90
   )
 source_group("Package_Matrix" FILES ${Package_Matrix})
 add_library(Package_Matrix STATIC ${Package_Matrix})
@@ -230,7 +233,6 @@ set(Package_Miscellaneous
   ${SOURCE_DIR}/Package_Miscellaneous/Opening_screen_LINUX.f90
   ${SOURCE_DIR}/Package_Miscellaneous/Package_Misc.f90
   ${SOURCE_DIR}/Package_Miscellaneous/Package_Misc_Revision.fi
-  ${SOURCE_DIR}/Package_Miscellaneous/TSDFileHandler.f90
   )
 source_group("Package_Miscellaneous" FILES ${Package_Miscellaneous})
 add_library(Package_Miscellaneous STATIC ${Package_Miscellaneous})
@@ -279,6 +281,8 @@ set(Package_RootZone
   ${SOURCE_DIR}/Package_RootZone/VERSION_4.1/Util_RootZone_v41.f90
   ${SOURCE_DIR}/Package_RootZone/VERSION_4.11/RootZone_v411.f90
   ${SOURCE_DIR}/Package_RootZone/VERSION_4.11/RootZone_v411_Revision.fi
+  ${SOURCE_DIR}/Package_RootZone/VERSION_4.12/RootZone_v412.f90
+  ${SOURCE_DIR}/Package_RootZone/VERSION_4.12/RootZone_v412_Revision.fi
   ${SOURCE_DIR}/Package_RootZone/VERSION_5.0/Class_AgLandUse_v50.f90
   ${SOURCE_DIR}/Package_RootZone/VERSION_5.0/Class_NativeRiparianLandUse_v50.f90
   ${SOURCE_DIR}/Package_RootZone/VERSION_5.0/Class_UrbanLandUse_v50.f90
@@ -441,7 +445,7 @@ set(CPACK_PACKAGE_VENDOR "Can Dogrul")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "IWFM")
 set(CPACK_PACKAGE_VERSION_MAJOR "2015")
 set(CPACK_PACKAGE_VERSION_MINOR "0")
-set(CPACK_PACKAGE_VERSION_PATCH "706")
+set(CPACK_PACKAGE_VERSION_PATCH "1403")
 set(CPACK_PACKAGE_VERSION "${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "CPack")
 include(CPack)

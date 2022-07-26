@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -36,9 +36,8 @@ MODULE Class_AppDiverBypass
                                            ArrangeText            , &
                                            NormalizeArray         , &
                                            ConvertID_To_Index
-  USE Package_Misc                 , ONLY: RealTSDataInFileType   , &
-                                           ReadTSData             , &
-                                           f_iFlowDest_Outside    , &
+  USE IOInterface                  , ONLY: RealTSDataInFileType
+  USE Package_Misc                 , ONLY: f_iFlowDest_Outside    , &
                                            f_iFlowDest_Element    , &
                                            f_iFlowDest_ElementSet , &
                                            f_iFlowDest_Subregion  , &
@@ -117,19 +116,19 @@ MODULE Class_AppDiverBypass
     LOGICAL                                   :: DiverDetailsBudRawFile_Defined = .FALSE.
     TYPE(BudgetType)                          :: DiverDetailsBudRawFile
   CONTAINS
-    PROCEDURE,PASS   :: New                            => AppDiverBypass_New
-    PROCEDURE,PASS   :: Kill                           => AppDiverBypass_Kill
+    PROCEDURE,PASS   :: New                            
+    PROCEDURE,PASS   :: Kill                           
     PROCEDURE,PASS   :: GetDiversionIDs
     PROCEDURE,PASS   :: GetBypassIDs      
     PROCEDURE,PASS   :: GetBypassDiverOriginDestData
-    PROCEDURE,PASS   :: GetElemRecvLosses                  => AppDiverBypass_GetElemRecvLosses        
-    PROCEDURE,PASS   :: GetSubregionalRecvLosses           => AppDiverBypass_GetSubregionalRecvLosses
-    PROCEDURE,PASS   :: GetNodeDiversions                  => AppDiverBypass_GetNodeDiversions       
-    PROCEDURE,PASS   :: GetReachDiversions                 => AppDiverBypass_GetReachDiversions      
-    PROCEDURE,PASS   :: GetNodeDiversionShort              => AppDiverBypass_GetNodeDiversionShort    
-    PROCEDURE,PASS   :: GetReachDiversionShort             => AppDiverBypass_GetReachDiversionShort   
-    PROCEDURE,PASS   :: GetNodeNetBypass                   => AppDiverBypass_GetNodeNetBypass        
-    PROCEDURE,PASS   :: GetReachNetBypass                  => AppDiverBypass_GetReachNetBypass
+    PROCEDURE,PASS   :: GetElemRecvLosses                  
+    PROCEDURE,PASS   :: GetSubregionalRecvLosses           
+    PROCEDURE,PASS   :: GetNodeDiversions                  
+    PROCEDURE,PASS   :: GetReachDiversions                 
+    PROCEDURE,PASS   :: GetNodeDiversionShort              
+    PROCEDURE,PASS   :: GetReachDiversionShort             
+    PROCEDURE,PASS   :: GetNodeNetBypass                   
+    PROCEDURE,PASS   :: GetReachNetBypass                  
     PROCEDURE,PASS   :: GetBudget_NColumns
     PROCEDURE,PASS   :: GetBudget_ColumnTitles
     PROCEDURE,PASS   :: GetBudget_TSData
@@ -138,6 +137,8 @@ MODULE Class_AppDiverBypass
     PROCEDURE,PASS   :: GetBypassReceived_FromABypass
     PROCEDURE,PASS   :: GetBypassExportNode
     PROCEDURE,PASS   :: GetBypassOutflows
+    PROCEDURE,PASS   :: GetBypassRecoverableLossFactor
+    PROCEDURE,PASS   :: GetBypassNonRecoverableLossFactor
     PROCEDURE,PASS   :: GetStrmBypassInflows
     PROCEDURE,PASS   :: GetDiversionsExportNodes
     PROCEDURE,PASS   :: GetDeliveryAtDiversion
@@ -149,12 +150,12 @@ MODULE Class_AppDiverBypass
     PROCEDURE,PASS   :: IsBypassNode
     PROCEDURE,PASS   :: IsRatingTableTypeBypassNode
     PROCEDURE,PASS   :: AddBypass
-    PROCEDURE,PASS   :: ConvertTimeUnit                    => AppDiverBypass_ConvertTimeUnit         
-    PROCEDURE,PASS   :: CompileNodalDiversions             => AppDiverBypass_CompileNodalDiversions   
-    PROCEDURE,PASS   :: ComputeBypass                      => AppDiverBypass_ComputeBypass            
-    PROCEDURE,PASS   :: ComputeDiversions                  => AppDiverBypass_ComputeDiversions        
-    PROCEDURE,PASS   :: ReadTSData                         => AppDiverBypass_ReadTSData              
-    PROCEDURE,PASS   :: PrintResults                       => AppDiverBypass_PrintResults
+    PROCEDURE,PASS   :: ConvertTimeUnit                    
+    PROCEDURE,PASS   :: CompileNodalDiversions              
+    PROCEDURE,PASS   :: ComputeBypass                       
+    PROCEDURE,PASS   :: ComputeDiversions                   
+    PROCEDURE,PASS   :: ReadTSData                         
+    PROCEDURE,PASS   :: PrintResults                       
   END TYPE AppDiverBypassType
   
   
@@ -196,7 +197,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- INSTANTIATE DIVERSIONS DATABASE
   ! -------------------------------------------------------------
-  SUBROUTINE AppDiverBypass_New(AppDiverBypass,IsForInquiry,DiverSpecFileName,BypassSpecFileName,DiverFileName,DiverDetailBudFileName,cWorkingDirectory,cVersion,NTIME,TimeStep,NStrmNodes,iStrmNodeIDs,iLakeIDs,Reaches,AppGrid,StrmLakeConnector,iStat)
+  SUBROUTINE New(AppDiverBypass,IsForInquiry,DiverSpecFileName,BypassSpecFileName,DiverFileName,DiverDetailBudFileName,cWorkingDirectory,cVersion,NTIME,TimeStep,NStrmNodes,iStrmNodeIDs,iLakeIDs,Reaches,AppGrid,StrmLakeConnector,iStat)
     CLASS(AppDiverBypassType),INTENT(OUT) :: AppDiverBypass
     LOGICAL,INTENT(IN)                    :: IsForInquiry
     CHARACTER(LEN=*),INTENT(IN)           :: DiverSpecFileName,BypassSpecFileName,DiverFileName,DiverDetailBudFileName,cWorkingDirectory,cVersion
@@ -208,9 +209,9 @@ CONTAINS
     INTEGER,INTENT(OUT)                   :: iStat
     
     !Local variables
-    CHARACTER(LEN=ModNameLen+18) :: ThisProcedure = ModName // 'AppDiverBypass_New'
-    INTEGER                      :: NElements,NSubregions,ErrorCode,iSize,iElemIDs(AppGrid%NElements),iSubregionIDs(AppGrid%NSubregions)
-    TYPE(BudgetHeaderType)       :: BudHeader
+    CHARACTER(LEN=ModNameLen+3) :: ThisProcedure = ModName // 'New'
+    INTEGER                     :: NElements,NSubregions,ErrorCode,iSize,iElemIDs(AppGrid%NElements),iSubregionIDs(AppGrid%NSubregions)
+    TYPE(BudgetHeaderType)      :: BudHeader
 
     !Initialize
     iStat         = 0
@@ -322,7 +323,7 @@ CONTAINS
       END IF
     END IF  
      
-  END SUBROUTINE AppDiverBypass_New
+  END SUBROUTINE New
   
   
   ! -------------------------------------------------------------
@@ -369,7 +370,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- KILL DIVERSIONS/BYPASSES DATA OBJECT
   ! -------------------------------------------------------------
-  SUBROUTINE AppDiverBypass_Kill(AppDiverBypass)
+  SUBROUTINE Kill(AppDiverBypass)
     CLASS(AppDiverBypassType) :: AppDiverBypass
     
     !Local variables
@@ -398,7 +399,7 @@ CONTAINS
     AppDiverBypass%lDiverRequired_Updated = .FALSE.
     AppDiverBypass%DiverDetailsBudRawFile_Defined = .FALSE.    
     
-  END SUBROUTINE AppDiverBypass_Kill
+  END SUBROUTINE Kill
   
   
   ! -------------------------------------------------------------
@@ -647,6 +648,32 @@ CONTAINS
   
 
   ! -------------------------------------------------------------
+  ! --- GET BYPASS RECOVERABLE LOSS FACTOR
+  ! -------------------------------------------------------------
+  FUNCTION GetBypassRecoverableLossFactor(AppDiverBypass,iBypass) RESULT(rFactor)
+    CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
+    INTEGER,INTENT(IN)                   :: iBypass
+    REAL(8)                              :: rFactor
+    
+    rFactor = AppDiverBypass%Bypasses(iBypass)%FracRecvLoss
+    
+  END FUNCTION GetBypassRecoverableLossFactor
+  
+  
+  ! -------------------------------------------------------------
+  ! --- GET BYPASS NON-RECOVERABLE LOSS FACTOR
+  ! -------------------------------------------------------------
+  FUNCTION GetBypassNonRecoverableLossFactor(AppDiverBypass,iBypass) RESULT(rFactor)
+    CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
+    INTEGER,INTENT(IN)                   :: iBypass
+    REAL(8)                              :: rFactor
+    
+    rFactor = AppDiverBypass%Bypasses(iBypass)%FracNonRecvLoss
+    
+  END FUNCTION GetBypassNonRecoverableLossFactor
+  
+  
+  ! -------------------------------------------------------------
   ! --- GET STREAM NODE INDICES FOR GIVEN DIVERSION INDICES
   ! -------------------------------------------------------------
   SUBROUTINE GetDiversionsExportNodes(AppDiverBypass,iDivList,iStrmNodeList)
@@ -713,7 +740,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- GET NET BYPASS FROM A SET OF NODES 
   ! -------------------------------------------------------------
-  FUNCTION AppDiverBypass_GetNodeNetBypass(AppDiverBypass,iNodes) RESULT(Bypasses)
+  FUNCTION GetNodeNetBypass(AppDiverBypass,iNodes) RESULT(Bypasses)
     CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
     INTEGER,INTENT(IN)                   :: iNodes(:)
     REAL(8)                              :: Bypasses(SIZE(iNodes))
@@ -741,13 +768,13 @@ CONTAINS
       END IF
     END DO
     
-  END FUNCTION AppDiverBypass_GetNodeNetBypass
+  END FUNCTION GetNodeNetBypass
   
     
   ! -------------------------------------------------------------
   ! --- GET NET BYPASS FROM EACH REACH 
   ! -------------------------------------------------------------
-  FUNCTION AppDiverBypass_GetReachNetBypass(AppDiverBypass,NStrmNodes,NReaches,Reaches) RESULT(Bypasses)
+  FUNCTION GetReachNetBypass(AppDiverBypass,NStrmNodes,NReaches,Reaches) RESULT(Bypasses)
     CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
     INTEGER,INTENT(IN)                   :: NStrmNodes,NReaches
     TYPE(StrmReachType),INTENT(IN)       :: Reaches(NReaches)
@@ -784,13 +811,13 @@ CONTAINS
         Bypasses(indxReach) = SUM(NodalBypassOut(iUpstrmNode:iDownstrmNode) - NodalBypassRecieved(iUpstrmNode:iDownstrmNode))
     END DO
     
-  END FUNCTION AppDiverBypass_GetReachNetBypass
+  END FUNCTION GetReachNetBypass
   
     
   ! -------------------------------------------------------------
   ! --- GET TOTAL DIVERSIONS FROM A SET OF NODES 
   ! -------------------------------------------------------------
-  FUNCTION AppDiverBypass_GetNodeDiversions(AppDiverBypass,iNodes) RESULT(Diversions)
+  FUNCTION GetNodeDiversions(AppDiverBypass,iNodes) RESULT(Diversions)
     CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
     INTEGER,INTENT(IN)                   :: iNodes(:)
     REAL(8)                              :: Diversions(SIZE(iNodes))
@@ -801,13 +828,13 @@ CONTAINS
         Diversions = AppDiverBypass%NodalDiverActual(iNodes)
     END IF
     
-  END FUNCTION AppDiverBypass_GetNodeDiversions
+  END FUNCTION GetNodeDiversions
   
   
   ! -------------------------------------------------------------
   ! --- GET TOTAL DIVERSIONS FROM EACH REACH 
   ! -------------------------------------------------------------
-  FUNCTION AppDiverBypass_GetReachDiversions(AppDiverBypass,NReaches,Reaches) RESULT(Diversions)
+  FUNCTION GetReachDiversions(AppDiverBypass,NReaches,Reaches) RESULT(Diversions)
     CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
     INTEGER,INTENT(IN)                   :: NReaches
     TYPE(StrmReachType),INTENT(IN)       :: Reaches(NReaches)
@@ -829,13 +856,13 @@ CONTAINS
       Diversions(indxReach) = SUM(AppDiverBypass%NodalDiverActual(iUpstrmNode:iDownstrmNode))
     END DO
     
-  END FUNCTION AppDiverBypass_GetReachDiversions
+  END FUNCTION GetReachDiversions
   
   
   ! -------------------------------------------------------------
   ! --- GET TOTAL DIVERSION SHORTAGES FOR A SET OF NODES 
   ! -------------------------------------------------------------
-  FUNCTION AppDiverBypass_GetNodeDiversionShort(AppDiverBypass,iNodes) RESULT(Shorts)
+  FUNCTION GetNodeDiversionShort(AppDiverBypass,iNodes) RESULT(Shorts)
     CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
     INTEGER,INTENT(IN)                   :: iNodes(:)
     REAL(8)                              :: Shorts(SIZE(iNodes))
@@ -855,13 +882,13 @@ CONTAINS
       IF (iLoc .GT. 0) Shorts(iLoc) = Shorts(iLoc) + AppDiverBypass%Diver(indxDiver)%DiverRequired - AppDiverBypass%Diver(indxDiver)%DiverActual
     END DO
     
-  END FUNCTION AppDiverBypass_GetNodeDiversionShort
+  END FUNCTION GetNodeDiversionShort
   
   
   ! -------------------------------------------------------------
   ! --- GET TOTAL DIVERSION SHORTAGES FOR EACH REACH 
   ! -------------------------------------------------------------
-  FUNCTION AppDiverBypass_GetReachDiversionShort(AppDiverBypass,NStrmNodes,NReaches,Reaches) RESULT(Shorts)
+  FUNCTION GetReachDiversionShort(AppDiverBypass,NStrmNodes,NReaches,Reaches) RESULT(Shorts)
     CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
     INTEGER,INTENT(IN)                   :: NStrmNodes,NReaches
     TYPE(StrmReachType),INTENT(IN)       :: Reaches(NReaches)
@@ -890,13 +917,13 @@ CONTAINS
       Shorts(indxReach) = SUM(NodeShorts(iUpstrmNode:iDownstrmNode))
     END DO
     
-  END FUNCTION AppDiverBypass_GetReachDiversionShort
+  END FUNCTION GetReachDiversionShort
   
   
   ! -------------------------------------------------------------
   ! --- GET SUBREGIONAL RECOVERABLE LOSSES
   ! -------------------------------------------------------------
-  PURE FUNCTION AppDiverBypass_GetSubregionalRecvLosses(AppDiverBypass,AppGrid) RESULT(RecvLosses)
+  PURE FUNCTION GetSubregionalRecvLosses(AppDiverBypass,AppGrid) RESULT(RecvLosses)
     CLASS(AppDiverBypassTYpe),INTENT(IN) :: AppDiverBypass
     TYPE(AppGridType),INTENT(IN)         :: AppGrid
     REAL(8)                              :: RecvLosses(AppGrid%NSubregions)
@@ -934,13 +961,13 @@ CONTAINS
 
     END ASSOCIATE
     
-  END FUNCTION AppDiverBypass_GetSubregionalRecvLosses
+  END FUNCTION GetSubregionalRecvLosses
   
   
   ! -------------------------------------------------------------
   ! --- GET ELEMENT LEVEL RECOVERABLE LOSSES
   ! -------------------------------------------------------------
-  PURE FUNCTION AppDiverBypass_GetElemRecvLosses(AppDiverBypass,NElements,iSource) RESULT(ElemRecvLosses)
+  PURE FUNCTION GetElemRecvLosses(AppDiverBypass,NElements,iSource) RESULT(ElemRecvLosses)
     CLASS(AppDiverBypassType),INTENT(IN) :: AppDiverBypass
     INTEGER,INTENT(IN)                   :: NElements,iSource
     REAL(8)                              :: ElemRecvLosses(NElements)
@@ -1018,7 +1045,7 @@ CONTAINS
     
     END FUNCTION CompileRecvLosses
     
-  END FUNCTION AppDiverBypass_GetElemRecvLosses
+  END FUNCTION GetElemRecvLosses
 
 
   ! -------------------------------------------------------------
@@ -1273,24 +1300,25 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ DIVERSIONS TIME SERIES DATA FILE
   ! -------------------------------------------------------------
-  SUBROUTINE AppDiverBypass_ReadTSData(AppDiverBypass,lDiverAdjusted,TimeStep,iDiversions,rDiversions,iBypasses,rBypasses,iStat)
+  SUBROUTINE ReadTSData(AppDiverBypass,lDiverAdjusted,TimeStep,iDiversions,rDiversions,iBypasses,rBypasses,StrmLakeConnector,iStat)
     CLASS(AppDiverBypassType)     :: AppDiverBypass
     LOGICAL,INTENT(IN)            :: lDiverAdjusted
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
     INTEGER,INTENT(IN)            :: iDiversions(:),iBypasses(:)  !Diversions and bypasses that will be overwritten
     REAL(8),INTENT(IN)            :: rDiversions(:),rBypasses(:)  !Overwriting diversion and bypasses values
+    TYPE(StrmLakeConnectorType)   :: StrmLakeConnector 
     INTEGER,INTENT(OUT)           :: iStat
 
     !Local variables
-    CHARACTER(LEN=ModNameLen+25) :: ThisProcedure = ModName // 'AppDiverBypass_ReadTSData'
+    CHARACTER(LEN=ModNameLen+10) :: ThisProcedure = ModName // 'ReadTSData'
     INTEGER                      :: indx,iMaxDiverCol,FileReadCode,iDivIndx,iBypsIndx,iCol
-    REAL(8)                      :: RecvLoss,NonRecvLoss,Factor,rSum
+    REAL(8)                      :: RecvLoss,NonRecvLoss,Factor,rSum,rBypassReceived
     
     !Initialize
     iStat = 0
     
     !Read data
-    CALL ReadTSData(TimeStep,'diversion data',AppDiverBypass%DiverFile%RealTSDataInFileType,FileReadCode,iStat)
+    CALL AppDiverBypass%DiverFile%ReadTSData(TimeStep,'diversion data',FileReadCode,iStat)
     IF (iStat .EQ. -1) RETURN
 
     !Proceed according to the returned error code
@@ -1361,7 +1389,22 @@ CONTAINS
                 pDiver%DiverRequired = pDiver%DiverRead
                            
             END ASSOCIATE
-        END DO        
+        END DO       
+        
+        !Bypasses that are imported
+        DO indx=1,AppDiverBypass%NBypass
+            IF (AppDiverBypass%Bypasses(indx)%iNode_Exp .EQ. 0) THEN
+                ASSOCIATE (pBypass => AppDiverBypass%Bypasses(indx))
+                    pBypass%Bypass_Out      = AppDiverBypass%DiverFile%rValues(pBypass%iColBypass)
+                    pBypass%RecvLoss        = pBypass%Bypass_Out * pBypass%FracRecvLoss
+                    pBypass%NonRecvLoss     = pBypass%Bypass_Out * pBypass%FracNonRecvLoss
+                    pBypass%Bypass_Received = pBypass%Bypass_Out - pBypass%RecvLoss - pBypass%NonRecvLoss
+                    !If the bypass flow goes to a lake, store that data
+                    IF (pBypass%iDestType .EQ. f_iFlowDest_Lake) CALL StrmLakeConnector%SetFlow(f_iBypassToLakeFlow,indx,pBypass%iDest,pBypass%Bypass_Received)
+                END ASSOCIATE
+            END IF
+        END DO
+        
         !Update flag to check if DiverAdjusted is updated
         AppDiverBypass%lDiverRequired_Updated = .TRUE.
         
@@ -1384,6 +1427,22 @@ CONTAINS
             iCol = AppDiverBypass%Bypasses(iBypsIndx)%iColBypass
             IF (iCol .GT. 0) THEN
                 AppDiverBypass%DiverFile%rValues(iCol) = rBypasses(indx)
+                !Compute bypass flows if this is an imported bypass
+                IF (AppDiverBypass%Bypasses(iBypsIndx)%iNode_Exp .EQ. 0) THEN
+                    ASSOCIATE (pBypass => AppDiverBypass%Bypasses(iBypsIndx))
+                        rBypassReceived         = pBypass%Bypass_Received 
+                        pBypass%Bypass_Out      = AppDiverBypass%DiverFile%rValues(iCol)
+                        pBypass%RecvLoss        = pBypass%Bypass_Out * pBypass%FracRecvLoss
+                        pBypass%NonRecvLoss     = pBypass%Bypass_Out * pBypass%FracNonRecvLoss
+                        pBypass%Bypass_Received = pBypass%Bypass_Out - pBypass%RecvLoss - pBypass%NonRecvLoss
+                        !If the bypass flow goes to a lake, store that data
+                        IF (pBypass%iDestType .EQ. f_iFlowDest_Lake) THEN
+                            !Calculate the correct bypass into lake by subtracting the previously added bypass flow into lake
+                            rBypassReceived = pBypass%Bypass_Received - rBypassReceived
+                            CALL StrmLakeConnector%SetFlow(f_iBypassToLakeFlow,iBypsIndx,pBypass%iDest,rBypassReceived)
+                        END IF
+                    END ASSOCIATE
+                END IF
             !Bypass rate is calculated via rating table; update rating table accordingly
             ELSE
                 AppDiverBypass%Bypasses(iBypsIndx)%RatingTable%YPoint = rBypasses(indx)
@@ -1391,7 +1450,7 @@ CONTAINS
         END DO
     END IF
             
-  END SUBROUTINE AppDiverBypass_ReadTSData
+  END SUBROUTINE ReadTSData
   
   
   
@@ -1409,7 +1468,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- PRINT DIVERSION AND BYPASS REALTED RESULTS
   ! -------------------------------------------------------------
-  SUBROUTINE AppDiverBypass_PrintResults(AppDiverBypass)
+  SUBROUTINE PrintResults(AppDiverBypass)
     CLASS(AppDiverBypassType) :: AppDiverBypass
     
     !Local variables
@@ -1429,7 +1488,7 @@ CONTAINS
     !Write out data
     CALL AppDiverBypass%DiverDetailsBudRawFile%WriteData(DummyArray)
 
-  END SUBROUTINE AppDiverBypass_PrintResults
+  END SUBROUTINE PrintResults
   
   
 
@@ -1447,7 +1506,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- COMPILE DIVERSIONS AT EACH STREAM NODE
   ! -------------------------------------------------------------
-  SUBROUTINE AppDiverBypass_CompileNodalDiversions(AppDiverBypass)
+  SUBROUTINE CompileNodalDiversions(AppDiverBypass)
     CLASS(AppDiverBypassType) :: AppDiverBypass
     
     !Local variables
@@ -1468,7 +1527,7 @@ CONTAINS
     !Set the flag properly
     AppDiverBypass%lDiverRequired_Updated = .FALSE.
     
-  END SUBROUTINE AppDiverBypass_CompileNodalDiversions
+  END SUBROUTINE CompileNodalDiversions
   
   
   ! -------------------------------------------------------------
@@ -1697,7 +1756,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- CONVERT TIME UNIT OF BYPASS DATA
   ! -------------------------------------------------------------
-  SUBROUTINE AppDiverBypass_ConvertTimeUnit(AppDiverBypass,NewUnit)
+  SUBROUTINE ConvertTimeUnit(AppDiverBypass,NewUnit)
     CLASS(AppDiverBypassType)   :: AppDiverBypass
     CHARACTER(LEN=*),INTENT(IN) :: NewUnit
     
@@ -1728,13 +1787,13 @@ CONTAINS
       END ASSOCIATE
     END DO
     
-  END SUBROUTINE AppDiverBypass_ConvertTimeUnit
+  END SUBROUTINE ConvertTimeUnit
   
   
   ! -------------------------------------------------------------
   ! --- COMPUTE BYPASS FLOWS
   ! -------------------------------------------------------------
-  SUBROUTINE AppDiverBypass_ComputeBypass(AppDiverBypass,iNode,rAvailableFlow,StrmLakeConnector,rBypassOut)
+  SUBROUTINE ComputeBypass(AppDiverBypass,iNode,rAvailableFlow,StrmLakeConnector,rBypassOut)
     CLASS(AppDiverBypassType)   :: AppDiverBypass
     INTEGER,INTENT(IN)          :: iNode
     REAL(8),INTENT(IN)          :: rAvailableFlow
@@ -1779,13 +1838,13 @@ CONTAINS
         
     END ASSOCIATE
       
-  END SUBROUTINE AppDiverBypass_ComputeBypass
+  END SUBROUTINE ComputeBypass
   
  
   ! -------------------------------------------------------------
   ! --- SIMULATE ALL DIVERSION RELATED FLOWS
   ! -------------------------------------------------------------
-  SUBROUTINE AppDiverBypass_ComputeDiversions(AppDiverBypass,NStrmNodes)
+  SUBROUTINE ComputeDiversions(AppDiverBypass,NStrmNodes)
     CLASS(AppDiverBypassType) :: AppDiverBypass
     INTEGER,INTENT(IN)        :: NStrmNodes
     
@@ -1827,7 +1886,7 @@ CONTAINS
       END ASSOCIATE
     END DO
     
-  END SUBROUTINE AppDiverBypass_ComputeDiversions
+  END SUBROUTINE ComputeDiversions
   
   
   ! -------------------------------------------------------------

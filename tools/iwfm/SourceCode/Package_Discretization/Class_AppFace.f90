@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -164,7 +164,7 @@ CONTAINS
     iStat     = 0
     NElements = SIZE(NVertex)
     
-    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NVertex,Vertex,NElements,X,Y,AppFaceList) NUM_THREADS(OMP_GET_NUM_PROCS()-1) 
+    !$OMP PARALLEL DEFAULT(PRIVATE) SHARED(NVertex,Vertex,NElements,X,Y,AppFaceList)  
     !$OMP DO SCHEDULE(STATIC,500)
     !Construct the face list
     DO indxElem1=1,NElements

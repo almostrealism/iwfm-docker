@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -24,7 +24,7 @@ MODULE TSDFileHandler
   USE MessageLogger        , ONLY: SetLastMessage                 , &
                                    MessageArray                   , &
                                    f_iFatal                         
-  USE IOInterface          , ONLY: GenericFileType                , &
+  USE IOInterface_Local    , ONLY: GenericFileType                , &
                                    f_iTXT                         , &
                                    f_iBIN                         , &
                                    f_iDSS                         , &
@@ -54,24 +54,25 @@ MODULE TSDFileHandler
   ! --- PUBLIC ENTITIES
   ! -------------------------------------------------------------
   PRIVATE
-  PUBLIC :: IntTSDataInFileType    ,  &
-            RealTSDataInFileType   ,  &
-            Real2DTSDataInFileType ,  &
-            PrepareTSDOutputFile   ,  &
-            ReadTSData
+  PUBLIC :: IntTSDataInFileType     ,  &
+            IntPairTSDataInFileType ,  &
+            RealTSDataInFileType    ,  &
+            Real2DTSDataInFileType  ,  &
+            PrepareTSDOutputFile   
 
 
   ! -------------------------------------------------------------
   ! --- GENERIC TS DATA INPUT FILE
   ! -------------------------------------------------------------
   TYPE TSDataInFileType
-    INTEGER               :: iSize     = 0
-    LOGICAL               :: lUpdated  = .FALSE.
-    TYPE(GenericFileType) :: File
+      INTEGER               :: iSize     = 0
+      LOGICAL               :: lUpdated  = .FALSE.
+      TYPE(GenericFileType) :: File
   CONTAINS
-    PROCEDURE,PASS :: GetNDataColumns 
-    PROCEDURE,PASS :: GetFileName
-    PROCEDURE,PASS :: CheckColNum
+      PROCEDURE,PASS :: GetNDataColumns 
+      PROCEDURE,PASS :: GetFileName
+      PROCEDURE,PASS :: CheckColNum
+      PROCEDURE,PASS :: IsUpdated
   END TYPE TSDataInFileType
   
     
@@ -79,28 +80,44 @@ MODULE TSDFileHandler
   ! --- DATA TYPE FOR INTEGER TS DATA INPUT FILE
   ! -------------------------------------------------------------
   TYPE,EXTENDS(TSDataInFileType) :: IntTSDataInFileType
-    INTEGER,ALLOCATABLE :: iValues(:)
+      INTEGER,ALLOCATABLE :: iValues(:)
   CONTAINS
-    PROCEDURE,PASS :: Init  => IntTSDataInFile_New
-    PROCEDURE,PASS :: Close => IntTSDataInFile_Kill
+      PROCEDURE,PASS :: Init       => IntTSDataInFile_New
+      PROCEDURE,PASS :: Close      => IntTSDataInFile_Kill
+      PROCEDURE,PASS :: ReadTSData => IntTSDataInFile_ReadTSData
   END TYPE IntTSDataInFileType
+  
+
+  ! -------------------------------------------------------------
+  ! --- DATA TYPE FOR INTEGER PAIR TS DATA INPUT FILE
+  ! -------------------------------------------------------------
+  TYPE,EXTENDS(TSDataInFileType) :: IntPairTSDataInFileType
+      INTEGER,ALLOCATABLE :: iValues1(:)  !First value of pair
+      INTEGER,ALLOCATABLE :: iValues2(:)  !Second value of pair
+  CONTAINS
+      PROCEDURE,PASS :: Init       => IntPairTSDataInFile_New
+      PROCEDURE,PASS :: Close      => IntPairTSDataInFile_Kill
+      PROCEDURE,PASS :: ReadTSData => IntPairTSDataInFile_ReadTSData
+  END TYPE IntPairTSDataInFileType
   
 
   ! -------------------------------------------------------------
   ! --- DATA TYPE FOR REAL TS DATA INPUT FILE
   ! -------------------------------------------------------------
   TYPE,EXTENDS(TSDataInFileType) :: RealTSDataInFileType
-    REAL(8),ALLOCATABLE :: rValues(:)
+      REAL(8),ALLOCATABLE :: rValues(:)
   CONTAINS
-    PROCEDURE,PASS :: RealTSDataInFile_AsAsciiFile_New
-    PROCEDURE,PASS :: RealTSDataInFile_AsDSSFile_New
-    PROCEDURE,PASS :: RealTSDataInFile_New
-    PROCEDURE,PASS :: Close                                   => RealTSDataInFile_Kill
-    PROCEDURE,PASS :: RealTSDataInFile_ReadData_ForTimeRange
-    GENERIC        :: Init                                    => RealTSDataInFile_New                    , &
-                                                                 RealTSDataInFile_AsAsciiFile_New        , &
-                                                                 RealTSDataInFile_AsDSSFile_New
-    GENERIC        :: ReadData                                => RealTSDataInFile_ReadData_ForTimeRange
+      PROCEDURE,PASS :: RealTSDataInFile_AsAsciiFile_New
+      PROCEDURE,PASS :: RealTSDataInFile_AsDSSFile_New
+      PROCEDURE,PASS :: RealTSDataInFile_New
+      PROCEDURE,PASS :: Close                                    => RealTSDataInFile_Kill
+      PROCEDURE,PASS :: RealTSDataInFile_ReadTSData
+      PROCEDURE,PASS :: RealTSDataInFile_ReadTSData_ForTimeRange
+      GENERIC        :: Init                                     => RealTSDataInFile_New                      , &
+                                                                    RealTSDataInFile_AsAsciiFile_New          , &
+                                                                    RealTSDataInFile_AsDSSFile_New
+      GENERIC        :: ReadTSData                               => RealTSDataInFile_ReadTSData               , &
+                                                                   RealTSDataInFile_ReadTSData_ForTimeRange
   END TYPE RealTSDataInFileType
   
   
@@ -108,33 +125,23 @@ MODULE TSDFileHandler
   ! --- DATA TYPE FOR 2-D REAL TS DATA INPUT FILE
   ! -------------------------------------------------------------
   TYPE,EXTENDS(TSDataInFileType) :: Real2DTSDataInFileType
-    INTEGER             :: nRow         = 0
-    INTEGER             :: nCol         = 0
-    REAL(8),ALLOCATABLE :: rValues(:,:)
+      INTEGER             :: nRow         = 0
+      INTEGER             :: nCol         = 0
+      REAL(8),ALLOCATABLE :: rValues(:,:)
   CONTAINS
-    PROCEDURE,PASS :: Real2DTSDataInFile_New
-    PROCEDURE,PASS :: Real2DTSDataInFile_AsAsciiFile_New
-    PROCEDURE,PASS :: Real2DTSDataInFile_AsDSSFile_New
-    PROCEDURE,PASS :: Close                                     => Real2DTSDataInFile_Kill
-    PROCEDURE,PASS :: Real2DTSDataInFile_ReadData_ForTimeRange
-    GENERIC        :: Init                                      => Real2DTSDataInFile_New                   , &
-                                                                   Real2DTSDataInFile_AsDSSFile_New         , &
-                                                                   Real2DTSDataInFile_AsAsciiFile_New
-    GENERIC        :: ReadData                                  => Real2DTSDataInFile_ReadData_ForTimeRange
+      PROCEDURE,PASS :: Real2DTSDataInFile_New
+      PROCEDURE,PASS :: Real2DTSDataInFile_AsAsciiFile_New
+      PROCEDURE,PASS :: Real2DTSDataInFile_AsDSSFile_New
+      PROCEDURE,PASS :: Close                                      => Real2DTSDataInFile_Kill
+      PROCEDURE,PASS :: Real2DTSDataInFile_ReadTSData
+      PROCEDURE,PASS :: Real2DTSDataInFile_ReadTSData_ForTimeRange
+      GENERIC        :: Init                                       => Real2DTSDataInFile_New                     , &
+                                                                      Real2DTSDataInFile_AsDSSFile_New           , &
+                                                                      Real2DTSDataInFile_AsAsciiFile_New
+      GENERIC        :: ReadTSData                                 => Real2DTSDataInFile_ReadTSData              , &
+                                                                      Real2DTSDataInFile_ReadTSData_ForTimeRange
   END TYPE Real2DTSDataInFileType
   
-  
-  ! -------------------------------------------------------------
-  ! --- OVERLOADED METHODS
-  ! -------------------------------------------------------------
-  
-  !Data readers
-  INTERFACE ReadTSData
-    MODULE PROCEDURE IntTSDataInFile_ReadData
-    MODULE PROCEDURE RealTSDataInFile_ReadData
-    MODULE PROCEDURE Real2DTSDataInFile_ReadData
-  END INTERFACE ReadTSData
-
   
   ! -------------------------------------------------------------
   ! --- MISC. DATA
@@ -209,6 +216,52 @@ CONTAINS
     END ASSOCIATE
     
   END SUBROUTINE IntTSDataInFile_New
+  
+  
+  ! -------------------------------------------------------------
+  ! --- NEW INTEGER PAIR TS DATA INPUT FILE
+  ! -------------------------------------------------------------
+  SUBROUTINE IntPairTSDataInFile_New(TSFile,cFileName,cWorkingDirectory,cFileDescription,TrackTime,BlocksToSkip,iStat)
+    CLASS(IntPairTSDataInFileType) :: TSFile
+    CHARACTER(LEN=*),INTENT(IN)    :: cFileName,cWorkingDirectory,cFileDescription
+    LOGICAL,INTENT(IN)             :: TrackTime
+    INTEGER,INTENT(IN)             :: BlocksToSkip
+    INTEGER,INTENT(OUT)            :: iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+23) :: ThisProcedure = ModName // 'IntPairTSDataInFile_New'
+    CHARACTER                    :: cDSSFL*1000
+    INTEGER                      :: iNCOL,iNSP,iNFQ,iErrorCode
+    LOGICAL                      :: lDummyArray(1) = .FALSE.
+    CHARACTER(:),ALLOCATABLE     :: cAbsPathFileName
+    
+    !Initialize
+    iStat = 0
+    
+    ASSOCIATE (pFile => TSFile%File)
+    
+      !Initialize file
+      CALL pFile%New(FileName=ADJUSTL(cFileName),InputFile=.TRUE.,IsTSFile=.TRUE.,Descriptor=cFileDescription,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+      CALL pFile%ReadData(iNCOL,iStat)                                                                                       ;  IF (iStat .EQ. -1) RETURN 
+      CALL pFile%ReadData(iNSP,iStat)                                                                                        ;  IF (iStat .EQ. -1) RETURN 
+      CALL pFile%ReadData(iNFQ,iStat)                                                                                        ;  IF (iStat .EQ. -1) RETURN 
+      CALL PrepareTSDInputFile(pFile,TrackTime,TRIM(cFileDescription),iNCOL,'',iNSP,iNFQ,BlocksToSkip,lDummyArray,iStat)
+      IF (iStat .EQ. -1) RETURN
+    
+      !Allocate memory for iValues1 and iValues2
+      ALLOCATE (TSFile%iValues1(iNCOL) , TSFile%iValues2(iNCOL) , STAT=iErrorCode)
+      IF (iErrorCode .NE. 0) THEN
+          CALL SetLastMessage('Error in allocating memory for input data from ' // TRIM(cFileDescription) // '!',f_iFatal,ThisProcedure)
+          iStat = -1
+          RETURN
+      END IF
+
+      !Dimension of iValue
+      TSFile%iSize = iNCOL
+      
+    END ASSOCIATE
+    
+  END SUBROUTINE IntPairTSDataInFile_New
   
   
   ! -------------------------------------------------------------
@@ -623,6 +676,24 @@ CONTAINS
   
   
   ! -------------------------------------------------------------
+  ! --- KILL INTEGER PAIR TS DATA INPUT FILE
+  ! -------------------------------------------------------------
+  SUBROUTINE IntPairTSDataInFile_Kill(TSFile)
+    CLASS(IntPairTSDataInFileType) :: TSFile
+    
+    !Local variables
+    INTEGER :: iErrorCode
+    
+    !Release file
+    CALL TSDataInFile_Kill(TSFile)
+    
+    !Kill rest of data
+    DEALLOCATE (TSFile%iValues1 , TSFile%iValues2 , STAT=iErrorCode)       
+    
+  END SUBROUTINE IntPairTSDataInFile_Kill
+  
+  
+  ! -------------------------------------------------------------
   ! --- KILL REAL TS DATA INPUT FILE
   ! -------------------------------------------------------------
   SUBROUTINE RealTSDataInFile_Kill(TSFile)
@@ -712,10 +783,10 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ INTEGER DATA
   ! -------------------------------------------------------------
-  SUBROUTINE IntTSDataInFile_ReadData(TimeStep,cDescription,TSFile,FileReadError,iStat)
+  SUBROUTINE IntTSDataInFile_ReadTSData(TSFile,TimeStep,cDescription,FileReadError,iStat)
+    CLASS(IntTSDataInFileType)    :: TSFile
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
     CHARACTER(LEN=*),INTENT(IN)   :: cDescription
-    TYPE(IntTSDataInFileType)     :: TSFile
     INTEGER,INTENT(OUT)           :: FileReadError,iStat
     
     !Local variables
@@ -734,16 +805,56 @@ CONTAINS
       TSFile%lUpdated = .TRUE.
     END IF
 
-  END SUBROUTINE IntTSDataInFile_ReadData
+  END SUBROUTINE IntTSDataInFile_ReadTSData
+  
+  
+  ! -------------------------------------------------------------
+  ! --- READ INTEGER PAIR DATA
+  ! -------------------------------------------------------------
+  SUBROUTINE IntPairTSDataInFile_ReadTSData(TSFile,TimeStep,cDescription,iFileReadError,iStat)
+    CLASS(IntPairTSDataInFileType) :: TSFile
+    TYPE(TimeStepType),INTENT(IN)  :: TimeStep
+    CHARACTER(LEN=*),INTENT(IN)    :: cDescription
+    INTEGER,INTENT(OUT)            :: iFileReadError,iStat
+    
+    !Local variables
+    CHARACTER(LEN=ModNameLen+30) :: ThisProcedure = ModName // 'IntPairTSDataInFile_ReadTSData'
+    INTEGER                      :: iLocOP,iLocCP,indx
+    CHARACTER                    :: cALine*300000
+    
+    !Set the update flag to False
+    TSFile%lUpdated = .FALSE.
+
+    !Read data
+    CALL ReadCharTSData(TSFile%File,TimeStep,cDescription,cALine,iFileReadError,iStat)
+    IF (iStat .EQ. -1) RETURN
+    
+    !Store read data if ErrorCode is zero
+    IF (iFileReadError .EQ. 0) THEN
+        DO indx=1,TSFile%iSize
+            iLocOP = FirstLocation('(',cALine)
+            iLocCP = FirstLocation(')',cALine)
+            IF (iLocOP.EQ.0  .OR.  iLocCP.EQ.0) THEN
+                CALL SetLastMessage("Can't find an integer pair in "//TRIM(cDescription)//'!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            READ (cALine(iLocOP+1:iLocCP-1),*) TSFile%iValues1(indx), TSFile%iValues2(indx)
+            cALine = cALine(iLocCP+1:)
+        END DO
+        TSFile%lUpdated = .TRUE.
+    END IF
+
+  END SUBROUTINE IntPairTSDataInFile_ReadTSData
   
   
   ! -------------------------------------------------------------
   ! --- READ REAL DATA
   ! -------------------------------------------------------------
-  SUBROUTINE RealTSDataInFile_ReadData(TimeStep,cDescription,TSFile,FileReadError,iStat)
+  SUBROUTINE RealTSDataInFile_ReadTSData(TSFile,TimeStep,cDescription,FileReadError,iStat)
+    CLASS(RealTSDataInFileType)   :: TSFile
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
     CHARACTER(LEN=*),INTENT(IN)   :: cDescription
-    TYPE(RealTSDataInFileType)    :: TSFile
     INTEGER,INTENT(OUT)           :: FileReadError,iStat
     
     !Set the update flag to False
@@ -755,13 +866,13 @@ CONTAINS
 
     IF (FileReadError .EQ. 0) TSFile%lUpdated = .TRUE.
 
-  END SUBROUTINE RealTSDataInFile_ReadData
+  END SUBROUTINE RealTSDataInFile_ReadTSData
   
   
   ! -------------------------------------------------------------
   ! --- READ DATA FOR A LOCATION FOR TIME RANGE FROM 1-D REAL TS INPUT FILE
   ! -------------------------------------------------------------
-  SUBROUTINE RealTSDataInFile_ReadData_ForTimeRange(ThisFile,iCol,cBeginDateAndTime,cEndDateAndTime,nActualOutput,rData,rDataDates,FileReadCode,iStat)
+  SUBROUTINE RealTSDataInFile_ReadTSData_ForTimeRange(ThisFile,iCol,cBeginDateAndTime,cEndDateAndTime,nActualOutput,rData,rDataDates,FileReadCode,iStat)
     CLASS(RealTSDataInFileType) :: ThisFile
     INTEGER,INTENT(IN)          :: iCol                               !Defines the column number of data if data is being read from ASCII file
     CHARACTER(LEN=*),INTENT(IN) :: cBeginDateAndTime,cEndDateAndTime
@@ -770,16 +881,16 @@ CONTAINS
     
     CALL ThisFile%File%ReadData(1,iCol,1,ThisFile%iSize,iCol,cBeginDateAndTime,cEndDateAndTime,nActualOutput,rData,rDataDates,FileReadCode,iStat)
     
-  END SUBROUTINE RealTSDataInFile_ReadData_ForTimeRange
+  END SUBROUTINE RealTSDataInFile_ReadTSData_ForTimeRange
   
   
   ! -------------------------------------------------------------
   ! --- READ 2-D REAL DATA
   ! -------------------------------------------------------------
-  SUBROUTINE Real2DTSDataInFile_ReadData(TimeStep,cDescription,TSFile,FileReadError,iStat)
+  SUBROUTINE Real2DTSDataInFile_ReadTSData(TSFile,TimeStep,cDescription,FileReadError,iStat)
+    CLASS(Real2DTSDataInFileType) :: TSFile
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
     CHARACTER(LEN=*),INTENT(IN)   :: cDescription
-    TYPE(Real2DTSDataInFileType)  :: TSFile
     INTEGER,INTENT(OUT)           :: FileReadError,iStat
     
     !Set the update flag to False
@@ -791,13 +902,13 @@ CONTAINS
 
     IF (FileReadError .EQ. 0) TSFile%lUpdated = .TRUE.
 
-  END SUBROUTINE Real2DTSDataInFile_ReadData
+  END SUBROUTINE Real2DTSDataInFile_ReadTSData
   
   
   ! -------------------------------------------------------------
   ! --- READ DATA FOR A LOCATION FOR TIME RANGE FROM 2-D REAL TS INPUT FILE
   ! -------------------------------------------------------------
-  SUBROUTINE Real2DTSDataInFile_ReadData_ForTimeRange(ThisFile,iRow,iCol,iPathNameIndex,cBeginDateAndTime,cEndDateAndTime,nActualOutput,rData,rDataDates,FileReadCode,iStat)
+  SUBROUTINE Real2DTSDataInFile_ReadTSData_ForTimeRange(ThisFile,iRow,iCol,iPathNameIndex,cBeginDateAndTime,cEndDateAndTime,nActualOutput,rData,rDataDates,FileReadCode,iStat)
     CLASS(Real2DTSDataInFileType) :: ThisFile
     INTEGER,INTENT(IN)            :: iRow,iCol           !Defines the location within the matrix data if data is being read from ASCII file
     INTEGER,INTENT(IN)            :: iPathNameIndex      !Defined ptahname index if data is being read from DSS file
@@ -808,9 +919,54 @@ CONTAINS
     FileReadCode = 0
     CALL ThisFile%File%ReadData(iRow,iCol,ThisFile%nRow,ThisFile%nCol,iPathNameIndex,cBeginDateAndTime,cEndDateAndTime,nActualOutput,rData,rDataDates,FileReadCode,iStat)
     
-  END SUBROUTINE Real2DTSDataInFile_ReadData_ForTimeRange
+  END SUBROUTINE Real2DTSDataInFile_ReadTSData_ForTimeRange
   
   
+  ! -------------------------------------------------------------
+  ! --- READ CHARACTER TIME SERIES DATA
+  ! -------------------------------------------------------------
+  SUBROUTINE ReadCharTSData(ThisFile,TimeStep,DataDescriptor,cTSData,FileReadCode,iStat)
+    TYPE(GenericFileType)         :: ThisFile
+    TYPE(TimeStepType),INTENT(IN) :: TimeStep
+    CHARACTER(LEN=*),INTENT(IN)   :: DataDescriptor
+    CHARACTER(LEN=*)              :: cTSData
+    INTEGER,INTENT(OUT)           :: FileReadCode,iStat
+    
+    !Initialize
+    iStat = 0
+
+    IF (ThisFile%iGetFileType() .EQ. f_iUNKNOWN) THEN
+        FileReadCode = -2  !File not found
+        
+    ELSE
+        !Read data 
+        CALL ThisFile%ReadData(TimeStep%CurrentDateAndTime,cTSData,FileReadCode,iStat,TimeStep%TrackTime)
+        IF (iStat .EQ. -1) RETURN
+        
+        !Proceed based on the returned error code
+        SELECT CASE (FileReadCode)
+          !It wasn't time to read; do nothing
+          CASE (-1)
+        
+          !The data is not properly time stamped
+          CASE (1)
+            CALL GenerateTimeStampError(DataDescriptor)
+            iStat = -1
+        
+          !Error in reading data from DSS file
+          CASE (2)
+            CALL GenerateDataRetrievalError(DataDescriptor)
+            iStat = -1
+            
+          !Data was read without any problem
+          CASE (0)
+        
+        END SELECT
+    END IF
+
+  END SUBROUTINE ReadCharTSData
+
+
   ! -------------------------------------------------------------
   ! --- READ 1-D ARRAY TIME SERIES DATA
   ! -------------------------------------------------------------
@@ -914,6 +1070,18 @@ CONTAINS
 ! ******************************************************************
 ! ******************************************************************
 
+  ! -------------------------------------------------------------
+  ! --- CHECK IF TIMESERIES INPUT DATA IS UPDATED
+  ! -------------------------------------------------------------
+  PURE FUNCTION IsUpdated(TSDataInFile) RESULT(lUpdated)
+    CLASS(TSDataInFileType),INTENT(IN) :: TSDataInFile
+    LOGICAL                            :: lUpdated
+    
+    lUpdated = TSDataInFile%lUpdated
+      
+  END FUNCTION IsUpdated
+  
+  
   ! -------------------------------------------------------------
   ! --- CHECK IF NUMBER OF COLUMNS IN A TS DATA INPUT FILE IS SUFFICENT
   ! -------------------------------------------------------------
@@ -1125,48 +1293,48 @@ CONTAINS
     !Proceed based on the supplied DSS file name
     DSSFileName=ADJUSTL(StripTextUntilCharacter(DSSFileName,'/'))
     IF (DSSFileName .EQ. '') THEN
-      !Set the information related to the ASCII file
-      CALL ThisFile%SetNSPVariable(NSP)
-      CALL ThisFile%SetNFQVariable(NFQ)
-      CALL ThisFile%SetBlocksToSkip(BlocksToSkip)
-      IF (PRESENT(RateTypeData)) THEN
-          CALL ThisFile%SetRateTypeDataVariable(RateTypeData)
-      END IF
+        !Set the information related to the ASCII file
+        CALL ThisFile%SetNSPVariable(NSP)
+        CALL ThisFile%SetNFQVariable(NFQ)
+        CALL ThisFile%SetBlocksToSkip(BlocksToSkip)
+        IF (PRESENT(RateTypeData)) THEN
+            CALL ThisFile%SetRateTypeDataVariable(RateTypeData)
+        END IF
     ELSE
-      !Check if it is a time-tracking simulation
-      IF (.NOT. TrackTime) THEN
-          MessageArray(1)='DSS input file is being used for '//FileDefinition
-          MessageArray(2)='when simulation time is not tracked!'
-          CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
-          iStat = -1
-          RETURN
-      END IF
-      !Allocate aray for pathnames
-      ALLOCATE (PathNames(NPathNames))
-      !Read pathnames and redefine the time series file as DSS file
-      DO indx=1,NPathNames
-        CALL ThisFile%ReadData(DummyChar,iStat)  ;  IF (iStat .EQ. -1) RETURN
-        CALL CleanSpecialCharacters(DummyChar)
-        StartLocation=FirstLocation('/',TRIM(DummyChar))
-        IF (StartLocation.EQ.0) THEN
-            CALL SetLastMessage('Error in pathnames defined in '//TRIM(LowerCase(FileDefinition))//'!',f_iFatal,ThisProcedure)
+        !Check if it is a time-tracking simulation
+        IF (.NOT. TrackTime) THEN
+            MessageArray(1)='DSS input file is being used for '//FileDefinition
+            MessageArray(2)='when simulation time is not tracked!'
+            CALL SetLastMessage(MessageArray(1:2),f_iFatal,ThisProcedure)
             iStat = -1
             RETURN
         END IF
-        PathNames(indx)=ADJUSTL(DummyChar(StartLocation:LEN(DummyChar)))
-      END DO
-      !Close the ASCII file
-      CALL ThisFile%Kill()
-      !Open the DSS file
-      CALL ThisFile%New(DSSFileName,InputFile=.TRUE.,IsTSFile=.TRUE.,Descriptor=FileDefinition,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-      !Set parameters for the DSS input file
-      CALL ThisFile%SetParametersForDSSFile(PathNames=PathNames(:),NColumnsOfData=NPathNames,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
-      !Set the RateTypeData flag
-      IF (PRESENT(RateTypeData)) THEN
-          CALL ThisFile%SetRateTypeDataVariable(RateTypeData)
-      END IF
-      !Clear memory
-      DEALLOCATE (PathNames)
+        !Allocate aray for pathnames
+        ALLOCATE (PathNames(NPathNames))
+        !Read pathnames and redefine the time series file as DSS file
+        DO indx=1,NPathNames
+            CALL ThisFile%ReadData(DummyChar,iStat)  ;  IF (iStat .EQ. -1) RETURN
+            CALL CleanSpecialCharacters(DummyChar)
+            StartLocation=FirstLocation('/',TRIM(DummyChar))
+            IF (StartLocation.EQ.0) THEN
+                CALL SetLastMessage('Error in pathnames defined in '//TRIM(LowerCase(FileDefinition))//'!',f_iFatal,ThisProcedure)
+                iStat = -1
+                RETURN
+            END IF
+            PathNames(indx)=ADJUSTL(DummyChar(StartLocation:LEN(DummyChar)))
+        END DO
+        !Close the ASCII file
+        CALL ThisFile%Kill()
+        !Open the DSS file
+        CALL ThisFile%New(DSSFileName,InputFile=.TRUE.,IsTSFile=.TRUE.,Descriptor=FileDefinition,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+        !Set parameters for the DSS input file
+        CALL ThisFile%SetParametersForDSSFile(PathNames=PathNames(:),NColumnsOfData=NPathNames,iStat=iStat)  ;  IF (iStat .EQ. -1) RETURN
+        !Set the RateTypeData flag
+        IF (PRESENT(RateTypeData)) THEN
+            CALL ThisFile%SetRateTypeDataVariable(RateTypeData)
+        END IF
+        !Clear memory
+        DEALLOCATE (PathNames)
     END IF
 
   END SUBROUTINE PrepareTSDInputFile

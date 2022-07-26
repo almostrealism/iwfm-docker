@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -733,9 +733,9 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- SIMULATE LAKES
   ! -------------------------------------------------------------
-  SUBROUTINE AppLake_v50_Simulate(AppLake,GSElevs,GWHeads,Runoff,ReturnFlow,LakeGWConnector,StrmLakeConnector,Matrix)
+  SUBROUTINE AppLake_v50_Simulate(AppLake,GSElevs,GWHeads,Runoff,ReturnFlow,PondDrain,LakeGWConnector,StrmLakeConnector,Matrix)
     CLASS(AppLake_v50_Type)              :: AppLake
-    REAL(8),INTENT(IN)                   :: GSElevs(:),GWHeads(:,:),Runoff(:),ReturnFlow(:)
+    REAL(8),INTENT(IN)                   :: GSElevs(:),GWHeads(:,:),Runoff(:),ReturnFlow(:),PondDrain(:)
     TYPE(LakeGWConnectorType),INTENT(IN) :: LakeGWConnector
     TYPE(StrmLakeConnectorType)          :: StrmLakeConnector
     TYPE(MatrixType)                     :: Matrix
@@ -769,7 +769,10 @@ CONTAINS
         !Initialize
         Elev        = AppLake%Lakes(indxLake)%Elev                                    !Lake elevation
         iNodeIDs(1) = indxLake                                                        !Lake to lake connectivity node
-        OtherInflow = StrmInflows(indxLake) + Runoff(indxLake) + ReturnFlow(indxLake) !Inflows into lake
+        OtherInflow = StrmInflows(indxLake) &                                         !Inflows into lake
+                    + Runoff(indxLake)      &
+                    + ReturnFlow(indxLake)  &
+                    + PondDrain(indxLake)
        
         !Lake storage
         AppLake%Lakes(indxLake)%Storage = MAX(AppLake%Lakes(indxLake)%RatingTable%Evaluate(Elev) , 0.0)

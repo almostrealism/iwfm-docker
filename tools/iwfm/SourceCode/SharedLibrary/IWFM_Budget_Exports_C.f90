@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -70,9 +70,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Budget_OpenFile(cFileName,iLen,iStat) BIND(C,NAME='IW_Budget_OpenFile')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Budget_OpenFile
-    INTEGER(C_INT),INTENT(IN)    :: iLen
-    CHARACTER(C_CHAR),INTENT(IN) :: cFileName(iLen)
-    INTEGER(C_INT),INTENT(OUT)   :: iStat
+    INTEGER(C_INT),INTENT(IN)         :: iLen
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cFileName(iLen)
+    INTEGER(C_INT),INTENT(OUT)        :: iStat
     
     !Local variables
     CHARACTER :: cFileName_F*iLen
@@ -156,9 +156,9 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Budget_GetLocationNames(cLocNames,iLenLocNames,NLocations,iLocArray,iStat) BIND(C,NAME='IW_Budget_GetLocationNames')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Budget_GetLocationNames
-    INTEGER(C_INT),INTENT(IN)     :: iLenLocNames,NLocations
-    CHARACTER(C_CHAR),INTENT(OUT) :: cLocNames(iLenLocNames)
-    INTEGER(C_INT),INTENT(OUT)    :: iLocArray(NLocations),iStat
+    INTEGER(C_INT),INTENT(IN)          :: iLenLocNames,NLocations
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cLocNames(iLenLocNames)
+    INTEGER(C_INT),INTENT(OUT)         :: iLocArray(NLocations),iStat
     
     !Local variables
     INTEGER                              :: indx
@@ -202,10 +202,10 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Budget_GetTimeSpecs(cDataDatesAndTimes,iLenDates,cInterval,iLenInterval,NData,iLocArray,iStat) BIND(C,NAME='IW_Budget_GetTimeSpecs')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Budget_GetTimeSpecs
-    INTEGER(C_INT),INTENT(IN)     :: iLenDates,iLenInterval,NData
-    CHARACTER(C_CHAR),INTENT(OUT) :: cDataDatesAndTimes(iLenDates)
-    CHARACTER(C_CHAR),INTENT(OUT) :: cInterval(iLenInterval)
-    INTEGER(C_INT),INTENT(OUT)    :: iLocArray(NData),iStat
+    INTEGER(C_INT),INTENT(IN)          :: iLenDates,iLenInterval,NData
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cDataDatesAndTimes(iLenDates)
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cInterval(iLenInterval)
+    INTEGER(C_INT),INTENT(OUT)         :: iLocArray(NData),iStat
     
     !Local variables
     TYPE(TimeStepType) :: TimeStep
@@ -277,12 +277,12 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Budget_GetTitleLines(NTitles,iLocation,FactArea,LengthUnit,AreaUnit,VolumeUnit,iLenUnit,cAltLocName,iLenAltLocName,cTitles,iLenTitles,iLocArray,iStat) BIND(C,NAME='IW_Budget_GetTitleLines')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Budget_GetTitleLines
-    INTEGER(C_INT),INTENT(IN)     :: NTitles,iLocation,iLenUnit,iLenTitles,iLenAltLocName  
-    REAL(C_DOUBLE),INTENT(IN)     :: FactArea
-    CHARACTER(C_CHAR),INTENT(IN)  :: LengthUnit(iLenUnit),AreaUnit(iLenUnit),VolumeUnit(iLenUnit) 
-    CHARACTER(C_CHAR),INTENT(IN)  :: cAltLocName(iLenAltLocName)
-    CHARACTER(C_CHAR),INTENT(OUT) :: cTitles(iLenTitles)    
-    INTEGER(C_INT),INTENT(OUT)    :: iLocArray(NTitles),iStat 
+    INTEGER(C_INT),INTENT(IN)          :: NTitles,iLocation,iLenUnit,iLenTitles,iLenAltLocName  
+    REAL(C_DOUBLE),INTENT(IN)          :: FactArea
+    CHARACTER(KIND=C_CHAR),INTENT(IN)  :: LengthUnit(iLenUnit),AreaUnit(iLenUnit),VolumeUnit(iLenUnit) 
+    CHARACTER(KIND=C_CHAR),INTENT(IN)  :: cAltLocName(iLenAltLocName)
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cTitles(iLenTitles)    
+    INTEGER(C_INT),INTENT(OUT)         :: iLocArray(NTitles),iStat 
     
     !Local variables
     CHARACTER(LEN=iLenTitles/NTitles) :: cTitles_Work(NTitles)
@@ -338,10 +338,10 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Budget_GetColumnHeaders(iLoc,cColumnHeaders,iLenColumnHeaders,NColumns,LengthUnit,AreaUnit,VolumeUnit,iLenUnit,iLocArray,iStat) BIND(C,NAME='IW_Budget_GetColumnHeaders')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Budget_GetColumnHeaders
-    INTEGER(C_INT),INTENT(IN)     :: iLoc,iLenColumnHeaders,NColumns,iLenUnit
-    CHARACTER(C_CHAR),INTENT(IN)  :: LengthUnit(iLenUnit),AreaUnit(iLenUnit),VolumeUnit(iLenUnit)
-    CHARACTER(C_CHAR),INTENT(OUT) :: cColumnHeaders(iLenColumnHeaders)
-    INTEGER(C_INT),INTENT(OUT)    :: iLocArray(NColumns),iStat
+    INTEGER(C_INT),INTENT(IN)          :: iLoc,iLenColumnHeaders,NColumns,iLenUnit
+    CHARACTER(KIND=C_CHAR),INTENT(IN)  :: LengthUnit(iLenUnit),AreaUnit(iLenUnit),VolumeUnit(iLenUnit)
+    CHARACTER(KIND=C_CHAR),INTENT(OUT) :: cColumnHeaders(iLenColumnHeaders)
+    INTEGER(C_INT),INTENT(OUT)         :: iLocArray(NColumns),iStat
     
     !Local variables
     INTEGER                           :: indx,NDataColumns
@@ -383,11 +383,11 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Budget_GetValues(iLoc,nReadCols,iReadCols,cDateAndTimeBegin,cDateAndTimeEnd,iLenDateAndTime,cOutputInterval,iLenInterval,rFact_LT,rFact_AR,rFact_VL,nTimes_In,Values,nTimes_Out,iStat) BIND(C,NAME='IW_Budget_GetValues')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Budget_GetValues
-    INTEGER(C_INT),INTENT(IN)    :: iLoc,nReadCols,iReadCols(nReadCols),iLenDateAndTime,iLenInterval,nTimes_In
-    CHARACTER(C_CHAR),INTENT(IN) :: cDateAndTimeBegin(iLenDateAndTime),cDateAndTimeEnd(iLenDateAndTime),cOutputInterval(iLenInterval)
-    REAL(C_DOUBLE),INTENT(IN)    :: rFact_LT,rFact_AR,rFact_VL
-    REAL(C_DOUBLE),INTENT(OUT)   :: Values(nReadCols+1,nTimes_In)
-    INTEGER(C_INT),INTENT(OUT)   :: nTimes_Out,iStat
+    INTEGER(C_INT),INTENT(IN)         :: iLoc,nReadCols,iReadCols(nReadCols),iLenDateAndTime,iLenInterval,nTimes_In
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cDateAndTimeBegin(iLenDateAndTime),cDateAndTimeEnd(iLenDateAndTime),cOutputInterval(iLenInterval)
+    REAL(C_DOUBLE),INTENT(IN)         :: rFact_LT,rFact_AR,rFact_VL
+    REAL(C_DOUBLE),INTENT(OUT)        :: Values(nReadCols+1,nTimes_In)
+    INTEGER(C_INT),INTENT(OUT)        :: nTimes_Out,iStat
     
     !Local variables
     REAL(8)   :: rDummy
@@ -417,11 +417,11 @@ CONTAINS
   ! -------------------------------------------------------------
   SUBROUTINE IW_Budget_GetValues_ForAColumn(iLoc,iCol,cOutputInterval,iLenInterval,cOutputBeginDateAndTime,cOutputEndDateAndTime,iLenDateAndTime,rFact_LT,rFact_AR,rFact_VL,iDim_In,iDim_Out,Dates,Values,iStat) BIND(C,NAME='IW_Budget_GetValues_ForAColumn')
     !DEC$ ATTRIBUTES STDCALL, DLLEXPORT :: IW_Budget_GetValues_ForAColumn
-    INTEGER(C_INT),INTENT(IN)    :: iLoc,iCol,iLenInterval,iLenDateAndTime,iDim_In
-    CHARACTER(C_CHAR),INTENT(IN) :: cOutputInterval(iLenInterval),cOutputBeginDateAndTime(iLenDateAndTime),cOutputEndDateAndTime(iLenDateAndTime)
-    REAL(C_DOUBLE),INTENT(IN)    :: rFact_LT,rFact_AR,rFact_VL
-    INTEGER(C_INT),INTENT(OUT)   :: iDim_Out,iStat
-    REAL(C_DOUBLE),INTENT(OUT)   :: Dates(iDim_In),Values(iDim_In)  
+    INTEGER(C_INT),INTENT(IN)         :: iLoc,iCol,iLenInterval,iLenDateAndTime,iDim_In
+    CHARACTER(KIND=C_CHAR),INTENT(IN) :: cOutputInterval(iLenInterval),cOutputBeginDateAndTime(iLenDateAndTime),cOutputEndDateAndTime(iLenDateAndTime)
+    REAL(C_DOUBLE),INTENT(IN)         :: rFact_LT,rFact_AR,rFact_VL
+    INTEGER(C_INT),INTENT(OUT)        :: iDim_Out,iStat
+    REAL(C_DOUBLE),INTENT(OUT)        :: Dates(iDim_In),Values(iDim_In)  
     
     !Local variables
     INTEGER :: iDataUnitType

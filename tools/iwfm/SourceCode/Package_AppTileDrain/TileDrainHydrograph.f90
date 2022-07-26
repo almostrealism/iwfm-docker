@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -35,11 +35,10 @@ MODULE TileDrainHydrograph
   USE TimeSeriesUtilities     , ONLY: TimeStepType                  , &
                                       IncrementTimeStamp
   USE IOInterface             , ONLY: GenericFileType               , &
+                                      RealTSDataInFileType          , &
+                                      PrepareTSDOutputFile          , &
                                       iGetFileType_FromName         , &
                                       f_iDSS
-  USE Package_Misc            , ONLY: RealTSDataInFileType          , &
-                                      ReadTSData                    , &
-                                      PrepareTSDOutputFile
   USE AppTileDrain_Parameters , ONLY: f_iTileDrain                  , &
                                       f_iSubIrig
   IMPLICIT NONE
@@ -412,7 +411,7 @@ CONTAINS
     END IF
     
     !Read data
-    CALL TDHyd%InFile_ForInquiry%ReadData(iHydIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)
+    CALL TDHyd%InFile_ForInquiry%ReadTSData(iHydIndex,cOutputBeginDateAndTime,cOutputEndDateAndTime,nActualOutput,rOutputValues,rOutputDates,ErrorCode,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Convert unit
@@ -684,7 +683,7 @@ CONTAINS
     TimeStep_Local = TimeStep
     DO indxTime=1,NTIME
         !Read data
-        CALL ReadTSData(TimeStep_Local,'tile drain hydrographs',TDHyd%InFile_ForInquiry,FileReadCode,iStat)
+        CALL TDHyd%InFile_ForInquiry%ReadTSData(TimeStep_Local,'tile drain hydrographs',FileReadCode,iStat)
         IF (iStat .EQ. -1) RETURN
         
         !Transfer  values to matrix to be written to HDF file

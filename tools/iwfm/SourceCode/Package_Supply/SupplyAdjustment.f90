@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -27,17 +27,16 @@ MODULE SupplyAdjustment
                                           f_iFatal
   USE GeneralUtilities            , ONLY: NormalizeArray
   USE TimeSeriesUtilities         , ONLY: TimeStepType
+  USE IOInterface                 , ONLY: IntTSDataInFileType
   USE Package_ComponentConnectors , ONLY: SupplyToDestinationType        , &
                                           DestinationToSupplyType        , &
                                           SupplyDestinationConnectorType
-  USE Package_Misc                , ONLY: IntTSDataInFileType            , &
-                                          ReadTSData                     , &
-                                          f_iSupply_Diversion            , &
+  USE Package_Misc                , ONLY: f_iSupply_Diversion            , &
                                           f_iSupply_ElemPump             , &
                                           f_iSupply_Well                 , &
                                           f_iFlowDest_Element            , &
-                                          f_iAg                          , &
-                                          f_iUrb
+                                          f_iLandUse_Ag                  , &
+                                          f_iLandUse_Urb
   USE Package_AppGW               , ONLY: AppGWType                      , &
                                           f_iPump_Well                   , &
                                           f_iPump_ElemPump
@@ -115,7 +114,7 @@ MODULE SupplyAdjustment
     PROCEDURE,PASS :: SetTolerance              
     PROCEDURE,PASS :: SetAdjustFlag             
     PROCEDURE,PASS :: SetMaxPumpAdjustIter      
-    PROCEDURE,PASS :: ReadTSData           => SupplyAdjustment_ReadTSData      
+    PROCEDURE,PASS :: ReadTSData                 
     PROCEDURE,PASS :: Adjust                    
     PROCEDURE,PASS :: ResetState              
   END TYPE SupplyAdjustmentType
@@ -432,7 +431,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- READ SUPPLY ADJUSTMENT SPECS
   ! -------------------------------------------------------------
-  SUBROUTINE SupplyAdjustment_ReadTSData(SupplyAdjustment,TimeStep,iStat)
+  SUBROUTINE ReadTSData(SupplyAdjustment,TimeStep,iStat)
     CLASS(SupplyAdjustmentType)   :: SupplyAdjustment
     TYPE(TimeStepType),INTENT(IN) :: TimeStep
     INTEGER,INTENT(OUT)           :: iStat
@@ -447,9 +446,9 @@ CONTAINS
     END IF
 
     !Read data
-    CALL ReadTSData(TimeStep,'supply adjustment specs data',SupplyAdjustment%SpecFile,FileReadCode,iStat)
+    CALL SupplyAdjustment%SpecFile%ReadTSData(TimeStep,'supply adjustment specs data',FileReadCode,iStat)
 
-  END SUBROUTINE SupplyAdjustment_ReadTSData
+  END SUBROUTINE ReadTSData
   
   
   
@@ -489,12 +488,12 @@ CONTAINS
     CALL EchoProgress('Adjusting supplies to meet water demand')
     
     !Get water demands
-    CALL RootZone%GetWaterDemand(f_iAg,AgDemand)
-    CALL RootZone%GetWaterDemand(f_iUrb,UrbDemand)
+    CALL RootZone%GetWaterDemand(f_iLandUse_Ag,AgDemand)
+    CALL RootZone%GetWaterDemand(f_iLandUse_Urb,UrbDemand)
     
     !Get water suppies
-    CALL RootZone%GetWaterSupply(AppGrid,f_iAg,AgSupply)
-    CALL RootZone%GetWaterSupply(AppGrid,f_iUrb,UrbSupply)
+    CALL RootZone%GetWaterSupply(AppGrid,f_iLandUse_Ag,AgSupply)
+    CALL RootZone%GetWaterSupply(AppGrid,f_iLandUse_Urb,UrbSupply)
     
     !Supply shortage (demand-supply) at each demand location
     AgDiff  = AgDemand - AgSupply
@@ -739,8 +738,10 @@ CONTAINS
     ASSOCIATE (pSupplyToDest => SupplyDestConnector%SupplyToDestination , &
                pDestToSupply => SupplyDestConnector%DestinationToSupply )
         
-        !First convert supply to destination fractions into volumes
+        !First calculate the maximum supplies to each destination and convert supply to destination fractions into volumes
         DO indxSupply=1,SupplyDestConnector%NSupply
+            pSupplyToDest(indxSupply)%SupplyMax_Ag          = SourcesMax(indxSupply)    * IrigFracs(indxSupply)       * pSupplyToDest(indxSupply)%SupplyToDestFracs_Ag
+            pSupplyToDest(indxSupply)%SupplyMax_Urb         = SourcesMax(indxSupply)    * (1d0-IrigFracs(indxSupply)) * pSupplyToDest(indxSupply)%SupplyToDestFracs_Urb
             pSupplyToDest(indxSupply)%SupplyToDestFracs_Ag  = SourcesActual(indxSupply) * IrigFracs(indxSupply)       * pSupplyToDest(indxSupply)%SupplyToDestFracs_Ag
             pSupplyToDest(indxSupply)%SupplyToDestFracs_Urb = SourcesActual(indxSupply) * (1d0-IrigFracs(indxSupply)) * pSupplyToDest(indxSupply)%SupplyToDestFracs_Urb
         END DO
@@ -765,7 +766,7 @@ CONTAINS
             !Count adjustable supplies
             CALL TagAdjustableSupplies(iSupplyType             , &
                                        Diff                    , &
-                                       f_iAg                   , &
+                                       f_iLandUse_Ag           , &
                                        iAdjustFlags            , &
                                        SourcesRequired_Original, &
                                        SourcesRequired         , &
@@ -791,7 +792,7 @@ CONTAINS
             END DO
           
             !Adjust supply
-            CALL Adjust(f_iAg,Toler,lAdjustSuppliesForADest,SourcesMax,pDestToSupply(indxDest),pSupplyToDest,SourcesActual,SourcesRequired)
+            CALL Adjust(f_iLandUse_Ag,Toler,lAdjustSuppliesForADest,SourcesMax,pDestToSupply(indxDest),pSupplyToDest,SourcesActual,SourcesRequired)
           
           END DO Ag_Supply_Adjustment_Loop
 
@@ -807,7 +808,7 @@ CONTAINS
             !Count adjustable supplies
             CALL TagAdjustableSupplies(iSupplyType             , &
                                        Diff                    , &
-                                       f_iUrb                  , &
+                                       f_iLandUse_Urb          , &
                                        iAdjustFlags            , &
                                        SourcesRequired_Original, &
                                        SourcesRequired         , &
@@ -833,7 +834,7 @@ CONTAINS
             END DO
           
             !Adjust supply
-            CALL Adjust(f_iUrb,Toler,lAdjustSuppliesForADest,SourcesMax,pDestToSupply(indxDest),pSupplyToDest,SourcesActual,SourcesRequired)
+            CALL Adjust(f_iLandUse_Urb,Toler,lAdjustSuppliesForADest,SourcesMax,pDestToSupply(indxDest),pSupplyToDest,SourcesActual,SourcesRequired)
           
           END DO Urb_Supply_Adjustment_Loop
           
@@ -878,11 +879,10 @@ CONTAINS
       REAL(8)                                  :: SourcesRequired(:)
 
       !Local variables
-      INTEGER             :: indxSupply,iSupply,indxInServedDest,iErrorCode,inDest
-      REAL(8)             :: rCorrection,rAdjustedSupply,rCheck,AgSupplyTotal,         &
-                             DestSupply_Ag_Old,DestSupply_Urb_Old,DestSupply_Ag_New,   &
-                             DestSupply_Urb_New 
-      REAL(8),ALLOCATABLE :: SourcesMax_Local(:)
+      INTEGER :: indxSupply,iSupply,indxInServedDest,iErrorCode
+      REAL(8) :: rCorrection,rAdjustedSupply,rCheck,AgSupplyTotal,         &
+                 DestSupply_Ag_Old,DestSupply_Urb_Old,DestSupply_Ag_New,   &
+                 DestSupply_Urb_New 
                  
     
       !Find correction
@@ -898,7 +898,7 @@ CONTAINS
               
               DestSupply_Ag_Old  = pSupplyToDest%SupplyToDestFracs_Ag(indxInServedDest)
               DestSupply_Urb_Old = pSupplyToDest%SupplyToDestFracs_Urb(indxInServedDest)
-              IF (iAdjustFor .EQ. f_iAg) THEN
+              IF (iAdjustFor .EQ. f_iLandUse_Ag) THEN
                   rAdjustedSupply = DestSupply_Ag_Old 
               ELSE
                   rAdjustedSupply = DestSupply_Urb_Old
@@ -923,32 +923,15 @@ CONTAINS
               !If the supply is being increased
               ELSE
                   rAdjustedSupply = rAdjustedSupply + rCorrection
-                  inDest          = pSupplyToDest%nDest
-                  DEALLOCATE (SourcesMax_Local , STAT=iErrorCode)
-                  ALLOCATE (SourcesMax_Local(inDest))
-                  IF (iAdjustFor .EQ. f_iAg) THEN
-                      SourcesMax_Local   = pSupplyToDest%SupplyToDestFracs_Ag
-                      IF (ALL(SourcesMax_Local .EQ. 0d0)) THEN
-                          SourcesMax_Local = 1d0 / REAL(inDest,8)
-                      ELSE
-                          CALL NormalizeArray(SourcesMax_Local)
-                      END IF
-                      SourcesMax_Local   = SourcesMax(iSupply) * SourcesMax_Local
-                      rAdjustedSupply    = MIN(rAdjustedSupply , SourcesMax_Local(indxInServedDest))
+                  IF (iAdjustFor .EQ. f_iLandUse_Ag) THEN
+                      rAdjustedSupply = MIN(rAdjustedSupply , pSupplyToDest%SupplyMax_Ag(indxInServedDest))
                   ELSE
-                      SourcesMax_Local   = pSupplyToDest%SupplyToDestFracs_Urb
-                      IF (ALL(SourcesMax_Local .EQ. 0d0)) THEN
-                          SourcesMax_Local = 1d0 / REAL(inDest,8)
-                      ELSE
-                          CALL NormalizeArray(SourcesMax_Local)
-                      END IF
-                      SourcesMax_Local   = SourcesMax(iSupply) * SourcesMax_Local
-                      rAdjustedSupply    = MIN(rAdjustedSupply , SourcesMax_Local(indxInServedDest))
+                      rAdjustedSupply = MIN(rAdjustedSupply , pSupplyToDest%SupplyMax_Urb(indxInServedDest))
                   END IF
               END IF
               
               !Store adjusted supplies
-              IF (iAdjustFor .EQ. f_iAg) THEN
+              IF (iAdjustFor .EQ. f_iLandUse_Ag) THEN
                 DestSupply_Ag_New  = rAdjustedSupply
                 DestSupply_Urb_New = DestSupply_Urb_Old
               ELSE
@@ -998,7 +981,7 @@ CONTAINS
       
       !Is the supply tagged for adjustment?
       iAdjustSupplyFor = iAdjustFlags(iSupply)
-      IF (iAdjustFor .EQ. f_iAg) THEN
+      IF (iAdjustFor .EQ. f_iLandUse_Ag) THEN
         IF (iAdjustSupplyFor.EQ.f_iAdjustForUrb .OR. iAdjustSupplyFor.EQ.f_iAdjustForNone) THEN
           lAdjustSupplies(indxSupply) = .FALSE.
           CYCLE
@@ -1020,7 +1003,7 @@ CONTAINS
       
       !If the supply needs to be decreased...
       IF (Diff .LT. 0.0) THEN
-        IF (iAdjustFor .EQ. f_iAg) THEN
+        IF (iAdjustFor .EQ. f_iLandUse_Ag) THEN
           Supply = SupplyToDest(iSupply)%SupplyToDestFracs_Ag(indxInServedDest)
         ELSE
           Supply = SupplyToDest(iSupply)%SupplyToDestFracs_Urb(indxInServedDest)
@@ -1039,10 +1022,13 @@ CONTAINS
             CYCLE
         END IF
         !Is the actual source less than required source indicating that there is not enough water at the source?
-        IF (SourcesRequired_Old(iSupply) .GT. SourcesActual(iSupply)) THEN
-            lAdjustSupplies(indxSupply) = .FALSE.
-            CYCLE
-        END IF              
+        !Check the percent difference, to avoid issues with comapring floating point numbers
+        IF (SourcesRequired_Old(iSupply) .NE. 0d0) THEN
+            IF (ABS(SourcesRequired_Old(iSupply)-SourcesActual(iSupply))/SourcesRequired_Old(iSupply) .GT. 1D-5) THEN
+                lAdjustSupplies(indxSupply) = .FALSE.
+                CYCLE
+            END IF
+        END IF
       END IF
 
     END DO

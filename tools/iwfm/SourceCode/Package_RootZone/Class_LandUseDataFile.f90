@@ -1,6 +1,6 @@
 !***********************************************************************
 !  Integrated Water Flow Model (IWFM)
-!  Copyright (C) 2005-2021  
+!  Copyright (C) 2005-2022  
 !  State of California, Department of Water Resources 
 !
 !  This program is free software; you can redistribute it and/or
@@ -28,8 +28,7 @@ MODULE Class_LandUseDataFile
                                      LowerCase               , &
                                      IntToText
   USE TimeSeriesUtilities    , ONLY: TimeStepType
-  USE TSDFileHandler         , ONLY: Real2DTSDataInFileType  , &
-                                     ReadTSData
+  USE IOInterface            , ONLY: Real2DTSDataInFileType  
   IMPLICIT NONE
   
   
@@ -58,9 +57,10 @@ MODULE Class_LandUseDataFile
   TYPE,EXTENDS(Real2DTSDataInFileType) :: LandUseDataFileType
     REAL(8) :: Fact  = 1.0     !Conversion factor for land use areas
   CONTAINS
-    PROCEDURE,PASS :: New        => LandUseDataFile_New
-    PROCEDURE,PASS :: Kill       => LandUseDataFile_Kill  
-    PROCEDURE,PASS :: ReadTSData => LandUseDataFile_ReadTSData
+    PROCEDURE,PASS :: New        
+    PROCEDURE,PASS :: Kill         
+    PROCEDURE,PASS :: LandUseDataFile_ReadTSData 
+    GENERIC        :: ReadTSData                 => LandUseDataFile_ReadTSData
   END TYPE LandUseDataFileType
   
   
@@ -81,7 +81,7 @@ CONTAINS
   ! -------------------------------------------------------------
   ! --- NEW LAND USE DATA FILE
   ! -------------------------------------------------------------
-  SUBROUTINE LandUseDataFile_New(LandUseDataFile,cFileName,cWorkingDirectory,cDescriptor,NLocations,NLands,TrackTime,iStat) 
+  SUBROUTINE New(LandUseDataFile,cFileName,cWorkingDirectory,cDescriptor,NLocations,NLands,TrackTime,iStat) 
     CLASS(LandUseDataFileType)  :: LandUseDataFile
     CHARACTER(LEN=*),INTENT(IN) :: cFileName,cWorkingDirectory,cDescriptor
     INTEGER,INTENT(IN)          :: NLocations,NLands
@@ -102,13 +102,13 @@ CONTAINS
     CALL LandUseDataFile%Init(cFileName,cWorkingDirectory,cDescriptor,TrackTime,BlocksToSkip=1,lFactorDefined=.TRUE.,lReadDims=.FALSE.,nRow=NLocations,nCol=NLands+1,Factor=Factor,iStat=iStat)
     LandUseDataFile%Fact = Factor(1)
 
-  END SUBROUTINE LandUseDataFile_New
+  END SUBROUTINE New
 
     
   ! -------------------------------------------------------------
   ! --- KILL LAND USE DATA FILE
   ! -------------------------------------------------------------
-  SUBROUTINE LandUseDataFile_Kill(LandUseDataFile)
+  SUBROUTINE Kill(LandUseDataFile)
     CLASS(LandUseDataFileType) :: LandUseDataFile
     
     !Local variables
@@ -120,7 +120,7 @@ CONTAINS
            p = Dummy
     END SELECT
     
-  END SUBROUTINE LandUseDataFile_Kill
+  END SUBROUTINE Kill
     
     
   ! -------------------------------------------------------------
@@ -145,7 +145,7 @@ CONTAINS
     NLocations = LandUseDataFile%nRow
     
     !Read data
-    CALL ReadTSData(TimeStep,cDescriptor,LandUseDataFile%Real2DTSDataInFileType,FileReadCode,iStat)
+    CALL LandUseDataFile%ReadTSData(TimeStep,cDescriptor,FileReadCode,iStat)
     IF (iStat .EQ. -1) RETURN
     
     !Return if new data is not read
