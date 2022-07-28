@@ -10,7 +10,7 @@ resource "aws_ecs_task_definition" "manager" {
   container_definitions = <<DEFINITION
   [
     {
-      "image": "${var.manager_image}",
+      "image": "${var.manager_image}:${var.tag}",
       "name": "${var.prefix}-manager",
       "portMappings": [
         {
