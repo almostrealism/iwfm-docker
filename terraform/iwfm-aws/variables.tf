@@ -33,7 +33,12 @@ variable "aws_secret_key" {
 
 variable "image" {
   description = "Docker image"
-  default = "ashesfall/iwfm-base:latest"
+  default = "ashesfall/iwfm-base"
+}
+
+variable "tag" {
+  description = "Docker image"
+  default = "latest"
 }
 
 variable "resource_bucket" {

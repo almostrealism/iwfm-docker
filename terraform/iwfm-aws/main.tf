@@ -25,7 +25,7 @@ resource "aws_ecs_task_definition" "definition" {
   container_definitions = <<DEFINITION
   [
     {
-      "image": "${var.image}",
+      "image": "${var.image}:${var.tag}",
       "name": "${var.prefix}-container",
       "portMappings": [
         {

@@ -44,6 +44,7 @@ region if you want to create dashboards.
 ```
 prefix="iwfm"
 iwfm_model="<path-to-model>/c2vsimfg_version1.01.zip"
+tag="1403"
 resource_bucket="iwfm-bucket-987342582"
 analytics_bucket="iwfm-analytics-3523598"
 analytics_title="analysis_1"
@@ -54,13 +55,15 @@ aws_secret_key="your_secret_key"
 
 If you are doing multiple deployments, you can distinguish between them using prefix, but otherwise
 just leave it as "iwfm". Make sure the iwfm_model is the one you intend to run. us-east-2 is Ohio,
-but any region the support AWS ECS will work for the deployment. The resource bucket needs to be
-globally unique, but it can be any string. Same with the analytics bucket.
+but any region the support AWS ECS will work for the deployment. The tag indicates which version of
+iwfm to run. It can be either 1273 or 1403 if you are using the public image (you can build your
+own image with build.sh and specify it using the variable 'image').
 
-When doing multiple analyses, you can use the analytics_title to distinguish them. This is necessary
-to do if you are going to detach the analysis from the running system (as described in the cleanup
-section below) - otherwise there will be an error during the deployment since it will not let you
-write over your last analysis.
+The resource bucket needs to be globally unique, but it can be any string. Same with the analytics
+bucket. When doing multiple analyses, you can use the analytics_title to distinguish them. This is
+necessary to do if you are going to detach the analysis from the running system (as described in the
+cleanup section below) - otherwise there will be an error during the deployment since it will not
+let you write over your last analysis.
 
 Now you are ready to deploy. You can initialize terraform (which will download the AWS provider),
 and then apply the deployment.
