@@ -88,7 +88,10 @@ iwfm-dashboard, where you can monitor the performance and log output of the proj
 
 ### Cleaning Up
 
-TODO: Explain how to isolate and preserve the analysis results using the process:
+Once the process is over, you'll need to detach the results to hang on to them before you take down
+the deployment. The steps for that are shown below. Simply examine the terraform state for the resources
+corresponding to results, and after confirming that they are attached, detach them with the **state rm**
+command. The three resources that hold results are the analytics database, workgroup, and bucket.
 
 ```
 # list all resources
@@ -110,9 +113,49 @@ terraform destroy
 
 Follow the same instructions for deploying the IWFM model, but use the directory terraform/pestpp-aws.
 
+When you are done, and detached analytics results from your deployment, you can destroy the deployment.
+
 ```
 terraform destroy
 ```
+
+## Deploying custom parallel model processes to AWS
+
+Follow the same instructions for deploying the IWFM model, but use the directory terraform/parallel-aws.
+This process is a little more complex, as the model zip must have a file called control.sh at the top level.
+This file indicates exactly what you want to do, and what parts of it can be done in parallel. An example
+is shown below.
+
+```
+#!
+cp FilesToCopy/1980_PUMPING_01.DAT "/Simulation\Groundwater\C2VSimFG_PumpRates.dat"
+cp FilesToCopy/1980_WELLSPEC_01.DAT "/Simulation\Groundwater\C2VSimFG_WellSpec.dat"
+/run_simulation.sh "Run 001"
+#!
+cp FilesToCopy/1980_PUMPING_02.DAT "/Simulation\Groundwater\C2VSimFG_PumpRates.dat"
+cp FilesToCopy/1980_WELLSPEC_02.DAT "/Simulation\Groundwater\C2VSimFG_WellSpec.dat"
+/run_simulation.sh "Run 002"
+#!
+cp FilesToCopy/1980_PUMPING_03.DAT "/Simulation\Groundwater\C2VSimFG_PumpRates.dat"
+cp FilesToCopy/1980_WELLSPEC_03.DAT "/Simulation\Groundwater\C2VSimFG_WellSpec.dat"
+/run_simulation.sh "Run 003"
+```
+
+This will run three processes in parallel, with 3 sequential steps in each. There is an upper-bound to the
+size of this file, but it is very large and its unclear what it is. It's been tested with a 900 line script.
+
+There are a few systems that are built into the deployment, and can be used in control.sh without having to
+be included in the model zip. These are:
+
+- Simulation: This is the IWFM Simulation binary.
+- PreProcessor: This is the IWFM Preprocessor binary.
+- dos2unix: This is a utility that will convert DOS-formatted files to UNIX-formatted files.
+- /run_simulation.sh: This is the script that actually runs the simulation.
+- /run_model.sh: This runs the simulation and the analytics post-processing.
+- /scripts/**: The scripts directory from this repository is included in the deployment also.
+
+Anything else needs to be included in the model zip. Everything in the model zip is available at the root of
+the file system.
 
 ## Deploying the Simulation to Azure
 
