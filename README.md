@@ -151,15 +151,15 @@ is shown below.
 #!
 cp FilesToCopy/1980_PUMPING_01.DAT "/Simulation\Groundwater\C2VSimFG_PumpRates.dat"
 cp FilesToCopy/1980_WELLSPEC_01.DAT "/Simulation\Groundwater\C2VSimFG_WellSpec.dat"
-/run_simulation.sh "Run 001"
+/run_model.sh "Run 001"
 #!
 cp FilesToCopy/1980_PUMPING_02.DAT "/Simulation\Groundwater\C2VSimFG_PumpRates.dat"
 cp FilesToCopy/1980_WELLSPEC_02.DAT "/Simulation\Groundwater\C2VSimFG_WellSpec.dat"
-/run_simulation.sh "Run 002"
+/run_model.sh "Run 002"
 #!
 cp FilesToCopy/1980_PUMPING_03.DAT "/Simulation\Groundwater\C2VSimFG_PumpRates.dat"
 cp FilesToCopy/1980_WELLSPEC_03.DAT "/Simulation\Groundwater\C2VSimFG_WellSpec.dat"
-/run_simulation.sh "Run 003"
+/run_model.sh "Run 003"
 ```
 
 This will run three processes in parallel, with 3 sequential steps in each. There is an upper-bound to the
@@ -168,8 +168,8 @@ size of this file, but it is very large and its unclear what it is. It's been te
 There are a few systems that are built into the deployment, and can be used in control.sh without having to
 be included in the model zip. These are:
 
-- Simulation: This is the IWFM Simulation binary.
 - PreProcessor: This is the IWFM Preprocessor binary.
+- Simulation: This is the IWFM Simulation binary.
 - dos2unix: This is a utility that will convert DOS-formatted files to UNIX-formatted files.
 - /run_simulation.sh: This is the script that actually runs the simulation.
 - /run_model.sh: This runs the simulation and the analytics post-processing.
