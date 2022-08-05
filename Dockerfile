@@ -29,6 +29,14 @@ COPY tools/build.sh /build.sh
 
 RUN /build.sh
 
+RUN wget https://download.java.net/java/GA/jdk17.0.2/dfd4a8d0985749f896bed50d7138ee7f/8/GPL/openjdk-17.0.2_linux-x64_bin.tar.gz
+RUN tar -zxvf openjdk-17.0.2_linux-x64_bin.tar.gz
+RUN mv jdk-17.0.2 /opt
+
+ENV JAVA_HOME=/opt/jdk-17.0.2
+
+COPY tools/ar-flowtree-shaded-0.13.jar /flowtree-shaded.jar
+
 COPY runner/GW_Obs.smp /Simulation/GW_Obs.smp
 COPY runner/iwfm2obs_2015.in /Simulation/iwfm2obs_2015.in
 COPY runner/MultiLayerTarget.in /Simulation/MultiLayerTarget.in
