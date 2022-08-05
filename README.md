@@ -113,6 +113,27 @@ terraform destroy
 
 Follow the same instructions for deploying the IWFM model, but use the directory terraform/pestpp-aws.
 
+There is one additional parameter you can supply, called pest_cmd. This controls which PEST++ executable
+is used. It defaults to 'glm'. An example of variables for pest++ is shown below.
+
+```
+prefix="iwfm-pest"
+pest_cmd="ies"
+iwfm_model="<path-to-model>/c2vsimfg_version1.01.zip"
+tag="1403"
+resource_bucket="iwfm-bucket-487336382"
+analytics_bucket="iwfm-analytics-65635398"
+analytics_title="analysis_1"
+instance_root_volume_size="4000"
+region="us-east-2"
+aws_access_key="your_access_key"
+aws_secret_key="your_secret_key"
+```
+
+PEST++ uses a lot of disk space, so you'll need to make sure you have enough available. The default is 4000gb,
+but as you can see it can be changed here. The entire process will fail if you don't have enough space, so if
+you are trying to cut costs by reducing it, make sure you know what you're doing.
+
 When you are done, and detached analytics results from your deployment, you can destroy the deployment.
 
 ```
