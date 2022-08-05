@@ -173,7 +173,9 @@ be included in the model zip. These are:
 - dos2unix: This is a utility that will convert DOS-formatted files to UNIX-formatted files.
 - /run_simulation.sh: This is the script that actually runs the simulation.
 - /run_model.sh: This runs the simulation and the analytics post-processing.
-- /scripts/**: The scripts directory from this repository is included in the deployment also.
+- /scripts/**: All the files from the postprocessing directory from this repository are included here.
+- /opt/jdk-17.0.2: The JDK is installed here.
+- python3: The Python3 interpreter is available, arbitrary scripts can be included in the model zip.
 
 Anything else needs to be included in the model zip. Everything in the model zip is available at the root of
 the file system.
