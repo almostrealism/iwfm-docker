@@ -58,7 +58,7 @@ COPY tools/pestbin /pestbin
 COPY tools/pest/Texture2Par.tpl /Simulation/Texture2Par.tpl
 COPY tools/pest/GWHMultiLayer.ins /Simulation/GWHMultiLayer.ins
 
-COPY init.sh /init.sh
+COPY runner/init.sh /init.sh
 COPY runner/run.sh /run.sh
 COPY runner/run_model.sh /run_model.sh
 COPY runner/run_simulation.sh /run_simulation.sh
