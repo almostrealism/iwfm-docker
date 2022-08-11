@@ -27,6 +27,14 @@ resource "aws_ecs_task_definition" "agent" {
               {
                   "name": "FLOWTREE_ROOT_HOST",
                   "value": "127.0.0.1"
+              },
+              {
+                  "name": "DB_BUCKET",
+                  "value": "${aws_s3_bucket.db.bucket}"
+              },
+              {
+                  "name": "DB_NAME",
+                  "value": "${var.prefix}_${var.analytics_title}_db"
               }
           ]
       }

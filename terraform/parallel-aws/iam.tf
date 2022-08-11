@@ -43,11 +43,6 @@ resource "aws_iam_role_policy_attachment" "ecs-task-execution-role-policy-attach
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-#resource "aws_iam_role_policy_attachment" "task_role_policy_attachment" {
-#  role       = aws_iam_role.ecs_task_role.name
-#  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
-#}
-
 data "aws_iam_policy_document" "instance_policy" {
   statement {
     sid = "CloudwatchPutMetricData"
@@ -98,6 +93,18 @@ data "aws_iam_policy_document" "instance_policy" {
       "*",
     ]
   }
+
+  statement {
+    sid = "AnalyticsS3"
+    actions = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
+    resources = ["arn:aws:s3:::${var.analytics_bucket}/*"]
+  }
+
+  statement {
+    sid = "AnalyticsDB"
+    actions = ["glue:GetTable", "glue:CreateTable", "glue:GetTableVersion", "glue:GetTableVersions", "glue:GetDatabase", "glue:GetDatabases", "glue:BatchCreatePartition"]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_policy" "instance_policy" {
@@ -133,6 +140,11 @@ resource "aws_iam_role_policy_attachment" "ecs_policy" {
 
 resource "aws_iam_role_policy_attachment" "instance_policy" {
   role       = "${aws_iam_role.instance.name}"
+  policy_arn = "${aws_iam_policy.instance_policy.arn}"
+}
+
+resource "aws_iam_role_policy_attachment" "task_role_policy_attachment" {
+  role       = aws_iam_role.ecs_task_role.name
   policy_arn = "${aws_iam_policy.instance_policy.arn}"
 }
 

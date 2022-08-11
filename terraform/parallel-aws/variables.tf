@@ -50,6 +50,14 @@ variable "resource_bucket" {
   description = "A unique name for an S3 bucket to store the resources for the process"
 }
 
+variable "analytics_bucket" {
+  description = "A unique name for an S3 bucket to store the parquet files for analytics"
+}
+
+variable "analytics_title" {
+  description = "A name for the analysis, used for database and workspace resources"
+}
+
 variable "iwfm_model" {
   description = "The path to the IWFM model to run"
 }

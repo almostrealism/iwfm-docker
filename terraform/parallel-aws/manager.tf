@@ -34,6 +34,14 @@ resource "aws_ecs_task_definition" "manager" {
               {
                   "name": "IWFM_MODEL",
                   "value": "http://${aws_s3_bucket_website_configuration.www.website_endpoint}/model.zip"
+              },
+              {
+                  "name": "DB_BUCKET",
+                  "value": "${aws_s3_bucket.db.bucket}"
+              },
+              {
+                  "name": "DB_NAME",
+                  "value": "${var.prefix}_${var.analytics_title}_db"
               }
           ]
       }
