@@ -73,6 +73,7 @@ COPY runner/run_simulation.sh /run_simulation.sh
 COPY post/post.sh /post.sh
 
 COPY postprocessing /scripts
+RUN cd /scripts ; pip install -e pywfm ; cd /
 
 COPY tools/apache2/autoindex.conf /etc/apache2/mods-available/autoindex.conf
 ENV APACHE_RUN_DIR=/
