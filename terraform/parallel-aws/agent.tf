@@ -35,6 +35,10 @@ resource "aws_ecs_task_definition" "agent" {
               {
                   "name": "DB_NAME",
                   "value": "${var.prefix}_${var.analytics_title}_db"
+              },
+              {
+                  "name": "AWS_DEFAULT_REGION",
+                  "value": "${var.region}"
               }
           ]
       }
