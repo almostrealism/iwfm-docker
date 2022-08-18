@@ -1,14 +1,20 @@
+# Build/Run
 build/**
 libs/**
 model/**
 runner/*.zip
 
+# Eclipse
 **/.cproject
 **/.project
 
+# Terraform
 **.tfstate*
 **/.terraform*
 **/*.tfvars
+
+# Python
+postprocessing/pywfm/__pycache__/**
 
 # Temporary stuff
 docker_run.sh
