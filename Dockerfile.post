@@ -1,8 +1,7 @@
-FROM ashesfall/pest-agent-post:latest
+FROM ashesfall/iwfm-base:1273
 
 WORKDIR /
 
-COPY postprocessing /scripts
-COPY post/post.sh /post.sh
+COPY model/Simulation/Groundwater/C2VSimFG_Groundwater1974.dat /Simulation/Groundwater/C2VSimFG_Groundwater1974.dat
 
-ENTRYPOINT /post.sh
+ENTRYPOINT /run_simulation.sh

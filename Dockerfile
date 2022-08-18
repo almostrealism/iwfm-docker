@@ -29,6 +29,14 @@ COPY tools/build.sh /build.sh
 
 RUN /build.sh
 
+RUN wget https://download.java.net/java/GA/jdk17.0.2/dfd4a8d0985749f896bed50d7138ee7f/8/GPL/openjdk-17.0.2_linux-x64_bin.tar.gz
+RUN tar -zxvf openjdk-17.0.2_linux-x64_bin.tar.gz
+RUN mv jdk-17.0.2 /opt
+
+ENV JAVA_HOME=/opt/jdk-17.0.2
+
+COPY tools/ar-flowtree-shaded-0.13.jar /flowtree-shaded.jar
+
 COPY runner/GW_Obs.smp /Simulation/GW_Obs.smp
 COPY runner/iwfm2obs_2015.in /Simulation/iwfm2obs_2015.in
 COPY runner/MultiLayerTarget.in /Simulation/MultiLayerTarget.in
@@ -58,13 +66,14 @@ COPY tools/pestbin /pestbin
 COPY tools/pest/Texture2Par.tpl /Simulation/Texture2Par.tpl
 COPY tools/pest/GWHMultiLayer.ins /Simulation/GWHMultiLayer.ins
 
-COPY init.sh /init.sh
+COPY runner/init.sh /init.sh
 COPY runner/run.sh /run.sh
 COPY runner/run_model.sh /run_model.sh
 COPY runner/run_simulation.sh /run_simulation.sh
 COPY post/post.sh /post.sh
 
 COPY postprocessing /scripts
+RUN cd /scripts ; pip install -e pywfm ; cd /
 
 COPY tools/apache2/autoindex.conf /etc/apache2/mods-available/autoindex.conf
 ENV APACHE_RUN_DIR=/

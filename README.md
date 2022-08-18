@@ -44,6 +44,7 @@ region if you want to create dashboards.
 ```
 prefix="iwfm"
 iwfm_model="<path-to-model>/c2vsimfg_version1.01.zip"
+tag="1403"
 resource_bucket="iwfm-bucket-987342582"
 analytics_bucket="iwfm-analytics-3523598"
 analytics_title="analysis_1"
@@ -54,13 +55,15 @@ aws_secret_key="your_secret_key"
 
 If you are doing multiple deployments, you can distinguish between them using prefix, but otherwise
 just leave it as "iwfm". Make sure the iwfm_model is the one you intend to run. us-east-2 is Ohio,
-but any region the support AWS ECS will work for the deployment. The resource bucket needs to be
-globally unique, but it can be any string. Same with the analytics bucket.
+but any region the support AWS ECS will work for the deployment. The tag indicates which version of
+iwfm to run. It can be either 1273 or 1403 if you are using the public image (you can build your
+own image with build.sh and specify it using the variable 'image').
 
-When doing multiple analyses, you can use the analytics_title to distinguish them. This is necessary
-to do if you are going to detach the analysis from the running system (as described in the cleanup
-section below) - otherwise there will be an error during the deployment since it will not let you
-write over your last analysis.
+The resource bucket needs to be globally unique, but it can be any string. Same with the analytics
+bucket. When doing multiple analyses, you can use the analytics_title to distinguish them. This is
+necessary to do if you are going to detach the analysis from the running system (as described in the
+cleanup section below) - otherwise there will be an error during the deployment since it will not
+let you write over your last analysis.
 
 Now you are ready to deploy. You can initialize terraform (which will download the AWS provider),
 and then apply the deployment.
@@ -85,7 +88,10 @@ iwfm-dashboard, where you can monitor the performance and log output of the proj
 
 ### Cleaning Up
 
-TODO: Explain how to isolate and preserve the analysis results using the process:
+Once the process is over, you'll need to detach the results to hang on to them before you take down
+the deployment. The steps for that are shown below. Simply examine the terraform state for the resources
+corresponding to results, and after confirming that they are attached, detach them with the **state rm**
+command. The three resources that hold results are the analytics database, workgroup, and bucket.
 
 ```
 # list all resources
@@ -107,9 +113,72 @@ terraform destroy
 
 Follow the same instructions for deploying the IWFM model, but use the directory terraform/pestpp-aws.
 
+There is one additional parameter you can supply, called pest_cmd. This controls which PEST++ executable
+is used. It defaults to 'glm'. An example of variables for pest++ is shown below.
+
+```
+prefix="iwfm-pest"
+pest_cmd="ies"
+iwfm_model="<path-to-model>/c2vsimfg_version1.01.zip"
+tag="1403"
+resource_bucket="iwfm-bucket-487336382"
+analytics_bucket="iwfm-analytics-65635398"
+analytics_title="analysis_1"
+instance_root_volume_size="4000"
+region="us-east-2"
+aws_access_key="your_access_key"
+aws_secret_key="your_secret_key"
+```
+
+PEST++ uses a lot of disk space, so you'll need to make sure you have enough available. The default is 4000gb,
+but as you can see it can be changed here. The entire process will fail if you don't have enough space, so if
+you are trying to cut costs by reducing it, make sure you know what you're doing.
+
+When you are done, and detached analytics results from your deployment, you can destroy the deployment.
+
 ```
 terraform destroy
 ```
+
+## Deploying custom parallel model processes to AWS
+
+Follow the same instructions for deploying the IWFM model, but use the directory terraform/parallel-aws.
+This process is a little more complex, as the model zip must have a file called control.sh at the top level.
+This file indicates exactly what you want to do, and what parts of it can be done in parallel. An example
+is shown below.
+
+```
+#!
+cp FilesToCopy/1980_PUMPING_01.DAT "/Simulation\Groundwater\C2VSimFG_PumpRates.dat"
+cp FilesToCopy/1980_WELLSPEC_01.DAT "/Simulation\Groundwater\C2VSimFG_WellSpec.dat"
+/run_model.sh "Run 001"
+#!
+cp FilesToCopy/1980_PUMPING_02.DAT "/Simulation\Groundwater\C2VSimFG_PumpRates.dat"
+cp FilesToCopy/1980_WELLSPEC_02.DAT "/Simulation\Groundwater\C2VSimFG_WellSpec.dat"
+/run_model.sh "Run 002"
+#!
+cp FilesToCopy/1980_PUMPING_03.DAT "/Simulation\Groundwater\C2VSimFG_PumpRates.dat"
+cp FilesToCopy/1980_WELLSPEC_03.DAT "/Simulation\Groundwater\C2VSimFG_WellSpec.dat"
+/run_model.sh "Run 003"
+```
+
+This will run three processes in parallel, with 3 sequential steps in each. There is an upper-bound to the
+size of this file, but it is very large and its unclear what it is. It's been tested with a 900 line script.
+
+There are a few systems that are built into the deployment, and can be used in control.sh without having to
+be included in the model zip. These are:
+
+- PreProcessor: This is the IWFM Preprocessor binary.
+- Simulation: This is the IWFM Simulation binary.
+- dos2unix: This is a utility that will convert DOS-formatted files to UNIX-formatted files.
+- /run_simulation.sh: This is the script that actually runs the simulation.
+- /run_model.sh: This runs the simulation and the analytics post-processing.
+- /scripts/**: All the files from the postprocessing directory from this repository are included here.
+- /opt/jdk-17.0.2: The JDK is installed here.
+- python3: The Python3 interpreter is available, arbitrary scripts can be included in the model zip.
+
+Anything else needs to be included in the model zip. Everything in the model zip is available at the root of
+the file system.
 
 ## Deploying the Simulation to Azure
 

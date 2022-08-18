@@ -1,44 +1,33 @@
-provider "aws" {
-  version = "4.12.1"
-  region = var.region
-  access_key = var.aws_access_key
-  secret_key = var.aws_secret_key
-}
 
-resource "aws_cloudwatch_log_group" "main" {
-  name = "${var.prefix}-logs"
-}
-
-resource "aws_ecs_task_definition" "definition" {
-  family                   = "${var.prefix}-task"
+resource "aws_ecs_task_definition" "manager" {
+  family                   = "${var.prefix}-manager-task"
   task_role_arn            = aws_iam_role.ecs_task_role.arn
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
   network_mode             = "host"
-  cpu                      = "2048"
-  memory                   = "3860"
-
-#  requires_compatibilities = ["FARGATE"]
-#  ephemeral_storage {
-#    size_in_gib = 100
-#  }
+  cpu                      = "12288"
+  memory                   = "18432"
 
   container_definitions = <<DEFINITION
   [
     {
-      "image": "${var.image}:${var.tag}",
-      "name": "${var.prefix}-container",
+      "image": "${var.manager_image}:${var.tag}",
+      "name": "${var.prefix}-manager",
       "portMappings": [
         {
           "containerPort": 80,
           "hostPort": 80
+        },
+        {
+          "containerPort": 7766,
+          "hostPort": 7766
         }
       ],
       "logConfiguration": {
                   "logDriver": "awslogs",
                   "options": {
                       "awslogs-region" : "${var.region}",
-                      "awslogs-group" : "${var.prefix}-logs",
-                      "awslogs-stream-prefix" : "${var.prefix}"
+                      "awslogs-group" : "${var.prefix}-management",
+                      "awslogs-stream-prefix" : "${var.prefix}-manager"
                   }
               },
       "environment": [
@@ -64,13 +53,13 @@ resource "aws_ecs_task_definition" "definition" {
   DEFINITION
 }
 
-resource "aws_ecs_service" "main" {
-  name            = "${var.prefix}-service"
+resource "aws_ecs_service" "manager" {
+  name            = "${var.prefix}-management"
   cluster         = aws_ecs_cluster.cluster.id
-  task_definition = aws_ecs_task_definition.definition.arn
+  task_definition = aws_ecs_task_definition.manager.arn
   desired_count   = 1
   launch_type     = "EC2"
-  depends_on = [aws_cloudwatch_log_group.main, aws_s3_object.model]
+  depends_on = [aws_cloudwatch_log_group.management, aws_s3_object.model]
 
 #  network_configuration {
 #    subnets = [aws_subnet.public.id]
