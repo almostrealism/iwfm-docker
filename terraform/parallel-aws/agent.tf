@@ -1,50 +1,32 @@
-provider "aws" {
-  version = "4.12.1"
-  region = var.region
-  access_key = var.aws_access_key
-  secret_key = var.aws_secret_key
-}
-
-resource "aws_cloudwatch_log_group" "main" {
-  name = "${var.prefix}-logs"
-}
-
-resource "aws_ecs_task_definition" "definition" {
-  family                   = "${var.prefix}-task"
+resource "aws_ecs_task_definition" "agent" {
+  family                   = "${var.prefix}-agent-task"
   task_role_arn            = aws_iam_role.ecs_task_role.arn
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
   network_mode             = "host"
-  cpu                      = "2048"
-  memory                   = "3860"
-
-#  requires_compatibilities = ["FARGATE"]
-#  ephemeral_storage {
-#    size_in_gib = 100
-#  }
+  cpu                      = "1584"
+  memory                   = "3072"
 
   container_definitions = <<DEFINITION
   [
     {
-      "image": "${var.image}:${var.tag}",
-      "name": "${var.prefix}-container",
-      "portMappings": [
-        {
-          "containerPort": 80,
-          "hostPort": 80
-        }
-      ],
+      "image": "${var.agent_image}:${var.tag}",
+      "name": "${var.prefix}-agent",
       "logConfiguration": {
                   "logDriver": "awslogs",
                   "options": {
                       "awslogs-region" : "${var.region}",
-                      "awslogs-group" : "${var.prefix}-logs",
-                      "awslogs-stream-prefix" : "${var.prefix}"
+                      "awslogs-group" : "${var.prefix}-agents",
+                      "awslogs-stream-prefix" : "${var.prefix}-agent"
                   }
               },
       "environment": [
               {
                   "name": "IWFM_MODEL",
                   "value": "http://${aws_s3_bucket_website_configuration.www.website_endpoint}/model.zip"
+              },
+              {
+                  "name": "FLOWTREE_ROOT_HOST",
+                  "value": "127.0.0.1"
               },
               {
                   "name": "DB_BUCKET",
@@ -64,13 +46,13 @@ resource "aws_ecs_task_definition" "definition" {
   DEFINITION
 }
 
-resource "aws_ecs_service" "main" {
-  name            = "${var.prefix}-service"
+resource "aws_ecs_service" "agent" {
+  name            = "${var.prefix}-agents"
   cluster         = aws_ecs_cluster.cluster.id
-  task_definition = aws_ecs_task_definition.definition.arn
-  desired_count   = 1
+  task_definition = aws_ecs_task_definition.agent.arn
+  desired_count   = var.agent_count
   launch_type     = "EC2"
-  depends_on = [aws_cloudwatch_log_group.main, aws_s3_object.model]
+  depends_on = [aws_cloudwatch_log_group.agents, aws_s3_object.model]
 
 #  network_configuration {
 #    subnets = [aws_subnet.public.id]

@@ -9,7 +9,7 @@ resource "aws_ecs_task_definition" "agent" {
   container_definitions = <<DEFINITION
   [
     {
-      "image": "${var.agent_image}",
+      "image": "${var.agent_image}:${var.tag}",
       "name": "${var.prefix}-agent",
       "logConfiguration": {
                   "logDriver": "awslogs",

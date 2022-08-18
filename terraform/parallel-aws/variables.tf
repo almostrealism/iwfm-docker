@@ -1,6 +1,6 @@
 variable "prefix" {
   description = "The prefix used for all resources"
-  default = "iwfm"
+  default = "parallel"
 }
 
 variable "region" {
@@ -10,17 +10,17 @@ variable "region" {
 
 variable "instance_type" {
   description = "The type of AWS EC2 instance to use for the cluster"
-  default = "c6i.large"
+  default = "c6i.metal"
+}
+
+variable "agent_count" {
+  description = "Number of agent containers to use"
+  default = 74
 }
 
 variable "instance_root_volume_size" {
   description = "The size of the root volume for cluster instances"
-  default = "750"
-}
-
-variable "instance_docker_volume_size" {
-  description = "The size of the volume for docker images on the cluster instances"
-  default = "150"
+  default = "4000"
 }
 
 variable "aws_access_key" {
@@ -31,13 +31,18 @@ variable "aws_secret_key" {
   description = "AWS Secret Key"
 }
 
-variable "image" {
+variable "manager_image" {
   description = "Docker image"
-  default = "ashesfall/iwfm-base"
+  default = "ashesfall/iwfm-parallel-mgr"
+}
+
+variable "agent_image" {
+  description = "Docker image"
+  default = "ashesfall/iwfm-parallel-agt"
 }
 
 variable "tag" {
-  description = "Docker image"
+  description = "Tag to use for the image"
   default = "latest"
 }
 
