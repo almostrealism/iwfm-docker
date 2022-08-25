@@ -2,4 +2,4 @@ FROM ashesfall/iwfm-base:latest
 
 COPY tools/pest/manager.sh /manager.sh
 
-ENTRYPOINT /manager.sh & /usr/sbin/apache2 -DFOREGROUND
+ENTRYPOINT /manager.sh & /usr/local/apache2/bin/httpd -DFOREGROUND
