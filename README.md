@@ -1,6 +1,6 @@
 ## What is this for?
 
-Running IWFM is a challenge. Normally the process requires a number of steps to get your own
+Running IWFM is a challenge. Normally, the process requires a number of steps to get your own
 machine ready to run the executables, and run the steps by hand. This repository contains
 everything that is needed to run it, and you don't even need to check this repository out:
 the build image is published to [Docker Hub](https://hub.docker.com/r/ashesfall/iwfm-base).
@@ -25,22 +25,74 @@ docker run -p 8080:80 -e IWFM_MODEL=https://data.cnra.ca.gov/dataset/31f3ddf8-75
 
 The -p option here is what allows you to access the results of the simulation. By binding the
 container's built in web server to port 8080 of your own machine you can simply bring up the
-site http://localhost:8080/files in your browser to keep an eye on any output it generates.
+site http://localhost:8080 in your browser to keep an eye on any output it generates.
 These pages are updated in real time, so you can monitor the entire process using just a browser.
 
-## Deploying the Simulation to AWS
+## Cloud Deployment
 
-First you'll need to download Terraform, if you have not already. It is free, and available on
+First, you'll need to download Terraform, if you have not already. It is free, and available on
 Windows, Linux, and Mac (Intel/ARM).
 
 [Terraform](https://learn.hashicorp.com/tutorials/terraform/install-cli)
 
-Next, navigate to the "terraform/iwfm-aws" directory of this repository and create a file called terraform.tfvars.
-Inside this file, you'll include all the parameters for your deployment. You can select any resource_bucket and
-analytics_bucket you want, as long as they don't exist already. Your analytics_bucket is where the final results
-will live so that they can be analyzed using QuickSight. Any region is acceptable, but it must match your QuickSight
-region if you want to create dashboards.
+On machines running windows 10, you will need to add Terraform to the system path environment variable to access 
+it from command prompt or powershell. To do this, right click on the start menu and click on system. Then, on the right side of the window, click on Advanced System Settings. Then, click on the Environment Variables button in the System Properties
+dialog box. Under System variables, scroll down and select Path and click new. Paste in the path to the Terraform 
+executable and click Ok.
 
+At this time, Terraform configurations have only been developed for AWS.
+
+## Deploying to AWS
+
+The following steps outline the process for deploying to AWS:
+1. Download or clone this repository.
+
+   From Git Bash, this can be accomplished by:
+   
+   ```bash
+   git clone https://github.com/ashesfall/iwfm-docker.git
+   ```
+
+2. Navigate to the desired terraform deployment configuration within the terraform directory.
+
+   Currently, there are several predefined deployment configurations using Terraform and AWS. Each is located in the 
+   terraform directory of this repository.
+   * **iwfm-aws** - run C2VSimFG and perform budget analytics
+   * **pest-aws** - run PEST++ with C2VSimFG for parameter estimation, sensitivity analysis, or uncertainty analysis
+   * **parallel-aws** - run generic container workloads in parallel
+
+
+3. Create a terraform.tfvars file with deployment parameters in the configuration directory
+
+4. Initialize and apply terraform deployment
+
+5. When complete, detach resources from terraform to preserve and destroy deployment
+
+### Deployment
+
+From the command line, navigate to the directory containing the terraform.tfvars file.
+
+Run the following commands:
+
+```
+terraform init
+terraform apply
+```
+
+This will prompt you to agree with the proposed changes. After typing "yes" and pressing enter, it
+will get to work deploying everything. This takes some time, but you can take a look at it in the
+AWS console by visiting the "Elastic Container Service".
+
+### Deploying C2VSimFG in AWS
+
+Navigate to the "terraform/iwfm-aws" directory of this repository and create the terraform.tfvars.
+Inside this file, you'll include all the parameters for your deployment. You can name the `resource_bucket` and
+`analytics_bucket` anything you want, as long as they don't exist already. Your `analytics_bucket` is where the final results
+will live so that they can be analyzed using QuickSight or another postprocessing tool. Any region is acceptable, but it 
+must match your QuickSight region if you want to create dashboards.
+
+
+The content of the terraform.tfvars should look similar to this:
 ```
 prefix="iwfm"
 iwfm_model="<path-to-model>/c2vsimfg_version1.01.zip"
@@ -53,47 +105,43 @@ aws_access_key="your_access_key"
 aws_secret_key="your_secret_key"
 ```
 
-If you are doing multiple deployments, you can distinguish between them using prefix, but otherwise
+If you are doing multiple deployments, you can distinguish between them using `prefix`, but otherwise
 just leave it as "iwfm". Make sure the iwfm_model is the one you intend to run. us-east-2 is Ohio,
 but any region the support AWS ECS will work for the deployment. The tag indicates which version of
-iwfm to run. It can be either 1273 or 1403 if you are using the public image (you can build your
-own image with build.sh and specify it using the variable 'image').
+iwfm to run. It can be:
+* latest, 
+* 1273, or 
+* 1403
 
-The resource bucket needs to be globally unique, but it can be any string. Same with the analytics
-bucket. When doing multiple analyses, you can use the analytics_title to distinguish them. This is
+if you are using the public image (you can build your own image with build.sh and specify it using the variable 'image').
+
+The `resource_bucket` needs to be globally unique, but it can be any string. Same with the `analytics_bucket`. 
+When doing multiple analyses, you can use the `analytics_title` to distinguish them. This is
 necessary to do if you are going to detach the analysis from the running system (as described in the
-cleanup section below) - otherwise there will be an error during the deployment since it will not
+cleanup section below) - otherwise, there will be an error during the deployment since it will not
 let you write over your last analysis.
 
-Now you are ready to deploy. You can initialize terraform (which will download the AWS provider),
-and then apply the deployment.
+Now, you are ready to deploy. You can initialize terraform (which will download the AWS provider),
+and then apply the deployment. See the Deployment Section above.
 
-```
-terraform init
-terraform apply
-```
-
-This will prompt you to agree with the proposed changes. After typing "yes" and pressing enter, it
-will get to work deploying everything. This takes some time, but you can take a look at it in the
-AWS console by visiting the "Elastic Container Service".
-
-To access your deployment, select the iwfm-cluster in the "Elastic Container Service" dashboard.
-Then select the iwfm-service. Then finally, select the one running task inside that service. The
+To access your deployment, select the `prefix`-cluster in the "Elastic Container Service" dashboard.
+Then select the `prefix`-service. Then finally, select the one running task inside that service. The
 info on the task will display its public IP address, which you can use to reach the deployment
-from any browser using http://public.ip.address/files, where public.ip.address is the address for
+from any browser using http://public.ip.address, where public.ip.address is the address for
 that task.
 
 If you visit "Cloud Watch" in the AWS console, you should see a dashboard created called
-iwfm-dashboard, where you can monitor the performance and log output of the project.
+`prefix`-dashboard, where you can monitor the performance and log output of the project.
 
 ### Cleaning Up
 
+#### Production
 Once the process is over, you'll need to detach the results to hang on to them before you take down
 the deployment. The steps for that are shown below. Simply examine the terraform state for the resources
 corresponding to results, and after confirming that they are attached, detach them with the **state rm**
 command. The three resources that hold results are the analytics database, workgroup, and bucket.
 
-```
+```bash
 # list all resources
 terraform state list
 
@@ -105,16 +153,46 @@ terraform state rm aws_s3_bucket.db
 
 When you are done, and detached analytics results from your deployment, you can destroy the deployment.
 
-```
+```bash
 terraform destroy
 ```
 
+#### Development
+During development or testing, it may be necessary to destroy without detaching the analytics results from the deployment.
+For this case, you can skip the terraform state commands and destroy the deployment.
+
+```bash
+terraform destroy
+```
+
+#### Clean-Up Detached Resources
+In other cases, you may want to delete analytics resources after you have already detached them from the terraform
+deployment. In these cases, you will need to delete following the same order to minimize errors. 
+
+First, delete the Athena database by going to the Amazon Athena Service in AWS. In the menu on the left side, go to 
+Data Sources, click on the appropriate data source name. Then, click on the appropriate database name. First delete 
+any associated tables by selecting them and clicking the delete button. If successful, then delete the database by 
+clicking the delete button. If you run into errors with either the tables or database, you can click the edit button 
+instead. This takes you to AWS Glue where you can force deletion of the tables and/or database.
+
+Second, delete the Athena Workgroup by clicking on Workgroups in the left side menu within the Amazon Athena Service.
+Go to the appropriate workgroup name and click the delete button.
+
+Last, delete the AWS S3 Bucket. Navigate to the Amazon S3 Service in AWS. Select the one with the same name as the
+```analytics_bucket``` provided in the terraform.tfvars file. In order to delete the S3 bucket, it needs to be empty, 
+so select all the contents and click delete. Follow the steps on-screen to confirm the delete. Once successful, return 
+to the main Amazon S3 Service page and select the analytics bucket and click delete.
+
 ## Deploying PEST++ to AWS
 
-Follow the same instructions for deploying the IWFM model, but use the directory terraform/pestpp-aws.
+Navigate to the "terraform/pest-aws" directory of this repository and create the terraform.tfvars.
 
-There is one additional parameter you can supply, called pest_cmd. This controls which PEST++ executable
-is used. It defaults to 'glm'. An example of variables for pest++ is shown below.
+There are a couple parameters you can supply, `pest_cmd` and `instance_root_volume_size`. `pest_cmd` controls which PEST++ executable
+is used. It defaults to 'glm'. PEST++ uses a lot of disk space, so you'll need to make sure you have enough available. The default is 
+4000gb, but as you can see it can be changed here using `instance_root_volume_size`. The entire process will fail if you don't have 
+enough space, so if you are trying to cut costs by reducing it, make sure you know what you're doing. 
+
+An example of variables for pest++ is shown below.
 
 ```
 prefix="iwfm-pest"
@@ -129,10 +207,6 @@ region="us-east-2"
 aws_access_key="your_access_key"
 aws_secret_key="your_secret_key"
 ```
-
-PEST++ uses a lot of disk space, so you'll need to make sure you have enough available. The default is 4000gb,
-but as you can see it can be changed here. The entire process will fail if you don't have enough space, so if
-you are trying to cut costs by reducing it, make sure you know what you're doing.
 
 When you are done, and detached analytics results from your deployment, you can destroy the deployment.
 
@@ -164,6 +238,13 @@ cp FilesToCopy/1980_WELLSPEC_03.DAT "/Simulation\Groundwater\C2VSimFG_WellSpec.d
 
 This will run three processes in parallel, with 3 sequential steps in each. There is an upper-bound to the
 size of this file, but it is very large and its unclear what it is. It's been tested with a 900 line script.
+
+When deploying from Windows, running a script within control.sh will require the script to be called with the 
+sh utility. e.g.
+
+```bash
+sh run_model.sh
+```
 
 There are a few systems that are built into the deployment, and can be used in control.sh without having to
 be included in the model zip. These are:
