@@ -15,6 +15,7 @@ RUN apt-get install -y libzip-dev
 
 # Install Python packages
 RUN pip3 install pandas
+RUN pip3 install geopandas
 RUN pip3 install matplotlib
 RUN pip3 install descartes
 RUN pip3 install pyshp
