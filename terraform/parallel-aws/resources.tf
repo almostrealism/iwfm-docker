@@ -21,3 +21,18 @@ resource "aws_s3_object" "model" {
   source = var.iwfm_model
   etag = filemd5(var.iwfm_model)
 }
+
+resource "aws_s3_bucket" "dashboards" {
+  bucket = var.dashboard_bucket
+
+  tags = {
+    Name = "${var.prefix}-dashboards"
+  }
+}
+
+resource "aws_s3_object" "dashboards" {
+  bucket = aws_s3_bucket.dashboards.id
+  key    = "dashboards.zip"
+  source = var.dashboards_zip
+  etag = filemd5(var.dashboards_zip)
+}
