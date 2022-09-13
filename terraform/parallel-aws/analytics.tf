@@ -19,9 +19,13 @@ resource "aws_athena_workgroup" "main" {
       output_location = "s3://${aws_s3_bucket.db.bucket}/output/"
     }
   }
+
+  force_destroy = true
 }
 
 resource "aws_athena_database" "main" {
   name   = "${var.prefix}_${var.analytics_title}_db"
   bucket = aws_s3_bucket.resources.bucket
+
+  force_destroy = true
 }
