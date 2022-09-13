@@ -4,6 +4,8 @@ resource "aws_s3_bucket" "db" {
   tags = {
     Name = "${var.prefix}-db"
   }
+
+  force_destroy = true
 }
 
 resource "aws_athena_workgroup" "main" {
