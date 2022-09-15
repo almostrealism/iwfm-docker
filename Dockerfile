@@ -48,6 +48,26 @@ ENV JAVA_HOME=/opt/jdk-17.0.2
 
 COPY tools/ar-flowtree-shaded-0.13.jar /flowtree-shaded.jar
 
+# Install Apache2
+RUN wget https://dlcdn.apache.org/httpd/httpd-2.4.54.tar.gz
+RUN tar -zxvf httpd-2.4.54.tar.gz
+RUN cd httpd-2.4.54 ; ./configure --enable-so ; make ; make install
+
+# Configure the webserver
+COPY tools/apache2/autoindex.conf /usr/local/apache2/conf/extra/httpd-autoindex.conf
+COPY tools/apache2/httpd.conf /usr/local/apache2/conf/httpd.conf
+RUN touch /index.html
+
+# Install PHP
+RUN wget https://www.php.net/distributions/php-8.1.9.tar.gz
+RUN tar -zxvf php-8.1.9.tar.gz
+RUN cd php-8.1.9 ; ./configure --with-apxs2=/usr/local/apache2/bin/apxs --with-zip; make ; make install ; cp php.ini-development /usr/local/lib/php.ini
+
+# Install DirectoryLister
+RUN wget https://github.com/DirectoryLister/DirectoryLister/releases/download/3.12.0/DirectoryLister-3.12.0.tar.gz
+RUN tar -zxvf DirectoryLister-3.12.0.tar.gz
+RUN chmod -R 777 /app/
+
 COPY runner/GW_Obs.smp /Simulation/GW_Obs.smp
 COPY runner/iwfm2obs_2015.in /Simulation/iwfm2obs_2015.in
 COPY runner/MultiLayerTarget.in /Simulation/MultiLayerTarget.in
@@ -89,25 +109,5 @@ COPY post/post.sh /post.sh
 # Post processing with Python
 COPY postprocessing /scripts
 RUN cd /scripts ; pip install -e pywfm ; cd /
-
-# Install Apache2
-RUN wget https://dlcdn.apache.org/httpd/httpd-2.4.54.tar.gz
-RUN tar -zxvf httpd-2.4.54.tar.gz
-RUN cd httpd-2.4.54 ; ./configure --enable-so ; make ; make install
-
-# Configure the webserver
-COPY tools/apache2/autoindex.conf /usr/local/apache2/conf/extra/httpd-autoindex.conf
-COPY tools/apache2/httpd.conf /usr/local/apache2/conf/httpd.conf
-RUN touch /index.html
-
-# Install PHP
-RUN wget https://www.php.net/distributions/php-8.1.9.tar.gz
-RUN tar -zxvf php-8.1.9.tar.gz
-RUN cd php-8.1.9 ; ./configure --with-apxs2=/usr/local/apache2/bin/apxs --with-zip; make ; make install ; cp php.ini-development /usr/local/lib/php.ini
-
-# Install DirectoryLister
-RUN wget https://github.com/DirectoryLister/DirectoryLister/releases/download/3.12.0/DirectoryLister-3.12.0.tar.gz
-RUN tar -zxvf DirectoryLister-3.12.0.tar.gz
-RUN chmod -R 777 /app/
 
 ENTRYPOINT /init.sh & /usr/local/apache2/bin/httpd -DFOREGROUND

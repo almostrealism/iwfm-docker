@@ -44,6 +44,22 @@ resource "aws_ecs_task_definition" "manager" {
                   "value": "${var.prefix}_${var.analytics_title}_db"
               },
               {
+                  "name": "DASHBOARDS_BUCKET",
+                  "value": "${aws_s3_bucket.dashboards.bucket}"
+              },
+              {
+                  "name": "USER_ACCESS_KEY_ID",
+                  "value": "${var.aws_access_key}"
+              },
+              {
+                  "name": "USER_SECRET_ACCESS_KEY",
+                  "value": "${var.aws_secret_key}"
+              },
+              {
+                  "name": "WORKGROUP_NAME",
+                  "value": "${var.prefix}-${var.analytics_title}"
+              },
+              {
                   "name": "AWS_DEFAULT_REGION",
                   "value": "${var.region}"
               }
