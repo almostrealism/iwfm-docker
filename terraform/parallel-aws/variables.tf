@@ -61,3 +61,12 @@ variable "analytics_title" {
 variable "iwfm_model" {
   description = "The path to the IWFM model to run"
 }
+
+variable "dashboard_bucket" {
+  description = "A unique name for an S3 bucket to store the dashboard files"
+}
+
+variable "dashboards_zip" {
+  description = "The path to the zip file containing the dashboards to import"
+  default = "dashboards.zip"
+}
