@@ -21,3 +21,18 @@ if __name__ == '__main__':
 
     with io.open("/dashboards/dashboard/databases/Amazon_Athena.yaml", "w", encoding="utf8") as outfile:
         yaml.dump(data, outfile, default_flow_style=False, allow_unicode=True)
+
+    for file in os.listdir("/dashboards/dashboard/datasets/Amazon_Athena"):
+        if file.endswith(".yaml"):
+            with open(f"/dashboards/dashboard/datasets/Amazon_Athena/{file}", "r") as stream:
+                try:
+                    data = yaml.safe_load(stream)
+                except yaml.YAMLError as exc:
+                    print(exc)
+
+            data["schema"] = database
+
+            with io.open(f"/dashboards/dashboard/datasets/Amazon_Athena/{file}", "w", encoding="utf8") as outfile:
+                yaml.dump(data, outfile, default_flow_style=False, allow_unicode=True)
+
+    print(f"Synced datasets and database to {database}")
