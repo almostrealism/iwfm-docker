@@ -68,6 +68,9 @@ RUN wget https://github.com/DirectoryLister/DirectoryLister/releases/download/3.
 RUN tar -zxvf DirectoryLister-3.12.0.tar.gz
 RUN chmod -R 777 /app/
 
+RUN apt-get install -y nodejs-dev node-gyp libssl1.0-dev
+RUN apt-get install -y npm
+
 COPY runner/GW_Obs.smp /Simulation/GW_Obs.smp
 COPY runner/iwfm2obs_2015.in /Simulation/iwfm2obs_2015.in
 COPY runner/MultiLayerTarget.in /Simulation/MultiLayerTarget.in
