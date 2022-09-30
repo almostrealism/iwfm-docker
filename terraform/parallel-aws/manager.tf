@@ -48,10 +48,6 @@ resource "aws_ecs_task_definition" "manager" {
                   "value": "${aws_s3_bucket.dashboards.bucket}"
               },
               {
-                  "name": "GEOJSON_FILENAME",
-                  "value": "${var.geojson_filename}"
-              },
-              {
                   "name": "USER_ACCESS_KEY_ID",
                   "value": "${var.aws_access_key}"
               },

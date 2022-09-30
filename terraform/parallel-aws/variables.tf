@@ -70,7 +70,3 @@ variable "dashboards_zip" {
   description = "The path to the zip file containing the dashboards to import"
   default = "dashboards.zip"
 }
-
-variable "geojson_filename" {
-  description = "The name of the file in the anlytics bucket containing geojson data to migrate for visualization"
-}
