@@ -1,4 +1,4 @@
-FROM ashesfall/iwfm-base:latest
+FROM ashesfall/iwfm-base:1403
 
 COPY tools/pest/agent.sh /agent.sh
 
