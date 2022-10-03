@@ -1,4 +1,4 @@
-FROM ashesfall/iwfm-base:1403
+FROM ashesfall/iwfm-base:1403-ubuntu20.04
 
 COPY tools/pest/agent.sh /agent.sh
 
