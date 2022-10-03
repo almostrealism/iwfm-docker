@@ -1,4 +1,4 @@
-FROM intel/oneapi-hpckit:2022.1.2-devel-ubuntu18.04
+FROM intel/oneapi-hpckit:2022.1.2-devel-ubuntu20.04
 
 WORKDIR /
 
