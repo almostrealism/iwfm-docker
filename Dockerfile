@@ -12,6 +12,7 @@ RUN apt-get install -y --fix-missing libxml2-dev
 RUN apt-get install -y sqlite3 libsqlite3-dev
 RUN apt-get install -y libapr1-dev libaprutil1-dev
 RUN apt-get install -y libzip-dev
+RUN apt-get install -y pcre2-utils
 
 # Install Python packages
 RUN pip3 install pandas
