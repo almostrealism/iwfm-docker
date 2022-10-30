@@ -51,25 +51,14 @@ COPY tools/apache2/httpd.conf /usr/local/apache2/conf/httpd.conf
 RUN touch /index.html
 
 # Install PHP
-RUN wget https://www.php.net/distributions/php-8.1.9.tar.gz
-RUN tar -zxvf php-8.1.9.tar.gz
-RUN cd php-8.1.9 ; ./configure --with-apxs2=/usr/local/apache2/bin/apxs --with-zip; make ; make install ; cp php.ini-development /usr/local/lib/php.ini
+# RUN wget https://www.php.net/distributions/php-8.1.9.tar.gz
+# RUN tar -zxvf php-8.1.9.tar.gz
+# RUN cd php-8.1.9 ; ./configure --with-apxs2=/usr/local/apache2/bin/apxs --with-zip; make ; make install ; cp php.ini-development /usr/local/lib/php.ini
 
-# Install DirectoryLister
-RUN wget https://github.com/DirectoryLister/DirectoryLister/releases/download/3.12.0/DirectoryLister-3.12.0.tar.gz
-RUN tar -zxvf DirectoryLister-3.12.0.tar.gz
-RUN chmod -R 777 /app/
-
-RUN apt-get install -y nodejs-dev node-gyp libssl1.0-dev
-RUN apt-get install -y npm
-RUN node --version
-RUN npm install @terraformer/arcgis
-
-FROM ubuntu:20.04
+FROM php:7.4-apache
 
 COPY --from=build-env /build /build
 COPY --from=build-env /libs /libs
-COPY --from=build-env /usr/local/apache2 /usr/local/apache2
 COPY --from=build-env /opt/intel/oneapi/compiler /opt/intel/oneapi/compiler
 COPY --from=build-env /opt/intel/oneapi/intelpython /opt/intel/oneapi/intelpython
 
@@ -83,6 +72,18 @@ RUN apt-get install -y libapr1-dev libaprutil1-dev
 RUN apt-get install -y libzip-dev
 RUN apt-get install -y pcre2-utils
 
+WORKDIR /
+
+# Install DirectoryLister
+RUN wget https://github.com/DirectoryLister/DirectoryLister/releases/download/3.12.0/DirectoryLister-3.12.0.tar.gz
+RUN tar -zxvf DirectoryLister-3.12.0.tar.gz
+RUN chmod -R 777 /app/
+
+# RUN apt-get install -y nodejs-dev node-gyp libssl1.0-dev npm
+RUN apt-get install -y nodejs node-gyp npm
+RUN node --version
+RUN npm install @terraformer/arcgis
+
 # Upgrade pip
 RUN python3 -m pip install --upgrade pip
 
@@ -93,6 +94,7 @@ RUN pip3 install matplotlib
 RUN pip3 install descartes
 RUN pip3 install pyshp
 RUN pip3 install awswrangler
+
 # Java
 RUN wget https://download.java.net/java/GA/jdk17.0.2/dfd4a8d0985749f896bed50d7138ee7f/8/GPL/openjdk-17.0.2_linux-x64_bin.tar.gz
 RUN tar -zxvf openjdk-17.0.2_linux-x64_bin.tar.gz
@@ -144,5 +146,10 @@ COPY post/post.sh /post.sh
 COPY postprocessing /scripts
 RUN cd /scripts ; pip3 install -e pywfm ; cd /
 
+# Serve files from the root directory
+RUN sed -ri -e 's!/var/www/html!/!g' /etc/apache2/sites-available/*.conf
+RUN sed -ri -e 's!/var/www/!/!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
+
 # ENTRYPOINT /init.sh & /usr/local/apache2/bin/httpd -DFOREGROUND
-ENTRYPOINT /init.sh
+# ENTRYPOINT /usr/local/apache2/bin/httpd -DFOREGROUND
+# ENTRYPOINT find / | grep httpd
