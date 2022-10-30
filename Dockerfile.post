@@ -1,4 +1,4 @@
-FROM ashesfall/iwfm-base:1403-ubuntu20.04
+FROM ashesfall/iwfm-base:1403-php7.4-apache
 
 WORKDIR /
 
