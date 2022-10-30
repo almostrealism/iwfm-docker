@@ -1,4 +1,4 @@
-FROM intel/oneapi-hpckit:2022.3.0-devel-ubuntu20.04
+FROM intel/oneapi-hpckit:2022.1.2-devel-ubuntu18.04 as build-env
 
 WORKDIR /
 
@@ -40,15 +40,6 @@ COPY tools/build.sh /build.sh
 # Build all the tools
 RUN /build.sh
 
-# Java
-RUN wget https://download.java.net/java/GA/jdk17.0.2/dfd4a8d0985749f896bed50d7138ee7f/8/GPL/openjdk-17.0.2_linux-x64_bin.tar.gz
-RUN tar -zxvf openjdk-17.0.2_linux-x64_bin.tar.gz
-RUN mv jdk-17.0.2 /opt
-
-ENV JAVA_HOME=/opt/jdk-17.0.2
-
-COPY tools/ar-flowtree-shaded-0.13.jar /flowtree-shaded.jar
-
 # Install Apache2
 RUN wget https://dlcdn.apache.org/httpd/httpd-2.4.54.tar.gz
 RUN tar -zxvf httpd-2.4.54.tar.gz
@@ -73,6 +64,43 @@ RUN apt-get install -y nodejs-dev node-gyp libssl1.0-dev
 RUN apt-get install -y npm
 RUN node --version
 RUN npm install @terraformer/arcgis
+
+FROM ubuntu:20.04
+
+COPY --from=build-env /build /build
+COPY --from=build-env /libs /libs
+COPY --from=build-env /usr/local/apache2 /usr/local/apache2
+COPY --from=build-env /opt/intel/oneapi/compiler /opt/intel/oneapi/compiler
+COPY --from=build-env /opt/intel/oneapi/intelpython /opt/intel/oneapi/intelpython
+
+# Install dependencies
+RUN apt-get update
+RUN apt-get install -y curl
+RUN apt-get install -y wget zip dos2unix python3 python3-pip
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --fix-missing libxml2-dev
+RUN apt-get install -y sqlite3 libsqlite3-dev
+RUN apt-get install -y libapr1-dev libaprutil1-dev
+RUN apt-get install -y libzip-dev
+RUN apt-get install -y pcre2-utils
+
+# Upgrade pip
+RUN python3 -m pip install --upgrade pip
+
+# Install Python packages
+RUN pip3 install pandas
+RUN pip3 install geopandas
+RUN pip3 install matplotlib
+RUN pip3 install descartes
+RUN pip3 install pyshp
+RUN pip3 install awswrangler
+# Java
+RUN wget https://download.java.net/java/GA/jdk17.0.2/dfd4a8d0985749f896bed50d7138ee7f/8/GPL/openjdk-17.0.2_linux-x64_bin.tar.gz
+RUN tar -zxvf openjdk-17.0.2_linux-x64_bin.tar.gz
+RUN mv jdk-17.0.2 /opt
+
+ENV JAVA_HOME=/opt/jdk-17.0.2
+
+COPY tools/ar-flowtree-shaded-0.13.jar /flowtree-shaded.jar
 
 COPY runner/GW_Obs.smp /Simulation/GW_Obs.smp
 COPY runner/iwfm2obs_2015.in /Simulation/iwfm2obs_2015.in
@@ -114,6 +142,7 @@ COPY post/post.sh /post.sh
 
 # Post processing with Python
 COPY postprocessing /scripts
-RUN cd /scripts ; pip install -e pywfm ; cd /
+RUN cd /scripts ; pip3 install -e pywfm ; cd /
 
-ENTRYPOINT /init.sh & /usr/local/apache2/bin/httpd -DFOREGROUND
+# ENTRYPOINT /init.sh & /usr/local/apache2/bin/httpd -DFOREGROUND
+ENTRYPOINT /init.sh

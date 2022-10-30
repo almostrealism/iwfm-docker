@@ -1,7 +1,7 @@
 #!/bin/sh
 PATH=$PATH:/build/iwfm
 
-ln -s / /var/www/html/files
+export LD_LIBRARY_PATH=/libs/lib
 
 wget -O model.zip $IWFM_MODEL
 unzip model.zip
