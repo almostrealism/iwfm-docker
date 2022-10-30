@@ -17,5 +17,8 @@ runner/*.zip
 .pydevproject
 postprocessing/pywfm/__pycache__/**
 
+# Apple
+**/.DS_Store
+
 # Temporary stuff
 docker_run.sh
