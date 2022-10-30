@@ -80,9 +80,9 @@ RUN tar -zxvf DirectoryLister-3.12.0.tar.gz
 RUN chmod -R 777 /app/
 
 # RUN apt-get install -y nodejs-dev node-gyp libssl1.0-dev npm
-RUN apt-get install -y nodejs node-gyp npm
-RUN node --version
-RUN npm install @terraformer/arcgis
+#RUN apt-get install -y nodejs node-gyp npm
+#RUN node --version
+#RUN npm install @terraformer/arcgis
 
 # Upgrade pip
 RUN python3 -m pip install --upgrade pip
@@ -150,6 +150,14 @@ RUN cd /scripts ; pip3 install -e pywfm ; cd /
 RUN sed -ri -e 's!/var/www/html!/!g' /etc/apache2/sites-available/*.conf
 RUN sed -ri -e 's!/var/www/!/!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
 
-# ENTRYPOINT /init.sh & /usr/local/apache2/bin/httpd -DFOREGROUND
-# ENTRYPOINT /usr/local/apache2/bin/httpd -DFOREGROUND
-# ENTRYPOINT find / | grep httpd
+# Enable PHP modules
+RUN docker-php-ext-install zip
+
+ENV APACHE_RUN_DIR=/var/run/apache2
+ENV APACHE_PID_FILE=/var/run/apache2/apache2.pid
+ENV APACHE_RUN_USER=www-data
+ENV APACHE_RUN_GROUP=www-data
+ENV APACHE_LOG_DIR=/var/log/apache2
+ENV APACHE_LOCK_DIR=/var/lock/apache2
+
+ENTRYPOINT /init.sh & apache2 -D FOREGROUND
