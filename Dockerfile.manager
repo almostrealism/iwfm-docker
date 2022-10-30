@@ -2,4 +2,4 @@ FROM ashesfall/iwfm-base:1403-php7.4-apache
 
 COPY tools/pest/manager.sh /manager.sh
 
-ENTRYPOINT /manager.sh & /usr/local/apache2/bin/httpd -DFOREGROUND
+ENTRYPOINT /manager.sh & apache2 -D FOREGROUND
