@@ -8,6 +8,8 @@ COPY --from=build-env /libs /libs
 COPY --from=build-env /opt/intel/oneapi/compiler /opt/intel/oneapi/compiler
 COPY --from=build-env /opt/intel/oneapi/intelpython /opt/intel/oneapi/intelpython
 
+USER root
+
 # Install packages
 RUN apt-get update
 RUN apt-get install -y curl
@@ -44,3 +46,5 @@ COPY tools/pestbin /pestbin
 # Post processing with Python
 COPY postprocessing /scripts
 RUN cd /scripts ; pip install -e pywfm ; cd /
+
+USER airflow
