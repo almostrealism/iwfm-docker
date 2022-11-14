@@ -46,4 +46,9 @@ COPY tools/pestbin /pestbin
 
 # Post processing with Python
 COPY postprocessing /scripts
+
+USER root
+RUN chown -R airflow /scripts
+
+USER airflow
 RUN cd /scripts ; pip3 install -e pywfm ; cd /
