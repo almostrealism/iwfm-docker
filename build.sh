@@ -9,9 +9,9 @@ docker build . -f Dockerfile.pmgr -t ashesfall/iwfm-parallel-mgr:latest
 docker build . -f Dockerfile.pagt -t ashesfall/iwfm-parallel-agt:latest
 
 echo "Pushing container images..."
-#docker push ashesfall/iwfm-base:latest
+docker push ashesfall/iwfm-base:latest
 docker push ashesfall/iwfm-airflow:latest
-#docker push ashesfall/iwfm-manager:latest
-#docker push ashesfall/iwfm-agent:latest
-#docker push ashesfall/iwfm-parallel-mgr:latest
-#docker push ashesfall/iwfm-parallel-agt:latest
+docker push ashesfall/iwfm-manager:latest
+docker push ashesfall/iwfm-agent:latest
+docker push ashesfall/iwfm-parallel-mgr:latest
+docker push ashesfall/iwfm-parallel-agt:latest
