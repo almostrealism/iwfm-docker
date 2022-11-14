@@ -20,17 +20,18 @@ RUN apt-get install -y sqlite3 libsqlite3-dev
 RUN apt-get install -y libapr1-dev libaprutil1-dev
 RUN apt-get install -y libzip-dev
 RUN apt-get install -y pcre2-utils
+RUN apt-get install -y libnode-dev node-gyp
+RUN apt-get install -y npm
 
 WORKDIR /
 
 # Install arcgis
-RUN apt-get install -y nodejs-dev node-gyp libssl1.0-dev
-RUN apt-get install -y npm
-RUN node --version
-RUN npm install @terraformer/arcgis
+# RUN npm install @terraformer/arcgis
 
 # Upgrade pip
 RUN python3 -m pip install --upgrade pip
+
+USER airflow
 
 # Install Python packages
 RUN pip3 install pandas
@@ -45,6 +46,4 @@ COPY tools/pestbin /pestbin
 
 # Post processing with Python
 COPY postprocessing /scripts
-RUN cd /scripts ; pip install -e pywfm ; cd /
-
-USER airflow
+RUN cd /scripts ; pip3 install -e pywfm ; cd /
