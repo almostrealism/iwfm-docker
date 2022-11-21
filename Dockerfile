@@ -32,6 +32,8 @@ COPY --from=build-env /libs /libs
 COPY --from=build-env /opt/intel/oneapi/compiler /opt/intel/oneapi/compiler
 COPY --from=build-env /opt/intel/oneapi/intelpython /opt/intel/oneapi/intelpython
 
+ENV LD_LIBRARY_PATH=/opt/intel/oneapi/compiler/2022.0.2/linux/compiler/lib/intel64_lin
+
 # Install packages
 RUN apt-get update
 RUN apt-get install -y curl
@@ -75,7 +77,7 @@ RUN mv jdk-17.0.2 /opt
 
 ENV JAVA_HOME=/opt/jdk-17.0.2
 
-COPY tools/ar-flowtree-shaded-0.13.jar /flowtree-shaded.jar
+#COPY tools/ar-flowtree-shaded-0.13.jar /flowtree-shaded.jar
 
 #COPY runner/GW_Obs.smp /Simulation/GW_Obs.smp
 #COPY runner/iwfm2obs_2015.in /Simulation/iwfm2obs_2015.in
