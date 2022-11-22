@@ -1,0 +1,7 @@
+FROM ashesfall/iwfm-airflow:latest
+
+ENV _AIRFLOW_DB_UPGRADE=true
+
+COPY runner/airflow_manager.sh /airflow_manager.sh
+
+ENTRYPOINT /airflow_manager.sh

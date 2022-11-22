@@ -47,6 +47,9 @@ COPY tools/pestbin /pestbin
 # Post processing with Python
 COPY postprocessing /scripts
 
+# Include DAGs
+COPY dags /opt/airflow/dags
+
 USER root
 RUN chown -R airflow /scripts
 
