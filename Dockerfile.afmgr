@@ -1,7 +1,11 @@
 FROM ashesfall/iwfm-airflow:latest
 
+USER root
+RUN apt-get install -y postgresql
+
+COPY runner/sudoers /etc/sudoers
+
+USER airflow
 ENV _AIRFLOW_DB_UPGRADE=true
-
 COPY runner/airflow_manager.sh /airflow_manager.sh
-
 ENTRYPOINT /airflow_manager.sh
