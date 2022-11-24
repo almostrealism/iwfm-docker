@@ -1,9 +1,8 @@
 name: Build and Publish
 
 on:
-  # run it on push to the default repository branch
   push:
-    branches: [main]
+    branches: []
 
 jobs:
   build-and-push-docker-image:
