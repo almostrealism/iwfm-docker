@@ -4,18 +4,28 @@ on:
   # run it on push to the default repository branch
   push:
     branches: [main]
-  # run it during pull request
-  pull_request:
 
 jobs:
-  # define job to build and publish docker image
   build-and-push-docker-image:
     name: Build Docker image and push to repositories
-    # run only when code is compiling and tests are passing
     runs-on: ubuntu-latest
 
-    # steps to perform in job
     steps:
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 512
+          swap-size-mb: 1024
+          remove-dotnet: 'true'
+
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Build
+        run: |
+          echo "Free space:"
+          df -h
+
       - name: Checkout code
         uses: actions/checkout@v3
 
