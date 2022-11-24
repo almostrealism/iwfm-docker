@@ -46,7 +46,7 @@ RUN mv jdk-17.0.2 /opt
 
 ENV JAVA_HOME=/opt/jdk-17.0.2
 
-COPY tools/ar-flowtree-shaded-0.13.jar /flowtree-shaded.jar
+# COPY tools/ar-flowtree-shaded-0.13.jar /flowtree-shaded.jar
 
 # Install Apache2
 RUN wget https://dlcdn.apache.org/httpd/httpd-2.4.54.tar.gz
