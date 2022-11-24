@@ -47,6 +47,9 @@ COPY tools/pestbin /pestbin
 # Post processing with Python
 COPY postprocessing /scripts
 
+# Include cfg
+COPY airflow.cfg /opt/airflow/airflow.cfg
+
 # Include DAGs
 COPY dags /opt/airflow/dags
 

@@ -1,3 +1,3 @@
 #!/bin/sh
 
-airflow worker celery
+airflow celery worker

@@ -48,6 +48,10 @@ resource "aws_ecs_task_definition" "manager" {
                   "value": "${aws_sqs_queue.main.arn}"
               },
               {
+                  "name": "BROKER_URL",
+                  "value": "sqs://${aws_sqs_queue.main.id}"
+              },
+              {
                   "name": "AIRFLOW_USERNAME",
                   "value": "${var.airflow_username}"
               },
