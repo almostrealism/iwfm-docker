@@ -42,13 +42,42 @@ jobs:
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
           
+          
+      - name: Airflow Base Image
+        uses: docker/build-push-action@v2
+        with:
+          file: Dockerfile.airflow
+          context: ./
+          tags: |
+            ashesfall/iwfm-airflow:latest
+          # build on feature branches, push only on main branch
+          push: ${{ github.ref == 'refs/heads/main' }}
+          
+      - name: Airflow Manager Image
+        uses: docker/build-push-action@v2
+        with:
+          file: Dockerfile.afmgr
+          context: ./
+          tags: |
+            ashesfall/iwfm-airflow-manager:latest
+          # build on feature branches, push only on main branch
+          push: ${{ github.ref == 'refs/heads/main' }}
+          
+      - name: Airflow Agent Image
+        uses: docker/build-push-action@v2
+        with:
+          file: Dockerfile.afagt
+          context: ./
+          tags: |
+            ashesfall/iwfm-airflow-agent:latest
+          # build on feature branches, push only on main branch
+          push: ${{ github.ref == 'refs/heads/main' }}
+    
       - name: PEST Manager Image
         uses: docker/build-push-action@v2
         with:
           file: Dockerfile.manager
-          # relative path to the place where source code with Dockerfile is located
           context: ./
-          # Note: tags has to be all lower-case
           tags: |
             ashesfall/iwfm-manager:latest
           # build on feature branches, push only on main branch
@@ -58,10 +87,28 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           file: Dockerfile.agent
-          # relative path to the place where source code with Dockerfile is located
           context: ./
-          # Note: tags has to be all lower-case
           tags: |
             ashesfall/iwfm-agent:latest
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
+
+#       - name: Parallel Manager Image
+#         uses: docker/build-push-action@v2
+#         with:
+#           file: Dockerfile.pmgr
+#           context: ./
+#           tags: |
+#             ashesfall/iwfm-parallel-mgr:latest
+#           # build on feature branches, push only on main branch
+#           push: ${{ github.ref == 'refs/heads/main' }}
+          
+#       - name: Parallel Agent Image
+#         uses: docker/build-push-action@v2
+#         with:
+#           file: Dockerfile.pagt
+#           context: ./
+#           tags: |
+#             ashesfall/iwfm-parallel-agent:latest
+#           # build on feature branches, push only on main branch
+#           push: ${{ github.ref == 'refs/heads/main' }}
