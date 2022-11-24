@@ -1,0 +1,5 @@
+FROM ashesfall/iwfm-airflow:latest
+
+COPY runner/airflow_agent.sh /airflow_agent.sh
+
+ENTRYPOINT /airflow_agent.sh

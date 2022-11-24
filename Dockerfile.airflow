@@ -1,0 +1,57 @@
+FROM ashesfall/iwfm-base:latest as build-env
+
+RUN ls /
+
+FROM apache/airflow:2.4.3
+COPY --from=build-env /build /build
+COPY --from=build-env /libs /libs
+COPY --from=build-env /opt/intel/oneapi/compiler /opt/intel/oneapi/compiler
+COPY --from=build-env /opt/intel/oneapi/intelpython /opt/intel/oneapi/intelpython
+
+USER root
+
+# Install packages
+RUN apt-get update
+RUN apt-get install -y curl
+RUN apt-get install -y wget zip dos2unix python3 python3-pip
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --fix-missing libxml2-dev
+RUN apt-get install -y --fix-missing libxml2-dev
+RUN apt-get install -y sqlite3 libsqlite3-dev
+RUN apt-get install -y libapr1-dev libaprutil1-dev
+RUN apt-get install -y libzip-dev
+RUN apt-get install -y pcre2-utils
+RUN apt-get install -y libnode-dev node-gyp
+RUN apt-get install -y npm
+
+WORKDIR /
+
+# Install arcgis
+# RUN npm install @terraformer/arcgis
+
+# Upgrade pip
+RUN python3 -m pip install --upgrade pip
+
+USER airflow
+
+# Install Python packages
+RUN pip3 install pandas
+RUN pip3 install geopandas
+RUN pip3 install matplotlib
+RUN pip3 install descartes
+RUN pip3 install pyshp
+RUN pip3 install awswrangler
+
+# PEST++ Binaries
+COPY tools/pestbin /pestbin
+
+# Post processing with Python
+COPY postprocessing /scripts
+
+# Include DAGs
+COPY dags /opt/airflow/dags
+
+USER root
+RUN chown -R airflow /scripts
+
+USER airflow
+RUN cd /scripts ; pip3 install -e pywfm ; cd /

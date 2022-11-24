@@ -1,7 +1,5 @@
 FROM ashesfall/iwfm-base:latest
 
-RUN pip3 install pyyaml
-
 COPY runner/dashboards.sh /dashboards.sh
 COPY runner/parallel_mgr.sh /parallel_mgr.sh
 
