@@ -48,7 +48,7 @@ COPY tools/pestbin /pestbin
 COPY postprocessing /scripts
 
 # Include cfg
-COPY airflow.cfg /opt/airflow/airflow.cfg
+COPY runner/airflow.cfg /opt/airflow/airflow.cfg
 
 # Include DAGs
 COPY dags /opt/airflow/dags
