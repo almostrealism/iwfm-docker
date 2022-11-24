@@ -30,9 +30,10 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       
-      - name: Build image and push to Docker Hub
+      - name: Base Image
         uses: docker/build-push-action@v2
         with:
+          
           # relative path to the place where source code with Dockerfile is located
           context: ./
           # Note: tags has to be all lower-case
@@ -40,6 +41,27 @@ jobs:
             ashesfall/iwfm-base:latest
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
+          
+      - name: PEST Manager Image
+        uses: docker/build-push-action@v2
+        with:
+          file: Dockerfile.manager
+          # relative path to the place where source code with Dockerfile is located
+          context: ./
+          # Note: tags has to be all lower-case
+          tags: |
+            ashesfall/iwfm-manager:latest
+          # build on feature branches, push only on main branch
+          push: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Image digest
-        run: echo ${{ steps.docker_build.outputs.digest }}
+      - name: PEST Agent Image
+        uses: docker/build-push-action@v2
+        with:
+          file: Dockerfile.agent
+          # relative path to the place where source code with Dockerfile is located
+          context: ./
+          # Note: tags has to be all lower-case
+          tags: |
+            ashesfall/iwfm-agent:latest
+          # build on feature branches, push only on main branch
+          push: ${{ github.ref == 'refs/heads/main' }}
