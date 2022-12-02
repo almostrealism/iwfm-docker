@@ -2,7 +2,27 @@
 <module type="JAVA_MODULE" version="4">
   <component name="NewModuleRootManager" inherit-compiler-output="true">
     <exclude-output />
-    <content url="file://$MODULE_DIR$" />
+    <content url="file://$MODULE_DIR$">
+      <excludeFolder url="file://$MODULE_DIR$/libs/bin" />
+      <excludeFolder url="file://$MODULE_DIR$/libs/include" />
+      <excludeFolder url="file://$MODULE_DIR$/libs/lib" />
+      <excludeFolder url="file://$MODULE_DIR$/libs/share" />
+      <excludeFolder url="file://$MODULE_DIR$/model/bin" />
+      <excludeFolder url="file://$MODULE_DIR$/model/Budget" />
+      <excludeFolder url="file://$MODULE_DIR$/model/Excel" />
+      <excludeFolder url="file://$MODULE_DIR$/model/Preprocessor" />
+      <excludeFolder url="file://$MODULE_DIR$/model/Results" />
+      <excludeFolder url="file://$MODULE_DIR$/model/Simulation" />
+      <excludeFolder url="file://$MODULE_DIR$/tools/h5fortran/cmake/abi_check/build" />
+      <excludeFolder url="file://$MODULE_DIR$/tools/h5fortran/Examples/build" />
+      <excludeFolder url="file://$MODULE_DIR$/tools/h5fortran/scripts/build" />
+      <excludeFolder url="file://$MODULE_DIR$/tools/h5fortran/src/concepts/build" />
+      <excludeFolder url="file://$MODULE_DIR$/tools/h5fortran/src/read/build" />
+      <excludeFolder url="file://$MODULE_DIR$/tools/h5fortran/src/write/build" />
+      <excludeFolder url="file://$MODULE_DIR$/tools/h5fortran/src/build" />
+      <excludeFolder url="file://$MODULE_DIR$/tools/h5fortran/tests/build" />
+      <excludeFolder url="file://$MODULE_DIR$/tools/h5fortran/build" />
+    </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>

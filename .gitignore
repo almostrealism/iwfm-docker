@@ -22,3 +22,5 @@ postprocessing/pywfm/__pycache__/**
 
 # Temporary stuff
 docker_run.sh
+**ar-flowtree-shaded-0.13.jar
+terraform/airflow-aws/dashboards.zip

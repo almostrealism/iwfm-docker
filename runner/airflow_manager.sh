@@ -1,10 +1,10 @@
 #!/bin/sh
-
-cat /etc/sudoers
 sudo service postgresql start
-createuser --no-password -s airflow
+sudo /bin/sh /dbinit.sh
+psql -U airflow -d airflow -f /postgres_airflow.sql
 
-#airflow db init
+airflow db init
+
 #airflow users create \
 #    --email admin@example.org --firstname admin \
 #    --lastname admin --password $AIRFLOW_PASSWORD \
