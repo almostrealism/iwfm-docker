@@ -1,6 +1,6 @@
 variable "prefix" {
   description = "The prefix used for all resources"
-  default = "parallel"
+  default = "airflow"
 }
 
 variable "region" {

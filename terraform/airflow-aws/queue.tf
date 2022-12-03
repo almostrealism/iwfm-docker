@@ -1,13 +1,13 @@
 resource "aws_sqs_queue" "deadletter" {
-  name = "${prefix}-deadletter-queue"
-  redrive_allow_policy = jsonencode({
-    redrivePermission = "byQueue",
-    sourceQueueArns   = [aws_sqs_queue.main.arn]
-  })
+  name = "${var.prefix}-deadletter-queue"
+#  redrive_allow_policy = jsonencode({
+#    redrivePermission = "byQueue",
+#    sourceQueueArns   = [aws_sqs_queue.main.arn]
+#  })
 }
 
 resource "aws_sqs_queue" "main" {
-  name                      = "${prefix}-queue"
+  name                      = "${var.prefix}-queue"
   delay_seconds             = 90
   max_message_size          = 2048
   message_retention_seconds = 86400
