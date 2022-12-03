@@ -1,4 +1,4 @@
-CREATE USER airflow PASSWORD 'airflow';
 CREATE DATABASE airflow;
-GRANT CONNECT ON DATABASE airflow TO airflow;
-GRANT CREATE ON DATABASE airflow TO airflow;
+CREATE USER airflow WITH PASSWORD 'airflow';
+ALTER DATABASE airflow OWNER TO airflow;
+GRANT ALL PRIVILEGES ON DATABASE airflow TO airflow;
