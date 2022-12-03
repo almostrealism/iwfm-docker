@@ -1,5 +1,6 @@
 #!/bin/sh
 sudo service postgresql start
+sudo service redis-server start
 sudo /bin/sh /dbinit.sh
 # psql -U airflow -d airflow -f /postgres_airflow.sql
 
