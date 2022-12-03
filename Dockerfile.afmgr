@@ -3,9 +3,6 @@ FROM ashesfall/iwfm-airflow:latest
 USER root
 RUN apt-get install -y postgresql
 
-# TODO  Remove
-COPY runner/airflow.cfg /opt/airflow/airflow.cfg
-
 COPY runner/sudoers /etc/sudoers
 COPY runner/pg_hba.conf /etc/postgresql/15/main/pg_hba.conf
 
