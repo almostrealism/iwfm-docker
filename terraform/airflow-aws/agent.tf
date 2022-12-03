@@ -38,7 +38,7 @@ resource "aws_ecs_task_definition" "agent" {
               },
               {
                   "name": "BROKER_URL",
-                  "value": "sqs://${aws_sqs_queue.main.id}"
+                  "value": "sqs://"
               },
               {
                   "name": "AWS_DEFAULT_REGION",
