@@ -20,12 +20,13 @@ with DAG(
         task_id="run_this_last",
     )
 
-    run_this = BashOperator(
-        task_id="run_model",
-        bash_command="/run_model.sh ",
-    )
+    for i in range(25):
+        run_this = BashOperator(
+            task_id=f"run_{i}",
+            bash_command="/run_model.sh ",
+        )
 
-    run_this >> run_this_last
+        run_this >> run_this_last
 
 if __name__ == "__main__":
     dag.test()
