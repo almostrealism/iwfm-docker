@@ -1,4 +1,6 @@
 #!/bin/sh
+PATH=$PATH:/build/iwfm
+
 cd /
 
 rm /Simulation/GW_MultiLayer.out
