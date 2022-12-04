@@ -22,7 +22,7 @@ with DAG(
 
     run_this = BashOperator(
         task_id="run_model",
-        bash_command="sh /run_model.sh",
+        bash_command="sh /run_model.sh ",
     )
 
     run_this >> run_this_last
