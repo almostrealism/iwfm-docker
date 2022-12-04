@@ -31,6 +31,9 @@ WORKDIR /
 # Upgrade pip
 RUN python3 -m pip install --upgrade pip
 
+# Configure sudo
+COPY runner/sudoers /etc/sudoers
+
 USER airflow
 
 # Install Python packages

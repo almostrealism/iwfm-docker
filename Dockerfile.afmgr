@@ -4,7 +4,6 @@ USER root
 RUN apt-get install -y postgresql
 RUN apt-get install -y redis-server
 
-COPY runner/sudoers /etc/sudoers
 COPY runner/pg_hba.conf /etc/postgresql/15/main/pg_hba.conf
 
 USER airflow

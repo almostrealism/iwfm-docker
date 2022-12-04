@@ -2,4 +2,7 @@ FROM ashesfall/iwfm-airflow:latest
 
 COPY runner/airflow_agent.sh /airflow_agent.sh
 
+# Give everyone write access
+RUN chmod -R a+w /
+
 ENTRYPOINT /airflow_agent.sh
