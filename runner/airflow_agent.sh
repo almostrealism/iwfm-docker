@@ -1,3 +1,3 @@
 #!/bin/sh
 
-airflow celery worker -n `tr -dc A-Za-z </dev/urandom | head -c 13`
+airflow celery worker --celery-hostname `tr -dc A-Za-z </dev/urandom | head -c 13`
