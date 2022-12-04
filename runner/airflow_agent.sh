@@ -1,4 +1,4 @@
 #!/bin/sh
-
-sudo /bin/sh /download_model.sh
+echo $IWFM_MODEL > /tmp/model_url
+/download_model.sh
 airflow celery worker --celery-hostname `tr -dc A-Za-z </dev/urandom | head -c 13`

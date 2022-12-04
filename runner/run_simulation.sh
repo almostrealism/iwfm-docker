@@ -1,6 +1,6 @@
 #!/bin/sh
 
-cd /Simulation
+cd ${WORKING_PATH}/Simulation
 cp Groundwater/C2VSimFG_Groundwater1974.dat Groundwater\\C2VSimFG_Groundwater1974_Orig.dat
 
 cp Streams/C2VSimFG_BypassSpec.dat Streams\\C2VSimFG_BypassSpec.dat

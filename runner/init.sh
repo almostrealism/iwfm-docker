@@ -1,7 +1,7 @@
 #!/bin/sh
 PATH=$PATH:/build/iwfm
 
-ln -s / /var/www/html/files
+cd ${WORKING_PATH}
 
 wget -O model.zip $IWFM_MODEL
 unzip model.zip
@@ -19,5 +19,5 @@ cp C2VSimFG_StreamsSpec.dat ../Simulation/..\\Preprocessor\\C2VSimFG_StreamsSpec
 mv ..\\Simulation\\C2VSimFG_PreprocessorOut.bin ../Simulation/C2VSimFG_PreprocessorOut.bin
 
 echo "Running initial simulation..."
-cd /
+cd ${WORKING_PATH}
 /run_model.sh

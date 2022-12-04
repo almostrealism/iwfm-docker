@@ -26,6 +26,7 @@ airflow    ALL = NOPASSWD: /usr/sbin/service postgresql *
 airflow    ALL = NOPASSWD: /usr/sbin/service redis-server *
 airflow    ALL = NOPASSWD: /bin/sh /dbinit.sh
 airflow    ALL = NOPASSWD: /bin/sh /download_model.sh
+airflow    ALL = NOPASSWD: chmod * *
 
 # See sudoers(5) for more information on "@include" directives:
 @includedir /etc/sudoers.d

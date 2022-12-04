@@ -2,9 +2,12 @@ FROM ashesfall/iwfm-airflow:latest
 
 COPY runner/airflow_agent.sh /airflow_agent.sh
 
-# Give everyone write access
 USER root
-RUN chmod a+w /
+RUN chmod o+w /
+RUN mkdir /data
+RUN chown airflow /data
 
 USER airflow
+
+ENV WORKING_PATH=/data
 ENTRYPOINT /airflow_agent.sh

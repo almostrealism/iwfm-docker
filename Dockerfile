@@ -134,5 +134,6 @@ ENV APACHE_RUN_USER=www-data
 ENV APACHE_RUN_GROUP=www-data
 ENV APACHE_LOG_DIR=/var/log/apache2
 ENV APACHE_LOCK_DIR=/var/lock/apache2
+ENV WORKING_PATH=/
 
 ENTRYPOINT /init.sh & apache2 -D FOREGROUND
