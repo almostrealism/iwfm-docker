@@ -38,7 +38,7 @@ resource "aws_ecs_task_definition" "agent" {
               },
               {
                   "name": "CLOUDWATCH_LOGS",
-                  "value": "cloudwatch://${aws_cloudwatch_log_group.work.name}"
+                  "value": "cloudwatch://${aws_cloudwatch_log_group.work.arn}"
               },
               {
                   "name": "AWS_DEFAULT_REGION",
