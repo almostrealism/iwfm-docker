@@ -1,7 +1,6 @@
 #!/bin/sh
 PATH=$PATH:/build/iwfm
 
-export WORKING_PATH=$1
 echo "WORKING_PATH = ${WORKING_PATH}"
 cd ${WORKING_PATH}
 

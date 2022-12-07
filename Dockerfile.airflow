@@ -57,6 +57,7 @@ COPY runner/airflow.cfg /opt/airflow/airflow.cfg
 COPY runner/init.sh /init.sh
 COPY runner/run.sh /run.sh
 COPY runner/run_model.sh /run_model.sh
+COPY runner/run_model_with_prep.sh /run_model_with_prep.sh
 COPY runner/run_simulation.sh /run_simulation.sh
 COPY runner/download_model.sh /download_model.sh
 COPY post/post.sh /post.sh

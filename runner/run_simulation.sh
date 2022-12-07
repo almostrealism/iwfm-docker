@@ -1,5 +1,7 @@
 #!/bin/sh
 
+echo "WORKING_PATH = ${WORKING_PATH}"
+
 cd ${WORKING_PATH}/Simulation
 cp Groundwater/C2VSimFG_Groundwater1974.dat Groundwater\\C2VSimFG_Groundwater1974_Orig.dat
 
@@ -38,6 +40,9 @@ cp RootZone/C2VSimFG_Urban.dat RootZone\\C2VSimFG_Urban.dat
 cp RootZone/C2VSimFG_Urban_PerCapWaterUse.dat RootZone\\C2VSimFG_Urban_PerCapWaterUse.dat
 cp RootZone/C2VSimFG_Urban_Population.dat RootZone\\C2VSimFG_Urban_Population.dat
 cp RootZone/C2VSimFG_Urban_WaterUseSpecs.dat RootZone\\C2VSimFG_Urban_WaterUseSpecs.dat
+
+echo "Listing contents of working directory..."
+ls -la
 
 /build/t2p/Texture2Par Texture2Par.in
 
