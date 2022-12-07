@@ -1,6 +1,7 @@
 #!/bin/sh
 PATH=$PATH:/build/iwfm
-export WORKING_PATH=$1
+LD_LIBRARY_PATH=/opt/intel/oneapi/compiler/2022.0.2/linux/compiler/lib/intel64_lin
+WORKING_PATH=$1
 
 echo "WORKING_PATH = ${WORKING_PATH}"
 cd ${WORKING_PATH}
