@@ -12,3 +12,7 @@ resource "aws_cloudwatch_log_group" "management" {
 resource "aws_cloudwatch_log_group" "agents" {
   name = "${var.prefix}-agents"
 }
+
+resource "aws_cloudwatch_log_group" "work" {
+  name = "${var.prefix}-work"
+}

@@ -56,6 +56,10 @@ resource "aws_ecs_task_definition" "manager" {
                   "value": "${var.airflow_password}"
               },
               {
+                  "name": "CLOUDWATCH_LOGS",
+                  "value": "cloudwatch://${aws_cloudwatch_log_group.work.name}"
+              },
+              {
                   "name": "DASHBOARDS_BUCKET",
                   "value": "${aws_s3_bucket.dashboards.bucket}"
               },

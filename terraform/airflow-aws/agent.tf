@@ -37,6 +37,10 @@ resource "aws_ecs_task_definition" "agent" {
                   "value": "${aws_sqs_queue.main.arn}"
               },
               {
+                  "name": "CLOUDWATCH_LOGS",
+                  "value": "cloudwatch://${aws_cloudwatch_log_group.work.name}"
+              },
+              {
                   "name": "AWS_DEFAULT_REGION",
                   "value": "${var.region}"
               }
