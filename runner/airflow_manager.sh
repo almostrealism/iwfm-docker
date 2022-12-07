@@ -4,6 +4,11 @@ sudo service redis-server start
 sudo /bin/sh /dbinit.sh
 # psql -U airflow -d airflow -f /postgres_airflow.sql
 
+echo "CLOUDWATCH_LOGS = ${CLOUDWATCH_LOGS}"
+
+# sed -i "s/CLOUDWATCH_LOGS/$CLOUDWATCH_LOGS/g" /opt/airflow/airflow.cfg
+cat /opt/airflow/airflow.cfg | grep remote_base_log_folder
+
 airflow db init
 
 airflow users create \
