@@ -57,17 +57,18 @@ data "aws_iam_policy_document" "instance_policy" {
   }
 
   statement {
-    sid = "InstanceLogging"
+    sid = "Logging"
 
     actions = [
       "logs:CreateLogGroup",
       "logs:CreateLogStream",
+      "logs:GetLogEvents",
       "logs:PutLogEvents",
       "logs:DescribeLogStreams",
     ]
 
     resources = [
-      "${aws_cloudwatch_log_group.instance.arn}",
+      "*"
     ]
   }
 
