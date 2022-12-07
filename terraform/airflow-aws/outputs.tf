@@ -19,3 +19,11 @@ output "instance_ip" {
 output "instance_volume" {
   value = tolist(data.aws_instance.capacity-provider.root_block_device)[0].volume_id
 }
+
+output "airflow" {
+  value = "http://${data.aws_instance.capacity-provider.public_ip}:8080/"
+}
+
+output "airlfow_logs" {
+  value = "cloudwatch://${aws_cloudwatch_log_group.work.arn}"
+}

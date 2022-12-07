@@ -57,7 +57,7 @@ resource "aws_ecs_task_definition" "manager" {
               },
               {
                   "name": "CLOUDWATCH_LOGS",
-                  "value": "cloudwatch://${aws_cloudwatch_log_group.work.name}"
+                  "value": "cloudwatch://${aws_cloudwatch_log_group.work.arn}"
               },
               {
                   "name": "DASHBOARDS_BUCKET",
