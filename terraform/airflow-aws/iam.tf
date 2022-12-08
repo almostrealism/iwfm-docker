@@ -102,9 +102,9 @@ data "aws_iam_policy_document" "instance_policy" {
   }
 
   statement {
-    sid = "AnalyticsS3"
+    sid = "S3"
     actions = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
-    resources = ["arn:aws:s3:::${var.analytics_bucket}/*", "arn:aws:s3:::${var.dashboard_bucket}/*"]
+    resources = ["arn:aws:s3:::${var.analytics_bucket}/*", "arn:aws:s3:::${var.dashboard_bucket}/*", "arn:aws:s3:::${var.resource_bucket}/*"]
   }
 
   statement {
