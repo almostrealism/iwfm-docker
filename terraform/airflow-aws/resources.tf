@@ -24,6 +24,13 @@ resource "aws_s3_object" "model" {
   etag = filemd5(var.iwfm_model)
 }
 
+resource "aws_s3_object" "control" {
+  bucket = aws_s3_bucket.resources.id
+  key    = "control.py"
+  source = var.control_file
+  etag = filemd5(var.control_file)
+}
+
 resource "aws_s3_bucket" "dashboards" {
   bucket = var.dashboard_bucket
 

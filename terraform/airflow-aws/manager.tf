@@ -36,6 +36,10 @@ resource "aws_ecs_task_definition" "manager" {
                   "value": "http://${aws_s3_bucket_website_configuration.www.website_endpoint}/model.zip"
               },
               {
+                  "name": "RESOURCE_BUCKET",
+                  "value": "${aws_s3_bucket.resources.bucket}"
+              },
+              {
                   "name": "DB_BUCKET",
                   "value": "${aws_s3_bucket.db.bucket}"
               },

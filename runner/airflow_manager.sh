@@ -2,10 +2,8 @@
 sudo service postgresql start
 sudo service redis-server start
 sudo /bin/sh /dbinit.sh
-# psql -U airflow -d airflow -f /postgres_airflow.sql
 
-echo "CLOUDWATCH_LOGS = ${CLOUDWATCH_LOGS}"
-cat /opt/airflow/airflow.cfg | grep remote_base_log_folder
+python3 /dag_download.py
 
 airflow db init
 
