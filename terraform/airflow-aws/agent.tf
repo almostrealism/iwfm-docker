@@ -60,7 +60,7 @@ resource "aws_ecs_service" "agent" {
   task_definition = aws_ecs_task_definition.agent.arn
   desired_count   = var.agent_count
   launch_type     = "EC2"
-  depends_on = [aws_cloudwatch_log_group.agents, aws_s3_object.model]
+  depends_on = [aws_cloudwatch_log_group.agents, aws_s3_object.model, aws_s3_object.control]
 
 #  network_configuration {
 #    subnets = [aws_subnet.public.id]

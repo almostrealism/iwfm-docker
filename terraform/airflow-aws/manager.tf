@@ -95,7 +95,7 @@ resource "aws_ecs_service" "manager" {
   task_definition = aws_ecs_task_definition.manager.arn
   desired_count   = 1
   launch_type     = "EC2"
-  depends_on = [aws_cloudwatch_log_group.management, aws_s3_object.model]
+  depends_on = [aws_cloudwatch_log_group.management, aws_s3_object.model, aws_s3_object.control]
 
 #  network_configuration {
 #    subnets = [aws_subnet.public.id]
