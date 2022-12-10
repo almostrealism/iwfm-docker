@@ -1,5 +1,0 @@
-FROM ashesfall/iwfm-base:latest
-
-COPY runner/parallel_agt.sh /parallel_agt.sh
-
-ENTRYPOINT /parallel_agt.sh

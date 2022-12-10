@@ -1,7 +1,0 @@
-FROM ashesfall/iwfm-base:latest
-
-WORKDIR /
-
-COPY model/Simulation/Groundwater/C2VSimFG_Groundwater1974.dat /Simulation/Groundwater/C2VSimFG_Groundwater1974.dat
-
-ENTRYPOINT /run_simulation.sh
