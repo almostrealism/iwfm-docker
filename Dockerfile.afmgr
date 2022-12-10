@@ -2,6 +2,7 @@ FROM ashesfall/iwfm-airflow:latest
 
 USER root
 RUN apt-get install -y postgresql
+RUN apt-get install -y postgis
 RUN apt-get install -y redis-server
 
 COPY runner/pg_hba.conf /etc/postgresql/15/main/pg_hba.conf
