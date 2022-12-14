@@ -15,7 +15,20 @@ variable "instance_type" {
 
 variable "agent_count" {
   description = "Number of agent containers to use"
-  default = 74
+  # default = 74
+  default = 37
+}
+
+variable "agent_ram" {
+  description = "RAM for agents in MB"
+  # default = "3072"
+  default = "6144"
+}
+
+variable "agent_cpu" {
+  description = "CPU for agents in units"
+  # default = "1584"
+  default = "3168"
 }
 
 variable "instance_root_volume_size" {

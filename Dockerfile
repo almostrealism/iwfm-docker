@@ -115,7 +115,6 @@ COPY runner/init.sh /init.sh
 COPY runner/run.sh /run.sh
 COPY runner/run_model.sh /run_model.sh
 COPY runner/run_simulation.sh /run_simulation.sh
-COPY post/post.sh /post.sh
 
 # Post processing with Python
 COPY postprocessing /scripts

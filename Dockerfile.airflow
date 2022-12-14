@@ -62,7 +62,6 @@ COPY runner/run_model_with_prep.sh /run_model_with_prep.sh
 COPY runner/run_simulation.sh /run_simulation.sh
 COPY runner/download_model.sh /download_model.sh
 COPY runner/dag_download.py /dag_download.py
-COPY post/post.sh /post.sh
 
 # Include DAGs
 COPY dags/test.py /opt/airflow/dags/test.py

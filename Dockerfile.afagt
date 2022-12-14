@@ -3,8 +3,7 @@ FROM ashesfall/iwfm-airflow:latest
 COPY runner/airflow_agent.sh /airflow_agent.sh
 
 USER root
-RUN chmod o+w /
-RUN mkdir /data
+RUN ln -s /opt/airflow/dags /data
 RUN chown airflow /data
 
 USER airflow
