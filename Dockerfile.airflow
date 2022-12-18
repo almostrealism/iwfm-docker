@@ -68,6 +68,10 @@ COPY dags/test.py /opt/airflow/dags/test.py
 
 USER root
 RUN chown -R airflow /scripts
+RUN ln -s /opt/airflow/dags /data
+RUN chown airflow /data
 
 USER airflow
+ENV WORKING_PATH=/data
+
 RUN cd /scripts ; pip3 install -e pywfm ; cd /

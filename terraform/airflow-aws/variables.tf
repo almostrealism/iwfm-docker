@@ -75,10 +75,6 @@ variable "iwfm_model" {
   description = "The path to the IWFM model to run"
 }
 
-variable "control_file" {
-  description = "The path to the control.py file defining the workflow"
-}
-
 variable "dashboard_bucket" {
   description = "A unique name for an S3 bucket to store the dashboard files"
 }

@@ -2,11 +2,4 @@ FROM ashesfall/iwfm-airflow:latest
 
 COPY runner/airflow_agent.sh /airflow_agent.sh
 
-USER root
-RUN ln -s /opt/airflow/dags /data
-RUN chown airflow /data
-
-USER airflow
-
-ENV WORKING_PATH=/data
 ENTRYPOINT /airflow_agent.sh
