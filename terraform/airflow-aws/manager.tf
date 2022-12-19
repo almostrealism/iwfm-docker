@@ -64,6 +64,10 @@ resource "aws_ecs_task_definition" "manager" {
                   "value": "cloudwatch://${aws_cloudwatch_log_group.work.arn}"
               },
               {
+                  "name": "RESOURCE_BUCKET",
+                  "value": "${aws_s3_bucket.resources.bucket}"
+              },
+              {
                   "name": "DASHBOARDS_BUCKET",
                   "value": "${aws_s3_bucket.dashboards.bucket}"
               },
