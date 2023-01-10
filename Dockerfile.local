@@ -1,0 +1,76 @@
+FROM intel/oneapi-hpckit:2022.1.2-devel-ubuntu18.04 as build-env
+
+WORKDIR /
+
+# Install dependencies
+RUN apt-get update
+RUN apt-get install -y curl wget zip
+
+# Include all the tools
+COPY tools/szip szip
+COPY tools/h5fortran h5fortran
+COPY tools/zlib-ng-2.0.6.tar.gz /build/hdf5/ZLIB-prefix/src/2.0.6.tar.gz
+COPY tools/hdf5-hdf5-1_12_1.tar.gz /build/hdf5/HDF5-prefix/src/hdf5-1_12_1.tar.gz
+COPY tools/heclib heclib
+COPY tools/iwfm iwfm
+COPY tools/iwfm2obs iwfm2obs
+COPY tools/srs srs
+COPY tools/mlt mlt
+COPY tools/mfUSGLib mfUSGLib
+COPY tools/t2p t2p
+COPY tools/cth cth
+COPY tools/build.sh /build.sh
+
+# Build all the tools
+RUN /build.sh
+
+FROM ubuntu:20.04
+
+# Copy necessary fields from build environment
+COPY --from=build-env /build /build
+COPY --from=build-env /libs /libs
+COPY --from=build-env /opt/intel/oneapi/compiler /opt/intel/oneapi/compiler
+COPY --from=build-env /opt/intel/oneapi/intelpython /opt/intel/oneapi/intelpython
+
+ENV LD_LIBRARY_PATH=/opt/intel/oneapi/compiler/2022.0.2/linux/compiler/lib/intel64_lin
+
+# Install packages
+RUN apt-get update
+RUN apt-get install -y curl
+RUN apt-get install -y wget zip dos2unix python3 python3-pip
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --fix-missing libxml2-dev
+RUN apt-get install -y --fix-missing libxml2-dev
+RUN apt-get install -y sqlite3 libsqlite3-dev
+RUN apt-get install -y libapr1-dev libaprutil1-dev
+RUN apt-get install -y libzip-dev
+RUN apt-get install -y pcre2-utils
+
+WORKDIR /
+
+# Upgrade pip
+RUN python3 -m pip install --upgrade pip
+
+# Install Python packages
+RUN pip3 install pandas
+RUN pip3 install geopandas
+RUN pip3 install matplotlib
+RUN pip3 install descartes
+RUN pip3 install pyshp
+RUN pip3 install awswrangler
+
+# PEST++ Binaries
+COPY tools/pestbin /pestbin
+
+# Scripts for running parts of the process
+COPY runner/init.sh /init.sh
+COPY runner/run.sh /run.sh
+COPY runner/run_model.sh /run_model.sh
+COPY runner/run_simulation.sh /run_simulation.sh
+
+# Post processing with Python
+COPY postprocessing /scripts
+RUN cd /scripts ; pip install -e pywfm ; cd /
+
+ENV WORKING_PATH=/
+
+CMD ["/bin/bash"] 
