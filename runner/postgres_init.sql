@@ -2,3 +2,8 @@ CREATE DATABASE airflow;
 CREATE USER airflow WITH PASSWORD 'airflow';
 ALTER DATABASE airflow OWNER TO airflow;
 GRANT ALL PRIVILEGES ON DATABASE airflow TO airflow;
+
+CREATE DATABASE analysis;
+CREATE USER analyst WITH PASSWORD 'analyst';
+ALTER DATABASE analysis OWNER TO analyst;
+GRANT ALL PRIVILEGES ON DATABASE analysis TO analyst;
