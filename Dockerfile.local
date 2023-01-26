@@ -35,42 +35,49 @@ COPY --from=build-env /opt/intel/oneapi/intelpython /opt/intel/oneapi/intelpytho
 ENV LD_LIBRARY_PATH=/opt/intel/oneapi/compiler/2022.0.2/linux/compiler/lib/intel64_lin
 
 # Install packages
-RUN apt-get update
-RUN apt-get install -y curl
-RUN apt-get install -y wget zip dos2unix python3 python3-pip
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --fix-missing libxml2-dev
-RUN apt-get install -y --fix-missing libxml2-dev
-RUN apt-get install -y sqlite3 libsqlite3-dev
-RUN apt-get install -y libapr1-dev libaprutil1-dev
-RUN apt-get install -y libzip-dev
-RUN apt-get install -y pcre2-utils
+RUN apt-get update && apt-get upgrade -y && \
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --fix-missing libxml2-dev \
+  curl wget zip dos2unix python3 python3-pip sqlite3 libsqlite3-dev libapr1-dev \
+  libaprutil1-dev libzip-dev pcre2-utils
+
+USER root
+RUN apt-get update && apt-get upgrade -y && \
+  apt-get install -y postgresql postgis redis-server
+
+#RUN apt-get install -y curl
+#RUN apt-get install -y wget zip dos2unix python3 python3-pip
+#RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --fix-missing libxml2-dev
+#RUN apt-get install -y --fix-missing libxml2-dev
+#RUN apt-get install -y sqlite3 libsqlite3-dev
+#RUN apt-get install -y libapr1-dev libaprutil1-dev
+#RUN apt-get install -y libzip-dev
+#RUN apt-get install -y pcre2-utils
+#
+#USER root
+#RUN apt-get install -y postgresql
+#RUN apt-get install -y postgis
+#RUN apt-get install -y redis-server
 
 WORKDIR /
+
+# PEST++ Binaries
+COPY tools/pestbin /pestbin
+
+# Post processing with Python
+COPY postprocessing /scripts
 
 # Upgrade pip
 RUN python3 -m pip install --upgrade pip
 
 # Install Python packages
-RUN pip3 install pandas
-RUN pip3 install geopandas
-RUN pip3 install matplotlib
-RUN pip3 install descartes
-RUN pip3 install pyshp
-RUN pip3 install awswrangler
-
-# PEST++ Binaries
-COPY tools/pestbin /pestbin
-
-# Scripts for running parts of the process
-COPY runner/init.sh /init.sh
-COPY runner/run.sh /run.sh
-COPY runner/run_model.sh /run_model.sh
-COPY runner/run_simulation.sh /run_simulation.sh
-
-# Post processing with Python
-COPY postprocessing /scripts
-RUN cd /scripts ; pip install -e pywfm ; cd /
+RUN cd /scripts ; pip install -r requirements.txt ; cd /
 
 ENV WORKING_PATH=/
 
-CMD ["/bin/bash"] 
+COPY runner/pg_hba.conf /etc/postgresql/15/main/pg_hba.conf
+
+COPY runner/dbinit_local.sh /dbinit_local.sh
+COPY runner/pg_init.sql /pg_init.sql
+COPY runner/local_manager.sh /local_manager.sh
+
+ENTRYPOINT /local_manager.sh && /bin/bash

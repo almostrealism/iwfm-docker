@@ -1,8 +1,8 @@
-FROM ashesfall/iwfm-base:latest as build-env
+FROM tjhatch/iwfm-base:latest as build-env
 
 RUN ls /
 
-FROM apache/airflow:2.4.3
+FROM apache/airflow:2.5.1-python3.10
 COPY --from=build-env /build /build
 COPY --from=build-env /libs /libs
 COPY --from=build-env /opt/intel/oneapi/compiler /opt/intel/oneapi/compiler
@@ -28,28 +28,19 @@ WORKDIR /
 # Install arcgis
 # RUN npm install @terraformer/arcgis
 
-# Upgrade pip
-RUN python3 -m pip install --upgrade pip
-
 # Configure sudo
 COPY runner/sudoers /etc/sudoers
 
 USER airflow
 
-# Install Python packages
-RUN pip3 install pandas
-RUN pip3 install geopandas
-RUN pip3 install geoalchemy
-RUN pip3 install matplotlib
-RUN pip3 install descartes
-RUN pip3 install pyshp
-RUN pip3 install awswrangler
+# Post processing with Python
+COPY postprocessing /scripts
+
+# Upgrade pip
+RUN python3 -m pip install --upgrade pip
 
 # PEST++ Binaries
 COPY tools/pestbin /pestbin
-
-# Post processing with Python
-COPY postprocessing /scripts
 
 # Include cfg
 COPY runner/airflow.cfg /opt/airflow/airflow.cfg
@@ -74,4 +65,5 @@ RUN chown airflow /data
 USER airflow
 ENV WORKING_PATH=/data
 
-RUN cd /scripts ; pip3 install -e pywfm ; cd /
+# Install Python packages
+RUN cd /scripts ; pip3 install -r requirements.txt ; cd /

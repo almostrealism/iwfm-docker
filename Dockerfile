@@ -58,17 +58,14 @@ RUN chmod -R 777 /app/
 #RUN node --version
 #RUN npm install @terraformer/arcgis
 
+# Python
+COPY postprocessing /scripts
+
 # Upgrade pip
 RUN python3 -m pip install --upgrade pip
 
 # Install Python packages
-RUN pip3 install pandas
-RUN pip3 install geopandas
-RUN pip3 install matplotlib
-RUN pip3 install descartes
-RUN pip3 install pyshp
-RUN pip3 install awswrangler
-# RUN pip3 install pyyaml
+RUN cd /scripts ; pip install -r requirements.txt ; cd /
 
 # Install Java
 RUN wget https://download.java.net/java/GA/jdk17.0.2/dfd4a8d0985749f896bed50d7138ee7f/8/GPL/openjdk-17.0.2_linux-x64_bin.tar.gz
@@ -77,48 +74,14 @@ RUN mv jdk-17.0.2 /opt
 
 ENV JAVA_HOME=/opt/jdk-17.0.2
 
-#COPY tools/ar-flowtree-shaded-0.13.jar /flowtree-shaded.jar
-
-#COPY runner/GW_Obs.smp /Simulation/GW_Obs.smp
-#COPY runner/iwfm2obs_2015.in /Simulation/iwfm2obs_2015.in
-#COPY runner/MultiLayerTarget.in /Simulation/MultiLayerTarget.in
-#COPY runner/ObservationConstruction.txt /Simulation/ObservationConstruction.txt
-#COPY runner/settings.fig /Simulation/settings.fig
-#COPY runner/STR_Obs.smp /Simulation/STR_Obs.smp
-#
-#COPY runner/*.dat /Simulation/
-#COPY runner/Texture2Par.in /Simulation/Texture2Par.in
-#COPY runner/zones.txt /Simulation/zones.txt
-#
-#COPY runner/CalcTypeHyd_All_sim.in /Simulation/CalcTypeHyd_All_sim.in
-#COPY runner/CalcTypeHyd_Sub1Sub2_sim.in /Simulation/CalcTypeHyd_Sub1Sub2_sim.in
-#COPY runner/CalcTypeHyd_Sub3Sub4_sim.in /Simulation/CalcTypeHyd_Sub3Sub4_sim.in
-#COPY runner/CalcTypeHyd_Sub5_sim.in /Simulation/CalcTypeHyd_Sub5_sim.in
-#COPY runner/CalcTypeHyd_Sub6Sub7_sim.in /Simulation/CalcTypeHyd_Sub6Sub7_sim.in
-#COPY runner/CalcTypeHyd_Sub19Sub20Sub21_sim.in /Simulation/CalcTypeHyd_Sub19Sub20Sub21_sim.in
-#COPY runner/CalcTypeHyd_Sub14Sub15_sim.in /Simulation/CalcTypeHyd_Sub14Sub15_sim.in
-#COPY runner/CalcTypeHyd_Sub16Sub17Sub18_sim.in /Simulation/CalcTypeHyd_Sub16Sub17Sub18_sim.in
-#COPY runner/CalcTypeHyd_Sub11Sub12Sub13_sim.in /Simulation/CalcTypeHyd_Sub11Sub12Sub13_sim.in
-#COPY runner/CalcTypeHyd_Sub10_sim.in /Simulation/CalcTypeHyd_Sub10_sim.in
-#COPY runner/CalcTypeHyd_Sub8Sub9_sim.in /Simulation/CalcTypeHyd_Sub8Sub9_sim.in
-#COPY runner/CalcTypeHyd_CC_sim.in /Simulation/CalcTypeHyd_CC_sim.in
-
 # PEST++ Binaries
 COPY tools/pestbin /pestbin
-
-# Files for PEST++ (necessary?)
-#COPY tools/pest/Texture2Par.tpl /Simulation/Texture2Par.tpl
-#COPY tools/pest/GWHMultiLayer.ins /Simulation/GWHMultiLayer.ins
 
 # Scripts for running parts of the process
 COPY runner/init.sh /init.sh
 COPY runner/run.sh /run.sh
 COPY runner/run_model.sh /run_model.sh
 COPY runner/run_simulation.sh /run_simulation.sh
-
-# Post processing with Python
-COPY postprocessing /scripts
-RUN cd /scripts ; pip install -e pywfm ; cd /
 
 # Serve files from the root directory
 RUN sed -ri -e 's!/var/www/html!/!g' /etc/apache2/sites-available/*.conf
