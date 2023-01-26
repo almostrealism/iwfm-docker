@@ -1,17 +1,17 @@
 #!/bin/sh
 
 echo "Building container images..."
-docker build . -t ashesfall/iwfm-base:latest --network=host
-docker build . -f Dockerfile.airflow -t ashesfall/iwfm-airflow:latest --network=host
-docker build . -f Dockerfile.afmgr -t ashesfall/iwfm-airflow-manager:latest --network=host
-docker build . -f Dockerfile.afagt -t ashesfall/iwfm-airflow-agent:latest
-docker build . -f Dockerfile.manager -t ashesfall/iwfm-manager:latest
-docker build . -f Dockerfile.agent -t ashesfall/iwfm-agent:latest
+docker build . -t tjhatch/iwfm-base:latest --network=host
+docker build . -f Dockerfile.airflow -t tjhatch/iwfm-airflow:latest --network=host
+docker build . -f Dockerfile.afmgr -t tjhatch/iwfm-airflow-manager:latest --network=host
+docker build . -f Dockerfile.afagt -t tjhatch/iwfm-airflow-agent:latest
+docker build . -f Dockerfile.manager -t tjhatch/iwfm-manager:latest
+docker build . -f Dockerfile.agent -t tjhatch/iwfm-agent:latest
 
 echo "Pushing container images..."
-docker push ashesfall/iwfm-base:latest
-docker push ashesfall/iwfm-airflow:latest
-docker push ashesfall/iwfm-airflow-manager:latest
-docker push ashesfall/iwfm-airflow-agent:latest
-docker push ashesfall/iwfm-manager:latest
-docker push ashesfall/iwfm-agent:latest
+docker push tjhatch/iwfm-base:latest
+docker push tjhatch/iwfm-airflow:latest
+docker push tjhatch/iwfm-airflow-manager:latest
+docker push tjhatch/iwfm-airflow-agent:latest
+docker push tjhatch/iwfm-manager:latest
+docker push tjhatch/iwfm-agent:latest
