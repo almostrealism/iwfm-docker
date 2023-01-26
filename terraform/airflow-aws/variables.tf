@@ -46,12 +46,12 @@ variable "aws_secret_key" {
 
 variable "manager_image" {
   description = "Docker image"
-  default = "ashesfall/iwfm-airflow-manager"
+  default = "tjhatch/iwfm-airflow-manager"
 }
 
 variable "agent_image" {
   description = "Docker image"
-  default = "ashesfall/iwfm-airflow-agent"
+  default = "tjhatch/iwfm-airflow-agent"
 }
 
 variable "tag" {
