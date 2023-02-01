@@ -11,18 +11,22 @@ variable "region" {
 variable "instance_type" {
   description = "The type of AWS EC2 instance to use for the cluster"
   default = "c6i.metal"
+  # default = "c6i.8xlarge" # (For lower cost with agent_count = 5)
 }
 
 variable "agent_count" {
   description = "Number of agent containers to use"
   # default = 74
   default = 37
+  # default = 5 # (For lower cost with instance_type = "c6i.8xlarge")
+  # default = 1 # (For testing with agent_ram = "30720")
 }
 
 variable "agent_ram" {
   description = "RAM for agents in MB"
   # default = "3072"
   default = "6144"
+  # default = "30720" # (For testing with one agent)
 }
 
 variable "agent_cpu" {
