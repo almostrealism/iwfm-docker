@@ -52,14 +52,14 @@ COPY runner/run_model.sh /run_model.sh
 COPY runner/run_model_with_prep.sh /run_model_with_prep.sh
 COPY runner/run_simulation.sh /run_simulation.sh
 COPY runner/download_model.sh /download_model.sh
-COPY runner/dag_download.py /dag_download.py
 
 # Include DAGs
 COPY dags/test.py /opt/airflow/dags/test.py
 
 USER root
 RUN chown -R airflow /scripts
-RUN ln -s /opt/airflow/dags /data
+# RUN ln -s /opt/airflow/dags /data
+RUN mkdir /data
 RUN chown airflow /data
 
 USER airflow
