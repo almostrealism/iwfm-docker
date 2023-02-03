@@ -1,7 +1,8 @@
 #!/bin/sh
+
 CC=cc
 CXX=c++
-CF=ifort
+FC=ifort
 
 mkdir libs
 mkdir libs/lib
@@ -25,7 +26,7 @@ cp build/heclib/libheclib.so libs/lib/libheclib.so
 
 CC=icc
 CXX=icpc
-F9X=ifort
+FC=ifort
 
 echo "Building IWFM..."
 cmake -S iwfm -B build/iwfm -DHDF5_DIR=$(pwd)/libs
