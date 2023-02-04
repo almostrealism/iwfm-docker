@@ -16,6 +16,7 @@ RUN echo "PREVENT_UNSAFE_DB_CONNECTIONS = False" >> /app/superset/config.py
 
 USER superset
 COPY runner/dbinit.sh /dbinit.sh
+COPY runner/dbimport.sh /dbimport.sh
 COPY runner/postgres_init.sql /postgres_init.sql
 COPY runner/dashboard_backup.py /dashboard_backup.py
 COPY runner/dashboard_download.py /dashboard_download.py

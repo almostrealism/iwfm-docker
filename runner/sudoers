@@ -30,6 +30,7 @@ airflow    ALL = NOPASSWD: /bin/sh /download_model.sh
 superset    ALL = NOPASSWD: /usr/sbin/service postgresql *
 superset    ALL = NOPASSWD: /usr/sbin/service redis-server *
 superset    ALL = NOPASSWD: /bin/sh /dbinit.sh
+superset    ALL = NOPASSWD: /bin/sh /dbimport.sh
 
 # See sudoers(5) for more information on "@include" directives:
 @includedir /etc/sudoers.d

@@ -9,7 +9,7 @@ sudo /bin/sh /dbinit.sh
 
 python3 /dashboard_download.py
 echo "Importing database dump..."
-psql analysis < /backups/data.sql
+sudo /bin/sh /dbimport.sh
 
 superset fab create-admin \
                   --username admin \
