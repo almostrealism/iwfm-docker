@@ -4,15 +4,6 @@ export SUP_WEBSERVER_PORT=8088
 export SUP_WEBSERVER_TIMEOUT=300
 export SUP_WEBSERVER_LOG_LEVEL=info
 
-sudo service postgresql start
-sudo /bin/sh /dbinit.sh
-
-python3 /dashboard_download.py
-ls -la /backups
-
-echo "Importing database dump..."
-sudo /bin/sh /dbimport.sh
-
 superset fab create-admin \
                   --username admin \
                   --firstname Superset \

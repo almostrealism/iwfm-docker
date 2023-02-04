@@ -1,8 +1,7 @@
 FROM apache/superset
 
 USER root
-RUN apt-get install -y sqlite3 libsqlite3-dev
-RUN apt-get install -y sudo
+# RUN apt-get update & apt-get install -y sqlite3 libsqlite3-dev
 
 RUN pip3 install awswrangler
 
