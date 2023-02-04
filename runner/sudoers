@@ -25,6 +25,7 @@ root    ALL=(ALL:ALL) ALL
 airflow    ALL = NOPASSWD: /usr/sbin/service postgresql *
 airflow    ALL = NOPASSWD: /usr/sbin/service redis-server *
 airflow    ALL = NOPASSWD: /bin/sh /dbinit.sh
+airflow    ALL = NOPASSWD: /bin/sh /dbimport.sh
 airflow    ALL = NOPASSWD: /bin/sh /download_model.sh
 
 superset    ALL = NOPASSWD: /usr/sbin/service postgresql *

@@ -1,0 +1,10 @@
+FROM tjhatch/iwfm-airflow-manager:latest
+
+USER root
+RUN mkdir /backups ; chmod 777 /backups
+
+USER airflow
+COPY runner/dbimport.sh /dbimport.sh
+COPY runner/db.sh /db.sh
+
+ENTRYPOINT /db.sh
