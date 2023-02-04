@@ -1,2 +1,2 @@
 #!/bin/sh
-runuser -l postgres -c 'pg_restore -d analysis -f /backups/data.sql'
+runuser -l postgres -c 'pg_restore -f /backups/data.sql'
