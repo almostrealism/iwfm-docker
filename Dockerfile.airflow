@@ -64,6 +64,7 @@ RUN chown airflow /data
 
 USER airflow
 ENV WORKING_PATH=/data
+ENV LD_LIBRARY_PATH=/opt/intel/oneapi/compiler/2022.0.2/linux/compiler/lib/intel64_lin
 
 # Install Python packages
 RUN cd /scripts ; pip3 install -r requirements.txt ; cd /
