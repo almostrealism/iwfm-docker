@@ -13,4 +13,4 @@ if __name__ == '__main__':
     # wr.s3.download(path=f's3://{dashboard_bucket}/dashboards.zip', local_file='/backups/dashboards.zip')
 
     print("Downloading SQL from S3...")
-    wr.s3.download(path=geojson_s3_url, local_file='/backups/data.sql')
+    wr.s3.download(path=sql_s3_url, local_file='/backups/data.sql')

@@ -41,7 +41,7 @@ variable "admin_password" {
 
 variable "image" {
   description = "Docker image"
-  default = "ashesfall/iwfm-analysis"
+  default = "tjhatch/iwfm-analysis"
 }
 
 variable "tag" {
