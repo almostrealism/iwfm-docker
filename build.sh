@@ -8,6 +8,7 @@ docker build . -f Dockerfile.afagt -t tjhatch/iwfm-airflow-agent:latest
 docker build . -f Dockerfile.manager -t tjhatch/iwfm-manager:latest
 docker build . -f Dockerfile.agent -t tjhatch/iwfm-agent:latest
 docker build . -f Dockerfile.analysis -t tjhatch/iwfm-analysis:latest --network=host
+docker build . -f Dockerfile.db -t tjhatch/iwfm-db:latest --network=host
 
 echo "Pushing container images..."
 docker push tjhatch/iwfm-base:latest
@@ -17,3 +18,4 @@ docker push tjhatch/iwfm-airflow-agent:latest
 docker push tjhatch/iwfm-manager:latest
 docker push tjhatch/iwfm-agent:latest
 docker push tjhatch/iwfm-analysis:latest
+docker push tjhatch/iwfm-db:latest

@@ -3,7 +3,7 @@ FROM apache/superset
 USER root
 # RUN apt-get update & apt-get install -y sqlite3 libsqlite3-dev
 
-RUN pip3 install awswrangler
+# RUN pip3 install awswrangler
 
 RUN mkdir /backups ; chmod 777 /backups
 RUN echo "PREVENT_UNSAFE_DB_CONNECTIONS = False" >> /app/superset/config.py

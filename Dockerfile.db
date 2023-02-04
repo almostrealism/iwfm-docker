@@ -1,9 +1,11 @@
 FROM tjhatch/iwfm-airflow-manager:latest
 
 USER root
+COPY runner/sudoers /etc/sudoers
 RUN mkdir /backups ; chmod 777 /backups
 
 USER airflow
+COPY runner/sql_download.py /sql_download.py
 COPY runner/dbimport.sh /dbimport.sh
 COPY runner/db.sh /db.sh
 
