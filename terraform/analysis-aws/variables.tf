@@ -10,7 +10,7 @@ variable "region" {
 
 variable "instance_type" {
   description = "The type of AWS EC2 instance to use for the cluster"
-  default = "c6i.large"
+  default = "c6i.xlarge"
 }
 
 variable "instance_root_volume_size" {
@@ -45,7 +45,17 @@ variable "image" {
 }
 
 variable "tag" {
-  description = "Docker image"
+  description = "Docker tag"
+  default = "latest"
+}
+
+variable "db_image" {
+  description = "Docker image for database"
+  default = "tjhatch/iwfm-db"
+}
+
+variable "db_tag" {
+  description = "Docker tag for database"
   default = "latest"
 }
 
