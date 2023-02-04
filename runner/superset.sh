@@ -7,6 +7,11 @@ export SUP_WEBSERVER_LOG_LEVEL=info
 sudo service postgresql start
 sudo /bin/sh /dbinit.sh
 
+echo "Downloading database dump..."
+python3 /dashboard_download.py
+echo "Importing database dump..."
+psql analysis < /backups/data.sql
+
 superset fab create-admin \
                   --username admin \
                   --firstname Superset \
@@ -16,7 +21,6 @@ superset fab create-admin \
 superset db upgrade
 superset init
 
-# python /dashboard_download.py
 # superset import-dashboards --path /backups/dashboards.zip
 
 gunicorn \

@@ -51,6 +51,11 @@ variable "tag" {
 
 variable "dashboards_bucket" {
   description = "A unique name where the dashboards are located"
+  default = ""
+}
+
+variable "sql_s3_url" {
+  description = "The URL of the SQL scripts to run"
 }
 
 variable "mapbox_api_key" {
