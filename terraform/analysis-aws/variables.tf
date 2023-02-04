@@ -10,12 +10,12 @@ variable "region" {
 
 variable "instance_type" {
   description = "The type of AWS EC2 instance to use for the cluster"
-  default = "c6i.xlarge"
+  default = "c6i.8xlarge"
 }
 
 variable "instance_root_volume_size" {
   description = "The size of the root volume for cluster instances"
-  default = "250"
+  default = "600"
 }
 
 variable "instance_docker_volume_size" {

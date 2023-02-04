@@ -7,8 +7,8 @@ resource "aws_ecs_task_definition" "db" {
   task_role_arn            = aws_iam_role.ecs_task_role.arn
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
   network_mode             = "host"
-  cpu                      = "2048"
-  memory                   = "3860"
+  cpu                      = "30720"
+  memory                   = "59500"
 
   container_definitions = <<DEFINITION
   [
