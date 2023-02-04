@@ -8,6 +8,8 @@ sudo service postgresql start
 sudo /bin/sh /dbinit.sh
 
 python3 /dashboard_download.py
+ls -la /backups
+
 echo "Importing database dump..."
 sudo /bin/sh /dbimport.sh
 
