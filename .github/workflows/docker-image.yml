@@ -9,7 +9,7 @@ jobs:
     name: Build Docker image and push to repositories
     runs-on:
       group: runners
-      labels: ubuntu-latest-16-cores
+      labels: ubuntu-latest-32-cores
 
     steps:
       - name: Maximize build space
