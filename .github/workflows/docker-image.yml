@@ -7,7 +7,9 @@ on:
 jobs:
   build-and-push-docker-image:
     name: Build Docker image and push to repositories
-    runs-on: ubuntu-latest
+    runs-on:
+      group: runners
+      labels: ubuntu-latest-16-cores
 
     steps:
       - name: Maximize build space
@@ -38,7 +40,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       
-      - name: Base Image
+      - name: "Base Image"
         uses: docker/build-push-action@v2
         with:
           
@@ -51,7 +53,7 @@ jobs:
           push: ${{ github.ref == 'refs/heads/main' }}
           
           
-      - name: Airflow Base Image
+      - name: "Airflow Base Image"
         uses: docker/build-push-action@v2
         with:
           file: Dockerfile.airflow
@@ -61,7 +63,7 @@ jobs:
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
           
-      - name: Airflow Manager Image
+      - name: "Airflow Manager Image"
         uses: docker/build-push-action@v2
         with:
           file: Dockerfile.afmgr
@@ -71,7 +73,7 @@ jobs:
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
           
-      - name: Airflow Agent Image
+      - name: "Airflow Agent Image"
         uses: docker/build-push-action@v2
         with:
           file: Dockerfile.afagt
@@ -81,7 +83,7 @@ jobs:
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
     
-      - name: PEST Manager Image
+      - name: "PEST Manager Image"
         uses: docker/build-push-action@v2
         with:
           file: Dockerfile.manager
@@ -91,7 +93,7 @@ jobs:
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: PEST Agent Image
+      - name: "PEST Agent Image"
         uses: docker/build-push-action@v2
         with:
           file: Dockerfile.agent
@@ -101,22 +103,22 @@ jobs:
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
 
-#       - name: Parallel Manager Image
-#         uses: docker/build-push-action@v2
-#         with:
-#           file: Dockerfile.pmgr
-#           context: ./
-#           tags: |
-#             ashesfall/iwfm-parallel-mgr:latest
-#           # build on feature branches, push only on main branch
-#           push: ${{ github.ref == 'refs/heads/main' }}
-          
-#       - name: Parallel Agent Image
-#         uses: docker/build-push-action@v2
-#         with:
-#           file: Dockerfile.pagt
-#           context: ./
-#           tags: |
-#             ashesfall/iwfm-parallel-agent:latest
-#           # build on feature branches, push only on main branch
-#           push: ${{ github.ref == 'refs/heads/main' }}
+      - name: "Analysis Image"
+        uses: docker/build-push-action@v2
+        with:
+          file: Dockerfile.analysis
+          context: ./
+          tags: |
+            ashesfall/iwfm-analysis:latest
+          # build on feature branches, push only on main branch
+          push: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: "Database Image"
+        uses: docker/build-push-action@v2
+        with:
+          file: Dockerfile.db
+          context: ./
+          tags: |
+            ashesfall/iwfm-db:latest
+          # build on feature branches, push only on main branch
+          push: ${{ github.ref == 'refs/heads/main' }}
