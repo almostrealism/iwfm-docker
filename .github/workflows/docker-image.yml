@@ -48,7 +48,7 @@ jobs:
           context: ./
           # Note: tags has to be all lower-case
           tags: |
-            ashesfall/iwfm-base:latest
+            tjhatch/iwfm-base:latest
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
           
@@ -59,7 +59,7 @@ jobs:
           file: Dockerfile.airflow
           context: ./
           tags: |
-            ashesfall/iwfm-airflow:latest
+            tjhatch/iwfm-airflow:latest
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
           
@@ -69,7 +69,7 @@ jobs:
           file: Dockerfile.afmgr
           context: ./
           tags: |
-            ashesfall/iwfm-airflow-manager:latest
+            tjhatch/iwfm-airflow-manager:latest
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
           
@@ -79,7 +79,7 @@ jobs:
           file: Dockerfile.afagt
           context: ./
           tags: |
-            ashesfall/iwfm-airflow-agent:latest
+            tjhatch/iwfm-airflow-agent:latest
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
     
@@ -89,7 +89,7 @@ jobs:
           file: Dockerfile.manager
           context: ./
           tags: |
-            ashesfall/iwfm-manager:latest
+            tjhatch/iwfm-manager:latest
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
 
@@ -99,7 +99,7 @@ jobs:
           file: Dockerfile.agent
           context: ./
           tags: |
-            ashesfall/iwfm-agent:latest
+            tjhatch/iwfm-agent:latest
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
 
@@ -109,7 +109,7 @@ jobs:
           file: Dockerfile.analysis
           context: ./
           tags: |
-            ashesfall/iwfm-analysis:latest
+            tjhatch/iwfm-analysis:latest
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
 
@@ -119,6 +119,6 @@ jobs:
           file: Dockerfile.db
           context: ./
           tags: |
-            ashesfall/iwfm-db:latest
+            tjhatch/iwfm-db:latest
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
