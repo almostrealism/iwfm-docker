@@ -39,6 +39,11 @@ variable "admin_password" {
   description = "Password for admin user"
 }
 
+variable "superset_secret_key" {
+  description = "Secret for the Superset DB"
+  default = "use-a-random-value"
+}
+
 variable "image" {
   description = "Docker image"
   default = "tjhatch/iwfm-analysis"

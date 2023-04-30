@@ -39,6 +39,10 @@ resource "aws_ecs_task_definition" "superset" {
                   "value": "${var.admin_password}"
               },
               {
+                  "name": "SUPERSET_SECRET_KEY",
+                  "value": "${var.superset_secret_key}"
+              },
+              {
                   "name": "DASHBOARDS_BUCKET",
                   "value": "${var.dashboards_bucket}"
               },
