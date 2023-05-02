@@ -5,7 +5,7 @@ set(THIRD_PARTY_DIR "${TOP_DIR}/third_party")
 # FFLAGS depend on the compiler
 get_filename_component (Fortran_COMPILER_NAME ${CMAKE_Fortran_COMPILER} NAME)
 # include the common macros for compiler flags and third party libraries
-include(${TOP_DIR}/CmakeLibraryMacro.txt)
+include(${TOP_DIR}/CmakeLibraryMacro.cmake)
 
 #-------        SET UP COMPILER FLAGS --------------#
 set_compiler_flags()
