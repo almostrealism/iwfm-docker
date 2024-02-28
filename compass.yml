@@ -1,0 +1,18 @@
+name: iwfm-docker
+id: ari:cloud:compass:a158e1a1-12d9-425a-a3c4-f5ff83e10cb2:component/d9bc3aba-252d-40c5-9afc-82f68c42bfdd/342ded52-6a0f-4a02-b8e4-92e23abbb813
+description: Integrated Water Flow Model Docker Container based on Intel HPC Kit
+configVersion: 1
+typeId: APPLICATION
+ownerId: null
+fields:
+  tier: 4
+links:
+  - name: null
+    type: REPOSITORY
+    url: https://github.com/almostrealism/iwfm-docker
+relationships:
+  DEPENDS_ON: []
+labels:
+  - language:fortran
+  - source:github
+customFields: null
